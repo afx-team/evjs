@@ -244,20 +244,22 @@ The factory call is the only Application-level plugin configuration surface.
 Its argument is typed by the plugin package and may contain executable options
 when that package explicitly supports them.
 
-A Page-aware installed plugin exposes a short key in the adjacent
-`page.config.ts#plugins` map. Application and Page contracts are independent
-and never merge with each other. Authored fields deep-merge over defaults
-within their own contract. With a normal factory call, an omitted Page key uses
-Page defaults when they exist and otherwise disables that Page. A defaultable
-Page contract also exposes `forPages()`, where omission always disables the
+A plugin with Application or Page options declares one short key. A Page-aware
+installation exposes that same key in the adjacent `page.config.ts#plugins`
+map. Application and Page contracts are independent and never merge with each
+other. Authored fields deep-merge over defaults within their own contract. With
+a normal factory call, an omitted key on a Page uses Page defaults when they
+exist and otherwise disables that Page. A defaultable
+Page contract also exposes `withPageOptIn()`, where omission always disables the
 Page. `false` disables the plugin for a Page, `true` requires Page defaults,
 and an object enables it with an independently typed, strict-JSON Page value.
 
 `ev prepare`, `ev dev`, and `ev build` generate `src/plugin-types.d.ts` as a
-stable bridge to `ev.config.ts`. TypeScript config provides Page key and value
-completion without a plugin import; conditional or widened plugin arrays expose
-only entries that are statically certain to install. The declaration lives in
-`src`, not `.ev`, because normal project tsconfigs include `src`.
+stable bridge to `ev.config.ts`. TypeScript config provides plugin-key and
+Page-value completion without a plugin import; conditional or widened plugin
+arrays expose only entries that are statically certain to install. The
+declaration lives in `src`, not `.ev`, because normal project tsconfigs include
+`src`.
 
 Route and Document objects do not expose separate plugin configuration. A
 Page-aware plugin derives route patterns, Document ownership, and other

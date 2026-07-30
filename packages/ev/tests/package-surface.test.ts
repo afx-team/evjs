@@ -168,6 +168,7 @@ const generatedFrameworkArtifacts = [
   ".evjs",
   ".turbopack",
   "route-types.d.ts",
+  "plugin-types.d.ts",
 ] as const;
 
 const forbiddenPackageNames = [
@@ -221,6 +222,7 @@ const expectedBuildToolsRuntimeExports = [
   "build",
   "buildHtml",
   "canonicalPortableArtifactPathKey",
+  "collectPluginHooks",
   "collectPluginSettingsRegistry",
   "createBuildPlan",
   "createCoreGraph",
@@ -236,6 +238,7 @@ const expectedBuildToolsRuntimeExports = [
   "generateHtml",
   "generatePageRouteTypes",
   "generatePluginTypes",
+  "hasGeneratedCompilerInputChanges",
   "inspectFrameworkBuild",
   "isArtifactOnlyBuildPlanUpdate",
   "isEmptyBuildPlanUpdate",
@@ -247,6 +250,7 @@ const expectedBuildToolsRuntimeExports = [
   "resolveBuildOutputPaths",
   "resolveBundlerClientEntryAssets",
   "resolvePluginSettingsState",
+  "runConfigureBundlerHook",
   "syncPluginTypes",
   "transformRscClientFile",
   "transformServerFile",
@@ -531,8 +535,10 @@ describe("workspace package surface", () => {
 
   it("keeps plugin authoring types on one canonical public vocabulary", async () => {
     expect(Object.keys(pluginAuthoring).sort()).toEqual([
+      "PLUGIN_HOOK_ERROR_CODE",
+      "PluginHookError",
       "definePlugin",
-      "pluginConfig",
+      "pluginOptions",
     ]);
 
     const pluginSource = await fs.readFile(
@@ -541,7 +547,10 @@ describe("workspace package surface", () => {
     );
 
     expect(pluginSource).not.toContain("BundlerAgnostic");
-    expect(pluginSource).not.toContain("AnyPluginConfigContract");
+    expect(pluginSource).toContain("export interface PluginConfigureContext");
+    expect(pluginSource).toContain("export interface PluginSetupContext");
+    expect(pluginSource).toContain("export interface PluginEmitIRContext");
+    expect(pluginSource).toContain("export type TransformHtmlContext");
 
     for (const alias of forbiddenPluginAuthoringAliases) {
       expect(pluginSource).not.toMatch(

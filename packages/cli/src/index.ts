@@ -24,17 +24,22 @@ export {
   resolveConfig,
 } from "@evjs/ev/config";
 export type {
+  BeforeBuildContext,
   BuildResult,
-  BundlerCtx,
-  ContributionContext,
+  ConfigureBundlerContext,
+  DisposeContext,
   EmitApi,
   FrameworkIRView,
   FrameworkSlot,
   FrameworkSlotInput,
   GeneratedModuleRef,
   Plugin,
+  PluginConfigureContext,
   PluginContext,
+  PluginEmitIRContext,
   PluginHooks,
+  TransformHtmlContext,
+  TransformOutputContext,
 } from "@evjs/ev/plugin";
 export { loadConfig } from "./load-config.js";
 

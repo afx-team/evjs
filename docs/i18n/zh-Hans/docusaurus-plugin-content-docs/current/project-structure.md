@@ -228,12 +228,13 @@ export default defineConfig({
 工厂调用是唯一的 Application 级插件配置入口。参数由插件包提供类型；插件合同
 明确允许时，也可以包含可执行选项。
 
-已安装且支持 Page 配置的插件会在相邻 `page.config.ts#plugins` map 中暴露短 key。
-Application 与 Page 是两个独立合同，不会相互合并；authoring 字段只在各自合同
-内部深度合并到 defaults。普通工厂调用在 Page 有 defaults 时，会让省略 key 的
-Page 使用 defaults；没有 defaults 时则关闭该 Page。defaultable Page 合同还会
-暴露 `forPages()`，并始终把省略视为关闭。`false` 对当前 Page 禁用插件，`true`
-要求 Page defaults，对象则用独立类型、严格 JSON 的 Page value 启用插件。
+插件只要声明 Application 或 Page options，就需要一个短 key。已安装且支持 Page
+配置时，相同 key 会暴露在相邻 `page.config.ts#plugins` map 中。Application 与 Page
+是两个独立合同，不会相互合并；authoring 字段只在各自合同内部深度合并到 defaults。
+普通工厂调用在 Page 有 defaults 时，会让省略 key 的 Page 使用 defaults；没有
+defaults 时则关闭该 Page。defaultable Page 合同还会暴露 `withPageOptIn()`，并始终
+把省略视为关闭。`false` 对当前 Page 禁用插件，`true` 要求 Page defaults，对象则用
+独立类型、严格 JSON 的 Page value 启用插件。
 
 `ev prepare`、`ev dev` 与 `ev build` 生成 `src/plugin-types.d.ts`，稳定桥接
 `ev.config.ts`。Page config 无需 import 插件包即可获得 key 与字段补全；条件化或

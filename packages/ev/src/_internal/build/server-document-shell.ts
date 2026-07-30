@@ -75,6 +75,9 @@ export async function compileServerDocumentShells<TBundlerCfg>(options: {
       html: htmlInfo,
       output,
       isRebuild,
+      validateAfterTransform(_transformedDoc, transformedHtml) {
+        assertDocumentMarkers(transformedHtml, serverDocument.pageId);
+      },
     });
     shells[serverDocument.pageId] = splitDocumentShell(
       html,
@@ -125,6 +128,22 @@ function insertDocumentMarkers(
 }
 
 function splitDocumentShell(html: string, pageId: string): ServerDocumentShell {
+  const { contentStart, dataStart } = assertDocumentMarkers(html, pageId);
+
+  return {
+    beforeContent: html.slice(0, contentStart),
+    betweenContentAndData: html.slice(
+      contentStart + PAGE_CONTENT_COMMENT.length,
+      dataStart,
+    ),
+    afterData: html.slice(dataStart + REQUEST_DATA_COMMENT.length),
+  };
+}
+
+function assertDocumentMarkers(
+  html: string,
+  pageId: string,
+): { contentStart: number; dataStart: number } {
   const contentStart = html.indexOf(PAGE_CONTENT_COMMENT);
   const dataStart = html.indexOf(REQUEST_DATA_COMMENT);
   const hasOneContentMarker =
@@ -138,12 +157,5 @@ function splitDocumentShell(html: string, pageId: string): ServerDocumentShell {
     );
   }
 
-  return {
-    beforeContent: html.slice(0, contentStart),
-    betweenContentAndData: html.slice(
-      contentStart + PAGE_CONTENT_COMMENT.length,
-      dataStart,
-    ),
-    afterData: html.slice(dataStart + REQUEST_DATA_COMMENT.length),
-  };
+  return { contentStart, dataStart };
 }

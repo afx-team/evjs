@@ -34,10 +34,10 @@ describe("qiankun plugin config types", () => {
     const slave = evPluginQiankunSlave();
     const configuredSlave = evPluginQiankunSlave({ name: "catalog" });
 
-    expect(master.key).toBeUndefined();
-    expect("forPages" in evPluginQiankunMaster).toBe(false);
-    expect(slave.key).toBeUndefined();
-    expect(configuredSlave.key).toBeUndefined();
+    expect(master.key).toBe("qiankun-master");
+    expect("withPageOptIn" in evPluginQiankunMaster).toBe(false);
+    expect(slave.key).toBe("qiankun-slave");
+    expect(configuredSlave.key).toBe("qiankun-slave");
     expectTypeOf<
       DefinedPluginApplicationInput<typeof slave>
     >().toEqualTypeOf<QiankunSlavePluginOptions>();

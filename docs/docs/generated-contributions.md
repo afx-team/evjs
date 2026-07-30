@@ -10,21 +10,25 @@ This is the canonical reference for declarative plugin output. Start with
 
 ## Concept
 
-A contribution is a declarative unit in the framework IR. It can produce
-generated artifacts, link those artifacts together, and attach them to
-framework slots.
+A contribution is a declarative unit in the framework IR. It describes a
+generated artifact, a relationship between artifacts, or an attachment to a
+framework slot.
 
-Keep `contributions(ctx)` deterministic and free of external side effects.
-evjs may evaluate it again when contributed source aliases change the
-framework graph.
+`emitIR(ctx)` declares Application-wide records; `emitPageIR(ctx)` declares
+records once for each enabled Page. Both methods only register records and
+opaque references in memory. evjs collects and validates the complete set
+before materializing the final `.ev` tree and manifest, so neither method is an
+immediate file-write API.
 
-That definition is intentionally narrower than an arbitrary temporary file
-system. Plugins do not write random files into `.ev`; they declare artifacts and
-relationships. evjs then materializes the final `.ev` tree and manifest.
+Keep both methods deterministic and free of external side effects. evjs may
+evaluate them again when emitted source aliases change the framework graph.
+This contract is intentionally narrower than an arbitrary temporary file
+system: plugins declare artifacts and relationships instead of writing random
+files into `.ev`.
 
 ```mermaid
 flowchart TB
-  Hook["contributions(ctx)"]
+  Hook["emitIR(ctx)"]
 
   subgraph Declare["Plugin declarations"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -96,12 +100,14 @@ is immutable so plugins can inspect the IR but cannot mutate framework state.
 
 Application and Page views expose resolved `plugins` setting bags. The
 Application bag contains enablement only; private factory configuration never
-enters CoreGraph. Page bags may contain the validated static Page value. A
-defined plugin normally uses its narrower `ctx.options` and `ctx.pages` views;
+enters CoreGraph. Page bags may contain the validated static Page value. Both
+bags index a plugin by the same declared key. A defined plugin normally uses
+its narrower `ctx.options` and `ctx.pages` views;
 each enabled Page entry is `{ page, options }`. The per-Page
-`contributePage()` form receives `ctx.pageOptions`. These flat fields preserve
+`emitPageIR()` form receives `ctx.pageOptions`. These flat fields preserve
 the descriptor's inferred types. Internal provenance and resolved settings are
-available before `contributions()` materializes generated code.
+available while the methods declare records; materialization happens only
+after evjs has collected and validated all declarations.
 
 The Application view also exposes its `root`, `routingMode`, and owned Page,
 Route, and Document ids. An MPA therefore appears as one logical Application
@@ -112,9 +118,11 @@ visible even when they have no component module.
 
 ## Authoring API
 
-Use `ctx.emit.module()` for generated code, `ctx.emit.data()` for generated JSON
-data, and `ctx.emit.entryFacade()` when a wrapper plugin needs to preserve a
-framework-generated entry that it is about to replace.
+Use `ctx.emit.module()` to declare generated code, `ctx.emit.data()` to declare
+generated JSON data, and `ctx.emit.entryFacade()` when a wrapper plugin needs
+to preserve a framework-generated entry that it is about to replace. These
+calls return references and register declarations; they do not write the
+corresponding files during the method call.
 
 Use `ctx.emit.importOf(ref)` or `helpers.importOf(ref)` to link generated
 artifacts together. The returned specifier is valid only inside generated
@@ -127,8 +135,8 @@ Generated modules use opaque refs instead of exposing filesystem paths:
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
-  contributions(ctx) {
+  name: "@company/analytics",
+  emitIR(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -155,7 +163,7 @@ When a plugin replaces an entry but still needs the original framework facade,
 use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -186,7 +194,7 @@ which preserves the framework hydration-marker behavior for the first mount. A
 replacement entry owns that first `start()` call and later `app.render()`
 remounts. Other entry types cannot disable framework startup.
 
-Generated plugin paths are stable and readable. For example, a plugin with id
+Generated plugin paths are stable and readable. For example, a plugin named
 `@evjs/plugin-qiankun:slave` writes modules under
 `.ev/plugins/qiankun/slave/*` and exposes specifiers such as
 `evjs:generated/qiankun/slave/entry-wrapper`.
@@ -220,7 +228,7 @@ wrap earlier contributions; route layouts and wrappers remain outside plugin
 Page wrappers.
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",
@@ -275,11 +283,11 @@ remain responsible only for transformations of real source modules.
 
 The contribution layer does not replace plugin lifecycles:
 
-- Use `config()` for framework config defaults or validation-sensitive config.
+- Use `configure()` for framework config defaults or validation-sensitive config.
 - Use `setup()` to allocate plugin state and return lifecycle hooks.
-- Use `bundlerConfig()` for low-level bundler features not modeled as slots.
+- Use `configureBundler()` for low-level bundler features not modeled as slots.
 - Use `transformHtml()` for AST-level HTML rewrites.
-- Use `buildOutput()` and `buildEnd()` for deployment metadata and final files.
+- Use `transformOutput()` and `afterBuild()` for deployment metadata and final files.
 
 This split keeps the IR readable without pretending every plugin capability is
 an entry contribution.

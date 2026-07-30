@@ -30,6 +30,15 @@ interface PreparedWorkerOptions {
   >;
 }
 
+interface SerializableUtoopackDevConfig {
+  config: ConfigComplete;
+  pathRewriteFunctionIndexes: number[];
+  pathRewriteFunctions: ReadonlyMap<
+    number,
+    Extract<PathRewrite, (path: string) => string>
+  >;
+}
+
 export interface UtoopackDevWorkerReadyContext extends DevServerReadyContext {
   spaHistoryFallbackUpdated: boolean;
 }
@@ -168,39 +177,59 @@ export function startUtoopackDevWorker(
 export function prepareUtoopackDevWorkerOptions(
   options: UtoopackDevWorkerOptions,
 ): PreparedWorkerOptions {
+  const preparedConfig = prepareSerializableUtoopackDevConfig(options.config);
+  const candidate = {
+    ...options,
+    config: preparedConfig.config,
+    pathRewriteFunctionIndexes: preparedConfig.pathRewriteFunctionIndexes,
+  };
+
+  return {
+    workerOptions: cloneUtoopackDevWorkerValue(candidate),
+    pathRewriteFunctions: preparedConfig.pathRewriteFunctions,
+  };
+}
+
+export function assertUtoopackDevConfigCloneable(config: ConfigComplete): void {
+  const prepared = prepareSerializableUtoopackDevConfig(config);
+  cloneUtoopackDevWorkerValue(prepared.config);
+}
+
+function prepareSerializableUtoopackDevConfig(
+  config: ConfigComplete,
+): SerializableUtoopackDevConfig {
   const pathRewriteFunctions = new Map<
     number,
     Extract<PathRewrite, (path: string) => string>
   >();
-  const proxy = options.config.devServer?.proxy;
+  const proxy = config.devServer?.proxy;
   const serializableProxy = proxy?.map((rule, index) => {
     if (typeof rule.pathRewrite !== "function") return rule;
     pathRewriteFunctions.set(index, rule.pathRewrite);
     const { pathRewrite: _pathRewrite, ...serializableRule } = rule;
     return serializableRule;
   });
-  const candidate = {
-    ...options,
+  return {
     config: serializableProxy
       ? {
-          ...options.config,
+          ...config,
           devServer: {
-            ...options.config.devServer,
+            ...config.devServer,
             proxy: serializableProxy,
           },
         }
-      : options.config,
+      : config,
     pathRewriteFunctionIndexes: [...pathRewriteFunctions.keys()],
+    pathRewriteFunctions,
   };
+}
 
+function cloneUtoopackDevWorkerValue<TValue>(value: TValue): TValue {
   try {
-    return {
-      workerOptions: structuredClone(candidate),
-      pathRewriteFunctions,
-    };
+    return structuredClone(value);
   } catch (error) {
     throw new Error(
-      "[evjs] Utoopack development config must be structured-cloneable so its process-owned server can run in an isolated, stoppable worker. Remove non-cloneable values contributed through bundlerConfig().",
+      "[evjs] Utoopack development config must be structured-cloneable so its process-owned server can run in an isolated, stoppable worker. Remove non-cloneable values contributed through configureBundler().",
       { cause: error },
     );
   }

@@ -4,9 +4,14 @@ import type {
   CoreApplicationPluginSettings,
 } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
+import { runPluginHook } from "../../plugin/errors.js";
 import type { PluginContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
-import { materializeFrameworkIR } from "./generated-contributions.js";
+import {
+  type PreparedFrameworkIR,
+  type PreparedSourceAliasContribution,
+  prepareFrameworkIR,
+} from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
 import { type CreateBuildPlanOptions, createBuildPlan } from "./plan/index.js";
@@ -26,6 +31,7 @@ export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   applicationPluginSettings: CoreApplicationPluginSettings;
   plan?: CreateBuildPlanOptions;
   write?: boolean;
+  deferWrite?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
 }
 
@@ -34,11 +40,12 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
 ): Promise<{
   analysis: GraphAnalysisResult;
   plan: BuildPlan;
+  commit?: () => Promise<void>;
 }> {
   async function materialize(
     analysis: GraphAnalysisResult,
-  ): Promise<BuildPlan> {
-    return materializeFrameworkIR({
+  ): Promise<PreparedFrameworkIR> {
+    return prepareFrameworkIR({
       cwd: options.cwd,
       mode: options.mode,
       command: options.command,
@@ -50,7 +57,6 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
         mode: options.mode,
         ...options.plan,
       }),
-      write: options.write,
     });
   }
 
@@ -61,37 +67,111 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
           options.config.routing.metadata,
         )
       : undefined;
-  if (options.write !== false) {
-    await syncPluginTypes({
-      cwd: options.cwd,
-    });
-  }
   const pluginSettingsSession = createPluginSettingsResolutionSession(
     options.pluginSettings,
   );
-  let aliases: Record<string, string> = {};
+  let aliasState: FrameworkSourceAliasState = {
+    aliases: {},
+    contributions: [],
+  };
+  let lastChangingContribution: PreparedSourceAliasContribution | undefined;
   for (let attempt = 0; attempt < 5; attempt++) {
     const analysis = await createCoreGraph(options.config, options.cwd, {
-      resolve: { alias: aliases },
+      resolve: { alias: aliasState.aliases },
       pluginSettings: options.pluginSettings,
       applicationPluginSettings: options.applicationPluginSettings,
       pluginSettingsSession,
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);
-    const plan = await materialize(analysis);
-    const nextAliases = getFrameworkSourceAliases(options.cwd, plan);
-    if (haveSameAliases(aliases, nextAliases)) {
-      if (options.write !== false && options.config.routing) {
-        await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
+    const prepared = await materialize(analysis);
+    const plan = prepared.plan;
+    const nextAliasState = getFrameworkSourceAliasState(options.cwd, prepared);
+    if (haveSameAliases(aliasState.aliases, nextAliasState.aliases)) {
+      const commit = async () => {
+        await syncPluginTypes({ cwd: options.cwd });
+        await prepared.write();
+        if (options.config.routing) {
+          await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
+        }
+      };
+      if (options.write !== false && !options.deferWrite) {
+        await commit();
       }
-      return { analysis, plan };
+      return {
+        analysis,
+        plan,
+        ...(options.write !== false && options.deferWrite ? { commit } : {}),
+      };
     }
-    aliases = nextAliases;
+    lastChangingContribution =
+      getChangingSourceAliasContribution(aliasState, nextAliasState) ??
+      lastChangingContribution;
+    aliasState = nextAliasState;
   }
 
-  throw new Error(
+  const convergenceError = new Error(
     "[evjs] Plugin source alias contributions did not converge after 5 framework graph analysis passes.",
+  );
+  if (!lastChangingContribution) throw convergenceError;
+  return runPluginHook(
+    lastChangingContribution.pluginName,
+    lastChangingContribution.originHook,
+    () => {
+      throw convergenceError;
+    },
+  );
+}
+
+interface FrameworkSourceAliasState {
+  aliases: Record<string, string>;
+  contributions: PreparedSourceAliasContribution[];
+}
+
+function getFrameworkSourceAliasState(
+  cwd: string,
+  prepared: PreparedFrameworkIR,
+): FrameworkSourceAliasState {
+  const aliases = getFrameworkSourceAliases(cwd, prepared.plan);
+  const contributions: PreparedSourceAliasContribution[] = [];
+  const seenSpecifiers = new Set<string>();
+  // Resolve slots use last-write-wins precedence. Retain only the effective
+  // contributor for each specifier, in highest-precedence order.
+  for (
+    let index = prepared.sourceAliasContributions.length - 1;
+    index >= 0;
+    index--
+  ) {
+    const contribution = prepared.sourceAliasContributions[index];
+    if (!contribution || seenSpecifiers.has(contribution.specifier)) {
+      continue;
+    }
+    seenSpecifiers.add(contribution.specifier);
+    contributions.push(contribution);
+  }
+  return { aliases, contributions };
+}
+
+function getChangingSourceAliasContribution(
+  previous: FrameworkSourceAliasState,
+  next: FrameworkSourceAliasState,
+): PreparedSourceAliasContribution | undefined {
+  const changedSpecifiers = new Set([
+    ...Object.keys(previous.aliases),
+    ...Object.keys(next.aliases),
+  ]);
+  for (const specifier of changedSpecifiers) {
+    if (previous.aliases[specifier] === next.aliases[specifier]) {
+      changedSpecifiers.delete(specifier);
+    }
+  }
+  return (
+    next.contributions.find((contribution) =>
+      changedSpecifiers.has(contribution.specifier),
+    ) ??
+    previous.contributions.find((contribution) =>
+      changedSpecifiers.has(contribution.specifier),
+    )
   );
 }
 

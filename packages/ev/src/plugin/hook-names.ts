@@ -1,16 +1,16 @@
 export const PLUGIN_HOOK_NAMES = [
-  "buildStart",
-  "buildOutput",
-  "bundlerConfig",
-  "buildEnd",
-  "dispose",
+  "configureBundler",
+  "beforeBuild",
+  "transformOutput",
   "transformHtml",
+  "afterBuild",
+  "dispose",
 ] as const;
 
 /**
- * Plugin descriptor objects are open to package-local metadata, but lifecycle
- * hooks belong to setup(). Reserve current hook spellings, including casing
- * mistakes, so misplaced hooks fail instead of becoming ignored metadata.
+ * Plugin descriptors are strict and lifecycle hooks belong to setup().
+ * Recognize current hook spellings, including casing mistakes, so misplaced
+ * hooks receive a focused diagnostic.
  */
 export function isPluginLifecycleDescriptorField(value: string): boolean {
   if ((PLUGIN_HOOK_NAMES as readonly string[]).includes(value)) return true;

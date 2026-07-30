@@ -160,10 +160,12 @@ export default defineConfig({
 ```
 
 该工厂同时完成插件安装和 Application 配置。参数类型由插件包直接提供，因此
-不需要维护第二个 namespace、注册调用或配置对象。条件项可以使用 `false`、
-`null` 或 `undefined`；运行时会忽略这些非活跃项。可能进入 falsy 分支的条目不保证
-安装，因此不会暴露 Page key。Page 合同有 defaults，且插件与 Application options
-需要保持启用、但每个 Page 必须显式 opt in 时，使用 `plugin.forPages(config)`。
+不需要维护第二个 namespace、注册调用或配置对象。只要插件声明 Application 或 Page
+options，就要提供一个短 `key`；CoreGraph 中的 Application 与 Page setting entry
+都使用这个 key。条件项可以使用 `false`、`null` 或 `undefined`；运行时会忽略这些
+非活跃项。可能进入 falsy 分支的条目不保证安装，因此不会向 Page config 暴露 key。
+Page 合同有 defaults，且插件与 Application options 需要保持启用、但每个 Page
+必须显式 opt in 时，使用 `plugin.withPageOptIn(config)`。
 
 插件合同允许时，Application 配置可以包含类型安全的可执行选项或显式模块引用。
 不要把 secret 放进插件会投影到 generated file 或浏览器 runtime 的值中。
@@ -220,15 +222,17 @@ evjs 构建 graph 时同步求值该 module。它必须 default-export plain obj
 `charset`、link、script、函数或通用 head tree。已安装且支持 Page 配置的插件使用
 `plugins` 下生成的短 key。Page module 不需要 import 插件包：`ev prepare`、
 `ev dev` 与 `ev build` 会生成 `src/plugin-types.d.ts`，稳定桥接 `ev.config.ts` 的
-静态类型。TypeScript 直接从该配置类型推导 Page key 与 value，但只包含静态上
+静态类型。TypeScript 直接从该配置类型推导 plugin key 与 Page value，但只包含静态上
 保证安装的条目。JavaScript 配置不会把 Page registry 扩散为 `any`；需要 Page
-插件补全时请使用 `ev.config.ts`。
+插件补全时请使用 `ev.config.ts`。Framework 命令会在 Page graph analysis 前生成该
+桥接；它保留在 `src` 下，因为普通应用 tsconfig 会包含 `src`，同时排除生成的 `.ev`
+IR。
 
 Application 与 Page 配置是两个独立的插件合同。evjs 不会把 Application 工厂的
 对象合并到 Page value。在任一合同内部，authoring 字段会先深度合并到该合同的
 defaults，再进行校验。普通工厂调用在 Page 有 defaults 时，会让省略 key 的 Page
 使用 defaults；没有 defaults 时，省略会关闭该 Page。defaultable Page 合同会暴露
-`forPages()`，并始终把省略视为关闭；non-defaultable 合同本身已经是 opt-in-only。
+`withPageOptIn()`，并始终把省略视为关闭；non-defaultable 合同本身已经是 opt-in-only。
 `false` 对当前 Page 禁用插件，`true` 要求 Page defaults，对象则在合并 Page
 defaults 并校验后启用插件。Page 对象必须是严格 static JSON。
 
@@ -324,7 +328,7 @@ export default defineConfig({
 ```
 
 Config 与 plugin setup 完成后，解析出的输出路径归 BuildPlan 持有。Adapter 使用
-这些路径执行 cleanup、写入产物、生成 stats 与 manifest；`bundlerConfig()` hook
+这些路径执行 cleanup、写入产物、生成 stats 与 manifest；`configureBundler()` hook
 不能覆盖 framework 持有的 client 或 server 输出路径。
 
 `output.crossOriginLoading` 接受 `false`、`"anonymous"` 或
@@ -347,8 +351,10 @@ export default defineConfig({
 
 通过 `plugins` 安装插件，通常写成
 `pluginFactory(applicationConfig)`。插件可以声明独立 Page 合同，其短 key 会出现在
-相邻 `page.config.ts` 中。同一个 Plugin descriptor 承载 config、setup、
-contributions 与 lifecycle hooks。参见[插件](./plugins)。
+相邻 `page.config.ts` 中。Plugin descriptor 承载 `configure()`、`setup()`、
+`emitIR()` 与 `emitPageIR()`；`beforeBuild()`、`dispose()` 等 lifecycle hook
+只应出现在 `setup()` 返回的 hooks object 中。IR emission 方法只声明由 evjs 收集、
+校验的 record，不会立即写入 `.ev`。参见[插件](./plugins)。
 
 ### Bundler
 
@@ -364,8 +370,8 @@ export default defineConfig({
 });
 ```
 
-每个 adapter 都声明 server rendering、RSC、PPR build capability，以及 HTML、
-entry、route、server output、resolution 的 dev-plan update capability。
+每个 adapter 都声明 server rendering、RSC、PPR build capability，以及配置热替换、
+HTML、entry、route、server output、resolution 的 dev-plan update capability。
 `ev inspect` 会报告选中的 adapter 与 plan gap；缺少必要 capability 时，build/dev
 会在执行 adapter 前失败。
 

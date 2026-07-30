@@ -27,8 +27,13 @@ import type {
   ServerMiddlewareNode,
 } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
+import {
+  attachPluginEmissionScope,
+  type PluginEmissionApi,
+  type PluginEmissionHook,
+} from "../../plugin/emission-scope.js";
+import { runPluginHook } from "../../plugin/errors.js";
 import type {
-  ContributionContext,
   EmitApi,
   FrameworkApplicationEntryView,
   FrameworkApplicationView,
@@ -43,14 +48,23 @@ import type {
   HtmlDocumentInfo,
   Plugin,
   PluginContext,
+  PluginEmitIRContext,
 } from "../../plugin/index.js";
 import {
   createOriginalClientEntryFacadeSource,
   createPagesAppEntryMainSource,
   createReactComponentPageEntryMainSource,
 } from "./generated/client-entry-source.js";
-import { applyPageWrapperContributions } from "./generated/page-wrapper-contribution.js";
+import {
+  applyPageWrapperContributions,
+  getPageWrapperProjectionError,
+} from "./generated/page-wrapper-contribution.js";
 import { createReactServerPageEntrySource } from "./generated/react-server-page-source.js";
+import {
+  removeOwnedOutputFile,
+  writeOwnedOutputFile,
+} from "./owned-file-output.js";
+import { createPluginConfigSnapshot } from "./plugin-lifecycle.js";
 import {
   reserveUniquePortableArtifactPath,
   sanitizePortableArtifactPathSegment,
@@ -112,11 +126,13 @@ type GeneratedSource =
       importOf(ref: GeneratedModuleRef): string;
       importFile(file: string): string;
     }) => string);
+type GeneratedIRFileSource = string | Uint8Array;
 
 interface InternalGeneratedModule {
   key: string;
   id: string;
   pluginName: string;
+  originHook: PluginEmissionHook;
   scope: GeneratedScope;
   source: GeneratedSource;
   resolvedSource?: string;
@@ -142,7 +158,7 @@ type TargetedSlotPlanItem =
   | PageWrapperSlotPlanItem
   | HtmlTagSlotPlanItem;
 
-interface MaterializeFrameworkIROptions<TBundlerCfg> {
+export interface MaterializeFrameworkIROptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
   command: "dev" | "build";
@@ -154,6 +170,20 @@ interface MaterializeFrameworkIROptions<TBundlerCfg> {
   write?: boolean;
 }
 
+export interface PreparedFrameworkIR {
+  plan: BuildPlan;
+  /** Build-local resolve.alias provenance. This is not serialized into IR. */
+  sourceAliasContributions: PreparedSourceAliasContribution[];
+  write(): Promise<void>;
+}
+
+export interface PreparedSourceAliasContribution {
+  readonly specifier: string;
+  readonly replacement: string;
+  readonly pluginName: string;
+  readonly originHook: PluginEmissionHook;
+}
+
 /**
  * Collect deterministic plugin contributions against an immutable view of the
  * same pre-contribution graph and plan, then apply the resolved slots to a
@@ -163,6 +193,14 @@ interface MaterializeFrameworkIROptions<TBundlerCfg> {
 export async function materializeFrameworkIR<TBundlerCfg>(
   options: MaterializeFrameworkIROptions<TBundlerCfg>,
 ): Promise<BuildPlan> {
+  const prepared = await prepareFrameworkIR(options);
+  if (options.write ?? true) await prepared.write();
+  return prepared.plan;
+}
+
+export async function prepareFrameworkIR<TBundlerCfg>(
+  options: Omit<MaterializeFrameworkIROptions<TBundlerCfg>, "write">,
+): Promise<PreparedFrameworkIR> {
   const plan = cloneJson(options.plan);
   const collector = new ContributionCollector({
     cwd: options.cwd,
@@ -175,11 +213,11 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   });
 
   for (const plugin of options.plugins) {
-    if (!plugin.contributions) continue;
+    if (!plugin.emitIR) continue;
     await collector.run(plugin);
   }
-  collector.resolveModuleSources();
-  collector.validateTargets();
+  await collector.resolveModuleSources();
+  await collector.validateTargets();
 
   const generated = collector.toGeneratedPlan();
   applyPageWrapperContributions(plan, options.graph, generated);
@@ -190,18 +228,24 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   const entries = createGeneratedEntryPlans(plan, generated);
   generated.entries = entries;
   rewritePlanEntriesToGeneratedFiles(plan, entries);
+  addGeneratedEntrySourceHashes(options.cwd, plan, entries);
 
-  if (options.write ?? true) {
-    await writeGeneratedIR(
-      options.cwd,
-      options.graph,
-      plan,
-      collector.modules,
-      generated,
-    );
-  }
-
-  return plan;
+  let written = false;
+  return {
+    plan,
+    sourceAliasContributions: collector.getSourceAliasContributions(),
+    async write() {
+      if (written) return;
+      written = true;
+      await writeGeneratedIR(
+        options.cwd,
+        options.graph,
+        plan,
+        collector.modules,
+        generated,
+      );
+    },
+  };
 }
 
 export function applyHtmlTagContributions(
@@ -246,6 +290,10 @@ class ContributionCollector<TBundlerCfg> {
   private readonly refs = new Map<string, InternalGeneratedModule>();
   private readonly seenKeys = new Map<string, string>();
   private readonly usedGeneratedModulePathKeys = new Set<string>();
+  private readonly slotOrigins = new WeakMap<
+    FrameworkSlotPlanItem,
+    PluginEmissionHook
+  >();
 
   constructor(
     private readonly options: {
@@ -260,121 +308,195 @@ class ContributionCollector<TBundlerCfg> {
   ) {}
 
   async run(plugin: Plugin<TBundlerCfg>): Promise<void> {
-    const emit = this.createEmitApi(plugin.name);
-    const context: ContributionContext<TBundlerCfg> = {
-      ...this.options.pluginContext,
-      mode: this.options.mode,
-      command: this.options.command,
-      cwd: this.options.cwd,
-      config: this.options.config,
-      framework: createFrameworkIRView(this.options.graph, this.options.plan),
-      emit,
-      slot: <K extends FrameworkSlotName>(name: K) =>
-        this.createSlot(plugin.name, name),
-    };
-    await plugin.contributions?.(context);
+    await runPluginHook(plugin.name, "emitIR", () => {
+      const emission = this.createEmissionApi(plugin.name, "emitIR");
+      const context: PluginEmitIRContext<TBundlerCfg> = {
+        ...this.options.pluginContext,
+        mode: this.options.mode,
+        command: this.options.command,
+        cwd: this.options.cwd,
+        config: createPluginConfigSnapshot(this.options.config),
+        framework: createFrameworkIRView(this.options.graph, this.options.plan),
+        ...emission,
+      };
+      attachPluginEmissionScope(context, (originHook) =>
+        this.createEmissionApi(plugin.name, originHook),
+      );
+      return plugin.emitIR?.(context);
+    });
   }
 
-  resolveModuleSources(): void {
+  async resolveModuleSources(): Promise<void> {
     for (const module of this.modules) {
-      module.resolvedSource =
-        typeof module.source === "function"
-          ? module.source({
-              importOf: (ref) =>
-                this.importOf(ref, {
-                  from: module.key,
-                  kind: "module-import",
-                  specifier: this.importSpecifierFromGeneratedFile(
-                    ref,
+      module.resolvedSource = await runPluginHook(
+        module.pluginName,
+        module.originHook,
+        () => {
+          const sourceFactory =
+            typeof module.source === "function" ? module.source : undefined;
+          const source = sourceFactory
+            ? sourceFactory({
+                importOf: (ref) =>
+                  this.importOf(ref, {
+                    from: module.key,
+                    kind: "module-import",
+                    specifier: this.importSpecifierFromGeneratedFile(
+                      ref,
+                      module.absoluteFile,
+                    ),
+                  }),
+                importFile: (file) =>
+                  toGeneratedImportSpecifier(
+                    this.options.cwd,
                     module.absoluteFile,
+                    file,
                   ),
-                }),
-              importFile: (file) =>
-                toGeneratedImportSpecifier(
-                  this.options.cwd,
-                  module.absoluteFile,
-                  file,
-                ),
-            })
-          : module.source;
+              })
+            : module.source;
+          if (typeof source !== "string") {
+            const expectation = sourceFactory
+              ? "source factory must return"
+              : "source must be";
+            throw new Error(
+              `[evjs] Plugin "${module.pluginName}" generated module "${module.id}" ${expectation} a string.`,
+            );
+          }
+          return source;
+        },
+      );
     }
   }
 
-  validateTargets(): void {
+  async validateTargets(): Promise<void> {
     for (const module of this.modules) {
-      if (
-        module.scope.kind === "page" &&
-        !Object.hasOwn(this.options.graph.pages, module.scope.pageId)
-      ) {
-        throw new Error(
-          `[evjs] Plugin "${module.pluginName}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
-        );
-      }
+      await runPluginHook(module.pluginName, module.originHook, () =>
+        this.validateModuleTarget(module),
+      );
     }
 
     for (const slot of this.slots) {
-      if (!isTargetedSlotPlanItem(slot) || !slot.target) continue;
-      const target = slot.target;
-      this.validateKnownTarget(slot);
+      await runPluginHook(
+        slot.pluginName,
+        this.slotOrigins.get(slot) ?? "emitIR",
+        () => this.validateSlotTarget(slot),
+      );
+    }
+    await this.validateClientEntryReplacementConflicts();
+  }
 
-      if (
-        slot.slot === "client.entry" &&
-        !this.options.plan.entries.some(
-          (entry) =>
-            entry.environment === "client" && targetMatchesEntry(target, entry),
-        )
-      ) {
-        if (target.kind === "application") {
-          const application = target.applicationId
-            ? `application "${target.applicationId}"`
-            : "an application";
-          throw new Error(
-            `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
-          );
-        }
-        const pageId = target.pageId;
-        const route = this.options.graph.routes.find(
-          (candidate) =>
-            candidate.target.kind === "page" &&
-            candidate.target.pageId === pageId,
-        );
-        const sharedOwner = route?.applicationId
-          ? ` It is served by shared SPA application "${route.applicationId}".`
-          : "";
+  private validateModuleTarget(module: InternalGeneratedModule): void {
+    if (
+      module.scope.kind === "page" &&
+      !Object.hasOwn(this.options.graph.pages, module.scope.pageId)
+    ) {
+      throw new Error(
+        `[evjs] Plugin "${module.pluginName}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
+      );
+    }
+  }
+
+  private validateSlotTarget(slot: FrameworkSlotPlanItem): void {
+    if (isTargetedSlotPlanItem(slot) && slot.target) {
+      this.validateKnownTarget(slot);
+    }
+    if (slot.slot === "page.wrapper") {
+      const projectionError = getPageWrapperProjectionError(
+        this.options.plan,
+        this.options.graph,
+        slot,
+      );
+      if (projectionError) throw new Error(projectionError);
+    }
+    if (!isTargetedSlotPlanItem(slot) || !slot.target) return;
+    const target = slot.target;
+
+    if (
+      slot.slot === "client.entry" &&
+      !this.options.plan.entries.some(
+        (entry) =>
+          entry.environment === "client" && targetMatchesEntry(target, entry),
+      )
+    ) {
+      if (target.kind === "application") {
+        const application = target.applicationId
+          ? `application "${target.applicationId}"`
+          : "an application";
         throw new Error(
-          `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
+          `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
         );
       }
+      const pageId = target.pageId;
+      const route = this.options.graph.routes.find(
+        (candidate) =>
+          candidate.target.kind === "page" &&
+          candidate.target.pageId === pageId,
+      );
+      const sharedOwner = route?.applicationId
+        ? ` It is served by shared SPA application "${route.applicationId}".`
+        : "";
+      throw new Error(
+        `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
+      );
+    }
 
-      if (
-        slot.slot === "html.tag" &&
-        ![
-          ...this.options.plan.html.map((document) => document.owner),
-          ...(this.options.plan.server.documents ?? []).map((document) => ({
-            appId: document.applicationId,
-            pageId: document.pageId,
-          })),
-        ].some((owner) => targetMatchesHtmlOwner(target, owner))
-      ) {
-        if (target.kind === "application") {
-          const application = target.applicationId
-            ? `application "${target.applicationId}"`
-            : "an application";
-          throw new Error(
-            `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
-          );
-        }
-        const pageId = target.pageId;
-        const route = this.options.graph.routes.find(
-          (candidate) =>
-            candidate.target.kind === "page" &&
-            candidate.target.pageId === pageId,
-        );
-        const sharedOwner = route?.applicationId
-          ? ` It shares the Document owned by SPA application "${route.applicationId}".`
-          : "";
+    if (
+      slot.slot === "html.tag" &&
+      ![
+        ...this.options.plan.html.map((document) => document.owner),
+        ...(this.options.plan.server.documents ?? []).map((document) => ({
+          appId: document.applicationId,
+          pageId: document.pageId,
+        })),
+      ].some((owner) => targetMatchesHtmlOwner(target, owner))
+    ) {
+      if (target.kind === "application") {
+        const application = target.applicationId
+          ? `application "${target.applicationId}"`
+          : "an application";
         throw new Error(
-          `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
+          `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
+        );
+      }
+      const pageId = target.pageId;
+      const route = this.options.graph.routes.find(
+        (candidate) =>
+          candidate.target.kind === "page" &&
+          candidate.target.pageId === pageId,
+      );
+      const sharedOwner = route?.applicationId
+        ? ` It shares the Document owned by SPA application "${route.applicationId}".`
+        : "";
+      throw new Error(
+        `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
+      );
+    }
+  }
+
+  private async validateClientEntryReplacementConflicts(): Promise<void> {
+    const replacements = this.slots.filter(
+      (slot): slot is ClientEntrySlotPlanItem =>
+        slot.slot === "client.entry" && slot.mode === "replace",
+    );
+    if (replacements.length < 2) return;
+
+    for (const entry of this.options.plan.entries) {
+      if (entry.environment !== "client") continue;
+      let first: ClientEntrySlotPlanItem | undefined;
+      for (const replacement of replacements) {
+        if (!targetMatchesEntry(replacement.target, entry)) continue;
+        if (!first) {
+          first = replacement;
+          continue;
+        }
+        const firstReplacement = first;
+        await runPluginHook(
+          replacement.pluginName,
+          this.slotOrigins.get(replacement) ?? "emitIR",
+          () => {
+            throw new Error(
+              `[evjs] Entry "${entry.name}" has multiple replacement client.entry contributions: ${firstReplacement.key}, ${replacement.key}.`,
+            );
+          },
         );
       }
     }
@@ -416,7 +538,36 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private createEmitApi(pluginName: string): EmitApi {
+  getSourceAliasContributions(): PreparedSourceAliasContribution[] {
+    return this.slots.flatMap((slot) =>
+      slot.slot === "resolve.alias"
+        ? [
+            {
+              specifier: slot.specifier,
+              replacement: slot.replacement,
+              pluginName: slot.pluginName,
+              originHook: this.slotOrigins.get(slot) ?? "emitIR",
+            },
+          ]
+        : [],
+    );
+  }
+
+  private createEmissionApi(
+    pluginName: string,
+    originHook: PluginEmissionHook,
+  ): PluginEmissionApi {
+    return {
+      emit: this.createEmitApi(pluginName, originHook),
+      slot: <K extends FrameworkSlotName>(name: K) =>
+        this.createSlot(pluginName, name, originHook),
+    };
+  }
+
+  private createEmitApi(
+    pluginName: string,
+    originHook: PluginEmissionHook,
+  ): EmitApi {
     return {
       module: (input) => {
         const id = validateContributionId(input.id, pluginName);
@@ -426,6 +577,7 @@ class ContributionCollector<TBundlerCfg> {
           source: input.source,
           extension: input.extension ?? ".ts",
           keyKind: "generated module",
+          originHook,
         });
       },
       data: (input) => {
@@ -441,6 +593,7 @@ class ContributionCollector<TBundlerCfg> {
           source,
           extension: ".json",
           keyKind: "generated data",
+          originHook,
         });
       },
       entryFacade: (input) => {
@@ -470,6 +623,7 @@ class ContributionCollector<TBundlerCfg> {
             }),
           extension: ".ts",
           keyKind: "entry facade",
+          originHook,
         });
       },
       importOf: (ref) =>
@@ -488,6 +642,7 @@ class ContributionCollector<TBundlerCfg> {
       source: GeneratedSource;
       extension: string;
       keyKind: string;
+      originHook: PluginEmissionHook;
     },
   ): GeneratedModuleRef {
     if (!SUPPORTED_GENERATED_EXTENSIONS.has(input.extension)) {
@@ -495,15 +650,16 @@ class ContributionCollector<TBundlerCfg> {
         `[evjs] Plugin "${pluginName}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
       );
     }
-    validateGeneratedScope(pluginName, input.id, input.scope);
+    const scope = normalizeGeneratedScope(pluginName, input.id, input.scope);
     const key = this.reserveKey(pluginName, input.id, input.keyKind);
     const module = this.createGeneratedModule({
       pluginName,
       id: input.id,
       key,
-      scope: input.scope,
+      scope,
       source: input.source,
       extension: input.extension,
+      originHook: input.originHook,
     });
     this.modules.push(module);
     this.refs.set(key, module);
@@ -516,6 +672,7 @@ class ContributionCollector<TBundlerCfg> {
   private createSlot<K extends FrameworkSlotName>(
     pluginName: string,
     name: K,
+    originHook: PluginEmissionHook,
   ): FrameworkSlot<K> {
     validateEnum(
       name,
@@ -526,6 +683,7 @@ class ContributionCollector<TBundlerCfg> {
       add: (input) => {
         assertRecord(input, `Plugin "${pluginName}" ${name} contribution`);
         const normalized = this.normalizeSlotInput(pluginName, name, input);
+        this.slotOrigins.set(normalized, originHook);
         this.slots.push(normalized);
       },
     };
@@ -567,8 +725,8 @@ class ContributionCollector<TBundlerCfg> {
             CLIENT_ENTRY_MODES,
             `${base.key}.mode`,
           ),
-          ...(item.target
-            ? { target: validateContributionTarget(item.target) }
+          ...(item.target !== undefined
+            ? { target: normalizeContributionTarget(item.target) }
             : {}),
         };
       }
@@ -591,8 +749,8 @@ class ContributionCollector<TBundlerCfg> {
             CONTRIBUTION_RUNTIMES,
             `${base.key}.runtime`,
           ),
-          ...(item.target
-            ? { target: validateContributionTarget(item.target) }
+          ...(item.target !== undefined
+            ? { target: normalizeContributionTarget(item.target) }
             : {}),
         };
       }
@@ -634,8 +792,8 @@ class ContributionCollector<TBundlerCfg> {
                 ),
               }
             : {}),
-          ...(item.target
-            ? { target: validateContributionTarget(item.target) }
+          ...(item.target !== undefined
+            ? { target: normalizeContributionTarget(item.target) }
             : {}),
         };
       }
@@ -700,6 +858,7 @@ class ContributionCollector<TBundlerCfg> {
     scope: GeneratedScope;
     source: GeneratedSource;
     extension: string;
+    originHook: PluginEmissionHook;
   }): InternalGeneratedModule {
     const pluginSlug = sanitizePluginPathSegment(input.pluginName);
     const idSlug = sanitizePortableArtifactPathSegment(input.id);
@@ -718,6 +877,7 @@ class ContributionCollector<TBundlerCfg> {
       scope: input.scope,
       source: input.source,
       extension: input.extension,
+      originHook: input.originHook,
       file,
       absoluteFile: path.resolve(this.options.cwd, file),
       specifier,
@@ -823,87 +983,95 @@ async function writeGeneratedIR(
   generated: GeneratedFrameworkPlan,
 ): Promise<void> {
   const rootDir = path.resolve(cwd, GENERATED_IR_DIR);
-  await fs.rm(rootDir, { recursive: true, force: true });
-  await fs.mkdir(rootDir, { recursive: true });
-
   const modulesByKey = new Map(modules.map((module) => [module.key, module]));
-  await Promise.all([
-    writeGeneratedTypes(rootDir),
-    ...writeGeneratedFrameworkFiles(cwd, graph, plan),
-    ...modules.map((module) =>
-      writeGeneratedModule(cwd, rootDir, module, modulesByKey),
-    ),
-    ...generated.entries.map((entry) =>
-      writeGeneratedEntry(cwd, rootDir, plan, entry),
-    ),
-  ]);
-
-  await fs.writeFile(
-    path.join(rootDir, GENERATED_IR_MANIFEST),
+  const files = new Map<string, string>();
+  addGeneratedIRFile(files, GENERATED_IR_TYPES, createGeneratedTypes());
+  addGeneratedIRFile(
+    files,
+    "framework/core-graph.json",
+    createJsonFileSource({
+      generatedBy: "evjs",
+      graph,
+    }),
+  );
+  addGeneratedIRFile(
+    files,
+    "framework/build-plan.json",
+    createJsonFileSource({
+      version: 1,
+      generatedBy: "evjs",
+      plan,
+    }),
+  );
+  for (const module of modules) {
+    addGeneratedIRFile(
+      files,
+      toGeneratedIRRelativePath(rootDir, module.absoluteFile),
+      createGeneratedModuleSource(cwd, rootDir, module, modulesByKey),
+    );
+  }
+  for (const entry of generated.entries) {
+    const source = createGeneratedEntrySource(cwd, rootDir, plan, entry);
+    if (source === undefined) continue;
+    addGeneratedIRFile(
+      files,
+      toGeneratedIRRelativePath(rootDir, path.resolve(cwd, entry.file)),
+      source,
+    );
+  }
+  addGeneratedIRFile(
+    files,
+    GENERATED_IR_MANIFEST,
     `${JSON.stringify(createManifestView(plan, graph), null, 2)}\n`,
-    "utf-8",
   );
+
+  await reconcileGeneratedIR(rootDir, files);
 }
 
-function writeGeneratedFrameworkFiles(
-  cwd: string,
-  graph: CoreGraph,
-  plan: BuildPlan,
-): Promise<void>[] {
+function addGeneratedIRFile(
+  files: Map<string, GeneratedIRFileSource>,
+  relativeFile: string,
+  source: GeneratedIRFileSource,
+): void {
+  const portableFile = toPosixPath(relativeFile);
+  if (files.has(portableFile)) {
+    throw new Error(
+      `[evjs] Generated framework IR file "${portableFile}" is not unique.`,
+    );
+  }
+  files.set(portableFile, source);
+}
+
+function createJsonFileSource(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function createGeneratedTypes(): string {
   return [
-    writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/core-graph.json`),
-      {
-        generatedBy: "evjs",
-        graph,
-      },
-    ),
-    writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/build-plan.json`),
-      {
-        version: 1,
-        generatedBy: "evjs",
-        plan,
-      },
-    ),
-  ];
+    "/* This file is generated by evjs. Do not edit it directly. */",
+    'declare module "evjs:generated/*";',
+    'declare module "*.css";',
+    'declare module "*.less";',
+    'declare module "*.scss";',
+    'declare module "*.sass";',
+    'declare module "*.json";',
+    'declare module "*.svg";',
+    'declare module "*.png";',
+    'declare module "*.jpg";',
+    'declare module "*.jpeg";',
+    'declare module "*.gif";',
+    'declare module "*.webp";',
+    'declare module "*.avif";',
+    "",
+  ].join("\n");
 }
 
-async function writeJsonFile(file: string, value: unknown): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
-}
-
-async function writeGeneratedTypes(rootDir: string): Promise<void> {
-  await fs.writeFile(
-    path.join(rootDir, GENERATED_IR_TYPES),
-    [
-      "/* This file is generated by evjs. Do not edit it directly. */",
-      'declare module "evjs:generated/*";',
-      'declare module "*.css";',
-      'declare module "*.less";',
-      'declare module "*.scss";',
-      'declare module "*.sass";',
-      'declare module "*.json";',
-      'declare module "*.svg";',
-      'declare module "*.png";',
-      'declare module "*.jpg";',
-      'declare module "*.jpeg";',
-      'declare module "*.gif";',
-      'declare module "*.webp";',
-      'declare module "*.avif";',
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
-}
-
-async function writeGeneratedModule(
+function createGeneratedModuleSource(
   cwd: string,
   rootDir: string,
   module: InternalGeneratedModule,
   modulesByKey: Map<string, InternalGeneratedModule>,
-): Promise<void> {
+): string {
   const resolvedSource =
     module.resolvedSource ??
     (typeof module.source === "function"
@@ -927,39 +1095,190 @@ async function writeGeneratedModule(
           },
         })
       : module.source);
-  await fs.mkdir(path.dirname(module.absoluteFile), { recursive: true });
-  await fs.writeFile(
-    module.absoluteFile,
-    withGeneratedHeader(resolvedSource, module.extension, {
-      fromFile: module.absoluteFile,
-      rootDir,
-    }),
-    "utf-8",
-  );
+  return withGeneratedHeader(resolvedSource, module.extension, {
+    fromFile: module.absoluteFile,
+    rootDir,
+  });
 }
 
-async function writeGeneratedEntry(
+function createGeneratedEntrySource(
   cwd: string,
   rootDir: string,
   plan: BuildPlan,
   entry: GeneratedEntryPlan,
-): Promise<void> {
+): string | undefined {
   const buildEntry = plan.entries.find((item) => item.name === entry.name);
-  if (!buildEntry) return;
+  if (!buildEntry) return undefined;
   const absoluteFile = path.resolve(cwd, entry.file);
-  await fs.mkdir(path.dirname(absoluteFile), { recursive: true });
-  await fs.writeFile(
-    absoluteFile,
-    withGeneratedHeader(
-      createEntrySource(cwd, buildEntry, entry, plan),
-      ".ts",
-      {
-        fromFile: absoluteFile,
-        rootDir,
-      },
-    ),
-    "utf-8",
+  return withGeneratedHeader(
+    createEntrySource(cwd, buildEntry, entry, plan),
+    ".ts",
+    {
+      fromFile: absoluteFile,
+      rootDir,
+    },
   );
+}
+
+/**
+ * Reconcile a fully rendered IR snapshot without ever deleting the live tree.
+ * Byte-identical files retain their inode, so a persistent compiler cannot
+ * observe its unchanged entry facades or generated modules disappearing during
+ * a metadata-only update. Changed leaves use atomic replacement and the
+ * manifest is replaced last as the snapshot's inspection commit marker.
+ */
+async function reconcileGeneratedIR(
+  rootDir: string,
+  files: ReadonlyMap<string, GeneratedIRFileSource>,
+): Promise<void> {
+  await ensureGeneratedIRRoot(rootDir);
+  const existing = await collectGeneratedIRFiles(rootDir);
+  const manifestSource = files.get(GENERATED_IR_MANIFEST);
+
+  for (const [relativeFile, source] of files) {
+    if (relativeFile === GENERATED_IR_MANIFEST) continue;
+    await reconcileGeneratedIRFile(rootDir, relativeFile, source);
+    existing.delete(relativeFile);
+  }
+
+  existing.delete(GENERATED_IR_MANIFEST);
+  for (const relativeFile of existing.keys()) {
+    await removeOwnedOutputFile(
+      rootDir,
+      path.join(rootDir, relativeFile),
+      "Generated framework IR",
+    );
+  }
+  await removeEmptyGeneratedIRDirectories(rootDir);
+
+  if (manifestSource !== undefined) {
+    await reconcileGeneratedIRFile(
+      rootDir,
+      GENERATED_IR_MANIFEST,
+      manifestSource,
+    );
+  }
+}
+
+async function reconcileGeneratedIRFile(
+  rootDir: string,
+  relativeFile: string,
+  source: GeneratedIRFileSource,
+): Promise<void> {
+  const file = path.join(rootDir, relativeFile);
+  try {
+    const stats = await fs.lstat(file);
+    const current = stats.isFile() ? await fs.readFile(file) : undefined;
+    const expected =
+      typeof source === "string"
+        ? Buffer.from(source)
+        : Buffer.from(source.buffer, source.byteOffset, source.byteLength);
+    if (current?.equals(expected)) {
+      return;
+    }
+  } catch (error) {
+    if (!isMissingGeneratedIRPath(error)) throw error;
+  }
+  await writeOwnedOutputFile(rootDir, file, source, "Generated framework IR");
+}
+
+/**
+ * Restore a previously captured `.ev` directory with the same leaf-level
+ * reconciliation used for forward commits. Dev rollback therefore preserves
+ * unchanged compiler inputs instead of deleting and recreating the live tree.
+ */
+export async function restoreGeneratedIRSnapshot(
+  rootDir: string,
+  snapshotDir: string,
+): Promise<void> {
+  const snapshotFiles = await collectGeneratedIRFiles(snapshotDir);
+  const files = new Map<string, Uint8Array>();
+  for (const [relativeFile, snapshotFile] of snapshotFiles) {
+    files.set(relativeFile, await fs.readFile(snapshotFile));
+  }
+  await reconcileGeneratedIR(rootDir, files);
+}
+
+async function ensureGeneratedIRRoot(rootDir: string): Promise<void> {
+  try {
+    const stats = await fs.lstat(rootDir);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new Error(
+        `[evjs] Generated framework IR root "${rootDir}" must be a directory and must not be a symbolic link.`,
+      );
+    }
+  } catch (error) {
+    if (!isMissingGeneratedIRPath(error)) throw error;
+    await fs.mkdir(rootDir, { recursive: true });
+  }
+}
+
+async function collectGeneratedIRFiles(
+  rootDir: string,
+): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+  const pending = [rootDir];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    if (!directory) continue;
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const absoluteFile = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(absoluteFile);
+      } else {
+        files.set(
+          toPosixPath(path.relative(rootDir, absoluteFile)),
+          absoluteFile,
+        );
+      }
+    }
+  }
+  return files;
+}
+
+async function removeEmptyGeneratedIRDirectories(
+  rootDir: string,
+): Promise<void> {
+  const directories: string[] = [];
+  const pending = [rootDir];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    if (!directory) continue;
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const child = path.join(directory, entry.name);
+      directories.push(child);
+      pending.push(child);
+    }
+  }
+  directories.sort((left, right) => right.length - left.length);
+  for (const directory of directories) {
+    try {
+      await fs.rmdir(directory);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code !== "ENOENT" && code !== "ENOTEMPTY") throw error;
+    }
+  }
+}
+
+function toGeneratedIRRelativePath(rootDir: string, file: string): string {
+  const relativeFile = path.relative(rootDir, file);
+  if (
+    !relativeFile ||
+    path.isAbsolute(relativeFile) ||
+    relativeFile === ".." ||
+    relativeFile.startsWith(`..${path.sep}`)
+  ) {
+    throw new Error(
+      `[evjs] Generated framework IR file "${file}" must stay inside "${rootDir}".`,
+    );
+  }
+  return relativeFile;
+}
+
+function isMissingGeneratedIRPath(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
 
 /** Compact index for inspecting linked generated artifacts and plan entries. */
@@ -1186,30 +1505,32 @@ function applyResolveContributions(
   const generatedFileBySpecifier = new Map(
     generated.modules.map((module) => [module.specifier, module.file]),
   );
-  const alias = {
-    ...(plan.resolve?.alias ?? {}),
-    ...Object.fromEntries(
-      generated.modules.map((module) => [module.specifier, module.file]),
-    ),
-  };
-  const external = { ...(plan.resolve?.external ?? {}) };
+  const alias = new Map(Object.entries(plan.resolve?.alias ?? {}));
+  for (const [specifier, file] of generatedFileBySpecifier) {
+    alias.set(specifier, file);
+  }
+  const external = new Map(Object.entries(plan.resolve?.external ?? {}));
 
   for (const item of generated.slots) {
     if (item.slot === "resolve.alias") {
-      alias[item.specifier] =
-        generatedFileBySpecifier.get(item.replacement) ?? item.replacement;
+      alias.set(
+        item.specifier,
+        generatedFileBySpecifier.get(item.replacement) ?? item.replacement,
+      );
     }
     if (item.slot === "resolve.external") {
-      external[item.specifier] = {
+      external.set(item.specifier, {
         ...(item.source ? { source: item.source } : {}),
         runtime: item.runtime,
-      };
+      });
     }
   }
 
+  const aliasRecord = Object.fromEntries(alias);
+  const externalRecord = Object.fromEntries(external);
   plan.resolve = {
-    ...(Object.keys(alias).length > 0 ? { alias } : {}),
-    ...(Object.keys(external).length > 0 ? { external } : {}),
+    ...(alias.size > 0 ? { alias: aliasRecord } : {}),
+    ...(external.size > 0 ? { external: externalRecord } : {}),
   };
 }
 
@@ -1358,6 +1679,20 @@ function rewritePlanEntriesToGeneratedFiles(
         }
       : {}),
   };
+}
+
+function addGeneratedEntrySourceHashes(
+  cwd: string,
+  plan: BuildPlan,
+  entries: GeneratedEntryPlan[],
+): void {
+  for (const entry of entries) {
+    const buildEntry = plan.entries.find((item) => item.name === entry.name);
+    if (!buildEntry) continue;
+    entry.sourceHash = hashText(
+      createEntrySource(cwd, buildEntry, entry, plan),
+    );
+  }
 }
 
 function createEntrySource(
@@ -1755,43 +2090,48 @@ function validateContributionId(id: string, pluginName: string): string {
   return id;
 }
 
-function validateGeneratedScope(
+function normalizeGeneratedScope(
   pluginName: string,
   id: string,
   scope: GeneratedScope,
-): void {
-  if (!scope || typeof scope !== "object") {
+): GeneratedScope {
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
     throw new Error(
       `[evjs] Plugin "${pluginName}" generated module "${id}" must declare a valid scope.`,
     );
   }
-  if (scope.kind === "application" || scope.kind === "server") return;
-  if (
-    scope.kind === "page" &&
-    typeof scope.pageId === "string" &&
-    scope.pageId.trim()
-  ) {
-    return;
+  const kind = scope.kind;
+  if (kind === "application" || kind === "server") {
+    return { kind };
+  }
+  if (kind === "page") {
+    const pageId = scope.pageId;
+    assertTrimmedString(pageId, "scope.pageId");
+    return { kind, pageId };
   }
   throw new Error(
     `[evjs] Plugin "${pluginName}" generated module "${id}" has an invalid scope.`,
   );
 }
 
-function validateContributionTarget(
+function normalizeContributionTarget(
   target: ContributionTarget,
 ): ContributionTarget {
-  if (target.kind === "application") {
-    if (target.applicationId !== undefined) {
-      assertTrimmedString(target.applicationId, "target.applicationId");
+  assertRecord(target, "target");
+  const kind = target.kind;
+  if (kind === "application") {
+    const applicationId = target.applicationId;
+    if (applicationId !== undefined) {
+      assertTrimmedString(applicationId, "target.applicationId");
     }
-    return target.applicationId === undefined
+    return applicationId === undefined
       ? { kind: "application" }
-      : { ...target };
+      : { kind: "application", applicationId };
   }
-  if (target.kind === "page") {
-    assertTrimmedString(target.pageId, "target.pageId");
-    return { ...target };
+  if (kind === "page") {
+    const pageId = target.pageId;
+    assertTrimmedString(pageId, "target.pageId");
+    return { kind: "page", pageId };
   }
   throw new Error('[evjs] target.kind must be "application" or "page".');
 }
@@ -1833,7 +2173,7 @@ function validateHtmlAttrs(
   label: string,
 ): Record<string, string | boolean> {
   assertRecord(value, label);
-  const attrs: Record<string, string | boolean> = {};
+  const attrs: Array<[string, string | boolean]> = [];
   for (const [name, attrValue] of Object.entries(value)) {
     assertTrimmedString(name, `${label} attribute name`);
     if (typeof attrValue !== "string" && typeof attrValue !== "boolean") {
@@ -1841,9 +2181,9 @@ function validateHtmlAttrs(
         `[evjs] ${label}.${name} must be a string or boolean value.`,
       );
     }
-    attrs[name] = attrValue;
+    attrs.push([name, attrValue]);
   }
-  return attrs;
+  return Object.fromEntries(attrs);
 }
 
 function assertRecord(value: unknown, label: string): asserts value is object {

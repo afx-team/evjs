@@ -23,7 +23,6 @@ import { resolveBuildOutputPaths } from "./build-output-paths.js";
 import { createBuildResult } from "./build-result.js";
 import type { BundlerBuildFacts } from "./bundler.js";
 import { assertFrameworkHtmlOutputsAvailable } from "./bundler-output-files.js";
-import { assertBuildEndDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 import { createFrameworkHtmlDocument } from "./framework-html-document.js";
 import {
   createClientRuntime,
@@ -33,10 +32,13 @@ import { type generateHtml, validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
 import { assertSafeBuildOutputPaths } from "./output-path-safety.js";
 import {
-  removeOwnedOutputFile,
-  writeOwnedOutputFile,
+  applyOwnedOutputFileTransaction,
+  type OwnedOutputFileMutation,
 } from "./owned-file-output.js";
-import { runBuildOutputHooks } from "./plugin-lifecycle.js";
+import {
+  preflightAfterBuildHooks,
+  runTransformOutputHooks,
+} from "./plugin-lifecycle.js";
 import {
   FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
   portableArtifactPathsConflict,
@@ -203,29 +205,17 @@ function getFrameworkOutputPaths(
   };
 }
 
-/**
- * Emit canonical deployment metadata and remove bundler-only runtime
- * manifests. The returned ownership snapshot is derived from the previous
- * canonical metadata and is used only for guarded stale-HTML cleanup.
- */
-async function emitFrameworkManifest(
+function createDeploymentMetadataMutation(
   cwd: string,
   output: BuildOutput,
-): Promise<PreviousFrameworkHtmlOutput | undefined> {
-  const { rootDir, clientDir } = getFrameworkOutputPaths(cwd, output);
-  const previousHtmlOutput = await readPreviousFrameworkHtmlOutput(
-    cwd,
-    rootDir,
-    clientDir,
-  );
-  await writeOwnedOutputFile(
-    cwd,
-    path.join(rootDir, FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME),
-    JSON.stringify(createDeploymentMetadata(output), null, 2),
-    "deployment metadata output",
-  );
-  await removeRuntimeOnlyBundlerManifests(cwd, clientDir);
-  return previousHtmlOutput;
+): OwnedOutputFileMutation {
+  const { rootDir } = getFrameworkOutputPaths(cwd, output);
+  return {
+    type: "write",
+    filePath: path.join(rootDir, FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME),
+    contents: JSON.stringify(createDeploymentMetadata(output), null, 2),
+    field: "deployment metadata output",
+  };
 }
 
 function isDeploymentMetadataSnapshot(value: Record<string, unknown>): boolean {
@@ -258,19 +248,14 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-async function removeRuntimeOnlyBundlerManifests(
-  cwd: string,
+function createRuntimeOnlyBundlerManifestMutations(
   clientDir: string,
-): Promise<void> {
-  await Promise.all(
-    RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) =>
-      removeOwnedOutputFile(
-        cwd,
-        path.join(clientDir, fileName),
-        `Runtime-only bundler manifest "${fileName}"`,
-      ),
-    ),
-  );
+): OwnedOutputFileMutation[] {
+  return RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) => ({
+    type: "remove",
+    filePath: path.join(clientDir, fileName),
+    field: `Runtime-only bundler manifest "${fileName}"`,
+  }));
 }
 
 async function readPreviousFrameworkHtmlOutput(
@@ -369,7 +354,7 @@ type PageHtmlDocumentInfo = HtmlDocumentInfo & {
   owner: { kind: "page"; pageId: string };
 };
 
-async function emitFrameworkHtml<TBundlerCfg>(
+async function prepareFrameworkHtml<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
   hooks: PluginHooks<TBundlerCfg>[],
@@ -378,19 +363,11 @@ async function emitFrameworkHtml<TBundlerCfg>(
   plan: BuildPlan,
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
-  previousHtmlOutput?: PreviousFrameworkHtmlOutput,
-  bundlerClientFiles?: readonly string[],
   loadServerModule?: (asset: string) => Promise<unknown>,
-): Promise<void> {
+): Promise<OwnedOutputFileMutation[]> {
   const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
-  await removeStaleFrameworkHtml(
-    cwd,
-    clientDir,
-    plan,
-    previousHtmlOutput,
-    bundlerClientFiles,
-  );
   const clientRuntime = createClientRuntime(output);
+  const mutations: OwnedOutputFileMutation[] = [];
 
   for (const html of plan.html) {
     const htmlInfo = createHtmlDocumentInfo(html, output);
@@ -431,34 +408,36 @@ async function emitFrameworkHtml<TBundlerCfg>(
           `[evjs] HTML Document "${html.id}" output "${fileName}" must resolve inside the client output directory.`,
         );
       }
-      await writeOwnedOutputFile(
-        cwd,
-        outPath,
-        finalHtml,
-        `HTML Document "${html.id}" output "${fileName}"`,
-      );
+      mutations.push({
+        type: "write",
+        filePath: outPath,
+        contents: finalHtml,
+        field: `HTML Document "${html.id}" output "${fileName}"`,
+      });
     }
   }
+
+  return mutations;
 }
 
 /**
- * Remove only HTML proven to belong to the previous framework build. A file is
- * preserved when it conflicts with current plan or bundler output, escapes the
- * client directory through its real path, or lacks the matching ownership
- * marker from the validated previous metadata snapshot.
+ * Collect removals only for HTML proven to belong to the previous framework
+ * build. A file is preserved when it conflicts with current plan or bundler
+ * output, escapes the client directory through its real path, or lacks the
+ * matching ownership marker from the validated previous metadata snapshot.
  */
-async function removeStaleFrameworkHtml(
-  cwd: string,
+async function collectStaleFrameworkHtmlMutations(
   clientDir: string,
   plan: BuildPlan,
   previous: PreviousFrameworkHtmlOutput | undefined,
   bundlerClientFiles: readonly string[] | undefined,
-): Promise<void> {
-  if (!previous) return;
+): Promise<OwnedOutputFileMutation[]> {
+  if (!previous) return [];
   const protectedFiles = [
     ...plan.html.flatMap((html) => [html.fileName, ...(html.aliases ?? [])]),
     ...(bundlerClientFiles ?? []),
   ];
+  const mutations: OwnedOutputFileMutation[] = [];
   for (const document of previous.documents) {
     for (const fileName of [document.fileName, ...(document.aliases ?? [])]) {
       const file = resolveContainedFile(clientDir, fileName);
@@ -474,14 +453,15 @@ async function removeStaleFrameworkHtml(
           document,
         ))
       ) {
-        await removeOwnedOutputFile(
-          cwd,
-          file,
-          `Stale HTML Document "${document.id}" output "${fileName}"`,
-        );
+        mutations.push({
+          type: "remove",
+          filePath: file,
+          field: `Stale HTML Document "${document.id}" output "${fileName}"`,
+        });
       }
     }
   }
+  return mutations;
 }
 
 function resolveContainedFile(
@@ -649,13 +629,14 @@ function normalizeServerModule(mod: unknown): Record<string, unknown> {
 
 /**
  * Complete the post-bundler control-plane phase. Bundler facts are linked to
- * graph and plan ownership, buildOutput hooks may adjust asset groups and
+ * graph and plan ownership, transformOutput hooks may adjust asset groups and
  * deployment metadata without changing that ownership, and request-time
  * Document shells are compiled before runtime projection.
  *
  * The deployed runtime excludes build-only renderers; a separate build runtime
  * includes them for SSG emission. Deployment output reservations are validated
- * before canonical metadata and transformed HTML are written.
+ * before transformed HTML is prepared. Framework-owned files are then committed
+ * as one transaction, with canonical deployment metadata published last.
  */
 export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   bundlerFacts: BundlerBuildFacts;
@@ -694,9 +675,12 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   const ownership = snapshotBuildOutputOwnership(output);
   const assertBuildOutputHookResult = () => {
     assertBuildOutputOwnershipUnchanged(ownership, output);
-    assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
+    assertFrameworkManifestShape(
+      output,
+      "BuildOutput after transformOutput hooks",
+    );
   };
-  await runBuildOutputHooks(
+  await runTransformOutputHooks(
     options.hooks,
     output,
     options.pluginCtx,
@@ -721,13 +705,18 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     documentShells,
     includeBuildRenderers: true,
   });
-  assertBuildEndDeploymentOutputsAvailable(
+  await preflightAfterBuildHooks(
     options.hooks,
     createBuildResult(output, options.isRebuild, { frameworkRuntime }),
     { cwd: options.cwd, emittedFiles: options.bundlerFacts.emittedFiles },
   );
-  const previousHtmlOutput = await emitFrameworkManifest(options.cwd, output);
-  await emitFrameworkHtml(
+  const { rootDir, clientDir } = getFrameworkOutputPaths(options.cwd, output);
+  const previousHtmlOutput = await readPreviousFrameworkHtmlOutput(
+    options.cwd,
+    rootDir,
+    clientDir,
+  );
+  const htmlMutations = await prepareFrameworkHtml(
     options.cwd,
     options.config,
     options.hooks,
@@ -736,10 +725,20 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.plan,
     buildFrameworkRuntime,
     options.isRebuild,
-    previousHtmlOutput,
-    options.bundlerFacts.emittedFiles?.client,
     options.bundlerFacts.loadServerModule,
   );
+  const staleHtmlMutations = await collectStaleFrameworkHtmlMutations(
+    clientDir,
+    options.plan,
+    previousHtmlOutput,
+    options.bundlerFacts.emittedFiles?.client,
+  );
+  await applyOwnedOutputFileTransaction(options.cwd, [
+    ...createRuntimeOnlyBundlerManifestMutations(clientDir),
+    ...staleHtmlMutations,
+    ...htmlMutations,
+    createDeploymentMetadataMutation(options.cwd, output),
+  ]);
 
   return { output, frameworkRuntime };
 }

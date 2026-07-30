@@ -4,9 +4,13 @@ import type {
   HtmlDocumentInfo,
   PluginContext,
   PluginHooks,
+  TransformHtmlContext,
 } from "../../plugin/index.js";
 import { createBuildResult } from "./build-result.js";
-import { createLatePluginContext } from "./plugin-lifecycle.js";
+import {
+  createLatePluginContext,
+  runPluginHookValidation,
+} from "./plugin-lifecycle.js";
 
 export interface BuildHtmlOptions<TBundlerCfg = unknown> {
   /** Pre-parsed HTML document (from `generateHtml()`). */
@@ -20,6 +24,11 @@ export interface BuildHtmlOptions<TBundlerCfg = unknown> {
   output: BuildOutput;
   /** True when this HTML is emitted for a dev rebuild/update. */
   isRebuild?: boolean;
+  /** Validate the composed document after each plugin transform. */
+  validateAfterTransform?: (
+    doc: HtmlDocument,
+    html: string,
+  ) => void | Promise<void>;
 }
 
 /**
@@ -35,8 +44,10 @@ export interface BuildHtmlOptions<TBundlerCfg = unknown> {
 export async function buildHtml<TBundlerCfg = unknown>(
   options: BuildHtmlOptions<TBundlerCfg>,
 ): Promise<string> {
-  const { doc, hooks, html, output, pluginContext } = options;
+  const { doc, hooks, html, output, pluginContext, validateAfterTransform } =
+    options;
   const latePluginContext = createLatePluginContext(pluginContext);
+  let serializedHtml = serializeHtmlDocument(doc);
 
   // The DOM composes across hooks, while manifest data is an isolated
   // observation. A transform must never be able to redirect later framework
@@ -49,7 +60,7 @@ export async function buildHtml<TBundlerCfg = unknown>(
         outputSnapshot,
         options.isRebuild ?? false,
       );
-      const htmlContext = {
+      const htmlContext: TransformHtmlContext<TBundlerCfg> = {
         ...latePluginContext,
         ...htmlSnapshot,
         ...buildResult,
@@ -57,8 +68,21 @@ export async function buildHtml<TBundlerCfg = unknown>(
         publicPath: outputSnapshot.publicPath,
       };
       await h.transformHtml(doc, htmlContext);
+      await runPluginHookValidation(h, "transformHtml", async () => {
+        const nextHtml = serializeHtmlDocument(doc);
+        await validateAfterTransform?.(doc, nextHtml);
+        serializedHtml = nextHtml;
+      });
     }
   }
 
-  return doc.toString();
+  return serializedHtml;
+}
+
+function serializeHtmlDocument(doc: HtmlDocument): string {
+  const html = doc.toString();
+  if (typeof html !== "string") {
+    throw new Error("[evjs] HTML document serialization must return a string.");
+  }
+  return html;
 }

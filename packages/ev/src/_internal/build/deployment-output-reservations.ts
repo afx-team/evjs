@@ -15,7 +15,7 @@ export interface DeploymentOutputReservation {
   fileName: string;
 }
 
-type BuildEndHook = NonNullable<PluginHooks["buildEnd"]>;
+type AfterBuildHook = NonNullable<PluginHooks["afterBuild"]>;
 type DeploymentOutputResolver = (
   result: BuildResult,
 ) => DeploymentOutputReservation[];
@@ -27,34 +27,42 @@ interface ResolvedOutputReservation {
 }
 
 const reservationResolvers = new WeakMap<
-  BuildEndHook,
+  AfterBuildHook,
   DeploymentOutputResolver
 >();
 
 /**
- * Declare the physical files written by a deployment buildEnd hook. The build
+ * Declare the physical files written by a deployment afterBuild hook. The build
  * lifecycle resolves every declaration before running any hook so two adapters
  * cannot overwrite one another after case or Unicode normalization aliases.
  */
 export function declareDeploymentOutputReservations(
   resolve: DeploymentOutputResolver,
-  buildEnd: BuildEndHook,
-): BuildEndHook {
-  reservationResolvers.set(buildEnd, resolve);
-  return buildEnd;
+  afterBuild: AfterBuildHook,
+): AfterBuildHook {
+  reservationResolvers.set(afterBuild, resolve);
+  return afterBuild;
 }
 
-/** Preflight all declared deployment outputs before any buildEnd hook writes. */
-export function assertBuildEndDeploymentOutputsAvailable<TBundlerCfg>(
+/** Preserve deployment preflight metadata when lifecycle management wraps a hook. */
+export function copyDeploymentOutputReservations(
+  source: AfterBuildHook,
+  target: AfterBuildHook,
+): void {
+  const resolve = reservationResolvers.get(source);
+  if (resolve) reservationResolvers.set(target, resolve);
+}
+
+/** Preflight all declared deployment outputs before any afterBuild hook writes. */
+export async function assertAfterBuildDeploymentOutputsAvailable<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
   result: BuildResult,
   options: { cwd?: string; emittedFiles?: BundlerEmittedFiles } = {},
-): void {
-  const reservations = hooks.flatMap((hooks) => {
-    if (!hooks.buildEnd) return [];
-    const resolve = reservationResolvers.get(hooks.buildEnd);
-    return resolve ? resolve(structuredClone(result)) : [];
-  });
+  runHookValidation?: (
+    hooks: PluginHooks<TBundlerCfg>,
+    validate: () => void,
+  ) => void | Promise<void>,
+): Promise<void> {
   const outputs = new Map<string, ResolvedOutputReservation>();
 
   assertBundlerEmittedFiles(options.emittedFiles);
@@ -62,15 +70,31 @@ export function assertBuildEndDeploymentOutputsAvailable<TBundlerCfg>(
     reserveBundlerOutputs(outputs, options.cwd, result, options.emittedFiles);
   }
 
-  for (const reservation of reservations) {
-    const fileName = assertPortableArtifactFileName(
-      reservation.fileName,
-      reservation.field,
-    );
-    const key = canonicalPhysicalPathKey(
-      path.resolve(reservation.cwd, reservation.outputDir, fileName),
-    );
-    reservePhysicalOutput(outputs, { field: reservation.field, fileName, key });
+  for (const hook of hooks) {
+    if (!hook.afterBuild) continue;
+    const resolve = reservationResolvers.get(hook.afterBuild);
+    if (!resolve) continue;
+    const validate = () => {
+      for (const reservation of resolve(structuredClone(result))) {
+        const fileName = assertPortableArtifactFileName(
+          reservation.fileName,
+          reservation.field,
+        );
+        const key = canonicalPhysicalPathKey(
+          path.resolve(reservation.cwd, reservation.outputDir, fileName),
+        );
+        reservePhysicalOutput(outputs, {
+          field: reservation.field,
+          fileName,
+          key,
+        });
+      }
+    };
+    if (runHookValidation) {
+      await runHookValidation(hook, validate);
+    } else {
+      validate();
+    }
   }
 }
 

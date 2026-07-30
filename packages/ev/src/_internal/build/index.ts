@@ -16,6 +16,7 @@ export {
   type BundlerDevController,
   type BundlerDevUpdateOptions,
   type BundlerEmittedFiles,
+  hasGeneratedCompilerInputChanges,
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   resolveBundlerClientEntryAssets,
@@ -85,6 +86,10 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
+export {
+  collectPluginHooks,
+  runConfigureBundlerHook,
+} from "./plugin-lifecycle.js";
 export type {
   PluginSettingsRegistry,
   PluginSettingsResolutionSession,

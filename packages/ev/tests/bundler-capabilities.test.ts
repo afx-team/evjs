@@ -4,6 +4,7 @@ import {
   type BundlerCapabilities,
   getBundlerBuildCapabilityGaps,
   getBundlerDevCapabilityGaps,
+  hasGeneratedCompilerInputChanges,
   preflightBundlerBuild,
   preflightBundlerDevUpdate,
 } from "../src/_internal/build/bundler.js";
@@ -11,6 +12,7 @@ import {
 const noCapabilities: BundlerCapabilities = {
   build: { server: false, rsc: false, ppr: false },
   dev: {
+    configuration: false,
     html: false,
     entries: false,
     routes: false,
@@ -22,6 +24,7 @@ const noCapabilities: BundlerCapabilities = {
 const allCapabilities: BundlerCapabilities = {
   build: { server: true, rsc: true, ppr: true },
   dev: {
+    configuration: true,
     html: true,
     entries: true,
     routes: true,
@@ -156,6 +159,47 @@ describe("bundler capability preflight", () => {
     ).not.toThrow();
   });
 
+  it("rejects config reloads before applying a dev plan update", () => {
+    const plan = {
+      distDir: "dist",
+      output: { clientDir: "client", serverDir: "server" },
+    } as unknown as BuildPlan;
+    const update = {
+      reason: "config",
+      previous: plan,
+      next: plan,
+      entries: { added: [], removed: [], changed: [] },
+      html: { added: [], removed: [], changed: [] },
+      generatedChanged: false,
+      resolveChanged: false,
+      runtimeChanged: false,
+      deliveryChanged: false,
+      serverCompilationChanged: false,
+      serverDocumentsChanged: false,
+      devRoutingChanged: false,
+    } as BuildPlanUpdate;
+
+    expect(
+      getBundlerDevCapabilityGaps({ capabilities: noCapabilities }, update, {
+        configChanged: true,
+      }).map((gap) => gap.capability),
+    ).toEqual(["dev.configuration"]);
+    expect(() =>
+      preflightBundlerDevUpdate(
+        { name: "limited", capabilities: noCapabilities },
+        update,
+        { configChanged: true },
+      ),
+    ).toThrow("dev.configuration");
+    expect(() =>
+      preflightBundlerDevUpdate(
+        { name: "complete", capabilities: allCapabilities },
+        update,
+        { configChanged: true },
+      ),
+    ).not.toThrow();
+  });
+
   it("treats server Document changes as artifact delivery, not compilation", () => {
     const plan = {
       distDir: "dist",
@@ -208,5 +252,81 @@ describe("bundler capability preflight", () => {
         (gap) => gap.capability,
       ),
     ).toEqual(["dev.routes", "dev.server"]);
+  });
+
+  it("distinguishes generated compiler inputs from output-only metadata", () => {
+    const previous = {
+      generated: {
+        modules: [
+          {
+            key: "plugin:module",
+            id: "module",
+            pluginName: "plugin",
+            scope: { kind: "application" },
+            file: ".ev/plugins/plugin/module.ts",
+            specifier: "virtual:plugin/module",
+            extension: ".ts",
+            sourceHash: "module-v1",
+          },
+        ],
+        entries: [
+          {
+            name: "client",
+            file: ".ev/entries/client.ts",
+            originalImport: "src/client.ts",
+            kind: "client",
+            environment: "client",
+            sourceHash: "entry-v1",
+          },
+        ],
+        slots: [{ slot: "html.tag", children: "old" }],
+      },
+    } as unknown as BuildPlan;
+    const outputOnly = {
+      generated: {
+        ...previous.generated,
+        slots: [{ slot: "html.tag", children: "new" }],
+      },
+    } as unknown as BuildPlan;
+    const compilerChange = {
+      generated: {
+        ...outputOnly.generated,
+        modules: [
+          {
+            ...previous.generated?.modules[0],
+            sourceHash: "module-v2",
+          },
+        ],
+      },
+    } as unknown as BuildPlan;
+
+    expect(
+      hasGeneratedCompilerInputChanges({
+        previous,
+        next: outputOnly,
+        generatedChanged: true,
+      } as BuildPlanUpdate),
+    ).toBe(false);
+    expect(
+      hasGeneratedCompilerInputChanges({
+        previous,
+        next: compilerChange,
+        generatedChanged: true,
+      } as BuildPlanUpdate),
+    ).toBe(true);
+    expect(
+      hasGeneratedCompilerInputChanges({
+        previous,
+        next: {
+          generated: {
+            ...outputOnly.generated,
+            entries: outputOnly.generated?.entries.map(
+              ({ sourceHash: _, ...entry }) => entry,
+            ),
+          },
+        } as BuildPlan,
+        generatedChanged: true,
+      } as BuildPlanUpdate),
+    ).toBe(true);
   });
 });

@@ -9,18 +9,21 @@ framework slot。
 
 ## 概念
 
-Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
-并把它们挂到 framework slot 上。
+Contribution 是 framework IR 里的声明式单元。它描述生成产物、产物之间的关系，
+或产物与 framework slot 的挂载关系。
 
-`contributions(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
-graph 时，evjs 可能会再次执行该 hook。
+`emitIR(ctx)` 声明 Application 范围的 record；`emitPageIR(ctx)` 会为每个启用的 Page
+声明一次 record。两个方法都只在内存中注册 record 与 opaque reference。evjs 收集并
+校验完整集合后，才统一物化最终 `.ev` 目录和 manifest，因此它们都不是立即写文件的
+API。
 
-这个定义刻意比任意临时文件系统更窄。插件不会随意向 `.ev` 写文件；插件声明 artifact
-和关系，由 evjs 统一 materialize 最终 `.ev` 目录和 manifest。
+两个方法都应保持确定性且不产生外部副作用。当发射的源码 alias 改变 framework graph
+时，evjs 可能会再次执行它们。这个合同刻意比任意临时文件系统更窄：插件声明 artifact
+和关系，而不是随意向 `.ev` 写文件。
 
 ```mermaid
 flowchart TB
-  Hook["contributions(ctx)"]
+  Hook["emitIR(ctx)"]
 
   subgraph Declare["插件声明"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -91,10 +94,11 @@ framework state。
 
 Application 与 Page view 会暴露解析后的 `plugins` setting bag。Application bag 只包含
 enablement；私有 factory 配置绝不会进入 CoreGraph。Page bag 可以包含经过校验的 static
-Page value。defined plugin 通常使用类型更窄的 `ctx.options` 与 `ctx.pages`；每个已启用
-Page 项都是 `{ page, options }`。逐 Page 的 `contributePage()` 使用
+Page value。两类 bag 都用插件声明的同一个 key 建立索引。defined plugin 通常使用类型
+更窄的 `ctx.options` 与 `ctx.pages`；每个已启用 Page 项都是 `{ page, options }`。逐 Page
+的 `emitPageIR()` 使用
 `ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。内部 provenance 与
-解析结果会在 `contributions()` 物化 generated code 前可用。
+解析结果在这些方法声明 record 时可用；只有 evjs 收集并校验全部声明后才会物化产物。
 
 Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
 id。因此 MPA 表现为一个拥有多个 Page/Document 的逻辑 Application，而不是互不关联的
@@ -106,7 +110,8 @@ module，也仍然可见。
 
 使用 `ctx.emit.module()` 声明生成代码，使用 `ctx.emit.data()` 声明生成 JSON 数据。
 当 wrapper 插件需要替换 entry、但仍要保留被替换前的框架生成 entry 时，使用
-`ctx.emit.entryFacade()`。
+`ctx.emit.entryFacade()`。这些调用只返回 reference 并注册声明，不会在方法调用期间
+写入对应文件。
 
 使用 `ctx.emit.importOf(ref)` 或 `helpers.importOf(ref)` 链接 generated artifacts。
 返回的 specifier 只应在生成源码中使用。应用源码不应 import `.ev` 路径或
@@ -118,8 +123,8 @@ module，也仍然可见。
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
-  contributions(ctx) {
+  name: "@company/analytics",
+  emitIR(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -146,7 +151,7 @@ export const analytics = definePlugin({
 `ctx.emit.entryFacade()`，不要重建 framework internal：
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -207,7 +212,7 @@ projection 时会失败。后声明的 contribution 包在先声明的 contribut
 route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",
@@ -255,11 +260,11 @@ Generated contributions 是 file-convention entry 组合，以及插件 entry/ru
 
 Contribution 层不替代插件生命周期：
 
-- 用 `config()` 处理 framework config 默认值或需要早期校验的配置。
+- 用 `configure()` 处理 framework config 默认值或需要早期校验的配置。
 - 用 `setup()` 初始化插件状态并返回 lifecycle hooks。
-- 用 `bundlerConfig()` 处理不由 slot 建模的底层 bundler 能力。
+- 用 `configureBundler()` 处理不由 slot 建模的底层 bundler 能力。
 - 用 `transformHtml()` 处理 AST 级 HTML 改写。
-- 用 `buildOutput()` 和 `buildEnd()` 处理部署 metadata 和最终文件。
+- 用 `transformOutput()` 和 `afterBuild()` 处理部署 metadata 和最终文件。
 
 这个拆分让 IR 保持可读，同时不假装所有插件能力都是 entry contribution。
 

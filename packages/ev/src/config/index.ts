@@ -26,13 +26,15 @@ import {
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
 import {
   copyDefinedPluginRuntime,
+  getDefinedPluginDeclaration,
   isDefinedPluginRuntimePropertyKey,
 } from "../plugin/defined.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
-import type {
-  PagePluginConfigValues,
-  PagePluginConfigValuesCheck,
+import {
+  assertPluginKey,
+  type PagePluginConfigValues,
+  type PagePluginConfigValuesCheck,
 } from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
@@ -539,14 +541,13 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
 ]);
 const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
   "name",
-  "id",
   "key",
   "dependencies",
   "optionalDependencies",
   "enforce",
-  "config",
+  "configure",
   "setup",
-  "contributions",
+  "emitIR",
 ]);
 const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
   "name",
@@ -557,6 +558,7 @@ const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
 const PUBLIC_BUNDLER_CAPABILITY_KEYS = new Set(["build", "dev"]);
 const PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS = new Set(["server", "rsc", "ppr"]);
 const PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS = new Set([
+  "configuration",
   "html",
   "entries",
   "routes",
@@ -729,17 +731,17 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   index: number,
 ): Plugin<TBundlerCfg> {
   const path = `plugins[${index}]`;
-  const pluginConfig = assertPlainConfigRecord(
+  const pluginRecord = assertPlainConfigRecord(
     plugin,
     path,
     "a plugin object",
     isDefinedPluginRuntimePropertyKey,
   );
   assertKnownConfigKeys(
-    pluginConfig,
+    pluginRecord,
     PUBLIC_PLUGIN_CONFIG_KEYS,
     path,
-    "name, id, key, dependencies, optionalDependencies, enforce, config, setup, or contributions",
+    "name, key, dependencies, optionalDependencies, enforce, configure, setup, or emitIR",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -747,20 +749,19 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   );
   const {
     name: rawName,
-    id: rawId,
     key: rawKey,
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
     enforce: rawEnforce,
-    config: rawConfig,
+    configure: rawConfigure,
     setup: rawSetup,
-    contributions: rawContributions,
-  } = pluginConfig;
+    emitIR: rawEmitIR,
+  } = pluginRecord;
 
-  if (rawConfig !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["config"]>>(
-      rawConfig,
-      `${path}.config`,
+  if (rawConfigure !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["configure"]>>(
+      rawConfigure,
+      `${path}.configure`,
     );
   }
   if (rawSetup !== undefined) {
@@ -769,10 +770,10 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       `${path}.setup`,
     );
   }
-  if (rawContributions !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["contributions"]>>(
-      rawContributions,
-      `${path}.contributions`,
+  if (rawEmitIR !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["emitIR"]>>(
+      rawEmitIR,
+      `${path}.emitIR`,
     );
   }
   const dependencies =
@@ -789,15 +790,22 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   if (dependencies !== undefined && optionalDependencies !== undefined) {
     assertDisjointPluginDependencies(dependencies, optionalDependencies, path);
   }
+  const key =
+    rawKey === undefined
+      ? undefined
+      : assertTrimmedNonEmptyString(rawKey, `${path}.key`);
+  if (key !== undefined) {
+    assertPluginKey(key, `${path}.key`);
+    if (!getDefinedPluginDeclaration(plugin as object)) {
+      throw new Error(
+        `[evjs] ${path}.key is only supported on instances created by definePlugin().`,
+      );
+    }
+  }
 
   const resolved: Plugin<TBundlerCfg> = {
     name: assertTrimmedNonEmptyString(rawName, `${path}.name`),
-    ...(rawId !== undefined
-      ? { id: assertTrimmedNonEmptyString(rawId, `${path}.id`) }
-      : {}),
-    ...(rawKey !== undefined
-      ? { key: assertTrimmedNonEmptyString(rawKey, `${path}.key`) }
-      : {}),
+    ...(key !== undefined ? { key } : {}),
     ...(dependencies !== undefined ? { dependencies } : {}),
     ...(optionalDependencies !== undefined ? { optionalDependencies } : {}),
     ...(rawEnforce !== undefined
@@ -805,11 +813,9 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
           enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
         }
       : {}),
-    ...(rawConfig !== undefined ? { config: rawConfig } : {}),
+    ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
-    ...(rawContributions !== undefined
-      ? { contributions: rawContributions }
-      : {}),
+    ...(rawEmitIR !== undefined ? { emitIR: rawEmitIR } : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
   return resolved;
@@ -912,7 +918,7 @@ function validateBundlerCapabilities(value: unknown, path: string): void {
     dev,
     PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS,
     `${path}.dev`,
-    "html, entries, routes, server, or resolution",
+    "configuration, html, entries, routes, server, or resolution",
   );
   for (const key of PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS) {
     assertRequiredBoolean(dev[key], `${path}.dev.${key}`);

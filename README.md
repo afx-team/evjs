@@ -15,7 +15,9 @@ applications, server file routes, server functions, rendering, and deployment.
 - **Data Fetching** — [TanStack Query](https://tanstack.com/query) integration for server functions.
 - **Server Functions** — reachable `"use server"` modules are transformed into typed client references.
 - **Pluggable Transport** — HTTP, WebSocket, or custom protocols via a `TransportAdapter`.
-- **Plugin System** — extend the generated `.ev` framework IR through contributions, plus lifecycle hooks for config, bundler, HTML, and build output.
+- **Plugin System** — use one typed key for Application/Page settings, extend
+  the generated `.ev` framework IR through declarative `emitIR()` records, and
+  hook into config, bundler, HTML, and build output stages.
 - **Server File Routes** — positive `src/apis/**/api.*` anchors map directory-owned Request/Response handlers to HTTP endpoints.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Runtime Targets** — [Hono](https://hono.dev/)-based server APIs for Node and standard Fetch runtimes.
@@ -43,8 +45,10 @@ the final manifest.
 
 Use `ev prepare` to generate `.ev/` without writing `dist`, and use
 `ev inspect --json` when you want a preflight report without writing generated
-files. Plugin authors should use `contributions()` for generated modules and
-entry/runtime/HTML/resolution slots; keep loaders for real bundler transforms.
+files. Plugin authors use `emitIR()` to declare generated modules and
+entry/runtime/HTML/resolution slots. evjs collects and validates those records
+before materializing `.ev`; `emitIR()` does not write files immediately. Keep
+loaders for real bundler transforms.
 
 ## 🏗️ Packages
 

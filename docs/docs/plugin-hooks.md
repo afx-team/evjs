@@ -2,8 +2,11 @@
 
 Plugins use lifecycle hooks for build-time side effects and low-level bundler
 customization. Define shared state in `setup()` and return the hooks that need
-it. Use [generated contributions](./generated-contributions) instead when the
-behavior should be represented declaratively in the framework IR.
+it. Lifecycle hooks belong only in the object returned by `setup()`. When
+behavior belongs in the declarative framework IR, put `emitIR()` or
+`emitPageIR()` on the plugin descriptor instead. Those methods declare records
+for evjs to collect and validate; they do not write `.ev` files immediately.
+See [Generated Contributions IR](./generated-contributions).
 
 ## Lifecycle
 
@@ -11,89 +14,116 @@ behavior should be represented declaratively in the framework IR.
 flowchart TB
   subgraph Configure["Configuration"]
     AppOptions["resolve typed Application options"]
-    Config["config(config, ctx.options)"]
+    Config["configure(config, ctx.options)"]
     Resolve["resolve framework config"]
     Setup["setup(ctx.options)"]
   end
 
   subgraph Plan["Framework planning"]
-    BuildStart["buildStart()"]
     Graph["discover graph\nroutes + server functions"]
     PageSettings["resolve Page plugin settings"]
     BuildPlan["create BuildPlan"]
-    Contributions["contributions(ctx) / contributePage(ctx)\nmodules + slots"]
+    Contributions["emitIR(ctx) / emitPageIR(ctx)\nmodules + slots"]
     IR["materialize .ev"]
   end
 
   subgraph Build["Bundling and output"]
-    BundlerConfig["bundlerConfig()"]
+    BundlerConfig["configureBundler()"]
     Bundler["bundler build"]
-    BuildOutput["buildOutput()"]
+    Facts["fresh bundler facts"]
+    BeforeBuild["beforeBuild(isRebuild)"]
+    LinkOutput["link framework output"]
+    TransformOutput["transformOutput()"]
     HTML["transformHtml()\nper document"]
-    BuildEnd["buildEnd()"]
+    BuildEnd["afterBuild()"]
     Dispose["dispose()"]
   end
 
-  AppOptions --> Config --> Resolve --> Setup --> BuildStart --> Graph --> PageSettings --> BuildPlan
+  AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> BuildPlan
   BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
-  Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
+  Bundler --> Facts --> BeforeBuild --> LinkOutput --> TransformOutput --> HTML --> BuildEnd
+  Setup -. plugin snapshot teardown .-> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class AppOptions,Config,Resolve,Setup config;
-  class BuildStart,Graph,PageSettings,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
+  class Graph,PageSettings,BuildPlan,Contributions,IR plan;
+  class BundlerConfig,Bundler,Facts,BeforeBuild,LinkOutput,TransformOutput,HTML,BuildEnd,Dispose build;
 ```
 
 For plugins created with `definePlugin()`, typed values stay flat across these
-stages: config and setup use `ctx.options`; `contributions()` uses
-`ctx.options` and `ctx.pages[].options`; `contributePage()` uses `ctx.options`
+stages: config and setup use `ctx.options`; `emitIR()` uses
+`ctx.options` and `ctx.pages[].options`; `emitPageIR()` uses `ctx.options`
 and `ctx.pageOptions`.
 
 | Hook | Purpose |
 |------|---------|
-| `buildStart(ctx)` | Session/config-snapshot setup before route discovery |
-| `bundlerConfig(config, ctx)` | Mutate the selected bundler config |
-| `buildOutput(output, ctx)` | Adjust linked `AssetGroup` contents or add deployment metadata |
+| `beforeBuild({ isRebuild })` | Start one framework output/link cycle after the adapter reports fresh bundler facts |
+| `configureBundler(config, ctx)` | Mutate the selected bundler config |
+| `transformOutput(output, ctx)` | Adjust linked `AssetGroup` contents or add deployment metadata |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
-| `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
-| `dispose(ctx)` | Cleanup |
+| `afterBuild({ output, isRebuild })` | Emit final artifacts after build |
+| `dispose(ctx)` | Release resources when the plugin snapshot is replaced or its session ends |
 
-See [Plugin Authoring](./plugin-authoring) for the `config()` and `setup()`
+See [Plugin Authoring](./plugin-authoring) for the `configure()` and `setup()`
 contracts that run before these hooks.
 
 ## Rebuild and Watch Behavior
 
-Each `buildEnd()` hook receives an isolated snapshot of the canonical build
+Each `afterBuild()` hook receives an isolated snapshot of the canonical build
 result. Mutating that snapshot is local to the hook and cannot change the input
 seen by later hooks or deployment adapters.
 
-In dev, `buildEnd()` runs after the initial linked output with
-`isRebuild: false` and after every later linked rebuild with
-`isRebuild: true`.
+In dev, `beforeBuild()` runs after each fresh set of bundler facts with
+`isRebuild: false` for the initial build and `isRebuild: true` for every later
+rebuild. The matching `afterBuild()` runs only after that framework output has
+linked and stabilized. A failed output cycle does not call `afterBuild()`.
+Because that output is already published, an `afterBuild()` failure in dev is
+reported as a warning while the published snapshot stays active and server
+activation continues; the same failure still fails a production build.
+`ev prepare` and `ev inspect` do not produce bundler facts, so neither command
+calls `beforeBuild()` or `afterBuild()`.
 
-`buildStart()` is not the per-rebuild counterpart of `buildEnd()`. It runs
-after `setup()` for the initial plugin/config snapshot and when a config update
-restages that snapshot. Ordinary graph rebuilds reuse the installed hooks and
-do not call it again.
-
-The `setup()`, `buildStart()`, and contribution contexts expose
-`addWatchFile()` for analysis dependencies. Late output, HTML, and disposal
-contexts do not. Changing an analysis dependency reuses the committed config,
-Application options, and setup hooks, then reruns contributions and graph
-analysis. Read changing watched data inside `contributions()` rather than
+The `setup()` and IR-emission contexts expose `addWatchFile()` for analysis
+dependencies. Build-cycle, output, HTML, and disposal contexts do not. Changing
+an analysis dependency reuses the committed config,
+Application options, and setup hooks, then reruns IR emission and graph
+analysis. Read changing watched data inside `emitIR()` rather than
 caching it in `setup()`.
 
-`bundlerConfig()` context `addWatchFile()` registers an effective bundler-config
+`configureBundler()` context `addWatchFile()` registers an effective bundler-config
 dependency. Changing it stages a complete config and plugin snapshot before
 applying the resulting plan update. If the selected adapter cannot safely
 replace that configuration in place, the update fails closed with an explicit
 restart diagnostic instead of continuing with mixed or stale state.
+The same fail-closed restart applies when `emitIR()` changes generated
+modules or entry facades that are compiler inputs and the running compiler
+cannot prove it produced fresh facts for them.
+
+## Disposal
+
+`dispose()` tears down resources allocated by `setup()`. It runs when a
+prepared plugin snapshot is no longer active: after a one-shot command such as
+`build` or `prepare`, when a dev session stops, or after a successful config
+reload replaces the previous snapshot. It does not run after every dev
+rebuild.
+
+Use it for resources whose lifetime extends beyond one hook call, such as file
+watchers, timers, worker processes, sockets, or temporary service handles.
+Ordinary in-memory values need no cleanup. For a resource acquired during
+`setup()`, register its cleanup immediately with `ctx.onDispose()`. Registered
+callbacks run in reverse order even if setup later throws or returns an invalid
+hooks object. A returned `dispose()` hook runs before those callbacks during
+normal snapshot teardown.
+
+Every lifecycle or IR-emission failure is attributed to the plugin `name` and
+hook. Code that needs structured handling can inspect the exported
+`PluginHookError` fields `code`, `plugin`, `hook`, and `cause`.
 
 ## Build Output Ownership
 
-`buildOutput()` may adjust only linked `AssetGroup` contents and `deployment`
+`transformOutput()` may adjust only linked `AssetGroup` contents and `deployment`
 metadata. Every other `BuildOutput` field remains framework-owned, including:
 
 - the build id, output paths, and public path;
@@ -146,13 +176,13 @@ import type { HtmlDocument } from "@evjs/ev/plugin";
 
 ## Final Build Result
 
-`buildEnd()` receives the final build output, framework runtime, and canonical
+`afterBuild()` receives the final build output, framework runtime, and canonical
 deployment metadata:
 
 ```ts
 setup() {
   return {
-    buildEnd({
+    afterBuild({
       output,
       frameworkRuntime,
       deploymentMetadata,
@@ -185,7 +215,7 @@ type-safe low-level changes; each helper runs its callback only for its own
 adapter and supplies that adapter's concrete config type.
 
 The finalized BuildPlan remains authoritative for framework runtime endpoints
-and output ownership. A `bundlerConfig()` hook may customize supported loader,
+and output ownership. A `configureBundler()` hook may customize supported loader,
 resolution, optimization, and similar low-level settings, but it cannot
 override framework client/server output paths. Adapters validate those paths
 against the BuildPlan after hooks run, even when recursive cleaning is disabled.
@@ -199,10 +229,10 @@ import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const yamlPlugin = definePlugin({
-  id: "@example/yaml-support",
+  name: "@example/yaml-support",
   setup() {
     return {
-      bundlerConfig: utoopack((cfg) => {
+      configureBundler: utoopack((cfg) => {
         merge(cfg, {
           module: {
             rules: {
@@ -225,10 +255,10 @@ import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
 import { definePlugin } from "@evjs/ev/plugin";
 
 const webpackAlias = definePlugin({
-  id: "@example/webpack-alias",
+  name: "@example/webpack-alias",
   setup() {
     return {
-      bundlerConfig: webpack((config) => {
+      configureBundler: webpack((config) => {
         config.resolve ??= {};
         config.resolve.alias ??= {};
         config.resolve.alias["@app"] = "./src";

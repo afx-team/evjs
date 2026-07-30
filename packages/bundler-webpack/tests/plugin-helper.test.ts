@@ -1,5 +1,5 @@
 import {
-  type BundlerCtx,
+  type ConfigureBundlerContext,
   definePlugin,
   type Plugin,
   type PluginHooks,
@@ -9,14 +9,16 @@ import type { WebpackConfig } from "../src/index.js";
 import { webpack } from "../src/plugin-helper.js";
 
 describe("webpack plugin helper", () => {
-  function createCtx(bundlerName: string): BundlerCtx<WebpackConfig> {
+  function createCtx(
+    bundlerName: string,
+  ): ConfigureBundlerContext<WebpackConfig> {
     return {
       mode: "production",
       command: "build",
       cwd: process.cwd(),
-      config: {} as BundlerCtx<WebpackConfig>["config"],
+      config: {} as ConfigureBundlerContext<WebpackConfig>["config"],
       bundlerName,
-      logger: {} as BundlerCtx<WebpackConfig>["logger"],
+      logger: {} as ConfigureBundlerContext<WebpackConfig>["logger"],
       addWatchFile() {},
     };
   }
@@ -28,7 +30,7 @@ describe("webpack plugin helper", () => {
     });
 
     expectTypeOf(hook).toMatchTypeOf<
-      NonNullable<PluginHooks<{ output: string }>["bundlerConfig"]>
+      NonNullable<PluginHooks<{ output: string }>["configureBundler"]>
     >();
     await hook([], createCtx("utoopack"));
     await hook([], createCtx("webpack"));
@@ -38,10 +40,10 @@ describe("webpack plugin helper", () => {
 
   it("keeps a default definePlugin factory bundler-agnostic", () => {
     const factory = definePlugin({
-      id: "@test/webpack-helper",
+      name: "@test/webpack-helper",
       setup() {
         return {
-          bundlerConfig: webpack((config) => {
+          configureBundler: webpack((config) => {
             for (const webpackConfig of Array.isArray(config)
               ? config
               : [config]) {

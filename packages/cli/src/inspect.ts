@@ -99,7 +99,7 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
         registration.page ? "page" : undefined,
       ].filter(Boolean);
       const metadata = [
-        `id=${formatCoreIdentifier(registration.id)}`,
+        `name=${formatCoreIdentifier(registration.name)}`,
         contracts.length > 0 ? `contracts=${contracts.join(",")}` : undefined,
         registration.page
           ? `pageDefaultable=${registration.page.defaultable}`

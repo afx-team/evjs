@@ -3,6 +3,23 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+export type OwnedOutputFileMutation =
+  | {
+      type: "write";
+      filePath: string;
+      contents: string | Uint8Array;
+      field: string;
+    }
+  | {
+      type: "remove";
+      filePath: string;
+      field: string;
+    };
+
+type OwnedOutputFileSnapshot =
+  | { exists: false }
+  | { exists: true; contents: Uint8Array };
+
 /**
  * Atomically write a framework-owned file without escaping its output tree or
  * following pre-existing symbolic links in the destination path.
@@ -34,6 +51,82 @@ export async function writeOwnedOutputFile(
     await fs.rename(temporary, destination);
   } finally {
     await fs.rm(temporary, { force: true });
+  }
+}
+
+/**
+ * Apply a set of owned-file mutations as one transaction. Every destination is
+ * validated and snapshotted before the first mutation. If a later mutation
+ * fails, all successfully changed files are restored to their prior contents.
+ */
+export async function applyOwnedOutputFileTransaction(
+  rootDir: string,
+  mutations: readonly OwnedOutputFileMutation[],
+): Promise<void> {
+  const snapshots = new Map<string, OwnedOutputFileSnapshot>();
+  const fields = new Map<string, string>();
+
+  for (const mutation of mutations) {
+    const destination = path.resolve(mutation.filePath);
+    if (!snapshots.has(destination)) {
+      snapshots.set(
+        destination,
+        await snapshotOwnedOutputFile(rootDir, destination, mutation.field),
+      );
+      fields.set(destination, mutation.field);
+    }
+  }
+
+  const changedDestinations: string[] = [];
+  const changed = new Set<string>();
+  try {
+    for (const mutation of mutations) {
+      if (mutation.type === "write") {
+        await writeOwnedOutputFile(
+          rootDir,
+          mutation.filePath,
+          mutation.contents,
+          mutation.field,
+        );
+      } else {
+        await removeOwnedOutputFile(rootDir, mutation.filePath, mutation.field);
+      }
+
+      const destination = path.resolve(mutation.filePath);
+      if (!changed.has(destination)) {
+        changed.add(destination);
+        changedDestinations.push(destination);
+      }
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    for (const destination of changedDestinations.reverse()) {
+      const snapshot = snapshots.get(destination);
+      const field = fields.get(destination);
+      if (!snapshot || !field) continue;
+      try {
+        if (snapshot.exists) {
+          await writeOwnedOutputFile(
+            rootDir,
+            destination,
+            snapshot.contents,
+            field,
+          );
+        } else {
+          await removeOwnedOutputFile(rootDir, destination, field);
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        "[evjs] Failed to roll back framework-owned output files.",
+      );
+    }
+    throw error;
   }
 }
 
@@ -93,6 +186,44 @@ export function removeOwnedOutputFileSync(
     fsSync.rmSync(destination, { force: true });
   } catch (error) {
     if (isMissingPathError(error)) return;
+    throw error;
+  }
+}
+
+async function snapshotOwnedOutputFile(
+  rootDir: string,
+  filePath: string,
+  field: string,
+): Promise<OwnedOutputFileSnapshot> {
+  const absoluteRoot = path.resolve(rootDir);
+  const destination = path.resolve(filePath);
+  assertStrictDescendant(absoluteRoot, destination, field);
+  if (!(await assertExistingOwnedDirectory(absoluteRoot, field))) {
+    return { exists: false };
+  }
+
+  const relativeParent = path.relative(absoluteRoot, path.dirname(destination));
+  let current = absoluteRoot;
+  for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
+    current = path.join(current, segment);
+    if (!(await assertExistingOwnedDirectory(current, field))) {
+      return { exists: false };
+    }
+  }
+
+  try {
+    const stats = await fs.lstat(destination);
+    if (stats.isSymbolicLink()) {
+      throw new Error(
+        `[evjs] ${field} must not overwrite a symbolic-link output file.`,
+      );
+    }
+    if (!stats.isFile()) {
+      throw new Error(`[evjs] ${field} output path must be a file.`);
+    }
+    return { exists: true, contents: await fs.readFile(destination) };
+  } catch (error) {
+    if (isMissingPathError(error)) return { exists: false };
     throw error;
   }
 }

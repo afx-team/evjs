@@ -109,7 +109,8 @@ Release automation replaces them with the release version before publishing.
 ### Add plugin-owned configuration
 
 1. Declare independent Application and optional Page contracts with
-   `definePlugin()` and `pluginConfig()`.
+   `definePlugin()` and `pluginOptions()`, plus one short `key` shared by every
+   declared owner contract.
 2. Install the factory in `config.plugins` and pass its typed Application
    options there.
 3. Configure installed Page-aware plugins under the generated short key in
@@ -132,17 +133,18 @@ Release automation replaces them with the release version before publishing.
 
 ```txt
 load config
-run config hooks and resolve Application plugin settings
-run setup/buildStart hooks
+run configure methods and resolve Application plugin settings
+run setup hooks
 create CoreGraph while resolving Page plugin settings
 derive BuildPlan
 collect generated contributions
 materialize .ev
 ```
 
-`ev build` then asks the selected bundler for build facts, links `BuildOutput`,
-runs output and HTML hooks, writes deployment metadata and Documents, and runs
-`buildEnd`.
+`ev build` then asks the selected bundler for build facts, runs `beforeBuild`,
+links `BuildOutput`, runs output and HTML hooks, writes deployment metadata and
+Documents, and runs `afterBuild`. `ev prepare` and `ev inspect` do not receive
+bundler facts and therefore call neither build-cycle hook.
 
 `ev dev` keeps normal source edits on the bundler watch/HMR path. Framework
 input changes recreate and diff the graph/plan, then call the adapter's

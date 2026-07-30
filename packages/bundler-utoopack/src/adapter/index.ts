@@ -21,6 +21,7 @@ import type {
 } from "@evjs/ev/_internal/build";
 import {
   assertSafeBuildOutputPaths,
+  hasGeneratedCompilerInputChanges,
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   resolveBuildOutputPaths,
@@ -37,10 +38,11 @@ import {
 import { assertSafeUtoopackCleanOutput } from "./output-paths.js";
 import { runUtoopackBuild } from "./runtime.js";
 import {
-  readServerStatsVersion,
-  startUtoopackServerStatsMonitor,
-  type UtoopackServerStatsMonitor,
-} from "./server-stats-monitor.js";
+  readUtoopackStatsSetVersion,
+  readUtoopackStatsVersion,
+  startUtoopackStatsMonitor,
+  type UtoopackStatsMonitor,
+} from "./stats-monitor.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 const require = createRequire(import.meta.url);
@@ -62,18 +64,15 @@ async function cleanServerOutput(
 async function generateDevArtifacts(
   cwd: string,
   plan: BuildPlan,
-  onBuildFacts: (
-    facts: BundlerBuildFacts,
-    options?: { isRebuild?: boolean },
-  ) => void | Promise<void>,
-  options: { isRebuild?: boolean } = {},
+  onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"],
+  options: { isRebuild: boolean },
   facts?: BundlerBuildFacts,
-): Promise<void> {
+): Promise<boolean> {
   logger.info`Generating development manifest and HTML...`;
   const buildFacts =
     facts ??
     (await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts());
-  await onBuildFacts(buildFacts, options);
+  return (await onBuildFacts(buildFacts, options)) !== false;
 }
 
 async function waitForReadableDevStats(
@@ -124,6 +123,56 @@ async function waitForReadableDevStats(
   }
 }
 
+async function readStableDevStatsSnapshot(
+  cwd: string,
+  plan: BuildPlan,
+  statsPaths: readonly string[],
+  activationStatsPath: string | undefined,
+  timeoutMs = INITIAL_DEV_STATS_TIMEOUT_MS,
+): Promise<{
+  facts: BundlerBuildFacts;
+  statsVersion: string | undefined;
+  activationVersion: string | undefined;
+}> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (true) {
+    const [versionBefore, activationVersionBefore] = await Promise.all([
+      readUtoopackStatsSetVersion(statsPaths),
+      activationStatsPath
+        ? readUtoopackStatsVersion(activationStatsPath)
+        : undefined,
+    ]);
+    const facts = await waitForReadableDevStats(
+      cwd,
+      plan,
+      Math.max(0, deadline - Date.now()),
+    );
+    const [versionAfter, activationVersionAfter] = await Promise.all([
+      readUtoopackStatsSetVersion(statsPaths),
+      activationStatsPath
+        ? readUtoopackStatsVersion(activationStatsPath)
+        : undefined,
+    ]);
+
+    if (
+      versionBefore === versionAfter &&
+      activationVersionBefore === activationVersionAfter
+    ) {
+      return {
+        facts,
+        statsVersion: versionAfter,
+        activationVersion: activationVersionAfter,
+      };
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        "[evjs] Timed out waiting for a stable Utoopack development stats snapshot.",
+      );
+    }
+  }
+}
+
 function requireUtoopack(): UtoopackRuntime {
   // @utoo/pack's import condition targets ESM .js files; Node 18 parses them as CJS.
   return require("@utoo/pack") as UtoopackRuntime;
@@ -138,6 +187,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       ppr: false,
     },
     dev: {
+      configuration: false,
       html: true,
       entries: false,
       routes: false,
@@ -235,50 +285,87 @@ async function startUtoopackDev(
       logger.warn`Reserved client port ${config.dev.port} became unavailable during startup; Utoopack is listening on ${ready.port}.${fallbackStatus}`;
     }
 
-    const initialFacts = await Promise.race([
-      waitForReadableDevStats(cwd, plan, statsTimeoutMs),
+    const hasServerRuntime = hasRuntimeServerEntry(plan);
+    const clientStatsPath = hasClientEntry(plan)
+      ? path.join(outputPaths.clientDir, "stats.json")
+      : undefined;
+    const serverStatsPath = hasServerRuntime
+      ? path.join(outputPaths.serverDir, "stats.json")
+      : undefined;
+    const statsPaths = [clientStatsPath, serverStatsPath].filter(
+      (statsPath): statsPath is string => statsPath !== undefined,
+    );
+    const initialSnapshot = await Promise.race([
+      readStableDevStatsSnapshot(
+        cwd,
+        plan,
+        statsPaths,
+        serverStatsPath,
+        statsTimeoutMs,
+      ),
       worker.failure,
     ]);
-    const serverStatsPath = path.join(outputPaths.serverDir, "stats.json");
-    const initialServerStatsVersion = hasRuntimeServerEntry(plan)
-      ? await readServerStatsVersion(serverStatsPath)
-      : undefined;
-    await generateDevArtifacts(
+    const initialPublished = await generateDevArtifacts(
       cwd,
       plan,
       callbacks.onBuildFacts,
       { isRebuild: false },
-      initialFacts,
+      initialSnapshot.facts,
     );
     worker.throwIfFailed();
 
-    if (hasRuntimeServerEntry(plan)) {
-      await callbacks.onServerBundleReady();
-      worker.throwIfFailed();
-      const monitor = startUtoopackServerStatsMonitor({
-        statsPath: serverStatsPath,
-        initialVersion: initialServerStatsVersion,
-        async onChange() {
+    if (initialPublished && statsPaths.length > 0) {
+      const monitor = startUtoopackStatsMonitor({
+        statsPaths,
+        initialVersion: initialSnapshot.statsVersion,
+        ...(serverStatsPath
+          ? {
+              initialActivationVersion: initialSnapshot.activationVersion,
+            }
+          : {}),
+        activateInitial: hasServerRuntime,
+        failInitialErrors: true,
+        async publish() {
           const activePlan = controller.getPlan();
-          const facts = await waitForReadableDevStats(
+          const snapshot = await readStableDevStatsSnapshot(
             cwd,
             activePlan,
+            statsPaths,
+            serverStatsPath,
             statsTimeoutMs,
           );
-          await generateDevArtifacts(
+          const published = await generateDevArtifacts(
             cwd,
             activePlan,
             callbacks.onBuildFacts,
             { isRebuild: true },
-            facts,
+            snapshot.facts,
           );
-          await callbacks.onServerBundleReady();
+          return {
+            published,
+            statsVersion: snapshot.statsVersion,
+            activationVersion: snapshot.activationVersion,
+          };
         },
-        onError(error) {
-          logger.error`Failed to process Utoopack server rebuild: ${error}`;
+        ...(hasServerRuntime
+          ? {
+              async activate() {
+                await callbacks.onServerBundleReady();
+              },
+            }
+          : {}),
+        onError(error, phase) {
+          const buildKind = hasServerRuntime ? "server" : "client";
+          const action =
+            phase === "publish"
+              ? `publish Utoopack ${buildKind} rebuild`
+              : "activate published Utoopack server rebuild";
+          logger.error`Failed to ${action}: ${error}`;
         },
       });
-      controller.attachServerStatsMonitor(monitor);
+      controller.attachStatsMonitor(monitor);
+      await Promise.race([monitor.ready, worker.failure]);
+      worker.throwIfFailed();
     }
 
     await callbacks.onDevServerReady?.({ origin: devServerOrigin });
@@ -305,6 +392,10 @@ function hasRuntimeServerEntry(plan: BuildPlan): boolean {
   );
 }
 
+function hasClientEntry(plan: BuildPlan): boolean {
+  return plan.entries.some((entry) => entry.environment === "client");
+}
+
 function formatDevServerOrigin(
   config: ResolvedConfig<ConfigComplete>,
   port: number,
@@ -316,7 +407,7 @@ function formatDevServerOrigin(
 }
 
 class UtoopackDevController implements BundlerDevController<ConfigComplete> {
-  private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
+  private statsMonitor: UtoopackStatsMonitor | undefined;
   private closed = false;
   readonly done: Promise<void>;
 
@@ -336,13 +427,13 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     return this.options.plan;
   }
 
-  attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
-    if (this.serverStatsMonitor) {
+  attachStatsMonitor(monitor: UtoopackStatsMonitor): void {
+    if (this.statsMonitor) {
       throw new Error(
-        "[evjs] Utoopack server stats monitor was attached more than once.",
+        "[evjs] Utoopack stats monitor was attached more than once.",
       );
     }
-    this.serverStatsMonitor = monitor;
+    this.statsMonitor = monitor;
   }
 
   async close(): Promise<void> {
@@ -350,7 +441,7 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     this.closed = true;
     const errors: unknown[] = [];
     try {
-      await this.serverStatsMonitor?.close();
+      await this.statsMonitor?.close();
     } catch (error) {
       errors.push(error);
     }
@@ -385,21 +476,28 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
         `[evjs] Utoopack dev cannot apply framework plan changes without restarting ev dev (${formatUnsupportedPlanUpdate(update)}). HTML/generated-only framework plan updates are supported; entry additions, removals, resolution changes, server changes, and route metadata changes still require a lower-layer Utoopack update API.`,
       );
     }
+    if (hasGeneratedCompilerInputChanges(update)) {
+      throw new Error(
+        "[evjs] Utoopack dev cannot reuse build facts after generated compiler inputs change. Restart ev dev to apply this framework plan change.",
+      );
+    }
 
     const previousPlan = this.options.plan;
     this.options.plan = update.next;
+    let frameworkOutputPublished = false;
     try {
-      await generateDevArtifacts(
+      const published = await generateDevArtifacts(
         this.options.cwd,
         update.next,
         this.options.onBuildFacts,
         { isRebuild: true },
       );
-      if (hasRuntimeServerEntry(update.next)) {
+      frameworkOutputPublished = published;
+      if (published && hasRuntimeServerEntry(update.next)) {
         await this.options.onServerBundleReady();
       }
     } catch (error) {
-      this.options.plan = previousPlan;
+      if (!frameworkOutputPublished) this.options.plan = previousPlan;
       throw error;
     }
   }

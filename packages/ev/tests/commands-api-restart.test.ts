@@ -7,12 +7,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
+  BundlerDevContext,
 } from "../src/_internal/build/bundler.js";
 import { dev } from "../src/_internal/build/commands.js";
 import type { Config } from "../src/config/index.js";
 
 const API_READY_MARKER = "__EVJS_API_READY__";
 const updateTimeoutMs = 10_000;
+type BuildFactsCallbackResult = ReturnType<
+  BundlerDevContext["callbacks"]["onBuildFacts"]
+>;
 
 const mockedExeca = vi.hoisted(() => {
   const state: {
@@ -125,7 +129,7 @@ function createServerFacts(plan: BuildPlan): BundlerBuildFacts {
 async function emitServerBuild(
   cwd: string,
   plan: BuildPlan,
-  onBuildFacts: (facts: BundlerBuildFacts) => void | Promise<void>,
+  onBuildFacts: (facts: BundlerBuildFacts) => BuildFactsCallbackResult,
 ): Promise<void> {
   const facts = createServerFacts(plan);
   if (!facts.serverEntry) throw new Error("Expected a server entry asset.");
@@ -146,7 +150,7 @@ async function waitForEvent(events: string[], expected: string): Promise<void> {
   }
 }
 
-describe("dev API restart rollback", () => {
+describe("dev API restart", () => {
   it("terminates a child that fails before reporting ready", async () => {
     const cwd = await createServerProject();
     const events: string[] = [];
@@ -163,6 +167,7 @@ describe("dev API restart rollback", () => {
       capabilities: {
         build: { server: true, rsc: true, ppr: true },
         dev: {
+          configuration: true,
           html: true,
           entries: true,
           routes: true,
@@ -175,7 +180,7 @@ describe("dev API restart rollback", () => {
       },
       async dev({ callbacks, plan }) {
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(facts),
+          callbacks.onBuildFacts(facts, { isRebuild: false }),
         );
         await callbacks.onServerBundleReady();
       },
@@ -195,12 +200,12 @@ describe("dev API restart rollback", () => {
     ]);
   });
 
-  it("restores the previous API after a plan-update restart fails", async () => {
+  it("keeps published state and retries after a plan-update restart fails", async () => {
     const cwd = await createServerProject();
     const configFile = path.join(cwd, "ev.config.ts");
     await writeFile(configFile, "export default {};");
     const events: string[] = [];
-    const processKinds = ["previous", "candidate", "restored"] as const;
+    const processKinds = ["previous", "candidate", "retried"] as const;
     let processIndex = 0;
     mockedExeca.state.spawn = () => {
       const id = processKinds[processIndex++];
@@ -218,11 +223,13 @@ describe("dev API restart rollback", () => {
     let currentConfig: Config<Record<string, never>> = {
       output: { client: "dist/client", server: "dist/server" },
     };
+    let retryApiServer!: () => Promise<void>;
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "api-update-rollback",
       capabilities: {
         build: { server: true, rsc: true, ppr: true },
         dev: {
+          configuration: true,
           html: true,
           entries: true,
           routes: true,
@@ -235,13 +242,16 @@ describe("dev API restart rollback", () => {
       },
       async dev({ callbacks, plan }) {
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(facts),
+          callbacks.onBuildFacts(facts, { isRebuild: false }),
         );
         await callbacks.onServerBundleReady();
         events.push("initial-api-ready");
+        retryApiServer = async () => {
+          await callbacks.onServerBundleReady();
+        };
         return {
-          async updatePlan() {
-            await emitServerBuild(cwd, plan, (facts) =>
+          async updatePlan(update) {
+            await emitServerBuild(cwd, update.next, (facts) =>
               callbacks.onBuildFacts(facts, { isRebuild: true }),
             );
             await callbacks.onServerBundleReady();
@@ -266,14 +276,16 @@ describe("dev API restart rollback", () => {
       },
     };
     await writeFile(configFile, "export default { dev: {} }; // changed");
-    await waitForEvent(events, "ready:restored");
+    await waitForEvent(events, "kill:candidate:SIGTERM");
+    await retryApiServer();
+    await waitForEvent(events, "ready:retried");
     process.emit("SIGINT");
 
     await Promise.race([
       running,
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("Dev API rollback timed out.")),
+          () => reject(new Error("Dev API retry timed out.")),
           updateTimeoutMs,
         ),
       ),
@@ -282,12 +294,12 @@ describe("dev API restart rollback", () => {
     expect(events.filter((event) => event.startsWith("start:"))).toEqual([
       "start:previous",
       "start:candidate",
-      "start:restored",
+      "start:retried",
     ]);
     expect(events).toContain("kill:candidate:SIGTERM");
     expect(events.indexOf("kill:candidate:SIGTERM")).toBeLessThan(
-      events.indexOf("start:restored"),
+      events.indexOf("start:retried"),
     );
-    expect(events).toContain("kill:restored:SIGTERM");
+    expect(events).toContain("kill:retried:SIGTERM");
   });
 });

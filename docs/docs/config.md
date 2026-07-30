@@ -172,11 +172,13 @@ export default defineConfig({
 The factory both installs the plugin and supplies its Application
 configuration. Its argument is typed directly by the plugin package, so there
 is no second namespace, registration call, or configuration object to keep in
-sync. Conditional entries may use `false`, `null`, or `undefined`; inactive
-entries are omitted at runtime. Because they are not guaranteed to install,
-entries with a possible falsy branch do not expose Page keys. When the Page
-contract has defaults, use `plugin.forPages(config)` to keep the plugin and its
-Application options active while every Page opts in explicitly.
+sync. A plugin with Application or Page options declares one short `key`.
+CoreGraph uses that same key for its Application and Page setting entries.
+Conditional entries may use `false`, `null`, or `undefined`; inactive entries
+are omitted at runtime. Because they are not guaranteed to install, entries
+with a possible falsy branch do not expose keys to Page config. When the Page
+contract has defaults, use `plugin.withPageOptIn(config)` to keep the plugin
+and its Application options active while every Page opts in explicitly.
 
 Application configuration may contain typed executable options or explicit
 module references when the plugin contract allows them. Do not put secrets in
@@ -235,17 +237,19 @@ accept `property`, `charset`, links, scripts, functions, or a generic head
 tree. Installed Page-aware plugins use generated short keys under `plugins`.
 The Page module does not import the plugin package: `ev prepare`, `ev dev`, and
 `ev build` generate `src/plugin-types.d.ts` as a stable bridge to the static
-type of `ev.config.ts`. TypeScript derives Page keys and values from that
+type of `ev.config.ts`. TypeScript derives plugin keys and Page values from that
 config type, but only for entries statically guaranteed to install. JavaScript
 config does not widen the Page registry to `any`; use `ev.config.ts` when Page
-plugin completion is required.
+plugin completion is required. Framework commands create the bridge before
+Page graph analysis, and it stays under `src` because ordinary application
+tsconfigs include `src` while excluding generated `.ev` IR.
 
 Application and Page configuration are independent plugin contracts. evjs
 does not merge the object passed to the Application factory into a Page value.
 Within either contract, authored fields deep-merge over that contract's
 defaults before validation. Within the Page map, a normal factory call uses
 Page defaults for an omitted key when defaults exist; otherwise omission
-disables that Page. Defaultable Page contracts expose `forPages()`, which
+disables that Page. Defaultable Page contracts expose `withPageOptIn()`, which
 always treats omission as disabled; non-defaultable contracts are already
 opt-in-only. `false` disables the plugin for this Page, `true` requires Page
 defaults, and an object enables it after merging over Page defaults and
@@ -352,7 +356,7 @@ export default defineConfig({
 
 After config and plugin setup finish, the BuildPlan owns the resolved output
 paths. Adapters use those paths for cleanup, emitted assets, stats, and
-manifests; `bundlerConfig()` hooks cannot override framework-owned client or
+manifests; `configureBundler()` hooks cannot override framework-owned client or
 server output paths.
 
 `output.crossOriginLoading` accepts `false`, `"anonymous"`, or
@@ -377,8 +381,11 @@ export default defineConfig({
 Install plugins through `plugins`, normally as
 `pluginFactory(applicationConfig)`. A plugin can declare an independent Page
 contract whose short key becomes available in adjacent `page.config.ts` files.
-The same Plugin descriptor owns config, setup, contributions, and lifecycle
-hooks. See [Plugins](./plugins).
+The Plugin descriptor owns `configure()`, `setup()`, `emitIR()`, and
+`emitPageIR()`. Lifecycle hooks such as `beforeBuild()` and `dispose()` belong
+only to the hooks object returned by `setup()`. IR emission methods declare
+records for evjs to collect and validate; they do not write `.ev` immediately.
+See [Plugins](./plugins).
 
 ### Bundler
 
@@ -396,9 +403,10 @@ export default defineConfig({
 ```
 
 Every adapter declares build capabilities for server rendering, RSC, and PPR,
-plus dev-plan update capabilities for HTML, entries, routes, server output, and
-resolution. `ev inspect` reports the selected adapter and any plan gaps; build
-and dev fail before adapter execution when a required capability is missing.
+plus dev-plan update capabilities for configuration replacement, HTML, entries,
+routes, server output, and resolution. `ev inspect` reports the selected adapter
+and any plan gaps; build and dev fail before adapter execution when a required
+capability is missing.
 
 ## Route Inputs
 

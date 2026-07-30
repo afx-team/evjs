@@ -191,17 +191,29 @@ export type CoreDocumentBootstrap =
 
 /**
  * Installed plugin contract metadata captured with the graph. Per-owner
- * settings refer to these short keys and are validated against this catalog.
+ * settings refer to the plugin's stable public `key` and are validated against
+ * this snapshot. Page settings use the same key when a Page contract exists.
  */
 export interface CorePluginCatalogSnapshot {
   entries: Record<string, CorePluginCatalogEntrySnapshot>;
 }
 
-export interface CorePluginCatalogEntrySnapshot {
-  id: string;
-  application?: CorePluginApplicationContractSnapshot;
-  page?: CorePluginPageContractSnapshot;
+interface CorePluginCatalogEntrySnapshotBase {
+  name: string;
 }
+
+export type CorePluginCatalogEntrySnapshot =
+  CorePluginCatalogEntrySnapshotBase &
+    (
+      | {
+          application: CorePluginApplicationContractSnapshot;
+          page?: CorePluginPageContractSnapshot;
+        }
+      | {
+          application?: CorePluginApplicationContractSnapshot;
+          page: CorePluginPageContractSnapshot;
+        }
+    );
 
 export interface CorePluginApplicationContractSnapshot {
   schemaVersion?: string;
@@ -415,7 +427,7 @@ function assertPluginSettingOwners(
     }
     if (requirePageContract && !definition.page) {
       throw new Error(
-        `[evjs] ${source} uses plugin key "${key}", but plugin "${definition.id}" does not declare a Page contract.`,
+        `[evjs] ${source} uses plugin key "${key}", but plugin "${definition.name}" does not declare a Page contract.`,
       );
     }
   }
@@ -1439,7 +1451,7 @@ function assertPluginCatalog(
 ): Record<string, CorePluginCatalogEntrySnapshot> {
   const catalog = assertObjectShape(value, source, ["entries"]);
   const entries = assertRecord(catalog.entries, `${source}.entries`);
-  const keyById = new Map<string, string>();
+  const keyByName = new Map<string, string>();
 
   for (const [key, valueEntry] of Object.entries(entries)) {
     assertCorePluginKey(key, `${source}.entries key`);
@@ -1447,18 +1459,18 @@ function assertPluginCatalog(
     const entry = assertObjectShape(
       valueEntry,
       entrySource,
-      ["id"],
+      ["name"],
       ["application", "page"],
     );
-    assertTrimmedNonEmptyString(entry.id, `${entrySource}.id`);
-    const id = entry.id as string;
-    const existingKey = keyById.get(id);
+    assertTrimmedNonEmptyString(entry.name, `${entrySource}.name`);
+    const name = entry.name as string;
+    const existingKey = keyByName.get(name);
     if (existingKey !== undefined) {
       throw new Error(
-        `[evjs] ${entrySource}.id "${id}" duplicates the plugin id registered by key "${existingKey}".`,
+        `[evjs] ${entrySource}.name "${name}" duplicates the plugin name registered by key "${existingKey}".`,
       );
     }
-    keyById.set(id, key);
+    keyByName.set(name, key);
 
     const application = getOwn(entry, "application");
     if (application !== undefined) {
@@ -1467,6 +1479,11 @@ function assertPluginCatalog(
     const page = getOwn(entry, "page");
     if (page !== undefined) {
       assertPluginContract(page, `${entrySource}.page`, true);
+    }
+    if (application === undefined && page === undefined) {
+      throw new Error(
+        `[evjs] ${entrySource} must declare an Application or Page contract.`,
+      );
     }
   }
 

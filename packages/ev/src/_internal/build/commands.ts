@@ -28,6 +28,7 @@ import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import { createBuildResult } from "./build-result.js";
 import {
   type BundlerAdapter,
+  type BundlerBuildFacts,
   type BundlerDevController,
   isEmptyBuildPlanUpdate,
   preflightBundlerBuild,
@@ -68,7 +69,10 @@ import {
   validateHtmlTemplates,
 } from "./framework-output.js";
 import type { createFrameworkRuntime } from "./framework-runtime.js";
-import { GENERATED_IR_DIR } from "./generated-contributions.js";
+import {
+  GENERATED_IR_DIR,
+  restoreGeneratedIRSnapshot,
+} from "./generated-contributions.js";
 import type { createCoreGraph } from "./graph/index.js";
 import {
   removeOwnedOutputFile,
@@ -85,10 +89,10 @@ import {
   hasSamePluginIdentity,
   orderPluginsByDependencies,
   rethrowAfterCleanup,
-  runBuildEndHooks,
-  runBuildStartHooks,
+  runAfterBuildHooks,
+  runBeforeBuildHooks,
   runCleanupTasks,
-  runConfigHooks,
+  runConfigureHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
 import {
@@ -99,10 +103,11 @@ import {
   collectGeneratedPluginTypeFiles,
   getPluginTypesPath,
   isGeneratedPluginTypesFile,
+  syncPluginTypes,
 } from "./plugin-types.js";
 import { isInsideCwd } from "./utils.js";
 
-type MutablePluginContext<TBundlerCfg> = Omit<
+type MutablePluginSetupContext<TBundlerCfg> = Omit<
   PluginContext<TBundlerCfg>,
   "config"
 > & {
@@ -215,7 +220,6 @@ export interface PrepareFrameworkBuildOptions<
   command?: "dev" | "build";
   bundler?: BundlerAdapter<TBundlerCfg>;
   requireBundler?: boolean;
-  runLifecycleHooks?: boolean;
 }
 
 export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
@@ -256,6 +260,79 @@ interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
 interface GeneratedDevStateSnapshot {
   commit(): Promise<void>;
   restore(): Promise<void>;
+}
+
+interface DevPluginSnapshot<TBundlerCfg> {
+  hooks: PluginHooks<TBundlerCfg>[];
+  setupContext: PluginContext<TBundlerCfg>;
+  watchFiles: Set<string>;
+  inFlightCycles: number;
+  idleWaiters: Set<() => void>;
+  disposePromise?: Promise<void>;
+}
+
+interface DevOutputSnapshot<TBundlerCfg> {
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
+  analysis: Awaited<ReturnType<typeof createCoreGraph>>;
+  plan: BuildPlan;
+  plugin: DevPluginSnapshot<TBundlerCfg>;
+  pluginContext: PluginContext<TBundlerCfg>;
+  published: boolean;
+}
+
+interface DevOutputTransition<TBundlerCfg> {
+  retiringSnapshot: DevOutputSnapshot<TBundlerCfg>;
+}
+
+function createDevPluginSnapshot<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  setupContext: PluginContext<TBundlerCfg>,
+  watchFiles: Set<string>,
+): DevPluginSnapshot<TBundlerCfg> {
+  return {
+    hooks,
+    setupContext,
+    watchFiles,
+    inFlightCycles: 0,
+    idleWaiters: new Set(),
+  };
+}
+
+function retainDevPluginSnapshot<TBundlerCfg>(
+  snapshot: DevPluginSnapshot<TBundlerCfg>,
+): void {
+  if (snapshot.disposePromise) {
+    throw new Error(
+      "[evjs] Cannot start an output cycle for a disposed plugin snapshot.",
+    );
+  }
+  snapshot.inFlightCycles++;
+}
+
+function releaseDevPluginSnapshot<TBundlerCfg>(
+  snapshot: DevPluginSnapshot<TBundlerCfg>,
+): void {
+  snapshot.inFlightCycles--;
+  if (snapshot.inFlightCycles !== 0) return;
+  for (const resolve of snapshot.idleWaiters) resolve();
+  snapshot.idleWaiters.clear();
+}
+
+function waitForDevPluginSnapshotIdle<TBundlerCfg>(
+  snapshot: DevPluginSnapshot<TBundlerCfg>,
+): Promise<void> {
+  if (snapshot.inFlightCycles === 0) return Promise.resolve();
+  return new Promise((resolve) => snapshot.idleWaiters.add(resolve));
+}
+
+function disposeDevPluginSnapshot<TBundlerCfg>(
+  snapshot: DevPluginSnapshot<TBundlerCfg>,
+): Promise<void> {
+  snapshot.disposePromise ??= (async () => {
+    await waitForDevPluginSnapshotIdle(snapshot);
+    await runDisposeHooks(snapshot.hooks, snapshot.setupContext);
+  })();
+  return snapshot.disposePromise;
 }
 
 interface DevApiRuntimeState<TBundlerCfg> {
@@ -308,7 +385,6 @@ async function createGeneratedDevStateSnapshot(
           await runCleanupTasks([
             () =>
               restoreGeneratedIr(
-                cwd,
                 generatedIrPath,
                 generatedIrSnapshot,
                 hadGeneratedIr,
@@ -349,7 +425,6 @@ async function captureGeneratedTypeFile(
 }
 
 async function restoreGeneratedIr(
-  cwd: string,
   generatedIrPath: string,
   generatedIrSnapshot: string,
   hadGeneratedIr: boolean,
@@ -358,20 +433,7 @@ async function restoreGeneratedIr(
     await fs.promises.rm(generatedIrPath, { force: true, recursive: true });
     return;
   }
-
-  const restoreRoot = await fs.promises.mkdtemp(
-    path.join(cwd, `${GENERATED_IR_DIR}-restore-`),
-  );
-  const restoredIrPath = path.join(restoreRoot, "generated-ir");
-  try {
-    await fs.promises.cp(generatedIrSnapshot, restoredIrPath, {
-      recursive: true,
-    });
-    await fs.promises.rm(generatedIrPath, { force: true, recursive: true });
-    await fs.promises.rename(restoredIrPath, generatedIrPath);
-  } finally {
-    await fs.promises.rm(restoreRoot, { force: true, recursive: true });
-  }
+  await restoreGeneratedIRSnapshot(generatedIrPath, generatedIrSnapshot);
 }
 
 async function restoreGeneratedTypes(
@@ -510,7 +572,8 @@ async function prepareInternalFrameworkBuild<
   }
   const mode = options.mode ?? expectedMode;
   const flags = options.flags;
-  const configuredConfig = await runConfigHooks(userConfig, {
+  await syncPluginTypes({ cwd });
+  const configuredConfig = await runConfigureHooks(userConfig, {
     mode,
     command,
     cwd,
@@ -555,7 +618,7 @@ async function prepareInternalFrameworkBuild<
   });
   const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
-  const pluginContext: MutablePluginContext<TBundlerCfg> = {
+  const pluginContext: MutablePluginSetupContext<TBundlerCfg> = {
     mode,
     command,
     cwd,
@@ -575,9 +638,6 @@ async function prepareInternalFrameworkBuild<
   };
 
   try {
-    if (options.runLifecycleHooks ?? true) {
-      await runBuildStartHooks(hooks, pluginContext);
-    }
     validateHtmlTemplates(cwd, config);
     const { analysis, plan } = await analyzeAndMaterializeFrameworkIR({
       cwd,
@@ -767,7 +827,8 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
   const cwd = options?.cwd ?? process.cwd();
   const flags = options?.flags;
   process.env.NODE_ENV ??= "development";
-  const configuredConfig = await runConfigHooks(userConfig, {
+  await syncPluginTypes({ cwd });
+  const configuredConfig = await runConfigureHooks(userConfig, {
     mode: "development",
     command: "dev",
     cwd,
@@ -851,15 +912,15 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let activeConfig = baseActiveConfig;
   let activeServerRouteWatchState = initialServerRouteWatchState;
 
-  const pluginWatchFiles = new Set<string>();
+  const initialPluginWatchFiles = new Set<string>();
   const bundlerConfigWatchFiles = new Set<string>();
   const addWatchFile = (file: string) => {
-    pluginWatchFiles.add(path.resolve(cwd, file));
+    initialPluginWatchFiles.add(path.resolve(cwd, file));
   };
   const addBundlerConfigWatchFile = (file: string) => {
     bundlerConfigWatchFiles.add(path.resolve(cwd, file));
   };
-  const pluginCtx: MutablePluginContext<TBundlerCfg> = {
+  const pluginCtx: PluginContext<TBundlerCfg> = {
     mode: "development",
     command: "dev",
     cwd,
@@ -868,11 +929,19 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     logger,
     addWatchFile,
   };
-  const hooks = await collectPluginHooks(activeConfig.plugins, pluginCtx);
+  const initialPluginHooks = await collectPluginHooks(
+    activeConfig.plugins,
+    pluginCtx,
+  );
+  const initialPluginSnapshot = createDevPluginSnapshot(
+    initialPluginHooks,
+    pluginCtx,
+    initialPluginWatchFiles,
+  );
+  const bundlerHooks = [...initialPluginHooks];
   let activeAnalysis: Awaited<ReturnType<typeof createCoreGraph>>;
   let activePlan: BuildPlan;
   try {
-    await runBuildStartHooks(hooks, pluginCtx);
     validateHtmlTemplates(cwd, activeConfig);
     const materialized = await analyzeAndMaterializeFrameworkIR({
       cwd,
@@ -891,10 +960,21 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   } catch (error) {
     return rethrowAfterCleanup(
       error,
-      () => runDisposeHooks(hooks, pluginCtx),
+      () => disposeDevPluginSnapshot(initialPluginSnapshot),
       "[evjs] Dev initialization failed and plugin cleanup also failed.",
     );
   }
+  let activeOutputSnapshot: DevOutputSnapshot<TBundlerCfg> = {
+    config: activeConfig,
+    analysis: activeAnalysis,
+    plan: activePlan,
+    plugin: initialPluginSnapshot,
+    pluginContext: pluginCtx,
+    published: false,
+  };
+  let outputTransition: DevOutputTransition<TBundlerCfg> | undefined;
+  let outputCycleQueue: Promise<void> = Promise.resolve();
+  let buildFactsAdmissionBlocked = false;
   let restartQueue: Promise<void> = Promise.resolve();
   let devUpdateQueue: Promise<void> = Promise.resolve();
   let devController: BundlerDevController<TBundlerCfg> | undefined;
@@ -905,10 +985,8 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const pendingDevChanges = new Set<string>();
   let pendingForcedConfigReload = false;
-  let activeFrameworkRuntime:
-    | ReturnType<typeof createFrameworkRuntime>
-    | undefined;
-  let activeServerEntry: string | undefined;
+  let shuttingDown = false;
+  let activeApiRuntimeState: DevApiRuntimeState<TBundlerCfg> | undefined;
   const expectedApiExits = new WeakSet<ApiProcess>();
   const apiProcessController = new DevApiProcessController<ApiProcess>({
     expectExit(process) {
@@ -925,6 +1003,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   });
 
   const stopApiOnParentShutdown = () => {
+    shuttingDown = true;
     apiProcessController.requestStop();
     resolveShutdown?.();
   };
@@ -932,12 +1011,13 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   process.once("SIGINT", stopApiOnParentShutdown);
   process.once("SIGTERM", stopApiOnParentShutdown);
 
-  const captureApiRuntimeState = (): DevApiRuntimeState<TBundlerCfg> => ({
-    config: activeConfig,
-    frameworkRuntime: activeFrameworkRuntime,
-    plan: activePlan,
-    serverEntry: activeServerEntry,
-  });
+  const captureApiRuntimeState = (): DevApiRuntimeState<TBundlerCfg> =>
+    activeApiRuntimeState ?? {
+      config: activeConfig,
+      frameworkRuntime: undefined,
+      plan: activePlan,
+      serverEntry: undefined,
+    };
 
   const restartApiServer = async (
     state: DevApiRuntimeState<TBundlerCfg>,
@@ -1007,10 +1087,14 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   const handleServerBundleReady = async () => {
+    if (shuttingDown) return;
     const state = captureApiRuntimeState();
     restartQueue = restartQueue
       .catch(() => {})
-      .then(() => restartApiServer(state))
+      .then(() => {
+        if (shuttingDown) return;
+        return restartApiServer(state);
+      })
       .then(() => {});
     await restartQueue;
   };
@@ -1020,7 +1104,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     onServerRouteWatchState?: (state: ServerRouteWatchState) => void,
   ) => {
     const nextConfiguredConfig = reloadConfiguredConfig
-      ? await runConfigHooks(
+      ? await runConfigureHooks(
           options?.loadConfig ? await options.loadConfig(cwd) : userConfig,
           {
             mode: "development",
@@ -1074,12 +1158,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   const stagePluginHooks = async (nextConfig: typeof activeConfig) => {
-    const previousConfig = activeConfig;
-    const previousHooks = [...hooks];
-    const previousPluginWatchFiles = [...pluginWatchFiles];
+    const previousPluginSnapshot = activeOutputSnapshot.plugin;
     const nextPluginWatchFiles = new Set<string>();
     const nextPluginCtx: PluginContext<TBundlerCfg> = {
-      ...pluginCtx,
+      ...previousPluginSnapshot.setupContext,
       config: nextConfig,
       addWatchFile(file) {
         nextPluginWatchFiles.add(path.resolve(cwd, file));
@@ -1089,69 +1171,155 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       nextConfig.plugins,
       nextPluginCtx,
     );
-    try {
-      await runBuildStartHooks(nextHooks, nextPluginCtx);
-    } catch (error) {
-      return rethrowAfterCleanup(
-        error,
-        () => runDisposeHooks(nextHooks, nextPluginCtx),
-        "[evjs] Plugin reload buildStart failed and rollback also failed.",
-      );
-    }
-
-    hooks.splice(0, hooks.length, ...nextHooks);
-    pluginWatchFiles.clear();
-    for (const file of nextPluginWatchFiles) {
-      pluginWatchFiles.add(file);
-    }
-    pluginCtx.config = nextConfig;
+    const nextPluginSnapshot = createDevPluginSnapshot(
+      nextHooks,
+      nextPluginCtx,
+      nextPluginWatchFiles,
+    );
     let settled = false;
 
     return {
+      plugin: nextPluginSnapshot,
       async commit() {
         if (settled) return;
         settled = true;
-        await runDisposeHooks(previousHooks, {
-          ...pluginCtx,
-          config: previousConfig,
-        });
+        await disposeDevPluginSnapshot(previousPluginSnapshot);
       },
       async rollback() {
         if (settled) return;
         settled = true;
-        try {
-          await runDisposeHooks(nextHooks, {
-            ...pluginCtx,
-            config: nextConfig,
-          });
-        } finally {
-          hooks.splice(0, hooks.length, ...previousHooks);
-          pluginWatchFiles.clear();
-          for (const file of previousPluginWatchFiles) {
-            pluginWatchFiles.add(file);
-          }
-          pluginCtx.config = previousConfig;
-        }
+        await disposeDevPluginSnapshot(nextPluginSnapshot);
       },
     };
   };
 
+  const transitionOutputSnapshot = async (
+    nextSnapshot: DevOutputSnapshot<TBundlerCfg>,
+    activate: () => void,
+    shouldTransition: () => boolean = () => true,
+  ): Promise<boolean> => {
+    if (outputTransition) {
+      throw new Error(
+        "[evjs] Dev output snapshots cannot transition concurrently.",
+      );
+    }
+    const transition: DevOutputTransition<TBundlerCfg> = {
+      retiringSnapshot: activeOutputSnapshot,
+    };
+    outputTransition = transition;
+    try {
+      do {
+        await waitForDevPluginSnapshotIdle(transition.retiringSnapshot.plugin);
+      } while (transition.retiringSnapshot.plugin.inFlightCycles > 0);
+      if (!shouldTransition()) return false;
+      activate();
+      bundlerHooks.splice(0, bundlerHooks.length, ...nextSnapshot.plugin.hooks);
+      activeOutputSnapshot = nextSnapshot;
+      return true;
+    } finally {
+      outputTransition = undefined;
+    }
+  };
+
+  const runDevOutputCycle = async (
+    snapshot: DevOutputSnapshot<TBundlerCfg>,
+    bundlerFacts: BundlerBuildFacts,
+    isRebuild: boolean,
+  ) => {
+    await runBeforeBuildHooks(
+      snapshot.plugin.hooks,
+      snapshot.pluginContext,
+      isRebuild,
+    );
+    const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
+      bundlerFacts,
+      graph: snapshot.analysis.graph,
+      plan: snapshot.plan,
+      config: snapshot.config,
+      cwd,
+      hooks: snapshot.plugin.hooks,
+      pluginCtx: snapshot.pluginContext,
+      isRebuild,
+    });
+
+    snapshot.published = true;
+    activeApiRuntimeState = {
+      config: snapshot.config,
+      frameworkRuntime,
+      plan: snapshot.plan,
+      serverEntry: output.server.entry,
+    };
+    try {
+      await runAfterBuildHooks(
+        snapshot.plugin.hooks,
+        createBuildResult(output, isRebuild, { frameworkRuntime }),
+        { cwd, emittedFiles: bundlerFacts.emittedFiles },
+      );
+    } catch (error) {
+      logger.warn`Plugin afterBuild failed after development output was published; keeping the published output active: ${error}`;
+    }
+  };
+
+  const suspendDevBuildFacts = async (): Promise<() => void> => {
+    if (buildFactsAdmissionBlocked) {
+      throw new Error("[evjs] Dev build facts are already suspended.");
+    }
+    buildFactsAdmissionBlocked = true;
+    const pluginSnapshot = activeOutputSnapshot.plugin;
+    do {
+      await waitForDevPluginSnapshotIdle(pluginSnapshot);
+    } while (pluginSnapshot.inFlightCycles > 0);
+
+    let resumed = false;
+    return () => {
+      if (resumed) return;
+      resumed = true;
+      buildFactsAdmissionBlocked = false;
+    };
+  };
+
+  const enqueueDevOutputCycle = (
+    bundlerFacts: BundlerBuildFacts,
+    options: { isRebuild: boolean },
+  ): Promise<void> => {
+    const snapshot = outputTransition?.retiringSnapshot ?? activeOutputSnapshot;
+    retainDevPluginSnapshot(snapshot.plugin);
+    const cycle = outputCycleQueue.then(() =>
+      runDevOutputCycle(snapshot, bundlerFacts, options.isRebuild),
+    );
+    const completed = cycle.finally(() => {
+      releaseDevPluginSnapshot(snapshot.plugin);
+    });
+    outputCycleQueue = completed.then(
+      () => undefined,
+      () => undefined,
+    );
+    return completed;
+  };
+
+  const clearDevDependencyWatchers = () => {
+    const stop = stopWatchingDevDependencies;
+    stopWatchingDevDependencies = () => {};
+    stop();
+  };
+
   const refreshDevDependencyWatchers = () => {
-    stopWatchingDevDependencies();
+    clearDevDependencyWatchers();
+    if (shuttingDown) return;
     const unsafeBoundary = activeServerRouteWatchState.unsafeBoundary;
     const serverRouteWatchDependencies =
       activeServerRouteWatchState.dependencies;
     const analysisFileDependencies = unsafeBoundary
-      ? activeAnalysis.fileDependencies.filter(
+      ? activeOutputSnapshot.analysis.fileDependencies.filter(
           (file) => !isInsideCwd(unsafeBoundary, file),
         )
-      : activeAnalysis.fileDependencies;
+      : activeOutputSnapshot.analysis.fileDependencies;
     stopWatchingDevDependencies = watchFiles(
       [
         ...listConfigDependencyFiles(cwd),
         ...analysisFileDependencies,
         ...serverRouteWatchDependencies,
-        ...pluginWatchFiles,
+        ...activeOutputSnapshot.plugin.watchFiles,
         ...bundlerConfigWatchFiles,
       ],
       scheduleDevUpdate,
@@ -1160,15 +1328,16 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   const clearFailedConfigDependencyWatchers = () => {
-    stopWatchingFailedConfigDependencies();
+    const stop = stopWatchingFailedConfigDependencies;
     stopWatchingFailedConfigDependencies = () => {};
+    stop();
   };
 
   const watchFailedConfigDependencies = (
     state: ServerRouteWatchState | undefined,
   ) => {
     clearFailedConfigDependencyWatchers();
-    if (!state || state.dependencies.length === 0) return;
+    if (shuttingDown || !state || state.dependencies.length === 0) return;
 
     stopWatchingFailedConfigDependencies = watchFiles(
       state.dependencies,
@@ -1216,6 +1385,15 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       | undefined;
     let generatedStateSnapshot: GeneratedDevStateSnapshot | undefined;
     let candidateServerRouteWatchState: ServerRouteWatchState | undefined;
+    let candidateCommitted = false;
+    let resumeDevBuildFacts: (() => void) | undefined;
+    const suspendBuildFactsForUpdate = async () => {
+      resumeDevBuildFacts = await suspendDevBuildFacts();
+    };
+    const resumeBuildFactsForUpdate = () => {
+      resumeDevBuildFacts?.();
+      resumeDevBuildFacts = undefined;
+    };
     const rollbackCandidateState = () =>
       runCleanupTasks([
         () => stagedPluginHooks?.rollback(),
@@ -1266,43 +1444,80 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       if (requiresBundlerConfigReload) {
         stagedPluginHooks = await stagePluginHooks(nextConfig);
       }
-      generatedStateSnapshot = await createGeneratedDevStateSnapshot(cwd);
-      const { analysis: nextAnalysis, plan: nextPlan } =
-        await analyzeAndMaterializeFrameworkIR({
-          cwd,
-          mode: "development",
-          command: "dev",
-          config: nextConfig,
-          pluginContext: {
-            ...pluginCtx,
-            config: nextConfig,
-          },
-          pluginSettings: nextPluginSettings,
-          applicationPluginSettings: nextApplicationPluginSettings,
-          plan: { distDir: DEV_DIST_DIR },
-          onAnalysis: reportGraphDiagnostics,
-        });
+      const nextPluginSnapshot =
+        stagedPluginHooks?.plugin ?? activeOutputSnapshot.plugin;
+      const nextPluginContext: PluginContext<TBundlerCfg> = {
+        ...nextPluginSnapshot.setupContext,
+        config: nextConfig,
+      };
+      const {
+        analysis: nextAnalysis,
+        plan: nextPlan,
+        commit: commitGeneratedFrameworkIR,
+      } = await analyzeAndMaterializeFrameworkIR({
+        cwd,
+        mode: "development",
+        command: "dev",
+        config: nextConfig,
+        pluginContext: nextPluginContext,
+        pluginSettings: nextPluginSettings,
+        applicationPluginSettings: nextApplicationPluginSettings,
+        plan: { distDir: DEV_DIST_DIR },
+        deferWrite: true,
+        onAnalysis: reportGraphDiagnostics,
+      });
+      if (!commitGeneratedFrameworkIR) {
+        throw new Error(
+          "[evjs] Deferred framework IR analysis did not provide a commit operation.",
+        );
+      }
       const update = diffBuildPlan(activePlan, nextPlan, reason);
-      if (isEmptyBuildPlanUpdate(update) && !requiresBundlerConfigReload) {
-        activeConfiguredConfig = nextConfiguredConfig;
-        activeConfig = nextConfig;
-        activePluginSettings = nextPluginSettings;
-        activeApplicationPluginSettings = nextApplicationPluginSettings;
-        activeAnalysis = nextAnalysis;
-        activePlan = nextPlan;
-        activeServerRouteWatchState = nextServerRouteWatchState;
-        pluginCtx.config = nextConfig;
-        await commitStagedPluginHooks(stagedPluginHooks);
-        await generatedStateSnapshot.commit();
-        applicationSettingSnapshot?.commit();
-        return;
+      const requiresBundlerUpdate =
+        !isEmptyBuildPlanUpdate(update) || requiresBundlerConfigReload;
+      let applyBundlerUpdate: (() => Promise<void>) | undefined;
+
+      if (requiresBundlerUpdate) {
+        const updateController = devController;
+        if (!updateController) {
+          await rollbackCandidateState();
+          logger.warn`The selected bundler does not expose a dev controller. Please restart ev dev to apply framework plan changes.`;
+          return;
+        }
+        preflightBundlerBuild(bundler, nextPlan);
+        preflightBundlerDevUpdate(bundler, update, {
+          configChanged: requiresBundlerConfigReload,
+        });
+        applyBundlerUpdate = async () => {
+          await updateController.updatePlan(update, {
+            config: nextConfig,
+            configChanged: requiresBundlerConfigReload,
+          });
+        };
       }
 
-      if (!devController) {
-        await rollbackCandidateState();
-        logger.warn`The selected bundler does not expose a dev controller. Please restart ev dev to apply framework plan changes.`;
-        return;
-      }
+      const nextOutputSnapshot: DevOutputSnapshot<TBundlerCfg> = {
+        config: nextConfig,
+        analysis: nextAnalysis,
+        plan: nextPlan,
+        plugin: nextPluginSnapshot,
+        pluginContext: nextPluginContext,
+        published: false,
+      };
+
+      // Analysis and preflight above are entirely in memory. Block new facts
+      // only for live `.ev` reconciliation and the output-snapshot transition.
+      await suspendBuildFactsForUpdate();
+      const nextGeneratedStateSnapshot =
+        await createGeneratedDevStateSnapshot(cwd);
+      generatedStateSnapshot = nextGeneratedStateSnapshot;
+      await commitGeneratedFrameworkIR();
+      const commitCandidateState = async () => {
+        activeServerRouteWatchState = nextServerRouteWatchState;
+        candidateCommitted = true;
+        await commitStagedPluginHooks(stagedPluginHooks);
+        await nextGeneratedStateSnapshot.commit();
+        applicationSettingSnapshot?.commit();
+      };
 
       const previousConfig = activeConfig;
       const previousConfiguredConfig = activeConfiguredConfig;
@@ -1310,42 +1525,56 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       const previousApplicationPluginSettings = activeApplicationPluginSettings;
       const previousAnalysis = activeAnalysis;
       const previousPlan = activePlan;
-      const previousFrameworkRuntime = activeFrameworkRuntime;
-      const previousServerEntry = activeServerEntry;
-      const previousApiRuntimeState: DevApiRuntimeState<TBundlerCfg> = {
-        config: previousConfig,
-        frameworkRuntime: previousFrameworkRuntime,
-        plan: previousPlan,
-        serverEntry: previousServerEntry,
-      };
+      const previousOutputSnapshot = activeOutputSnapshot;
+      const previousApiRuntimeState = captureApiRuntimeState();
       const previousApiProcess = apiProcessController.checkpoint();
 
-      preflightBundlerBuild(bundler, nextPlan);
-      preflightBundlerDevUpdate(bundler, update);
+      await transitionOutputSnapshot(nextOutputSnapshot, () => {
+        activeConfiguredConfig = nextConfiguredConfig;
+        activeConfig = nextConfig;
+        activePluginSettings = nextPluginSettings;
+        activeApplicationPluginSettings = nextApplicationPluginSettings;
+        activeAnalysis = nextAnalysis;
+        activePlan = nextPlan;
+      });
+      resumeBuildFactsForUpdate();
 
-      activeConfiguredConfig = nextConfiguredConfig;
-      activeConfig = nextConfig;
-      activePluginSettings = nextPluginSettings;
-      activeApplicationPluginSettings = nextApplicationPluginSettings;
-      activeAnalysis = nextAnalysis;
-      activePlan = nextPlan;
-      pluginCtx.config = nextConfig;
+      if (!applyBundlerUpdate) {
+        await commitCandidateState();
+        return;
+      }
 
       try {
-        await devController.updatePlan(update, {
-          config: nextConfig,
-          configChanged: requiresBundlerConfigReload,
-        });
+        await applyBundlerUpdate();
       } catch (err) {
-        activeConfiguredConfig = previousConfiguredConfig;
-        activeConfig = previousConfig;
-        activePluginSettings = previousPluginSettings;
-        activeApplicationPluginSettings = previousApplicationPluginSettings;
-        activeAnalysis = previousAnalysis;
-        activePlan = previousPlan;
-        activeFrameworkRuntime = previousFrameworkRuntime;
-        activeServerEntry = previousServerEntry;
-        pluginCtx.config = previousConfig;
+        if (nextOutputSnapshot.published) {
+          await commitCandidateState();
+          throw err;
+        }
+        await suspendBuildFactsForUpdate();
+        if (nextOutputSnapshot.published) {
+          resumeBuildFactsForUpdate();
+          await commitCandidateState();
+          throw err;
+        }
+        const rolledBack = await transitionOutputSnapshot(
+          previousOutputSnapshot,
+          () => {
+            activeConfiguredConfig = previousConfiguredConfig;
+            activeConfig = previousConfig;
+            activePluginSettings = previousPluginSettings;
+            activeApplicationPluginSettings = previousApplicationPluginSettings;
+            activeAnalysis = previousAnalysis;
+            activePlan = previousPlan;
+            activeApiRuntimeState = previousApiRuntimeState;
+          },
+          () => !nextOutputSnapshot.published,
+        );
+        if (!rolledBack) {
+          resumeBuildFactsForUpdate();
+          await commitCandidateState();
+          throw err;
+        }
         try {
           await runCleanupTasks([
             rollbackCandidateState,
@@ -1370,6 +1599,8 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             "[evjs] Framework plan update failed and dev state rollback also failed.",
             { cause: err },
           );
+        } finally {
+          resumeBuildFactsForUpdate();
         }
         if (requiresBundlerConfigReload) {
           watchFailedConfigDependencies(candidateServerRouteWatchState);
@@ -1377,17 +1608,19 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         logger.warn`Unable to apply framework plan update without restart: ${err}`;
         return;
       }
-      activeServerRouteWatchState = nextServerRouteWatchState;
-      await commitStagedPluginHooks(stagedPluginHooks);
-      await generatedStateSnapshot.commit();
-      applicationSettingSnapshot?.commit();
+      await commitCandidateState();
     } catch (err) {
+      if (candidateCommitted) {
+        resumeBuildFactsForUpdate();
+        throw err;
+      }
       return rethrowAfterCleanup(
         err,
         async () => {
           try {
             await rollbackCandidateState();
           } finally {
+            resumeBuildFactsForUpdate();
             if (requiresBundlerConfigReload) {
               watchFailedConfigDependencies(candidateServerRouteWatchState);
             }
@@ -1399,6 +1632,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   function scheduleDevUpdate(changedFile: string, forceConfigReload = false) {
+    if (shuttingDown) return;
     pendingDevChanges.add(changedFile);
     pendingForcedConfigReload ||= forceConfigReload;
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -1410,9 +1644,13 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       pendingForcedConfigReload = false;
       devUpdateQueue = devUpdateQueue
         .catch(() => {})
-        .then(() =>
-          handleDevDependencyChange(changedFiles, shouldForceConfigReload),
-        )
+        .then(() => {
+          if (shuttingDown) return;
+          return handleDevDependencyChange(
+            changedFiles,
+            shouldForceConfigReload,
+          );
+        })
         .catch((err) => {
           logger.warn`Failed to update framework dev state: ${err}`;
         });
@@ -1420,17 +1658,22 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   }
 
   const cleanupDev = async () => {
+    // An in-flight update may finish while cleanup waits for the queue. Make
+    // watcher shutdown irreversible and close once more after the queue drains.
+    shuttingDown = true;
     if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = undefined;
     pendingDevChanges.clear();
     pendingForcedConfigReload = false;
     await runCleanupTasks([
-      () => stopWatchingDevDependencies(),
+      clearDevDependencyWatchers,
       () => clearFailedConfigDependencyWatchers(),
       () => devUpdateQueue.catch(() => {}),
+      clearDevDependencyWatchers,
       () => clearFailedConfigDependencyWatchers(),
+      () => devController?.close?.(),
       () => restartQueue.catch(() => {}),
       () => apiProcessController.stop(),
-      () => devController?.close?.(),
       async () => {
         try {
           await releaseDevDistLock?.();
@@ -1442,7 +1685,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         process.off("SIGINT", stopApiOnParentShutdown);
         process.off("SIGTERM", stopApiOnParentShutdown);
       },
-      () => runDisposeHooks(hooks, pluginCtx),
+      () => disposeDevPluginSnapshot(activeOutputSnapshot.plugin),
     ]);
   };
 
@@ -1452,7 +1695,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       (await bundler.dev({
         config: activeConfig,
         cwd,
-        hooks,
+        hooks: bundlerHooks,
         plan: activePlan,
         addWatchFile: addBundlerConfigWatchFile,
         callbacks: {
@@ -1463,25 +1706,9 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
               activePlan,
             )}`;
           },
-          async onBuildFacts(bundlerFacts, options) {
-            const isRebuild = options?.isRebuild ?? false;
-            const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
-              bundlerFacts,
-              graph: activeAnalysis.graph,
-              plan: activePlan,
-              config: activeConfig,
-              cwd,
-              hooks,
-              pluginCtx,
-              isRebuild,
-            });
-            await runBuildEndHooks(
-              hooks,
-              createBuildResult(output, isRebuild, { frameworkRuntime }),
-              { cwd, emittedFiles: bundlerFacts.emittedFiles },
-            );
-            activeFrameworkRuntime = frameworkRuntime;
-            activeServerEntry = output.server.entry;
+          onBuildFacts(bundlerFacts, options) {
+            if (shuttingDown || buildFactsAdmissionBlocked) return false;
+            return enqueueDevOutputCycle(bundlerFacts, options);
           },
           onServerBundleReady: handleServerBundleReady,
         },
@@ -1546,6 +1773,7 @@ async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
       plan: prepared.plan,
       addWatchFile: prepared.pluginContext.addWatchFile,
     });
+    await runBeforeBuildHooks(prepared.hooks, prepared.pluginContext, false);
     const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
       bundlerFacts,
       graph: prepared.graph,
@@ -1557,7 +1785,7 @@ async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
       isRebuild: false,
     });
 
-    await runBuildEndHooks(
+    await runAfterBuildHooks(
       prepared.hooks,
       createBuildResult(output, false, { frameworkRuntime }),
       { cwd, emittedFiles: bundlerFacts.emittedFiles },

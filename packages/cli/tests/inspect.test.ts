@@ -415,7 +415,7 @@ describe("inspect", () => {
     );
     expect(result.routeFiles).toEqual([]);
     result.graph.plugins.entries.analytics = {
-      id: "@company/analytics",
+      name: "@company/analytics",
       application: { schemaVersion: "1" },
       page: { schemaVersion: "2", defaultable: true },
     };
@@ -424,7 +424,7 @@ describe("inspect", () => {
     expect(text).not.toContain("provider=@evjs/provider/config-route");
     expect(text).toContain("Plugins");
     expect(text).toContain(
-      "analytics: id=@company/analytics, contracts=application,page, pageDefaultable=true",
+      "analytics: name=@company/analytics, contracts=application,page, pageDefaultable=true",
     );
     expect(text).not.toContain("owners=");
     expect(text).not.toMatch(/CoreGraph v\d+/);
@@ -439,7 +439,7 @@ describe("inspect", () => {
     });
     const plugin: Plugin<Record<string, never>> = {
       name: "inspect-contribution",
-      contributions(ctx) {
+      emitIR(ctx) {
         const module = ctx.emit.module({
           id: "entry",
           scope: { kind: "application" },
@@ -555,6 +555,7 @@ describe("inspect", () => {
       capabilities: {
         build: { server: false, rsc: false, ppr: false },
         dev: {
+          configuration: false,
           html: true,
           entries: false,
           routes: false,
@@ -582,7 +583,7 @@ describe("inspect", () => {
     expect(text).toContain("bundler: limited");
     expect(text).toContain("bundler.build: server=no, rsc=no, ppr=no");
     expect(text).toContain(
-      "bundler.dev: html=yes, entries=no, routes=no, server=no, resolution=no",
+      "bundler.dev: configuration=no, html=yes, entries=no, routes=no, server=no, resolution=no",
     );
     expect(text).toContain("bundler.gap: build.server");
     expect(result.bundler?.gaps).toEqual([

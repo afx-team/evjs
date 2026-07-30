@@ -11,6 +11,7 @@ export type StaticConfigValue = StaticJsonValue;
 export type StaticConfigObject = Readonly<Record<string, StaticConfigValue>>;
 
 type StaticConfigPrimitive = null | boolean | number | string;
+type EmptyStaticConfigObject = Readonly<Record<PropertyKey, never>>;
 
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
@@ -35,7 +36,7 @@ export type StaticConfigCompatible<T> =
             ? never
             : T extends object
               ? keyof T extends never
-                ? never
+                ? EmptyStaticConfigObject
                 : Extract<keyof T, symbol> extends never
                   ? {
                       readonly [TKey in keyof T]: StaticConfigCompatible<

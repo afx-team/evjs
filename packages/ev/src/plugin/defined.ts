@@ -8,19 +8,21 @@ import {
   resolveStaticConfigObject,
   type StaticConfigObject,
 } from "../config/static.js";
+import { getPluginEmissionApi } from "./emission-scope.js";
+import { runPluginHook } from "./errors.js";
 import type {
-  ContributionContext,
   FrameworkPageView,
   GeneratedModuleRef,
   Plugin,
-  PluginConfigContext,
-  PluginContext,
+  PluginConfigureContext,
+  PluginEmitIRContext,
   PluginHooks,
+  PluginSetupContext,
 } from "./index.js";
 
 declare const definedPluginContract: unique symbol;
-declare const pluginConfigTypes: unique symbol;
-const PLUGIN_CONFIG_CONTRACT = Symbol("evjs.plugin-config");
+declare const pluginOptionsTypes: unique symbol;
+const PLUGIN_OPTIONS_CONTRACT = Symbol("evjs.plugin-options");
 
 type MaybePromise<T> = T | Promise<T>;
 type AnyFunction = (...args: never[]) => unknown;
@@ -86,7 +88,7 @@ type DeepPartial<TValue> = [TValue] extends [AnyFunction]
             : { [TKey in keyof TValue]?: DeepPartialProperty<TValue[TKey]> }
           : TValue;
 
-export interface PluginSettingContext {
+export interface PluginOptionsContext {
   readonly owner: "application" | "page";
   readonly applicationId: string;
   readonly applicationRoot: string;
@@ -97,36 +99,39 @@ export interface PluginSettingContext {
   readonly configSource?: string;
 }
 
-export interface PluginConfigOptions<TValue extends object> {
+export interface PluginOptionsDefinition<TValue extends object> {
   /** Optional schema version recorded in the CoreGraph plugin catalog. */
   readonly schemaVersion?: string;
   /** Value used when the application/page explicitly enables this contract without an object. */
-  readonly defaults?: TValue | ((context: PluginSettingContext) => TValue);
+  readonly defaults?: TValue | ((context: PluginOptionsContext) => TValue);
   /** Return false/a message or throw to reject a resolved value. */
   readonly validate?: (
     value: DeepReadonly<TValue>,
-    context: PluginSettingContext,
+    context: PluginOptionsContext,
   ) => undefined | boolean | string;
 }
 
-export interface PluginConfigContract<
+export interface PluginOptionsContract<
   TInput extends object = object,
   TOutput extends object = TInput,
   TDefaultable extends boolean = boolean,
+  TDefinitionInput extends object = TInput,
 > {
-  readonly [PLUGIN_CONFIG_CONTRACT]: true;
-  readonly [pluginConfigTypes]: {
+  readonly [PLUGIN_OPTIONS_CONTRACT]: true;
+  readonly [pluginOptionsTypes]: {
     readonly input: TInput;
     readonly output: TOutput;
     readonly defaultable: TDefaultable;
   };
   readonly schemaVersion?: string;
   readonly defaultable: TDefaultable;
-  readonly defaults?: TOutput | ((context: PluginSettingContext) => TOutput);
-  readonly schema?: StandardSchemaV1<TInput, TOutput>;
+  readonly defaults?:
+    | TDefinitionInput
+    | ((context: PluginOptionsContext) => TDefinitionInput);
+  readonly schema?: StandardSchemaV1<TDefinitionInput, TOutput>;
   readonly validate?: (
     value: DeepReadonly<TOutput>,
-    context: PluginSettingContext,
+    context: PluginOptionsContext,
   ) => undefined | boolean | string;
 }
 
@@ -167,45 +172,46 @@ type OptionalPluginConfigArgs<TValue extends object, TOptions> = [
   : [options?: TOptions];
 
 /**
- * Declare one independently validated application/page configuration contract.
+ * Declare one independently validated Application/Page options contract.
  *
  * Passing defaults makes the contract usable through an omitted value or
  * page-level `true`. Explicit objects are deeply merged over those defaults
  * before schema/plugin validation.
  */
-export function pluginConfig<TValue extends object>(
+export function pluginOptions<TValue extends object>(
   ...args: RequiredPluginConfigArgs<
     TValue,
-    PluginConfigOptions<TValue> & {
-      readonly defaults: TValue | ((context: PluginSettingContext) => TValue);
+    PluginOptionsDefinition<TValue> & {
+      readonly defaults: TValue | ((context: PluginOptionsContext) => TValue);
     }
   >
-): PluginConfigContract<DeepPartial<TValue>, TValue, true>;
-export function pluginConfig<TValue extends object>(
+): PluginOptionsContract<DeepPartial<TValue>, TValue, true, TValue>;
+export function pluginOptions<TValue extends object>(
   ...args: OptionalPluginConfigArgs<
     TValue,
-    PluginConfigOptions<TValue> & { readonly defaults?: undefined }
+    PluginOptionsDefinition<TValue> & { readonly defaults?: undefined }
   >
-): PluginConfigContract<TValue, TValue, false>;
-export function pluginConfig<const TSchema extends StandardSchemaV1>(
+): PluginOptionsContract<TValue, TValue, false>;
+export function pluginOptions<const TSchema extends StandardSchemaV1>(
   schema: ValidConfigSchema<TSchema>,
-  options: Omit<PluginConfigOptions<SchemaOutput<TSchema>>, "defaults"> & {
+  options: Omit<PluginOptionsDefinition<SchemaOutput<TSchema>>, "defaults"> & {
     readonly defaults:
       | SchemaInput<TSchema>
-      | ((context: PluginSettingContext) => SchemaInput<TSchema>);
+      | ((context: PluginOptionsContext) => SchemaInput<TSchema>);
   },
-): PluginConfigContract<
+): PluginOptionsContract<
   DeepPartial<SchemaInput<TSchema>>,
   SchemaOutput<TSchema>,
-  true
+  true,
+  SchemaInput<TSchema>
 >;
-export function pluginConfig<const TSchema extends StandardSchemaV1>(
+export function pluginOptions<const TSchema extends StandardSchemaV1>(
   schema: ValidConfigSchema<TSchema>,
-  options?: Omit<PluginConfigOptions<SchemaOutput<TSchema>>, "defaults"> & {
+  options?: Omit<PluginOptionsDefinition<SchemaOutput<TSchema>>, "defaults"> & {
     readonly defaults?: undefined;
   },
-): PluginConfigContract<SchemaInput<TSchema>, SchemaOutput<TSchema>, false>;
-export function pluginConfig(
+): PluginOptionsContract<SchemaInput<TSchema>, SchemaOutput<TSchema>, false>;
+export function pluginOptions(
   schemaOrOptions: unknown = {},
   maybeOptions: unknown = {},
 ): unknown {
@@ -214,12 +220,14 @@ export function pluginConfig(
     : undefined;
   const options = schema ? maybeOptions : schemaOrOptions;
   if (!isPlainRecord(options)) {
-    throw new Error("[evjs] pluginConfig() options must be a plain object.");
+    throw new Error(
+      "[evjs] pluginOptions() definition must be a plain object.",
+    );
   }
   assertOnlyKeys(
     options,
     ["schemaVersion", "defaults", "validate"],
-    "pluginConfig() options",
+    "pluginOptions() definition",
   );
   if (
     options.schemaVersion !== undefined &&
@@ -228,23 +236,23 @@ export function pluginConfig(
       options.schemaVersion !== options.schemaVersion.trim())
   ) {
     throw new Error(
-      "[evjs] pluginConfig() schemaVersion must be a non-empty string without surrounding whitespace.",
+      "[evjs] pluginOptions() schemaVersion must be a non-empty string without surrounding whitespace.",
     );
   }
   if (
     options.defaults !== undefined &&
     typeof options.defaults !== "function"
   ) {
-    assertConfigObject(options.defaults, "pluginConfig() defaults");
+    assertConfigObject(options.defaults, "pluginOptions() defaults");
   }
   if (
     options.validate !== undefined &&
     typeof options.validate !== "function"
   ) {
-    throw new Error("[evjs] pluginConfig() validate must be a function.");
+    throw new Error("[evjs] pluginOptions() validate must be a function.");
   }
   return Object.freeze({
-    [PLUGIN_CONFIG_CONTRACT]: true,
+    [PLUGIN_OPTIONS_CONTRACT]: true,
     defaultable: options.defaults !== undefined,
     ...(schema ? { schema } : {}),
     ...(options.schemaVersion === undefined
@@ -252,12 +260,12 @@ export function pluginConfig(
       : { schemaVersion: options.schemaVersion }),
     ...(options.defaults === undefined ? {} : { defaults: options.defaults }),
     ...(options.validate === undefined ? {} : { validate: options.validate }),
-  }) as PluginConfigContract;
+  }) as PluginOptionsContract;
 }
 
 /** Structural constraint used by typed plugin factory declarations. */
-interface AnyPluginConfigContract {
-  readonly [PLUGIN_CONFIG_CONTRACT]: true;
+interface AnyPluginOptionsContract {
+  readonly [PLUGIN_OPTIONS_CONTRACT]: true;
   readonly schemaVersion?: string;
   readonly defaultable: boolean;
   readonly defaults?: unknown;
@@ -266,7 +274,7 @@ interface AnyPluginConfigContract {
 }
 
 type ContractInput<TContract> = TContract extends {
-  readonly [pluginConfigTypes]: { readonly input: infer TInput };
+  readonly [pluginOptionsTypes]: { readonly input: infer TInput };
 }
   ? TInput extends object
     ? TInput
@@ -274,7 +282,7 @@ type ContractInput<TContract> = TContract extends {
   : never;
 
 type ContractOutput<TContract> = TContract extends {
-  readonly [pluginConfigTypes]: { readonly output: infer TOutput };
+  readonly [pluginOptionsTypes]: { readonly output: infer TOutput };
 }
   ? TOutput extends object
     ? TOutput
@@ -282,7 +290,7 @@ type ContractOutput<TContract> = TContract extends {
   : never;
 
 type ContractDefaultable<TContract> = TContract extends {
-  readonly [pluginConfigTypes]: {
+  readonly [pluginOptionsTypes]: {
     readonly defaultable: infer TDefaultable;
   };
 }
@@ -297,41 +305,41 @@ export interface DefinedPluginPageOptions<TConfig extends object> {
 }
 
 type ResolvedContractOptions<TContract> =
-  TContract extends AnyPluginConfigContract
+  TContract extends AnyPluginOptionsContract
     ? DeepReadonly<ContractOutput<TContract>>
     : undefined;
 
 export interface DefinedPluginSetupContext<
-  TApplication extends AnyPluginConfigContract | undefined,
+  TApplication extends AnyPluginOptionsContract | undefined,
   TBundlerCfg = DefaultBundlerConfig,
-> extends PluginContext<TBundlerCfg> {
+> extends PluginSetupContext<TBundlerCfg> {
   /** Resolved Application options passed to the plugin factory. */
   readonly options: ResolvedContractOptions<TApplication>;
 }
 
-export interface DefinedPluginConfigContext<
-  TApplication extends AnyPluginConfigContract | undefined,
-> extends PluginConfigContext {
+export interface DefinedPluginConfigureContext<
+  TApplication extends AnyPluginOptionsContract | undefined,
+> extends PluginConfigureContext {
   /** Authored Application options resolved with defaults and validation. */
   readonly options: ResolvedContractOptions<TApplication>;
 }
 
-export interface DefinedPluginContributionContext<
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
+export interface DefinedPluginEmitIRContext<
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg = DefaultBundlerConfig,
-> extends ContributionContext<TBundlerCfg> {
+> extends PluginEmitIRContext<TBundlerCfg> {
   /** Resolved Application options passed to the plugin factory. */
   readonly options: ResolvedContractOptions<TApplication>;
   /** Pages whose plugin behavior is enabled, with resolved Page options. */
   readonly pages: readonly DefinedPluginPageOptions<ContractOutput<TPage>>[];
 }
 
-export interface DefinedPluginPageContributionContext<
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
+export interface DefinedPluginEmitPageIRContext<
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg = DefaultBundlerConfig,
-> extends ContributionContext<TBundlerCfg> {
+> extends PluginEmitIRContext<TBundlerCfg> {
   readonly page: FrameworkPageView;
   /** Resolved Application options passed to the plugin factory. */
   readonly options: ResolvedContractOptions<TApplication>;
@@ -339,12 +347,12 @@ export interface DefinedPluginPageContributionContext<
   readonly pageOptions: DeepReadonly<ContractOutput<TPage>>;
 }
 
-type DefinedPluginConfigHook<
-  TApplication extends AnyPluginConfigContract | undefined,
+type DefinedPluginConfigureHook<
+  TApplication extends AnyPluginOptionsContract | undefined,
   TBundlerCfg,
 > = <TActualBundlerCfg extends TBundlerCfg = TBundlerCfg>(
   config: Config<TActualBundlerCfg>,
-  context: DefinedPluginConfigContext<TApplication>,
+  context: DefinedPluginConfigureContext<TApplication>,
 ) =>
   | Config<TActualBundlerCfg>
   | undefined
@@ -360,69 +368,101 @@ type DefinedPluginSetupResult<TBundlerCfg> =
   | Promise<void>;
 
 type DefinedPluginSetupHook<
-  TApplication extends AnyPluginConfigContract | undefined,
+  TApplication extends AnyPluginOptionsContract | undefined,
   TBundlerCfg,
 > = <TActualBundlerCfg extends TBundlerCfg = TBundlerCfg>(
   context: DefinedPluginSetupContext<TApplication, TActualBundlerCfg>,
 ) => DefinedPluginSetupResult<TBundlerCfg>;
 
-type DefinedPluginContributionsHook<
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
+type DefinedPluginEmitIRHook<
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg,
 > = <TActualBundlerCfg extends TBundlerCfg = TBundlerCfg>(
-  context: DefinedPluginContributionContext<
+  context: DefinedPluginEmitIRContext<TApplication, TPage, TActualBundlerCfg>,
+) => MaybePromise<void>;
+
+type DefinedPluginEmitPageIRHook<
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
+  TBundlerCfg,
+> = <TActualBundlerCfg extends TBundlerCfg = TBundlerCfg>(
+  context: DefinedPluginEmitPageIRContext<
     TApplication,
     TPage,
     TActualBundlerCfg
   >,
 ) => MaybePromise<void>;
 
-type DefinedPluginPageContributionHook<
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
-  TBundlerCfg,
-> = <TActualBundlerCfg extends TBundlerCfg = TBundlerCfg>(
-  context: DefinedPluginPageContributionContext<
-    TApplication,
-    TPage,
-    TActualBundlerCfg
-  >,
-) => MaybePromise<void>;
+type DefinedPluginRequiredKey<TKey extends string | undefined> = {
+  /** Short key shared by Application and Page plugin options. */
+  readonly key: StaticallyKnownPluginKey<Exclude<TKey, undefined>>;
+};
 
-export interface DefinedPluginDescriptor<
-  TId extends string,
+type StaticallyKnownPluginKey<TKey extends string> = string extends TKey
+  ? never
+  : IsUnion<TKey> extends true
+    ? never
+    : TKey;
+
+type DefinedPluginKeyDescriptor<
   TKey extends string | undefined,
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
+> = [TApplication] extends [AnyPluginOptionsContract]
+  ? DefinedPluginRequiredKey<TKey>
+  : [TPage] extends [AnyPluginOptionsContract]
+    ? DefinedPluginRequiredKey<TKey>
+    : { readonly key?: never };
+
+type DefinedPluginApplicationDescriptor<
+  TApplication extends AnyPluginOptionsContract | undefined,
+> = [TApplication] extends [AnyPluginOptionsContract]
+  ? {
+      /** Application factory options. Independent from Page options. */
+      readonly application: TApplication;
+    }
+  : { readonly application?: never };
+
+type DefinedPluginPageDescriptor<
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
+  TBundlerCfg,
+> = [TPage] extends [AnyPluginOptionsContract]
+  ? {
+      /** Page-level options. Independent from Application options. */
+      readonly page: TPage;
+      /** Emit IR records for one enabled Page. */
+      readonly emitPageIR?: DefinedPluginEmitPageIRHook<
+        TApplication,
+        TPage,
+        TBundlerCfg
+      >;
+    }
+  : {
+      readonly page?: never;
+      readonly emitPageIR?: never;
+    };
+
+export type DefinedPluginDescriptor<
+  TName extends string,
+  TKey extends string | undefined,
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg = unknown,
-> {
+> = {
   /** Stable dependency and lifecycle identity, normally the package name. */
-  readonly id: TId;
-  /** Short page.config key. Required only when Page configuration is declared. */
-  readonly key?: TKey;
-  /** Application factory configuration. Independent from Page configuration. */
-  readonly application?: TApplication;
-  /** Page-level configuration. Independent from Application configuration. */
-  readonly page?: TPage;
+  readonly name: TName;
   readonly dependencies?: readonly string[];
   readonly optionalDependencies?: readonly string[];
   readonly enforce?: "pre" | "normal" | "post";
-  readonly config?: DefinedPluginConfigHook<TApplication, TBundlerCfg>;
+  readonly configure?: DefinedPluginConfigureHook<TApplication, TBundlerCfg>;
   readonly setup?: DefinedPluginSetupHook<TApplication, TBundlerCfg>;
-  /** Declare contributions shared by every enabled owner. */
-  readonly contributions?: DefinedPluginContributionsHook<
-    TApplication,
-    TPage,
-    TBundlerCfg
-  >;
-  /** Declare contributions for one enabled Page. */
-  readonly contributePage?: DefinedPluginPageContributionHook<
-    TApplication,
-    TPage,
-    TBundlerCfg
-  >;
-}
+  /** Emit IR records shared by every enabled owner. */
+  readonly emitIR?: DefinedPluginEmitIRHook<TApplication, TPage, TBundlerCfg>;
+} & DefinedPluginApplicationDescriptor<TApplication> &
+  DefinedPluginKeyDescriptor<TKey, TApplication, TPage> &
+  DefinedPluginPageDescriptor<TApplication, TPage, TBundlerCfg>;
 
 interface DefinedPluginTypeContract<
   TApplicationInput extends object,
@@ -439,7 +479,7 @@ interface DefinedPluginTypeContract<
 }
 
 export type DefinedPluginInstance<
-  TId extends string = string,
+  TName extends string = string,
   TKey extends string | undefined = string | undefined,
   TApplicationInput extends object = object,
   TApplicationOutput extends object = object,
@@ -448,7 +488,7 @@ export type DefinedPluginInstance<
   TPageDefaultable extends boolean = boolean,
   TBundlerCfg = unknown,
 > = Plugin<TBundlerCfg> & {
-  readonly id: TId;
+  readonly name: TName;
   readonly [definedPluginContract]: DefinedPluginTypeContract<
     TApplicationInput,
     TApplicationOutput,
@@ -494,20 +534,20 @@ export type DefinedPluginPageDefaultable<TPlugin> = TPlugin extends {
   ? TDefaultable
   : false;
 
-type FactoryArgs<TContract> = TContract extends AnyPluginConfigContract
+type FactoryArgs<TContract> = TContract extends AnyPluginOptionsContract
   ? ContractDefaultable<TContract> extends true
-    ? [config?: ContractInput<TContract>]
-    : [config: ContractInput<TContract>]
+    ? [options?: ContractInput<TContract> & object]
+    : [options: ContractInput<TContract> & object]
   : [];
 
 type DefinedPluginFactoryInstance<
-  TId extends string,
+  TName extends string,
   TKey extends string | undefined,
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg = unknown,
 > = DefinedPluginInstance<
-  TId,
+  TName,
   TKey,
   ContractInput<TApplication>,
   ContractOutput<TApplication>,
@@ -518,28 +558,28 @@ type DefinedPluginFactoryInstance<
 >;
 
 export type DefinedPluginFactory<
-  TId extends string,
+  TName extends string,
   TKey extends string | undefined,
-  TApplication extends AnyPluginConfigContract | undefined,
-  TPage extends AnyPluginConfigContract | undefined,
+  TApplication extends AnyPluginOptionsContract | undefined,
+  TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg = unknown,
 > = ((
   ...args: FactoryArgs<TApplication>
 ) => DefinedPluginFactoryInstance<
-  TId,
+  TName,
   TKey,
   TApplication,
   TPage,
   TBundlerCfg
 >) &
-  (TPage extends AnyPluginConfigContract
+  (TPage extends AnyPluginOptionsContract
     ? ContractDefaultable<TPage> extends true
       ? {
           /** Install the plugin while requiring Pages to opt in explicitly. */
-          forPages(
+          withPageOptIn(
             ...args: FactoryArgs<TApplication>
           ): DefinedPluginFactoryInstance<
-            TId,
+            TName,
             TKey,
             TApplication,
             TPage,
@@ -555,11 +595,10 @@ interface RuntimePluginSetting {
 }
 
 interface DefinedPluginRuntime {
-  readonly id: string;
+  readonly name: string;
   readonly key?: string;
-  readonly settingsKey: string;
-  readonly application?: AnyPluginConfigContract;
-  readonly page?: AnyPluginConfigContract;
+  readonly application?: AnyPluginOptionsContract;
+  readonly page?: AnyPluginOptionsContract;
   readonly applicationConfigured: unknown;
   readonly pagesByDefault: boolean;
   applicationSetting?: RuntimePluginSetting;
@@ -580,60 +619,51 @@ type DefinedPluginRuntimeCarrier = object & {
  * intentionally depends on one bundler's config shape.
  */
 export function definePlugin<
-  const TId extends string,
+  const TName extends string,
   const TKey extends string | undefined = undefined,
-  const TApplication extends AnyPluginConfigContract | undefined = undefined,
-  const TPage extends AnyPluginConfigContract | undefined = undefined,
+  const TApplication extends AnyPluginOptionsContract | undefined = undefined,
+  const TPage extends AnyPluginOptionsContract | undefined = undefined,
 >(
-  descriptor: DefinedPluginDescriptor<TId, TKey, TApplication, TPage> &
-    (TPage extends AnyPluginConfigContract
-      ? { readonly key: Exclude<TKey, undefined> }
-      : { readonly key?: never }),
-): DefinedPluginFactory<TId, TKey, TApplication, TPage>;
+  descriptor: DefinedPluginDescriptor<TName, TKey, TApplication, TPage>,
+): DefinedPluginFactory<TName, TKey, TApplication, TPage>;
 /** Define a plugin factory tied to one explicit bundler config shape. */
 export function definePlugin<
-  const TId extends string,
+  const TName extends string,
   const TKey extends string | undefined,
-  const TApplication extends AnyPluginConfigContract | undefined,
-  const TPage extends AnyPluginConfigContract | undefined,
+  const TApplication extends AnyPluginOptionsContract | undefined,
+  const TPage extends AnyPluginOptionsContract | undefined,
   TBundlerCfg,
 >(
   descriptor: DefinedPluginDescriptor<
-    TId,
+    TName,
     TKey,
     TApplication,
     TPage,
     TBundlerCfg
-  > &
-    (TPage extends AnyPluginConfigContract
-      ? { readonly key: Exclude<TKey, undefined> }
-      : { readonly key?: never }),
-): DefinedPluginFactory<TId, TKey, TApplication, TPage, TBundlerCfg>;
+  >,
+): DefinedPluginFactory<TName, TKey, TApplication, TPage, TBundlerCfg>;
 export function definePlugin<
-  const TId extends string,
+  const TName extends string,
   const TKey extends string | undefined = undefined,
-  const TApplication extends AnyPluginConfigContract | undefined = undefined,
-  const TPage extends AnyPluginConfigContract | undefined = undefined,
+  const TApplication extends AnyPluginOptionsContract | undefined = undefined,
+  const TPage extends AnyPluginOptionsContract | undefined = undefined,
   TBundlerCfg = unknown,
 >(
   descriptor: DefinedPluginDescriptor<
-    TId,
+    TName,
     TKey,
     TApplication,
     TPage,
     TBundlerCfg
-  > &
-    (TPage extends AnyPluginConfigContract
-      ? { readonly key: Exclude<TKey, undefined> }
-      : { readonly key?: never }),
-): DefinedPluginFactory<TId, TKey, TApplication, TPage, TBundlerCfg> {
+  >,
+): DefinedPluginFactory<TName, TKey, TApplication, TPage, TBundlerCfg> {
   assertDefinedPluginDescriptor(descriptor);
 
   const create = (
     installMode: "all" | "pages",
     args: readonly unknown[],
   ): DefinedPluginFactoryInstance<
-    TId,
+    TName,
     TKey,
     TApplication,
     TPage,
@@ -642,35 +672,34 @@ export function definePlugin<
     const application = descriptor.application;
     if (!application && args.length > 0) {
       throw new Error(
-        `[evjs] Plugin "${descriptor.id}" does not declare Application configuration.`,
+        `[evjs] Plugin "${descriptor.name}" does not declare Application options.`,
       );
     }
     if (args.length > 1) {
       throw new Error(
-        `[evjs] Plugin "${descriptor.id}" accepts at most one Application configuration object.`,
+        `[evjs] Plugin "${descriptor.name}" accepts at most one Application options object.`,
       );
     }
     if (application && !application.defaultable && args.length === 0) {
       throw new Error(
-        `[evjs] Plugin "${descriptor.id}" requires Application configuration.`,
+        `[evjs] Plugin "${descriptor.name}" requires Application options.`,
       );
     }
 
-    const settingsKey =
-      descriptor.key ?? deriveApplicationPluginKey(descriptor.id);
     const runtime: DefinedPluginRuntime = {
-      id: descriptor.id,
+      name: descriptor.name,
       ...(descriptor.key ? { key: descriptor.key } : {}),
-      settingsKey,
       ...(application ? { application } : {}),
       ...(descriptor.page ? { page: descriptor.page } : {}),
       applicationConfigured: args[0],
       pagesByDefault: installMode === "all",
       applicationSettingPrepared: false,
     };
+    const emitPageIR = descriptor.emitPageIR as
+      | DefinedPluginEmitPageIRHook<TApplication, TPage, TBundlerCfg>
+      | undefined;
     const plugin: Plugin<TBundlerCfg> = {
-      name: descriptor.id,
-      id: descriptor.id,
+      name: descriptor.name,
       ...(descriptor.key ? { key: descriptor.key } : {}),
       ...(descriptor.dependencies
         ? { dependencies: [...descriptor.dependencies] }
@@ -679,12 +708,12 @@ export function definePlugin<
         ? { optionalDependencies: [...descriptor.optionalDependencies] }
         : {}),
       ...(descriptor.enforce ? { enforce: descriptor.enforce } : {}),
-      ...(descriptor.config
+      ...(descriptor.configure
         ? {
-            config: (config, context) =>
-              descriptor.config?.(config, {
+            configure: (config, context) =>
+              descriptor.configure?.(config, {
                 ...context,
-                options: resolveConfigHookApplicationSetting(
+                options: resolveConfigureHookApplicationSetting(
                   runtime,
                   createPluginApplicationSettingContext(config),
                 ).config as ResolvedContractOptions<TApplication>,
@@ -701,30 +730,34 @@ export function definePlugin<
               }),
           }
         : {}),
-      ...(descriptor.contributions || descriptor.contributePage
+      ...(descriptor.emitIR || emitPageIR
         ? {
-            contributions: async (context) => {
+            emitIR: async (context) => {
               const options = getRuntimeApplicationSetting(runtime)
                 .config as ResolvedContractOptions<TApplication>;
               const pages = readPageOptions(
                 context,
                 runtime,
               ) as unknown as DefinedPluginPageOptions<ContractOutput<TPage>>[];
-              if (descriptor.contributions) {
-                await descriptor.contributions({
+              if (descriptor.emitIR) {
+                await descriptor.emitIR({
                   ...context,
+                  ...getPluginEmissionApi(context, "emitIR"),
                   options,
                   pages,
                 });
               }
-              if (descriptor.contributePage) {
+              if (emitPageIR) {
                 for (const page of pages) {
-                  await descriptor.contributePage({
-                    ...context,
-                    page: page.page,
-                    options,
-                    pageOptions: page.options,
-                  });
+                  await runPluginHook(descriptor.name, "emitPageIR", () =>
+                    emitPageIR({
+                      ...context,
+                      ...getPluginEmissionApi(context, "emitPageIR"),
+                      page: page.page,
+                      options,
+                      pageOptions: page.options,
+                    }),
+                  );
                 }
               }
             },
@@ -733,7 +766,7 @@ export function definePlugin<
     };
     attachDefinedPluginRuntime(plugin, runtime);
     return plugin as DefinedPluginFactoryInstance<
-      TId,
+      TName,
       TKey,
       TApplication,
       TPage,
@@ -743,14 +776,14 @@ export function definePlugin<
 
   const factory = ((...args: readonly unknown[]) =>
     create("all", args)) as unknown as DefinedPluginFactory<
-    TId,
+    TName,
     TKey,
     TApplication,
     TPage,
     TBundlerCfg
   >;
   if (descriptor.page?.defaultable) {
-    Object.defineProperty(factory, "forPages", {
+    Object.defineProperty(factory, "withPageOptIn", {
       configurable: false,
       enumerable: true,
       value: (...args: readonly unknown[]) => create("pages", args),
@@ -761,9 +794,8 @@ export function definePlugin<
 }
 
 export interface DefinedPluginDeclaration {
-  readonly id: string;
+  readonly name: string;
   readonly key?: string;
-  readonly settingsKey: string;
   readonly application?: {
     readonly schemaVersion?: string;
     readonly defaultable: boolean;
@@ -780,9 +812,8 @@ export function getDefinedPluginDeclaration(
   const runtime = getDefinedPluginRuntime(plugin);
   if (!runtime) return undefined;
   return {
-    id: runtime.id,
+    name: runtime.name,
     ...(runtime.key ? { key: runtime.key } : {}),
-    settingsKey: runtime.settingsKey,
     ...(runtime.application
       ? {
           application: {
@@ -809,6 +840,14 @@ export function getDefinedPluginDeclaration(
 export function copyDefinedPluginRuntime(source: object, target: object): void {
   const runtime = getDefinedPluginRuntime(source);
   if (runtime) attachDefinedPluginRuntime(target, runtime);
+}
+
+/** @internal Compare the hidden factory contract carried by resolved copies. */
+export function hasSameDefinedPluginRuntime(
+  left: object,
+  right: object,
+): boolean {
+  return getDefinedPluginRuntime(left) === getDefinedPluginRuntime(right);
 }
 
 /** @internal Snapshot the mutable Application cache shared by resolved plugin copies. */
@@ -872,7 +911,7 @@ function attachDefinedPluginRuntime(
 
 export function resolveDefinedPluginApplicationSetting(
   plugin: object,
-  context: PluginSettingContext,
+  context: PluginOptionsContext,
   options: { readonly reusePrepared?: boolean } = {},
 ): RuntimePluginSetting | undefined {
   const runtime = getDefinedPluginRuntime(plugin);
@@ -887,10 +926,10 @@ export function resolveDefinedPluginApplicationSetting(
   return resolveRuntimeApplicationSetting(runtime, context);
 }
 
-/** @internal Resolve one build-scoped Application snapshot before config hooks. */
+/** @internal Resolve one build-scoped Application snapshot before configure hooks. */
 export function prepareDefinedPluginApplicationSetting(
   plugin: object,
-  context: PluginSettingContext,
+  context: PluginOptionsContext,
 ): void {
   const runtime = getDefinedPluginRuntime(plugin);
   if (!runtime) return;
@@ -898,9 +937,9 @@ export function prepareDefinedPluginApplicationSetting(
   runtime.applicationSettingPrepared = true;
 }
 
-function resolveConfigHookApplicationSetting(
+function resolveConfigureHookApplicationSetting(
   runtime: DefinedPluginRuntime,
-  context: PluginSettingContext,
+  context: PluginOptionsContext,
 ): RuntimePluginSetting {
   if (
     runtime.applicationSettingPrepared === true &&
@@ -913,7 +952,7 @@ function resolveConfigHookApplicationSetting(
 
 function resolveRuntimeApplicationSetting(
   runtime: DefinedPluginRuntime,
-  context: PluginSettingContext,
+  context: PluginOptionsContext,
 ): RuntimePluginSetting {
   runtime.applicationSettingPrepared = false;
   let config: object | undefined;
@@ -926,12 +965,12 @@ function resolveRuntimeApplicationSetting(
         runtime.application,
         runtime.applicationConfigured,
         context,
-        `${runtime.id} Application config`,
+        `${runtime.name} Application options`,
         false,
       );
     } else {
       throw new Error(
-        `[evjs] Plugin "${runtime.id}" requires Application configuration.`,
+        `[evjs] Plugin "${runtime.name}" requires Application options.`,
       );
     }
   }
@@ -946,14 +985,14 @@ function resolveRuntimeApplicationSetting(
 export function resolveDefinedPluginPageSetting(
   plugin: object,
   configured: ResolvedPagePluginConfigInput | undefined,
-  context: PluginSettingContext,
+  context: PluginOptionsContext,
 ): RuntimePluginSetting | undefined {
   const runtime = getDefinedPluginRuntime(plugin);
   if (!runtime) return undefined;
   if (!runtime.page) {
     if (configured !== undefined) {
       throw new Error(
-        `[evjs] Plugin "${runtime.id}" does not declare Page configuration.`,
+        `[evjs] Plugin "${runtime.name}" does not declare Page options.`,
       );
     }
     return undefined;
@@ -968,7 +1007,7 @@ export function resolveDefinedPluginPageSetting(
   }
   if (configured === true && !runtime.page.defaultable) {
     throw new Error(
-      `[evjs] ${context.configSource ?? context.pageId ?? "Page"} enables plugin "${runtime.key ?? runtime.id}" with true, but the plugin has no Page defaults. Configure an object instead.`,
+      `[evjs] ${context.configSource ?? context.pageId ?? "Page"} enables plugin "${runtime.key ?? runtime.name}" with true, but the plugin has no Page defaults. Configure an object instead.`,
     );
   }
 
@@ -976,28 +1015,42 @@ export function resolveDefinedPluginPageSetting(
     runtime.page,
     typeof configured === "object" ? configured : undefined,
     context,
-    `${runtime.id} Page config`,
+    createPageOptionsSource(runtime, context),
     true,
   );
   return Object.freeze({ enabled: true, config });
 }
 
+function createPageOptionsSource(
+  runtime: DefinedPluginRuntime,
+  context: PluginOptionsContext,
+): string {
+  const key = runtime.key ?? runtime.name;
+  let location = `plugins.${key}`;
+  if (context.configSource) {
+    location = `${context.configSource} ${location}`;
+  } else if (context.pageId) {
+    location = `Page "${context.pageId}" ${location}`;
+  }
+  return `Plugin "${runtime.name}" Page options at ${location}`;
+}
+
 function resolvePluginContract(
-  contract: AnyPluginConfigContract,
+  contract: AnyPluginOptionsContract,
   configured: unknown,
-  context: PluginSettingContext,
+  context: PluginOptionsContext,
   source: string,
   staticOnly: boolean,
 ): object {
   const defaults = contract.defaults as
     | object
-    | ((context: PluginSettingContext) => object)
+    | ((context: PluginOptionsContext) => object)
     | undefined;
   const schema = contract.schema as StandardSchemaV1 | undefined;
   const validate = contract.validate as
     | ((
         value: object,
-        context: PluginSettingContext,
+        context: PluginOptionsContext,
       ) => undefined | boolean | string)
     | undefined;
   let value = configured;
@@ -1005,7 +1058,7 @@ function resolvePluginContract(
     typeof defaults === "function" ? defaults(context) : defaults;
   if (value === undefined) {
     if (resolvedDefaults === undefined) {
-      throw new Error(`[evjs] ${source} requires a configuration object.`);
+      throw new Error(`[evjs] ${source} requires an options object.`);
     }
     value = resolvedDefaults;
   } else if (resolvedDefaults !== undefined) {
@@ -1056,14 +1109,14 @@ function getRuntimeApplicationSetting(
 ): RuntimePluginSetting {
   if (!runtime.applicationSetting) {
     throw new Error(
-      `[evjs] Plugin "${runtime.id}" Application settings were not resolved before setup().`,
+      `[evjs] Plugin "${runtime.name}" Application options were not resolved before setup().`,
     );
   }
   return runtime.applicationSetting;
 }
 
 function readPageOptions<TBundlerCfg>(
-  context: ContributionContext<TBundlerCfg>,
+  context: PluginEmitIRContext<TBundlerCfg>,
   runtime: DefinedPluginRuntime,
 ): DefinedPluginPageOptions<StaticConfigObject>[] {
   const pages: DefinedPluginPageOptions<StaticConfigObject>[] = [];
@@ -1072,7 +1125,7 @@ function readPageOptions<TBundlerCfg>(
     if (!setting?.enabled) continue;
     if (!setting.config) {
       throw new Error(
-        `[evjs] Internal invariant: enabled Page plugin "${runtime.id}" has no resolved options.`,
+        `[evjs] Internal invariant: enabled Page plugin "${runtime.name}" has no resolved options.`,
       );
     }
     pages.push({
@@ -1083,14 +1136,22 @@ function readPageOptions<TBundlerCfg>(
   return pages;
 }
 
-function assertDefinedPluginDescriptor<TBundlerCfg>(
-  descriptor: DefinedPluginDescriptor<
-    string,
-    string,
-    AnyPluginConfigContract | undefined,
-    AnyPluginConfigContract | undefined,
-    TBundlerCfg
-  >,
+interface RuntimeDefinedPluginDescriptor {
+  readonly name: unknown;
+  readonly key?: unknown;
+  readonly application?: AnyPluginOptionsContract;
+  readonly page?: AnyPluginOptionsContract;
+  readonly dependencies?: unknown;
+  readonly optionalDependencies?: unknown;
+  readonly enforce?: unknown;
+  readonly configure?: unknown;
+  readonly setup?: unknown;
+  readonly emitIR?: unknown;
+  readonly emitPageIR?: unknown;
+}
+
+function assertDefinedPluginDescriptor(
+  descriptor: RuntimeDefinedPluginDescriptor,
 ): void {
   if (!isPlainRecord(descriptor)) {
     throw new Error("[evjs] definePlugin() expects a plain descriptor object.");
@@ -1098,37 +1159,38 @@ function assertDefinedPluginDescriptor<TBundlerCfg>(
   assertOnlyKeys(
     descriptor,
     [
-      "id",
+      "name",
       "key",
       "application",
       "page",
       "dependencies",
       "optionalDependencies",
       "enforce",
-      "config",
+      "configure",
       "setup",
-      "contributions",
-      "contributePage",
+      "emitIR",
+      "emitPageIR",
     ],
     "definePlugin() descriptor",
   );
   if (
-    typeof descriptor.id !== "string" ||
-    descriptor.id.length === 0 ||
-    descriptor.id !== descriptor.id.trim()
+    typeof descriptor.name !== "string" ||
+    descriptor.name.length === 0 ||
+    descriptor.name !== descriptor.name.trim()
   ) {
     throw new Error(
-      "[evjs] definePlugin() id must be a non-empty string without surrounding whitespace.",
+      "[evjs] definePlugin() name must be a non-empty string without surrounding whitespace.",
     );
   }
-  if (descriptor.page && descriptor.key === undefined) {
+  const hasOptions = Boolean(descriptor.application || descriptor.page);
+  if (hasOptions && descriptor.key === undefined) {
     throw new Error(
-      "[evjs] definePlugin() key is required when Page configuration is declared.",
+      "[evjs] definePlugin() key is required when Application or Page options are declared.",
     );
   }
-  if (!descriptor.page && descriptor.key !== undefined) {
+  if (!hasOptions && descriptor.key !== undefined) {
     throw new Error(
-      "[evjs] definePlugin() key is only supported when Page configuration is declared.",
+      "[evjs] definePlugin() key is only supported when Application or Page options are declared.",
     );
   }
   if (descriptor.key !== undefined) {
@@ -1161,12 +1223,7 @@ function assertDefinedPluginDescriptor<TBundlerCfg>(
       '[evjs] definePlugin() enforce must be "pre", "normal", or "post".',
     );
   }
-  for (const field of [
-    "config",
-    "setup",
-    "contributions",
-    "contributePage",
-  ] as const) {
+  for (const field of ["configure", "setup", "emitIR", "emitPageIR"] as const) {
     if (
       descriptor[field] !== undefined &&
       typeof descriptor[field] !== "function"
@@ -1176,16 +1233,14 @@ function assertDefinedPluginDescriptor<TBundlerCfg>(
   }
   for (const owner of ["application", "page"] as const) {
     const contract = descriptor[owner];
-    if (contract !== undefined && contract[PLUGIN_CONFIG_CONTRACT] !== true) {
+    if (contract !== undefined && contract[PLUGIN_OPTIONS_CONTRACT] !== true) {
       throw new Error(
-        `[evjs] definePlugin() ${owner} must be declared with pluginConfig().`,
+        `[evjs] definePlugin() ${owner} must be declared with pluginOptions().`,
       );
     }
   }
-  if (!descriptor.page && descriptor.contributePage) {
-    throw new Error(
-      "[evjs] definePlugin() contributePage requires Page configuration.",
-    );
+  if (!descriptor.page && descriptor.emitPageIR) {
+    throw new Error("[evjs] definePlugin() emitPageIR requires Page options.");
   }
 }
 
@@ -1220,29 +1275,13 @@ function assertPluginDependencyNames(
 /** @internal Create the shared Application owner context for one config pass. */
 export function createPluginApplicationSettingContext(
   config: { readonly routing?: { readonly mode?: "spa" | "mpa" } } | undefined,
-): PluginSettingContext {
+): PluginOptionsContext {
   return Object.freeze({
     owner: "application",
     applicationId: "default",
     applicationRoot: ".",
     routingMode: config?.routing?.mode ?? "spa",
   });
-}
-
-function deriveApplicationPluginKey(id: string): string {
-  const normalized = id
-    .toLowerCase()
-    .replace(/^@/, "")
-    .split("/")
-    .map((segment) => segment.replace(/^plugin-/, ""))
-    .join("-")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const key = /^[a-z]/.test(normalized)
-    ? normalized
-    : `plugin${normalized ? `-${normalized}` : ""}`;
-  assertPluginKey(key, `Application plugin "${id}" internal key`);
-  return key;
 }
 
 function mergePluginConfigDefaults(

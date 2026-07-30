@@ -25,22 +25,10 @@ export interface InstalledPluginRegistry {
   readonly [installedPluginRegistry]?: never;
 }
 
-type InstalledPluginRegistryControlKey =
-  | typeof installedPluginRegistry
-  | "config";
-
 type GeneratedInstalledPluginConfig =
   InstalledPluginRegistry extends Readonly<{ config: infer TConfig }>
     ? TConfig
     : never;
-
-type ManuallyRegisteredPluginKey = Exclude<
-  keyof InstalledPluginRegistry,
-  InstalledPluginRegistryControlKey
->;
-
-type ManuallyRegisteredPlugin =
-  InstalledPluginRegistry[ManuallyRegisteredPluginKey];
 
 type InactivePluginEntry = false | null | undefined;
 
@@ -77,19 +65,25 @@ type ConfiguredPlugin<TConfig> = [TConfig] extends [
   : never;
 
 type InstalledPlugin = Exclude<
-  ConfiguredPlugin<GeneratedInstalledPluginConfig> | ManuallyRegisteredPlugin,
+  ConfiguredPlugin<GeneratedInstalledPluginConfig>,
   InactivePluginEntry
 >;
 
-type PluginKey<TPlugin> = TPlugin extends {
-  readonly key: infer TKey extends string;
-}
-  ? TKey
+type PluginPageKey<TPlugin> = TPlugin extends unknown
+  ? [DefinedPluginPageInput<TPlugin>] extends [never]
+    ? never
+    : TPlugin extends { readonly key: infer TKey extends string }
+      ? string extends TKey
+        ? never
+        : IsUnion<TKey> extends true
+          ? never
+          : TKey
+      : never
   : never;
 
-type InstalledPluginKey = PluginKey<InstalledPlugin>;
+type InstalledPluginPageKey = PluginPageKey<InstalledPlugin>;
 
-type InstalledPluginForKey<TKey extends InstalledPluginKey> = Extract<
+type InstalledPluginForPageKey<TKey extends InstalledPluginPageKey> = Extract<
   InstalledPlugin,
   { readonly key: TKey }
 >;
@@ -103,13 +97,13 @@ type PagePluginConfiguredValue<TPlugin> =
         | (DefinedPluginPageDefaultable<TPlugin> extends true ? true : never);
 
 type RegisteredPagePluginValues = {
-  readonly [TKey in InstalledPluginKey]?: PagePluginConfiguredValue<
-    InstalledPluginForKey<TKey>
+  readonly [TKey in InstalledPluginPageKey]?: PagePluginConfiguredValue<
+    InstalledPluginForPageKey<TKey>
   >;
 };
 
 /** Page-level settings for plugins installed by `ev.config.ts`. */
-export type PagePluginConfigValues = [InstalledPluginKey] extends [never]
+export type PagePluginConfigValues = [InstalledPluginPageKey] extends [never]
   ? Readonly<Record<string, never>>
   : RegisteredPagePluginValues;
 
@@ -164,7 +158,7 @@ export type PagePluginConfigValuesCheck<TActual> = TActual extends undefined
   ? undefined
   : TActual extends object
     ? {
-        readonly [TKey in keyof TActual]: TKey extends InstalledPluginKey
+        readonly [TKey in keyof TActual]: TKey extends InstalledPluginPageKey
           ? ExactPagePluginConfiguredValue<
               Exclude<TActual[TKey], undefined>,
               Exclude<RegisteredPagePluginValues[TKey], undefined>

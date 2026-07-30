@@ -29,6 +29,7 @@ import {
   utoopackAdapter,
   __testing as utoopackAdapterTesting,
 } from "../src/adapter/index.js";
+import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
 const utoopackMock = vi.hoisted(() => ({
   clientStatsDelayMs: 0,
@@ -149,9 +150,13 @@ const utoopackMock = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("../src/adapter/dev-worker-client.js", () => ({
-  startUtoopackDevWorker: utoopackMock.startUtoopackDevWorker,
-}));
+vi.mock(
+  "../src/adapter/dev-worker-client.js",
+  async (importOriginal: () => Promise<object>) => ({
+    ...(await importOriginal()),
+    startUtoopackDevWorker: utoopackMock.startUtoopackDevWorker,
+  }),
+);
 
 vi.mock("node:module", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:module")>();
@@ -242,7 +247,10 @@ function createFrameworkCallbacks(options: {
       graph = nextGraph;
       plan = nextPlan;
     },
-    async onBuildFacts(facts: BundlerBuildFacts) {
+    async onBuildFacts(
+      facts: BundlerBuildFacts,
+      _options: { isRebuild: boolean },
+    ) {
       const output = linkBuildOutput({
         graph,
         plan,
@@ -716,7 +724,7 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it("refreshes the server runtime after page metadata-only plan updates", async () => {
+  it("keeps a metadata-only plan after published server activation fails", async () => {
     const cwd = await makeProject("home");
     const config = await resolveProjectConfig(cwd, {
       output: { client: "dist/client", server: "dist/server" },
@@ -788,6 +796,38 @@ describe("utoopackAdapter dev", () => {
       expect(onBuildOutput.mock.calls.at(-1)?.[0].pages.home.metadata).toEqual({
         title: "Updated home",
         meta: { description: "Updated description" },
+      });
+
+      const publishedGraph = structuredClone(nextGraph);
+      const publishedPage = publishedGraph.pages.home;
+      if (!publishedPage) throw new Error("Expected home Page.");
+      publishedPage.metadata = {
+        title: "Published home",
+        meta: { description: "Published description" },
+      };
+      const publishedBasePlan = createBuildPlan(config, publishedGraph, {
+        mode: "development",
+      });
+      const publishedPlan: BuildPlan = {
+        ...publishedBasePlan,
+        entries: [...publishedBasePlan.entries, serverRuntimeEntry],
+        server: { entry: serverRuntimeEntry.import },
+      };
+      const publishedUpdate = diffBuildPlan(nextPlan, publishedPlan, "config");
+
+      framework.update(publishedGraph, publishedPlan);
+      onServerBundleReady.mockRejectedValueOnce(
+        new Error("server activation failed"),
+      );
+      await expect(controller.updatePlan(publishedUpdate)).rejects.toThrow(
+        "server activation failed",
+      );
+
+      const session = controller as unknown as { getPlan(): BuildPlan };
+      expect(session.getPlan()).toBe(publishedPlan);
+      expect(onBuildOutput.mock.calls.at(-1)?.[0].pages.home.metadata).toEqual({
+        title: "Published home",
+        meta: { description: "Published description" },
       });
     } finally {
       await controller.close?.();
@@ -915,7 +955,7 @@ describe("utoopackAdapter dev", () => {
       },
     ];
 
-    await utoopackAdapter.dev({
+    const controller = await utoopackAdapter.dev({
       config,
       cwd,
       plan: buildContext.plan,
@@ -930,54 +970,300 @@ describe("utoopackAdapter dev", () => {
       hooks,
     });
 
-    const deploymentMetadata = JSON.parse(
-      await fs.promises.readFile(
-        path.join(cwd, "dist/deployment-metadata.json"),
+    try {
+      const deploymentMetadata = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, "dist/deployment-metadata.json"),
+          "utf-8",
+        ),
+      );
+      const output = onBuildOutput.mock.calls[0]?.[0];
+      if (!output) throw new Error("Expected linked BuildOutput.");
+      const publicManifest = createPublicManifest(output);
+      if (
+        !("routing" in publicManifest) ||
+        publicManifest.routing.kind !== "spa"
+      ) {
+        throw new Error("Expected a public SPA manifest.");
+      }
+      const html = await fs.promises.readFile(
+        path.join(cwd, "dist/client/index.html"),
         "utf-8",
-      ),
-    );
-    const output = onBuildOutput.mock.calls[0]?.[0];
-    if (!output) throw new Error("Expected linked BuildOutput.");
-    const publicManifest = createPublicManifest(output);
-    if (
-      !("routing" in publicManifest) ||
-      publicManifest.routing.kind !== "spa"
-    ) {
-      throw new Error("Expected a public SPA manifest.");
-    }
-    const html = await fs.promises.readFile(
-      path.join(cwd, "dist/client/index.html"),
-      "utf-8",
-    );
+      );
 
-    expect("apps" in deploymentMetadata).toBe(false);
-    expect(deploymentMetadata.documents).toEqual([
-      {
-        kind: "app",
-        id: "default",
-        fileName: "index.html",
-        fallback: "/",
-        assets: {
-          js: ["main.js"],
-          css: ["main.css"],
+      expect("apps" in deploymentMetadata).toBe(false);
+      expect(deploymentMetadata.documents).toEqual([
+        {
+          kind: "app",
+          id: "default",
+          fileName: "index.html",
+          fallback: "/",
+          assets: {
+            js: ["main.js"],
+            css: ["main.css"],
+          },
+        },
+      ]);
+      expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
+        false,
+      );
+      expect("app" in publicManifest).toBe(false);
+      expect(publicManifest.routing.kind).toBe("spa");
+      expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+      expect(html).toContain('<link rel="stylesheet" href="/main.css">');
+      expect(html).toContain('src="/main.js"');
+      expect(html).toContain('data-evjs-kind="app"');
+      expect(html).toContain('data-evjs-id="default"');
+      expect(html).toContain('<meta name="server">');
+      expect(onServerBundleReady).not.toHaveBeenCalled();
+    } finally {
+      await controller?.close?.();
+    }
+  });
+
+  it("publishes client-only rebuild facts without server activation", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const onServerBundleReady = vi.fn();
+    const rebuildStates: boolean[] = [];
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput,
+      onServerBundleReady,
+    });
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      plan: buildContext.plan,
+      callbacks: {
+        ...framework,
+        async onBuildFacts(facts, options) {
+          rebuildStates.push(options.isRebuild);
+          return framework.onBuildFacts(facts, options);
         },
       },
-    ]);
-    expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
-      false,
-    );
-    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
-      false,
-    );
-    expect("app" in publicManifest).toBe(false);
-    expect(publicManifest.routing.kind).toBe("spa");
-    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
-    expect(html).toContain('<link rel="stylesheet" href="/main.css">');
-    expect(html).toContain('src="/main.js"');
-    expect(html).toContain('data-evjs-kind="app"');
-    expect(html).toContain('data-evjs-id="default"');
-    expect(html).toContain('<meta name="server">');
-    expect(onServerBundleReady).not.toHaveBeenCalled();
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const clientDir = path.resolve(cwd, buildContext.plan.output.clientDir);
+      await fs.promises.writeFile(path.join(clientDir, "main-rebuild.js"), "");
+      await fs.promises.writeFile(
+        path.join(clientDir, "stats.json"),
+        JSON.stringify({
+          entrypoints: {
+            main: {
+              assets: [{ name: "main-rebuild.js" }, { name: "main.css" }],
+            },
+          },
+        }),
+      );
+
+      await vi.waitFor(() => {
+        expect(rebuildStates).toEqual([false, true]);
+      });
+
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+      expect(onBuildOutput.mock.calls.at(-1)?.[0].assets.main).toEqual({
+        js: ["main-rebuild.js"],
+        css: ["main.css"],
+      });
+      expect(onServerBundleReady).not.toHaveBeenCalled();
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("republishes startup facts before activating a newer server bundle", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      routing: { mode: "spa" },
+    });
+    const baseContext = await createBuildContext(config, cwd);
+    const serverRuntimeEntry = {
+      name: "server",
+      import: "@evjs/ev/_internal/server/fetch",
+      environment: "server" as const,
+      runtime: "node" as const,
+      kind: "server-runtime" as const,
+    };
+    const plan: BuildPlan = {
+      ...baseContext.plan,
+      entries: [...baseContext.plan.entries, serverRuntimeEntry],
+      server: { entry: serverRuntimeEntry.import },
+    };
+    const buildContext = { graph: baseContext.graph, plan };
+    const clientDir = path.resolve(cwd, plan.output.clientDir);
+    const serverDir = path.resolve(cwd, plan.output.serverDir);
+    const onBuildOutput = vi.fn();
+    const activatedSnapshots: Array<{
+      client: string | undefined;
+      server: string | undefined;
+    }> = [];
+    const onServerBundleReady = vi.fn(() => {
+      const output = onBuildOutput.mock.calls.at(-1)?.[0];
+      activatedSnapshots.push({
+        client: output?.assets.main?.js[0],
+        server: output?.server.entry,
+      });
+    });
+    const rebuildStates: boolean[] = [];
+    let injectedRebuild = false;
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput,
+      onServerBundleReady,
+    });
+
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      plan,
+      callbacks: {
+        ...framework,
+        async onBuildFacts(facts, options) {
+          rebuildStates.push(options.isRebuild);
+          if (!options.isRebuild && !injectedRebuild) {
+            injectedRebuild = true;
+            await Promise.all([
+              fs.promises.writeFile(
+                path.join(clientDir, "main-rebuild.js"),
+                "",
+              ),
+              fs.promises.writeFile(
+                path.join(serverDir, "server-rebuild.js"),
+                "",
+              ),
+              fs.promises.writeFile(
+                path.join(clientDir, "stats.json"),
+                JSON.stringify({
+                  entrypoints: {
+                    main: {
+                      assets: [
+                        { name: "main-rebuild.js" },
+                        { name: "main.css" },
+                      ],
+                    },
+                  },
+                }),
+              ),
+              fs.promises.writeFile(
+                path.join(serverDir, "stats.json"),
+                JSON.stringify({
+                  entrypoints: {
+                    server: {
+                      assets: [{ name: "server-rebuild.js" }],
+                    },
+                  },
+                }),
+              ),
+            ]);
+          }
+          return framework.onBuildFacts(facts, options);
+        },
+      },
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      expect(rebuildStates).toEqual([false, true]);
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+      expect(onServerBundleReady).toHaveBeenCalledTimes(1);
+      expect(activatedSnapshots).toEqual([
+        {
+          client: "main-rebuild.js",
+          server: "server-rebuild.js",
+        },
+      ]);
+
+      let replaceStatsDuringCollection = true;
+      const collectBuildFacts =
+        UtoopackManifestGenerator.prototype.collectBuildFacts;
+      const collect = vi
+        .spyOn(UtoopackManifestGenerator.prototype, "collectBuildFacts")
+        .mockImplementation(async function (this: UtoopackManifestGenerator) {
+          const facts = await collectBuildFacts.call(this);
+          if (replaceStatsDuringCollection) {
+            replaceStatsDuringCollection = false;
+            await Promise.all([
+              fs.promises.writeFile(path.join(clientDir, "main-latest.js"), ""),
+              fs.promises.writeFile(
+                path.join(serverDir, "server-latest.js"),
+                "",
+              ),
+              fs.promises.writeFile(
+                path.join(clientDir, "stats.json"),
+                JSON.stringify({
+                  entrypoints: {
+                    main: {
+                      assets: [
+                        { name: "main-latest.js" },
+                        { name: "main.css" },
+                      ],
+                    },
+                  },
+                }),
+              ),
+              fs.promises.writeFile(
+                path.join(serverDir, "stats.json"),
+                JSON.stringify({
+                  entrypoints: {
+                    server: {
+                      assets: [{ name: "server-latest.js" }],
+                    },
+                  },
+                }),
+              ),
+            ]);
+          }
+          return facts;
+        });
+
+      try {
+        await fs.promises.writeFile(
+          path.join(clientDir, "main-trigger.js"),
+          "",
+        );
+        await fs.promises.writeFile(
+          path.join(clientDir, "stats.json"),
+          JSON.stringify({
+            entrypoints: {
+              main: {
+                assets: [{ name: "main-trigger.js" }, { name: "main.css" }],
+              },
+            },
+          }),
+        );
+
+        await vi.waitFor(() => {
+          expect(activatedSnapshots).toHaveLength(2);
+        });
+      } finally {
+        collect.mockRestore();
+      }
+
+      expect(rebuildStates).toEqual([false, true, true]);
+      expect(onBuildOutput).toHaveBeenCalledTimes(3);
+      expect(activatedSnapshots.at(-1)).toEqual({
+        client: "main-latest.js",
+        server: "server-latest.js",
+      });
+    } finally {
+      await controller.close?.();
+    }
   });
 });
 

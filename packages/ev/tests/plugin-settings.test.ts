@@ -3,7 +3,7 @@ import { PAGE_ANCHOR_PROVIDER_ID } from "@evjs/shared/manifest";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, it } from "vitest";
 import type { ResolvedPageFileConfig } from "../src/_internal/build/page-config-module.js";
-import { runConfigHooks } from "../src/_internal/build/plugin-lifecycle.js";
+import { runConfigureHooks } from "../src/_internal/build/plugin-lifecycle.js";
 import {
   applyPluginSettings,
   collectPluginSettingsRegistry,
@@ -17,21 +17,23 @@ import {
 } from "../src/config/plugins.js";
 import {
   definePlugin,
+  PLUGIN_HOOK_ERROR_CODE,
   type Plugin,
+  PluginHookError,
   type PluginHooks,
-  pluginConfig,
+  pluginOptions,
 } from "../src/plugin/index.js";
 
 describe("plugin settings registry", () => {
   it("collects defined plugins and snapshots independent owner contracts", () => {
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig<{ endpoint: string }>({
+      application: pluginOptions<{ endpoint: string }>({
         schemaVersion: "application-v1",
         defaults: { endpoint: "/events" },
       }),
-      page: pluginConfig<{ channel: string }>({
+      page: pluginOptions<{ channel: string }>({
         schemaVersion: "page-v2",
       }),
     });
@@ -45,7 +47,7 @@ describe("plugin settings registry", () => {
     expect(registry.catalog).toEqual({
       entries: {
         analytics: {
-          id: "@company/analytics",
+          name: "@company/analytics",
           application: { schemaVersion: "application-v1" },
           page: {
             schemaVersion: "page-v2",
@@ -58,97 +60,114 @@ describe("plugin settings registry", () => {
     expect(Object.isFrozen(registry.catalog.entries)).toBe(true);
   });
 
-  it("rejects duplicate plugin keys and ids", () => {
+  it("rejects duplicate plugin keys and plugin names", () => {
     const firstKey = definePlugin({
-      id: "@company/first",
+      name: "@company/first",
       key: "shared",
-      page: pluginConfig({ defaults: {} }),
+      page: pluginOptions({ defaults: {} }),
     });
     const secondKey = definePlugin({
-      id: "@company/second",
+      name: "@company/second",
       key: "shared",
-      page: pluginConfig({ defaults: {} }),
+      page: pluginOptions({ defaults: {} }),
     });
     expect(() =>
       collectPluginSettingsRegistry([firstKey(), secondKey()]),
     ).toThrow(
       'Plugin key "shared" is declared by both "@company/first" and "@company/second"',
     );
+    const applicationKey = definePlugin({
+      name: "@company/application",
+      key: "shared",
+      application: pluginOptions({ defaults: {} }),
+    });
+    expect(() =>
+      collectPluginSettingsRegistry([firstKey(), applicationKey()]),
+    ).toThrow(
+      'Plugin key "shared" is declared by both "@company/first" and "@company/application"',
+    );
 
     const firstId = definePlugin({
-      id: "@company/duplicate",
+      name: "@company/duplicate",
       key: "first",
-      page: pluginConfig({ defaults: {} }),
+      page: pluginOptions({ defaults: {} }),
     });
     const secondId = definePlugin({
-      id: "@company/duplicate",
+      name: "@company/duplicate",
       key: "second",
-      page: pluginConfig({ defaults: {} }),
+      page: pluginOptions({ defaults: {} }),
     });
     expect(() =>
       collectPluginSettingsRegistry([firstId(), secondId()]),
     ).toThrow('Duplicate plugin name "@company/duplicate"');
   });
 
-  it("does not require or publish a Page key for Application-only plugins", () => {
+  it("uses one public key for Application-only settings", () => {
     const deploy = definePlugin({
-      id: "@company/plugin-deploy-node",
-      application: pluginConfig({ defaults: { region: "local" } }),
+      name: "@company/plugin-deploy-node",
+      key: "deploy",
+      application: pluginOptions({ defaults: { region: "local" } }),
     });
     const plugin = deploy();
     const state = resolveInstalled(plugin);
 
-    expect(plugin.key).toBeUndefined();
-    expect("forPages" in deploy).toBe(false);
-    expect(state.registry.byKey.size).toBe(0);
+    expect(plugin.key).toBe("deploy");
+    expect("withPageOptIn" in deploy).toBe(false);
+    expect(state.registry.byKey.get("deploy")?.plugin).toMatchObject({
+      name: "@company/plugin-deploy-node",
+      key: "deploy",
+    });
     expect(state.registry.catalog).toEqual({
       entries: {
-        "company-deploy-node": {
-          id: "@company/plugin-deploy-node",
+        deploy: {
+          name: "@company/plugin-deploy-node",
           application: {},
         },
       },
     });
-    expect(state.applicationSettings["company-deploy-node"]).toEqual({
+    expect(state.applicationSettings.deploy).toEqual({
       enabled: true,
     });
     const assertNoPageOnlyMode = () => {
-      // @ts-expect-error Application-only factories do not expose forPages().
-      deploy.forPages();
+      // @ts-expect-error Application-only factories do not expose withPageOptIn().
+      deploy.withPageOptIn();
     };
     expect(assertNoPageOnlyMode).toBeTypeOf("function");
   });
 
-  it("derives collision-resistant internal keys from complete plugin ids", () => {
-    const first = definePlugin({ id: "@scope-a/plugin-auth" });
-    const second = definePlugin({ id: "@scope-b/plugin-auth" });
+  it("does not publish catalog or settings entries for hooks-only plugins", () => {
+    const hooksOnly = definePlugin({
+      name: "@scope/hooks-only",
+      setup() {},
+    });
+    const plugin = hooksOnly();
+    const state = resolveInstalled(plugin);
 
-    const registry = collectPluginSettingsRegistry([first(), second()]);
-
-    expect(Object.keys(registry.catalog.entries)).toEqual([
-      "scope-a-auth",
-      "scope-b-auth",
-    ]);
+    expect(plugin.key).toBeUndefined();
+    expect(state.registry.entries).toHaveLength(1);
+    expect(state.registry.byKey.size).toBe(0);
+    expect(state.registry.catalog).toEqual({ entries: {} });
+    expect(state.applicationSettings).toEqual({});
   });
 });
 
-describe("definePlugin and pluginConfig", () => {
+describe("definePlugin and pluginOptions", () => {
   it("keeps default factories bundler-agnostic and explicit factories fixed", () => {
     const agnostic = definePlugin({
-      id: "@company/agnostic",
+      name: "@company/agnostic",
       setup(ctx) {
-        // @ts-expect-error Resolved framework config is read-only after config().
+        // @ts-expect-error Resolved framework config is read-only after configure().
         ctx.config.dev.port = 4000;
-        // @ts-expect-error The installed plugin list is read-only after config().
+        // @ts-expect-error The installed plugin list is read-only after configure().
         ctx.config.plugins.push({ name: "late-plugin" });
-        // @ts-expect-error Plugin dependency lists are read-only after config().
+        // @ts-expect-error Plugin dependency lists are read-only after configure().
         ctx.config.plugins[0]?.dependencies?.push("late-dependency");
         return {
-          bundlerConfig(_config, bundlerCtx) {
+          configureBundler(_config, bundlerCtx) {
             // @ts-expect-error The framework config view stays read-only here.
             bundlerCtx.config.server.basePath = "/other";
           },
-          buildOutput(_output, outputCtx) {
+          transformOutput(_output, outputCtx) {
             // @ts-expect-error Late output hooks cannot add analysis watches.
             outputCtx.addWatchFile("late.txt");
           },
@@ -162,10 +181,10 @@ describe("definePlugin and pluginConfig", () => {
       undefined,
       { feature: boolean }
     >({
-      id: "@company/fixed",
+      name: "@company/fixed",
       setup() {
         return {
-          bundlerConfig(config) {
+          configureBundler(config) {
             config.feature = true;
           },
         };
@@ -191,64 +210,82 @@ describe("definePlugin and pluginConfig", () => {
   });
 
   it("validates descriptor identity and owner contracts", () => {
+    const widenedKey: string = "analytics";
+    const assertStaticKey = () => {
+      definePlugin({
+        name: "@company/widened-key",
+        // @ts-expect-error Page keys must remain one statically known literal.
+        key: widenedKey,
+        page: pluginOptions({ defaults: {} }),
+      });
+    };
     expect(() =>
       definePlugin({
-        id: "",
+        name: "",
         key: "analytics",
-        page: pluginConfig({ defaults: {} }),
+        page: pluginOptions({ defaults: {} }),
       }),
-    ).toThrow("definePlugin() id must be a non-empty string");
+    ).toThrow("definePlugin() name must be a non-empty string");
     expect(() =>
       definePlugin({
-        id: " @company/analytics",
+        name: " @company/analytics",
         key: "analytics",
-        page: pluginConfig({ defaults: {} }),
+        page: pluginOptions({ defaults: {} }),
       }),
     ).toThrow("without surrounding whitespace");
     expect(() =>
       definePlugin({
-        id: "@company/analytics",
+        name: "@company/analytics",
         key: "Analytics",
-        page: pluginConfig({ defaults: {} }),
+        page: pluginOptions({ defaults: {} }),
       }),
     ).toThrow("must be a lowercase plugin key");
     expect(() =>
       definePlugin({
-        id: "@company/analytics",
+        name: "@company/analytics",
         key: "analytics",
         page: {},
       } as never),
-    ).toThrow("page must be declared with pluginConfig()");
+    ).toThrow("page must be declared with pluginOptions()");
     expect(() =>
-      pluginConfig({
+      pluginOptions({
         defaults: {},
         schemaVersion: " 1",
       }),
     ).toThrow("without surrounding whitespace");
     expect(() =>
       definePlugin({
-        id: "@company/missing-key",
-        page: pluginConfig({ defaults: {} }),
+        name: "@company/missing-key",
+        page: pluginOptions({ defaults: {} }),
       } as never),
-    ).toThrow("key is required when Page configuration is declared");
+    ).toThrow("key is required when Application or Page options are declared");
     expect(() =>
       definePlugin({
-        id: "@company/application-only",
-        key: "application-only",
+        name: "@company/missing-application-key",
+        application: pluginOptions({ defaults: {} }),
       } as never),
-    ).toThrow("key is only supported when Page configuration is declared");
+    ).toThrow("key is required when Application or Page options are declared");
+    expect(() =>
+      definePlugin({
+        name: "@company/hooks-only",
+        key: "hooks-only",
+      } as never),
+    ).toThrow(
+      "key is only supported when Application or Page options are declared",
+    );
+    expect(assertStaticKey).toBeTypeOf("function");
   });
 
   it("validates descriptor ordering and hook fields at definition time", () => {
     expect(() =>
       definePlugin({
-        id: "@company/invalid-dependencies",
+        name: "@company/invalid-dependencies",
         dependencies: "@company/base",
       } as never),
     ).toThrow("definePlugin() dependencies must be an array of plugin names");
     expect(() =>
       definePlugin({
-        id: "@company/duplicate-dependencies",
+        name: "@company/duplicate-dependencies",
         dependencies: ["@company/base", "@company/base"],
       }),
     ).toThrow(
@@ -256,7 +293,7 @@ describe("definePlugin and pluginConfig", () => {
     );
     expect(() =>
       definePlugin({
-        id: "@company/overlapping-dependencies",
+        name: "@company/overlapping-dependencies",
         dependencies: ["@company/base"],
         optionalDependencies: ["@company/base"],
       }),
@@ -265,13 +302,13 @@ describe("definePlugin and pluginConfig", () => {
     );
     expect(() =>
       definePlugin({
-        id: "@company/invalid-enforce",
+        name: "@company/invalid-enforce",
         enforce: "first",
       } as never),
     ).toThrow('definePlugin() enforce must be "pre", "normal", or "post"');
     expect(() =>
       definePlugin({
-        id: "@company/invalid-setup",
+        name: "@company/invalid-setup",
         setup: true,
       } as never),
     ).toThrow("definePlugin() setup must be a function");
@@ -279,33 +316,33 @@ describe("definePlugin and pluginConfig", () => {
 
   it("requires Application options in both installation modes", () => {
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig<{ endpoint: string }>(),
-      page: pluginConfig({ defaults: {} }),
+      application: pluginOptions<{ endpoint: string }>(),
+      page: pluginOptions({ defaults: {} }),
     });
 
     expect(() => (analytics as unknown as () => Plugin)()).toThrow(
-      'Plugin "@company/analytics" requires Application configuration',
+      'Plugin "@company/analytics" requires Application options',
     );
 
-    expect(() => (analytics.forPages as unknown as () => Plugin)()).toThrow(
-      'Plugin "@company/analytics" requires Application configuration',
-    );
+    expect(() =>
+      (analytics.withPageOptIn as unknown as () => Plugin)(),
+    ).toThrow('Plugin "@company/analytics" requires Application options');
   });
 
-  it("keeps Application and Page config independent", () => {
+  it("keeps Application and Page options independent", () => {
     const validated: string[] = [];
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig<{ channel: string }>({
+      application: pluginOptions<{ channel: string }>({
         schemaVersion: "application-v1",
         validate(value, context) {
           validated.push(`${context.owner}:${value.channel}`);
         },
       }),
-      page: pluginConfig<{ channel: string }>({
+      page: pluginOptions<{ channel: string }>({
         schemaVersion: "page-v1",
         validate(value, context) {
           validated.push(`${context.owner}:${value.channel}`);
@@ -345,9 +382,9 @@ describe("definePlugin and pluginConfig", () => {
   it("deep-merges defaults within each independent owner contract", () => {
     const setupSettings: unknown[] = [];
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig<{
+      application: pluginOptions<{
         endpoint: string;
         retry: { count: number; backoff: boolean };
       }>({
@@ -356,7 +393,7 @@ describe("definePlugin and pluginConfig", () => {
           retry: { count: 1, backoff: true },
         },
       }),
-      page: pluginConfig<{
+      page: pluginOptions<{
         channel: string;
         sampling: { rate: number; debug: boolean };
       }>({
@@ -399,8 +436,9 @@ describe("definePlugin and pluginConfig", () => {
   it("merges over frozen defaults and treats explicit undefined as omission", () => {
     const setupSettings: unknown[] = [];
     const analytics = definePlugin({
-      id: "@company/analytics",
-      application: pluginConfig<{
+      name: "@company/analytics",
+      key: "analytics",
+      application: pluginOptions<{
         endpoint: string;
         retry: { count: number; backoff: boolean };
       }>({
@@ -431,8 +469,9 @@ describe("definePlugin and pluginConfig", () => {
 
   it("keeps rich default values atomic in factory input types", () => {
     const richConfig = definePlugin({
-      id: "@company/rich-config",
-      application: pluginConfig<{
+      name: "@company/rich-config",
+      key: "rich-config",
+      application: pluginOptions<{
         createdAt: Date;
         matcher: RegExp;
         labels: Map<string, string>;
@@ -455,8 +494,9 @@ describe("definePlugin and pluginConfig", () => {
 
   it("accepts only record contracts and preserves tuple option types", () => {
     const tuplePlugin = definePlugin({
-      id: "@company/tuple-config",
-      application: pluginConfig<{
+      name: "@company/tuple-config",
+      key: "tuple-config",
+      application: pluginOptions<{
         pair: [label: string, priority: number];
       }>({
         defaults: { pair: ["checkout", 1] },
@@ -474,58 +514,100 @@ describe("definePlugin and pluginConfig", () => {
       },
     });
     const assertInvalidContracts = () => {
-      // @ts-expect-error Plugin configuration contracts must be objects, not arrays.
-      pluginConfig<string[]>();
-      // @ts-expect-error Plugin configuration contracts must be objects, not functions.
-      pluginConfig<() => void>();
+      // @ts-expect-error Plugin options contracts must be objects, not arrays.
+      pluginOptions<string[]>();
+      // @ts-expect-error Plugin options contracts must be objects, not functions.
+      pluginOptions<() => void>();
       const arraySchema = {} as StandardSchemaV1<string[]>;
       // @ts-expect-error Standard Schema contracts must also resolve to objects.
-      pluginConfig(arraySchema);
+      pluginOptions(arraySchema);
       const functionSchema = {} as StandardSchemaV1<() => void>;
       // @ts-expect-error Standard Schema contracts must not resolve to functions.
-      pluginConfig(functionSchema);
+      pluginOptions(functionSchema);
       type RecordConfig = { mode: string };
       // @ts-expect-error An invalid array branch rejects the whole contract.
-      pluginConfig<RecordConfig | string[]>();
+      pluginOptions<RecordConfig | string[]>();
       // @ts-expect-error An invalid function branch rejects the whole contract.
-      pluginConfig<RecordConfig | (() => void)>();
+      pluginOptions<RecordConfig | (() => void)>();
       const arrayInputUnionSchema = {} as StandardSchemaV1<
         RecordConfig | string[],
         RecordConfig
       >;
       // @ts-expect-error Invalid Standard Schema input branches are not filtered out.
-      pluginConfig(arrayInputUnionSchema);
+      pluginOptions(arrayInputUnionSchema);
       const functionInputUnionSchema = {} as StandardSchemaV1<
         RecordConfig | (() => void),
         RecordConfig
       >;
       // @ts-expect-error Invalid Standard Schema input branches are not filtered out.
-      pluginConfig(functionInputUnionSchema);
+      pluginOptions(functionInputUnionSchema);
       const arrayOutputUnionSchema = {} as StandardSchemaV1<
         RecordConfig,
         RecordConfig | string[]
       >;
       // @ts-expect-error Invalid Standard Schema output branches are not filtered out.
-      pluginConfig(arrayOutputUnionSchema);
+      pluginOptions(arrayOutputUnionSchema);
       const functionOutputUnionSchema = {} as StandardSchemaV1<
         RecordConfig,
         RecordConfig | (() => void)
       >;
       // @ts-expect-error Invalid Standard Schema output branches are not filtered out.
-      pluginConfig(functionOutputUnionSchema);
+      pluginOptions(functionOutputUnionSchema);
     };
 
     expect(tuplePlugin()).toBeTypeOf("object");
     expect(assertInvalidContracts).toBeTypeOf("function");
   });
 
-  it("resolves one Application snapshot for config and later lifecycle phases", async () => {
+  it("keeps Page hooks and Application option inputs type-safe", () => {
+    const emptyOptionsPlugin = definePlugin({
+      name: "@company/empty-options",
+      key: "empty-options",
+      application: pluginOptions({ defaults: {} }),
+    });
+    const assertInvalidPageHook = () => {
+      definePlugin({
+        name: "@company/missing-page-options",
+        // @ts-expect-error emitPageIR requires a declared Page options contract.
+        emitPageIR() {},
+      });
+    };
+    const assertObjectFactoryInput = () => {
+      // @ts-expect-error Empty options still require an object when provided.
+      emptyOptionsPlugin(42);
+      // @ts-expect-error Empty options do not accept primitive strings.
+      emptyOptionsPlugin("invalid");
+    };
+    const assertSchemaContractTypes = () => {
+      type SchemaInput = { raw: string };
+      type SchemaOutput = { parsed: number };
+      const schema = {} as StandardSchemaV1<SchemaInput, SchemaOutput>;
+      const contract = pluginOptions(schema, {
+        defaults: { raw: "1" },
+      });
+      const defaults = contract.defaults;
+      if (defaults && typeof defaults !== "function") {
+        const raw: string = defaults.raw;
+        // @ts-expect-error Schema defaults are input values, not parsed outputs.
+        const parsed: number = defaults.parsed;
+        void raw;
+        void parsed;
+      }
+    };
+
+    expect(assertInvalidPageHook).toBeTypeOf("function");
+    expect(assertObjectFactoryInput).toBeTypeOf("function");
+    expect(assertSchemaContractTypes).toBeTypeOf("function");
+  });
+
+  it("resolves one Application snapshot for configure and later lifecycle phases", async () => {
     let defaultsCalls = 0;
     let validationCalls = 0;
     const seen: unknown[] = [];
     const contextual = definePlugin({
-      id: "@company/contextual",
-      application: pluginConfig<{
+      name: "@company/contextual",
+      key: "contextual",
+      application: pluginOptions<{
         sequence: number;
         routingMode: "spa" | "mpa";
       }>({
@@ -539,7 +621,7 @@ describe("definePlugin and pluginConfig", () => {
           validationCalls++;
         },
       }),
-      config(config, context) {
+      configure(config, context) {
         seen.push(context.options);
         return { ...config, routing: { mode: "spa" } };
       },
@@ -548,7 +630,7 @@ describe("definePlugin and pluginConfig", () => {
       },
     });
     const plugin = contextual();
-    const configured = await runConfigHooks(
+    const configured = await runConfigureHooks(
       { routing: { mode: "mpa" }, plugins: [plugin] },
       {
         command: "build",
@@ -570,16 +652,16 @@ describe("definePlugin and pluginConfig", () => {
     expect(seen[0]).toBe(seen[1]);
   });
 
-  it("isolates in-place config hook mutations from the caller", async () => {
+  it("isolates in-place configure hook mutations from the caller", async () => {
     const plugin: Plugin = {
       name: "isolated-config-hook",
-      config(config) {
+      configure(config) {
         config.server = { ...config.server, basePath: "/candidate" };
       },
     };
     const input: Config = { plugins: [plugin] };
 
-    const configured = await runConfigHooks(input, {
+    const configured = await runConfigureHooks(input, {
       command: "dev",
       cwd: process.cwd(),
       mode: "development",
@@ -590,10 +672,135 @@ describe("definePlugin and pluginConfig", () => {
     expect(input.server).toBeUndefined();
   });
 
+  it("rejects configure hooks that change the installed plugin list", async () => {
+    const plugin: Plugin = {
+      name: "changes-plugin-list",
+      configure(config) {
+        (config.plugins as Plugin[] | undefined)?.push({
+          name: "late-plugin",
+        });
+      },
+    };
+
+    const configuring = runConfigureHooks(
+      { plugins: [plugin] },
+      {
+        command: "dev",
+        cwd: process.cwd(),
+        mode: "development",
+      },
+    );
+    await expect(configuring).rejects.toMatchObject({
+      code: PLUGIN_HOOK_ERROR_CODE,
+      plugin: "changes-plugin-list",
+      hook: "configure",
+      cause: expect.any(Error),
+    });
+    await expect(configuring).rejects.toBeInstanceOf(PluginHookError);
+    await expect(configuring).rejects.toThrow(
+      'Plugin "changes-plugin-list" configure hook must not add, remove, replace, or reorder config.plugins',
+    );
+  });
+
+  it("attributes invalid core config mutations to configure", async () => {
+    const configuring = runConfigureHooks(
+      {
+        plugins: [
+          {
+            name: "invalid-routing-mode",
+            configure(config) {
+              config.routing = { mode: "invalid" } as never;
+            },
+          },
+        ],
+      },
+      {
+        command: "dev",
+        cwd: process.cwd(),
+        mode: "development",
+      },
+    );
+
+    await expect(configuring).rejects.toMatchObject({
+      code: PLUGIN_HOOK_ERROR_CODE,
+      plugin: "invalid-routing-mode",
+      hook: "configure",
+      cause: expect.any(Error),
+    });
+    await expect(configuring).rejects.toThrow(
+      'routing.mode must be "spa" or "mpa"',
+    );
+  });
+
+  it("does not attribute invalid author config to a configure hook", async () => {
+    let configureCalled = false;
+    let thrown: unknown;
+    try {
+      await runConfigureHooks(
+        {
+          routing: { mode: "invalid" } as never,
+          plugins: [
+            {
+              name: "unrelated-configure",
+              configure() {
+                configureCalled = true;
+              },
+            },
+          ],
+        },
+        {
+          command: "dev",
+          cwd: process.cwd(),
+          mode: "development",
+        },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(configureCalled).toBe(false);
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(PluginHookError);
+    expect((thrown as Error).message).toContain(
+      'routing.mode must be "spa" or "mpa"',
+    );
+  });
+
+  it("attributes invalid configure return values to configure", async () => {
+    const configuring = runConfigureHooks(
+      {
+        plugins: [
+          {
+            name: "invalid-configure-result",
+            configure() {
+              return [] as never;
+            },
+          },
+        ],
+      },
+      {
+        command: "build",
+        cwd: process.cwd(),
+        mode: "production",
+      },
+    );
+
+    await expect(configuring).rejects.toMatchObject({
+      code: PLUGIN_HOOK_ERROR_CODE,
+      plugin: "invalid-configure-result",
+      hook: "configure",
+      cause: expect.any(Error),
+    });
+    await expect(configuring).rejects.toBeInstanceOf(PluginHookError);
+    await expect(configuring).rejects.toThrow(
+      'Plugin "invalid-configure-result" configure hook must return a config object or undefined',
+    );
+  });
+
   it("preserves length fields on ordinary config objects", async () => {
     const plugin: Plugin = {
       name: "observes-length-field",
-      config(config) {
+      configure(config) {
         return config;
       },
     };
@@ -610,7 +817,7 @@ describe("definePlugin and pluginConfig", () => {
       plugins: [plugin],
     };
 
-    const configured = await runConfigHooks(input, {
+    const configured = await runConfigureHooks(input, {
       command: "dev",
       cwd: process.cwd(),
       mode: "development",
@@ -635,8 +842,9 @@ describe("definePlugin and pluginConfig", () => {
         }>
       | undefined;
     const analytics = definePlugin({
-      id: "@company/isolated-application-options",
-      application: pluginConfig<{
+      name: "@company/isolated-application-options",
+      key: "isolated-application-options",
+      application: pluginOptions<{
         endpoint: string;
         headers: { regions: string[] };
       }>(),
@@ -663,11 +871,12 @@ describe("definePlugin and pluginConfig", () => {
     ).toBe(false);
   });
 
-  it("exposes resolved Application options to the config hook", async () => {
+  it("exposes resolved Application options to the configure hook", async () => {
     const seen: unknown[] = [];
     const serverBase = definePlugin({
-      id: "@company/server-base",
-      application: pluginConfig<{
+      name: "@company/server-base",
+      key: "server-base",
+      application: pluginOptions<{
         basePath: string;
         headers: { trace: boolean; region: string };
       }>({
@@ -676,7 +885,7 @@ describe("definePlugin and pluginConfig", () => {
           headers: { trace: false, region: "global" },
         },
       }),
-      config(config, context) {
+      configure(config, context) {
         seen.push(context.options);
         config.server = {
           ...config.server,
@@ -687,7 +896,7 @@ describe("definePlugin and pluginConfig", () => {
     });
     const plugin = serverBase({ headers: { trace: true } });
 
-    const result = await plugin.config?.(
+    const result = await plugin.configure?.(
       {},
       {
         command: "build",
@@ -707,17 +916,17 @@ describe("definePlugin and pluginConfig", () => {
 });
 
 describe("Application and Page enablement", () => {
-  it("uses normal installation for defaults and forPages for explicit opt-in", () => {
+  it("uses normal installation for defaults and withPageOptIn for explicit opt-in", () => {
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      page: pluginConfig({ defaults: { channel: "web" } }),
+      page: pluginOptions({ defaults: { channel: "web" } }),
     });
     const normal = resolveInstalled(analytics());
     const normalGraph = applyPluginSettings(createSpaGraph(), normal.registry, {
       applicationSettings: normal.applicationSettings,
     });
-    const pageOnly = resolveInstalled(analytics.forPages());
+    const pageOnly = resolveInstalled(analytics.withPageOptIn());
     const pageOnlyGraph = applyPluginSettings(
       createSpaGraph(),
       pageOnly.registry,
@@ -734,7 +943,7 @@ describe("Application and Page enablement", () => {
   });
 
   const cases: readonly {
-    application: "enabled" | "for-pages";
+    application: "enabled" | "page-opt-in";
     page: "omitted" | "false" | "true" | "object";
     configured?: ResolvedPagePluginConfigInput;
     expected: CorePagePluginSetting;
@@ -763,24 +972,24 @@ describe("Application and Page enablement", () => {
       expected: { enabled: true, config: { channel: "checkout" } },
     },
     {
-      application: "for-pages",
+      application: "page-opt-in",
       page: "omitted",
       expected: { enabled: false },
     },
     {
-      application: "for-pages",
+      application: "page-opt-in",
       page: "false",
       configured: false,
       expected: { enabled: false },
     },
     {
-      application: "for-pages",
+      application: "page-opt-in",
       page: "true",
       configured: true,
       expected: { enabled: true, config: { channel: "default" } },
     },
     {
-      application: "for-pages",
+      application: "page-opt-in",
       page: "object",
       configured: { channel: "checkout" },
       expected: { enabled: true, config: { channel: "checkout" } },
@@ -795,17 +1004,17 @@ describe("Application and Page enablement", () => {
     expected,
   }) => {
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig<{ mode: string }>({
+      application: pluginOptions<{ mode: string }>({
         defaults: { mode: "application-default" },
       }),
-      page: pluginConfig<{ channel: string }>({
+      page: pluginOptions<{ channel: string }>({
         defaults: { channel: "default" },
       }),
     });
     const installed =
-      application === "enabled" ? analytics() : analytics.forPages();
+      application === "enabled" ? analytics() : analytics.withPageOptIn();
     const state = resolveInstalled(installed);
     const configuredPlugins =
       configured === undefined ? {} : { analytics: configured };
@@ -825,14 +1034,14 @@ describe("Application and Page enablement", () => {
 
   it("rejects Page true when the Page contract has no defaults", () => {
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      page: pluginConfig<{ channel: string }>(),
+      page: pluginOptions<{ channel: string }>(),
     });
-    expect("forPages" in analytics).toBe(false);
+    expect("withPageOptIn" in analytics).toBe(false);
     const assertNoRedundantForPages = () => {
       // @ts-expect-error A non-defaultable Page is already opt-in only.
-      analytics.forPages();
+      analytics.withPageOptIn();
     };
     expect(assertNoRedundantForPages).toBeTypeOf("function");
     const state = resolveInstalled(analytics());
@@ -870,6 +1079,30 @@ describe("Application and Page enablement", () => {
 });
 
 describe("plugin setting diagnostics", () => {
+  it("identifies the Page config source and plugin key in option errors", () => {
+    const analytics = definePlugin({
+      name: "@company/analytics",
+      key: "analytics",
+      page: pluginOptions<{ channel: string }>({
+        validate() {
+          return "channel is not available";
+        },
+      }),
+    });
+    const state = resolveInstalled(analytics());
+
+    expect(() =>
+      applyPluginSettings(createSpaGraph(), state.registry, {
+        applicationSettings: state.applicationSettings,
+        canonicalPages: {
+          home: createPageConfig({ analytics: { channel: "checkout" } }),
+        },
+      }),
+    ).toThrow(
+      'Plugin "@company/analytics" Page options at ./src/pages/home/page.config.ts plugins.analytics is invalid: channel is not available',
+    );
+  });
+
   it("rejects uninstalled Page and Application setting keys", () => {
     const emptyRegistry = collectPluginSettingsRegistry([]);
 
@@ -894,8 +1127,9 @@ describe("plugin setting diagnostics", () => {
 
   it("does not expose Application-only plugins as Page settings", () => {
     const analytics = definePlugin({
-      id: "@company/analytics",
-      application: pluginConfig({
+      name: "@company/analytics",
+      key: "analytics",
+      application: pluginOptions({
         defaults: { endpoint: "/events" },
       }),
     });
@@ -909,7 +1143,7 @@ describe("plugin setting diagnostics", () => {
         },
       }),
     ).toThrow(
-      'configures plugin "analytics", but that plugin is not installed by ev.config',
+      'configures plugin "analytics", but plugin "@company/analytics" does not declare Page options',
     );
   });
 
@@ -946,9 +1180,9 @@ describe("static plugin settings", () => {
       },
     };
     const authoredPlugin = definePlugin({
-      id: "@company/authored-schema",
+      name: "@company/authored-schema",
       key: "authored-schema",
-      page: pluginConfig(authoredSchema),
+      page: pluginOptions(authoredSchema),
     });
     const authoredState = resolveInstalled(authoredPlugin());
     const authored = { channel: "checkout", metadata: {} };
@@ -986,9 +1220,9 @@ describe("static plugin settings", () => {
     };
     const defaults = { channel: "default" };
     const defaultPlugin = definePlugin({
-      id: "@company/default-schema",
+      name: "@company/default-schema",
       key: "default-schema",
-      page: pluginConfig(defaultSchema, { defaults }),
+      page: pluginOptions(defaultSchema, { defaults }),
     });
     const defaultState = resolveInstalled(defaultPlugin());
     const resolveDefaults = () =>
@@ -1016,9 +1250,9 @@ describe("static plugin settings", () => {
       },
     };
     const invalidPlugin = definePlugin({
-      id: "@company/non-static-schema-output",
+      name: "@company/non-static-schema-output",
       key: "non-static-schema-output",
-      page: pluginConfig(schema),
+      page: pluginOptions(schema),
     });
     const state = resolveInstalled(invalidPlugin());
 
@@ -1036,9 +1270,9 @@ describe("static plugin settings", () => {
 
   it("rejects non-static Page defaults during apply", () => {
     const dated = definePlugin({
-      id: "@company/dated",
+      name: "@company/dated",
       key: "dated",
-      page: pluginConfig({
+      page: pluginOptions({
         defaults: { createdAt: new Date() },
       }),
     });
@@ -1050,9 +1284,9 @@ describe("static plugin settings", () => {
     ).toThrow(/arrays and plain objects/);
 
     const nonFinite = definePlugin({
-      id: "@company/non-finite",
+      name: "@company/non-finite",
       key: "non-finite",
-      page: pluginConfig({
+      page: pluginOptions({
         defaults: { value: Number.NaN },
       }),
     });
@@ -1073,9 +1307,9 @@ describe("static plugin settings", () => {
       },
     });
     const accessorPlugin = definePlugin({
-      id: "@company/accessor",
+      name: "@company/accessor",
       key: "accessor",
-      page: pluginConfig({
+      page: pluginOptions({
         defaults: accessor,
       }),
     });
@@ -1091,8 +1325,9 @@ describe("static plugin settings", () => {
   it("keeps rich Application config private while rejecting lazy non-static Page defaults", () => {
     const applicationSettings: unknown[] = [];
     const configuredPlugin = definePlugin({
-      id: "@company/configured",
-      application: pluginConfig<{ createdAt: Date }>(),
+      name: "@company/configured",
+      key: "configured",
+      application: pluginOptions<{ createdAt: Date }>(),
       setup(context) {
         applicationSettings.push(context.options);
       },
@@ -1102,15 +1337,15 @@ describe("static plugin settings", () => {
     });
     const configuredState = resolveInstalled(configured);
     configured.setup?.({} as never);
-    expect(configuredState.applicationSettings["company-configured"]).toEqual({
-      enabled: true,
-    });
+    expect(Object.values(configuredState.applicationSettings)).toEqual([
+      { enabled: true },
+    ]);
     expect(applicationSettings).toEqual([{ createdAt: new Date(0) }]);
 
     const lazyPlugin = definePlugin({
-      id: "@company/lazy",
+      name: "@company/lazy",
       key: "lazy",
-      page: pluginConfig<{ value: string }>({
+      page: pluginOptions<{ value: string }>({
         defaults: () => ({ value: undefined }) as never,
       }),
     });
@@ -1144,30 +1379,30 @@ describe("plugin setting lifecycle", () => {
   it("runs a Page-scoped plugin and contributes only for enabled Pages", async () => {
     const calls: string[] = [];
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig({ defaults: { endpoint: "/events" } }),
-      page: pluginConfig({ defaults: { channel: "default" } }),
+      application: pluginOptions({ defaults: { endpoint: "/events" } }),
+      page: pluginOptions({ defaults: { channel: "default" } }),
       setup(context) {
         calls.push(`setup:${context.options.endpoint}`);
       },
-      contributions(context) {
-        calls.push(`contributions:${context.pages.length}`);
+      emitIR(context) {
+        calls.push(`emitIR:${context.pages.length}`);
       },
-      contributePage(context) {
+      emitPageIR(context) {
         calls.push(`page:${context.page.id}`);
       },
     });
-    const plugin = analytics.forPages();
+    const plugin = analytics.withPageOptIn();
     const state = resolveInstalled(plugin);
 
     await plugin.setup?.({} as never);
-    await plugin.contributions?.({
+    await plugin.emitIR?.({
       framework: {
         pages: [{ id: "home", plugins: { analytics: { enabled: false } } }],
       },
     } as never);
-    expect(calls).toEqual(["setup:/events", "contributions:0"]);
+    expect(calls).toEqual(["setup:/events", "emitIR:0"]);
 
     const graph = applyPluginSettings(createSpaGraph(), state.registry, {
       applicationSettings: state.applicationSettings,
@@ -1175,27 +1410,27 @@ describe("plugin setting lifecycle", () => {
         home: createPageConfig({ analytics: true }),
       },
     });
-    await plugin.contributions?.({
+    await plugin.emitIR?.({
       framework: { pages: Object.values(graph.pages) },
     } as never);
 
     expect(calls).toEqual([
       "setup:/events",
-      "contributions:0",
-      "contributions:1",
+      "emitIR:0",
+      "emitIR:1",
       "page:home",
     ]);
   });
 
-  it("requires and exposes resolved Application settings before setup", () => {
+  it("requires and exposes resolved Application options before setup", () => {
     const setupSettings: unknown[] = [];
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      application: pluginConfig({
+      application: pluginOptions({
         defaults: { endpoint: "/events" },
       }),
-      page: pluginConfig({ defaults: {} }),
+      page: pluginOptions({ defaults: {} }),
       setup(context) {
         setupSettings.push(context.options);
       },
@@ -1205,7 +1440,7 @@ describe("plugin setting lifecycle", () => {
     const registry = collectPluginSettingsRegistry(config.plugins);
 
     expect(() => plugin.setup?.({} as never)).toThrow(
-      "Application settings were not resolved before setup()",
+      "Application options were not resolved before setup()",
     );
     expect(() => applyPluginSettings(createSpaGraph(), registry)).toThrow(
       "were not resolved before graph analysis",
@@ -1227,9 +1462,9 @@ describe("plugin setting lifecycle", () => {
   it("reuses equivalent Page resolutions in an alias-analysis session", () => {
     let validationCalls = 0;
     const analytics = definePlugin({
-      id: "@company/analytics",
+      name: "@company/analytics",
       key: "analytics",
-      page: pluginConfig<{ channel: string }>({
+      page: pluginOptions<{ channel: string }>({
         defaults: { channel: "default" },
         validate() {
           validationCalls += 1;

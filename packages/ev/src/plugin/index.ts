@@ -1,4 +1,5 @@
 import type { FrameworkRuntime } from "@evjs/server";
+import type { StaticJsonValue } from "@evjs/shared/_internal/static-json";
 import type {
   AppRouteTarget,
   AssetGroup,
@@ -37,6 +38,7 @@ import type {
   ResolvedFrameworkConfig,
 } from "../config/index.js";
 
+export type { StaticJsonValue } from "@evjs/shared/_internal/static-json";
 export type {
   ClientContributionRuntime,
   ContributionRuntime,
@@ -50,22 +52,27 @@ export type {
 } from "@evjs/shared/manifest";
 export {
   type DefinedPluginApplicationInput,
-  type DefinedPluginConfigContext,
-  type DefinedPluginContributionContext,
+  type DefinedPluginConfigureContext,
   type DefinedPluginDescriptor,
+  type DefinedPluginEmitIRContext,
+  type DefinedPluginEmitPageIRContext,
   type DefinedPluginFactory,
   type DefinedPluginInstance,
-  type DefinedPluginPageContributionContext,
   type DefinedPluginPageDefaultable,
   type DefinedPluginPageInput,
   type DefinedPluginPageOptions,
   type DefinedPluginSetupContext,
   definePlugin,
-  type PluginConfigContract,
-  type PluginConfigOptions,
-  type PluginSettingContext,
-  pluginConfig,
+  type PluginOptionsContext,
+  type PluginOptionsContract,
+  type PluginOptionsDefinition,
+  pluginOptions,
 } from "./defined.js";
+export {
+  PLUGIN_HOOK_ERROR_CODE,
+  PluginHookError,
+  type PluginHookName,
+} from "./errors.js";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -155,7 +162,7 @@ export interface HtmlDocument {
 /**
  * Context passed to plugin bundler hooks.
  */
-export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
+export interface ConfigureBundlerContext<TBundlerCfg = DefaultBundlerConfig> {
   /** The current mode. */
   readonly mode: "development" | "production";
   /** The current working directory. */
@@ -174,8 +181,8 @@ export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
   addWatchFile(file: string): void;
 }
 
-/** Context passed to plugin config hooks. */
-export interface PluginConfigContext {
+/** Context passed to plugin configure() hooks. */
+export interface PluginConfigureContext {
   /** The current mode. */
   readonly mode: "development" | "production";
   /** The current working directory. */
@@ -200,7 +207,7 @@ type PluginSetupResult<TBundlerCfg> =
   | Promise<PluginHooks<TBundlerCfg> | undefined>
   | Promise<void>;
 
-type ContributionsHookResult = void | Promise<void>;
+type EmitIRHookResult = void | Promise<void>;
 
 type AnyFunction = (...args: never[]) => unknown;
 
@@ -229,24 +236,24 @@ type ReadonlyFrameworkConfig<TBundlerCfg> = DeepReadonly<
   readonly plugins: readonly ReadonlyPlugin<TBundlerCfg>[];
 };
 
-type PluginConfigHook<TBundlerCfg> = <
+type PluginConfigureHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
   config: Config<TActualBundlerCfg>,
-  ctx: PluginConfigContext,
+  ctx: PluginConfigureContext,
 ) => ConfigHookResult<TActualBundlerCfg>;
 
 type PluginSetupHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
-  ctx: PluginContext<TActualBundlerCfg>,
+  ctx: PluginSetupContext<TActualBundlerCfg>,
 ) => PluginSetupResult<TBundlerCfg>;
 
-type PluginContributionsHook<TBundlerCfg> = <
+type PluginEmitIRHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
-  ctx: ContributionContext<TActualBundlerCfg>,
-) => ContributionsHookResult;
+  ctx: PluginEmitIRContext<TActualBundlerCfg>,
+) => EmitIRHookResult;
 
 /**
  * An evjs plugin.
@@ -258,14 +265,8 @@ export interface Plugin<TBundlerCfg = unknown> {
   /** Type-only marker that keeps bundler-specific plugins incompatible. */
   readonly [pluginBundlerConfigType]?: PluginBundlerConfigType<TBundlerCfg>;
 
-  /** Plugin name for debugging and logging. */
+  /** Stable plugin identity used for dependencies, diagnostics, and logging. */
   name: string;
-
-  /** @internal Stable descriptor identity for a `definePlugin()` instance. */
-  id?: string;
-
-  /** @internal Page configuration key for a `definePlugin()` instance. */
-  key?: string;
 
   /**
    * Required plugin dependencies that must run before this plugin.
@@ -288,7 +289,7 @@ export interface Plugin<TBundlerCfg = unknown> {
    * Use this for framework-level config such as `server.basePath` that must
    * be visible to dev proxy setup and build-time runtime defines.
    */
-  config?: PluginConfigHook<TBundlerCfg>;
+  configure?: PluginConfigureHook<TBundlerCfg>;
 
   /**
    * Initialize the plugin and return lifecycle hooks.
@@ -299,13 +300,12 @@ export interface Plugin<TBundlerCfg = unknown> {
   setup?: PluginSetupHook<TBundlerCfg>;
 
   /**
-   * Declare generated framework contributions for the `.ev` IR.
+   * Emit declarative modules, slots, and resolution records into the `.ev` IR.
    *
-   * This hook is separate from setup() lifecycle hooks. It declares generated
-   * modules, structured framework slots, and resolution changes before bundler
-   * configuration is created.
+   * evjs collects and validates these records before writing them. Keep this
+   * hook deterministic and free of external side effects.
    */
-  contributions?: PluginContributionsHook<TBundlerCfg>;
+  emitIR?: PluginEmitIRHook<TBundlerCfg>;
 
   /**
    * Relative ordering tier for plugins without an explicit dependency edge.
@@ -330,18 +330,30 @@ interface PluginBaseContext<TBundlerCfg = DefaultBundlerConfig> {
   readonly logger: Logger;
 }
 
-/** Context passed to plugin setup(). */
+/** Shared context for framework analysis and plugin snapshot execution. */
 export interface PluginContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginBaseContext<TBundlerCfg> {
   /** Adds an extra framework-level watch file in dev mode. */
   addWatchFile(file: string): void;
 }
 
+/** Context passed to plugin setup(). */
+export interface PluginSetupContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {
+  /**
+   * Register setup cleanup immediately.
+   *
+   * Registered callbacks run in reverse order even when setup later throws or
+   * returns an invalid hooks object.
+   */
+  onDispose(callback: () => void | Promise<void>): void;
+}
+
 export type CliFlagValue = boolean | string | Array<boolean | string>;
 
 export type CliFlags = Record<string, CliFlagValue>;
 
-/** Read-only framework IR snapshot exposed to contribution hooks. */
+/** Read-only framework IR snapshot exposed while a plugin emits IR. */
 export interface FrameworkIRView {
   /** Normalized Applications discovered before bundling. */
   readonly applications: readonly FrameworkApplicationView[];
@@ -565,7 +577,7 @@ export interface FrameworkServerAppEntryMetadata {
   readonly serverFunctions?: readonly FrameworkServerFunctionView[];
 }
 
-export interface ContributionContext<TBundlerCfg = DefaultBundlerConfig>
+export interface PluginEmitIRContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginContext<TBundlerCfg> {
   readonly framework: FrameworkIRView;
   readonly emit: EmitApi;
@@ -588,7 +600,7 @@ export interface EmitApi {
   data(input: {
     id: string;
     scope: GeneratedScope;
-    value: unknown;
+    value: StaticJsonValue;
   }): GeneratedModuleRef;
 
   entryFacade(input: {
@@ -685,33 +697,36 @@ export interface ResolveExternalContribution {
   runtime?: ContributionRuntime;
 }
 
-export interface BuildStartContext<TBundlerCfg = DefaultBundlerConfig>
-  extends PluginContext<TBundlerCfg> {}
+export interface BeforeBuildContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginBaseContext<TBundlerCfg> {
+  /** True for a development rebuild and false for the initial output cycle. */
+  readonly isRebuild: boolean;
+}
 
-export interface BuildOutputContext<TBundlerCfg = DefaultBundlerConfig>
+export interface TransformOutputContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginBaseContext<TBundlerCfg> {}
 
 export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginBaseContext<TBundlerCfg> {}
 
-type BuildStartHook<TBundlerCfg> = <
+type BeforeBuildHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
-  ctx: BuildStartContext<TActualBundlerCfg>,
+  ctx: BeforeBuildContext<TActualBundlerCfg>,
 ) => void | Promise<void>;
 
-type BuildOutputHook<TBundlerCfg> = <
+type TransformOutputHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
   output: BuildOutput,
-  ctx: BuildOutputContext<TActualBundlerCfg>,
+  ctx: TransformOutputContext<TActualBundlerCfg>,
 ) => void | Promise<void>;
 
-type BundlerConfigHook<TBundlerCfg> = <
+type ConfigureBundlerHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
   config: TActualBundlerCfg,
-  ctx: BundlerCtx<TActualBundlerCfg>,
+  ctx: ConfigureBundlerContext<TActualBundlerCfg>,
 ) => void | Promise<void>;
 
 type DisposeHook<TBundlerCfg> = <
@@ -724,7 +739,7 @@ type TransformHtmlHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
   doc: HtmlDocument,
-  ctx: HtmlTransformContext<TActualBundlerCfg>,
+  ctx: TransformHtmlContext<TActualBundlerCfg>,
 ) => void | Promise<void>;
 
 /**
@@ -737,36 +752,30 @@ export interface PluginHooks<TBundlerCfg = unknown> {
   /** Type-only marker that keeps bundler-specific hooks incompatible. */
   readonly [pluginBundlerConfigType]?: PluginBundlerConfigType<TBundlerCfg>;
 
-  /** Called before compilation begins. */
-  buildStart?: BuildStartHook<TBundlerCfg>;
-
-  /**
-   * Inspect or mutate the linked framework build output before deployment
-   * metadata is projected and before HTML documents are transformed.
-   *
-   * Deployment adapters should prefer buildEnd().deploymentMetadata for the
-   * canonical deployable artifact shape, and use this hook only when they need
-   * to add data to the in-memory BuildOutput before projection.
-   * CoreGraph-owned Document file names and aliases are immutable here.
-   */
-  buildOutput?: BuildOutputHook<TBundlerCfg>;
-
   /**
    * Modify the underlying bundler configuration directly.
    *
    * Bare hooks are bundler-polymorphic. Use the typed helper exported by an
    * adapter or pass a concrete config type for adapter-specific changes.
    */
-  bundlerConfig?: BundlerConfigHook<TBundlerCfg>;
+  configureBundler?: ConfigureBundlerHook<TBundlerCfg>;
 
   /**
-   * Called after compilation completes. Receives an isolated snapshot of the
-   * canonical build result; mutations do not affect later hooks or artifacts.
+   * Called when fresh bundler facts are ready, immediately before evjs links
+   * and publishes the canonical framework output for this cycle.
    */
-  buildEnd?: (result: BuildResult) => void | Promise<void>;
+  beforeBuild?: BeforeBuildHook<TBundlerCfg>;
 
-  /** Called when the command is shutting down or after a build finishes. */
-  dispose?: DisposeHook<TBundlerCfg>;
+  /**
+   * Inspect or mutate the linked framework build output before deployment
+   * metadata is projected and before HTML documents are transformed.
+   *
+   * Deployment adapters should prefer afterBuild().deploymentMetadata for the
+   * canonical deployable artifact shape, and use this hook only when they need
+   * to add data to the in-memory BuildOutput before projection.
+   * CoreGraph-owned Document file names and aliases are immutable here.
+   */
+  transformOutput?: TransformOutputHook<TBundlerCfg>;
 
   /**
    * Transform the output HTML document after asset injection.
@@ -778,18 +787,32 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * server shell. Multiple plugins are applied in order.
    */
   transformHtml?: TransformHtmlHook<TBundlerCfg>;
+
+  /**
+   * Called after evjs successfully publishes the canonical output for this
+   * cycle. Receives an isolated snapshot; mutations do not affect later hooks
+   * or artifacts.
+   */
+  afterBuild?: (result: BuildResult) => void | Promise<void>;
+
+  /**
+   * Tear down this plugin snapshot after a one-shot build or prepare completes,
+   * when dev stops, or when config reload replaces or rolls back the snapshot.
+   * This hook does not run after each development rebuild.
+   */
+  dispose?: DisposeHook<TBundlerCfg>;
 }
 
 /** Build result passed to plugin hooks. */
 export interface BuildResult {
   /** Single framework build output. */
-  output: BuildOutput;
+  readonly output: Readonly<BuildOutput>;
   /** Server runtime contract generated from BuildOutput plus runtime-only facts. */
-  frameworkRuntime?: FrameworkRuntime;
+  readonly frameworkRuntime?: Readonly<FrameworkRuntime>;
   /** Deployment metadata projection for adapters and tooling. */
-  deploymentMetadata: DeploymentMetadata;
+  readonly deploymentMetadata: Readonly<DeploymentMetadata>;
   /** True if this is a rebuild triggered by file change (dev watch mode only). */
-  isRebuild: boolean;
+  readonly isRebuild: boolean;
 }
 
 export interface HtmlDocumentInfo {
@@ -807,7 +830,7 @@ export interface HtmlDocumentInfo {
   assets: AssetGroup;
 }
 
-export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
+export type TransformHtmlContext<TBundlerCfg = DefaultBundlerConfig> =
   BuildResult &
     HtmlDocumentInfo &
     PluginBaseContext<TBundlerCfg> & {

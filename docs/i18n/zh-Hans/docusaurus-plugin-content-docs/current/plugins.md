@@ -2,8 +2,8 @@
 
 插件通过受支持的生命周期扩展框架，而无需扩大核心应用配置。应用在
 `ev.config.ts` 中安装一次插件；Page 再通过插件的短 key 配置、启用或禁用页面级
-行为。Lifecycle hook 与 generated contribution 继续负责 build、bundler、HTML 和
-runtime 集成。
+行为。Lifecycle hook 与声明式 IR emission 继续负责 build、bundler、HTML 和 runtime
+集成。
 
 ## 安装并配置 Application
 
@@ -19,7 +19,7 @@ export default defineConfig({
 ```
 
 工厂调用会安装插件，并提供类型安全的 Application 配置。没有 Application 配置的
-插件不接收参数，例如 `buildTimer()`。
+插件不接收参数，例如 `outputReporter()`。
 
 `plugins` 数组是有序安装边界。配置直接放在各工厂调用中，因此不需要另一份 extension
 bag，也不需要重复 package key。
@@ -44,7 +44,8 @@ export default definePageConfig({
 会从静态 config 类型推导精确的 plugin key 与 Page value；JavaScript 配置只生成不会
 扩散 `any` 的安全桥接，因此 Page 需要插件补全时应使用 TypeScript 配置。只有静态上
 保证安装的条目才会暴露给 Page config。不要编辑或导入这份生成声明，并确保项目
-`tsconfig.json` 包含 `src`。
+`tsconfig.json` 包含 `src`。上述三个生成命令会在 Page graph analysis 前生成该声明。
+它有意放在 `src` 而非 `.ev`，因为普通应用 tsconfig 会排除 `.ev`。
 
 Page 保留一层 `plugins` map，避免第三方 key 与 `title`、`render` 等 core 字段冲突。
 进入该 map 后只使用短 key，不需要 package name 或另一层 plugin 嵌套。
@@ -53,6 +54,8 @@ Page 保留一层 `plugins` map，避免第三方 key 与 `title`、`render` 等
 
 Application 配置与 Page 配置是两份独立的类型合同：
 
+- 只要存在任一合同，插件就声明一个短 `key`。同一个 key 在 CoreGraph 中标识
+  Application 与 Page setting。
 - Application setting 通过 `ev.config.ts` 中的工厂参数传入。插件支持时，其中可以包含
   只在构建期使用的 callback 或 module reference。
 - Page setting 位于 `page.config.ts`。它会跨越静态 CoreGraph 边界，因此必须是普通、
@@ -66,25 +69,25 @@ Application 配置与 Page 配置是两份独立的类型合同：
 ## 按 Scope 启用或禁用
 
 两种工厂写法都会安装并执行插件，也会解析同一份类型安全 Application options；
-它们只在“Page 省略 key”时表现不同：
+它们只在 Page 中省略 key 时表现不同：
 
 | 写法 | 结果 |
 |---|---|
 | `analytics(config)` | 安装并执行插件。Page 有 defaults 时，省略 key 会使用 defaults；否则该 Page 关闭。 |
-| `analytics.forPages(config)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
+| `analytics.withPageOptIn(config)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
 | `plugins` 中的 `false`、`null` 或 `undefined` | 条件式省略整个插件；不执行任何插件 hook。 |
 | `analytics(config)` 后 Page 省略 key | Page 合同有 defaults 时用 defaults 启用；否则关闭该 Page。 |
-| `analytics.forPages(config)` 后 Page 省略 key | 即使 Page 有 defaults，也关闭该 Page。 |
+| `analytics.withPageOptIn(config)` 后 Page 省略 key | 即使 Page 有 defaults，也关闭该 Page。 |
 | `analytics: false` | 在该 Page 禁用。 |
 | `analytics: true` | 使用 Page `defaults` 启用；合同没有 defaults 时会报错。 |
 | `analytics: { ... }` | 将 object 合并到 Page defaults，校验后启用该 Page。 |
 
-只在选定 Page 启用时，使用 `forPages()`：
+只在选定 Page 启用时，使用 `withPageOptIn()`：
 
 ```ts
 // ev.config.ts
 export default defineConfig({
-  plugins: [analytics.forPages({ endpoint: "/events" })],
+  plugins: [analytics.withPageOptIn({ endpoint: "/events" })],
 });
 ```
 
@@ -119,14 +122,14 @@ export default definePageConfig({
 plugins: [process.env.ANALYTICS === "1" && analytics(options)]
 ```
 
-可能进入 falsy 分支的插件并不保证安装，因此不会向 Page 暴露 key。这种写法适用于
-没有 Page setting 的整插件条件。Page 需要配置插件时，应确定性安装插件，再用
-`analytics: false` 或 `forPages()` 控制 Page 级启用。
+可能进入 falsy 分支的插件并不保证安装，因此不会向 Page config 暴露 key。这种写法
+适用于没有 Page setting 的整插件条件。Page 需要配置插件时，应确定性安装插件，再用
+`analytics: false` 或 `withPageOptIn()` 控制 Page 级启用。
 
-Page key 只从 `defineConfig()` 推导出的 tuple 中确定存在的条目生成。宽化后的 plugin
+Plugin key 只从 `defineConfig()` 推导出的 tuple 中确定存在的条目生成。宽化后的 plugin
 array、在多个 array 之间做条件选择，或在多个完整 config object 之间做条件选择，都
-无法证明某个条目一定存在，因此不会暴露 Page key。需要 Page 配置的插件应直接保留在
-`defineConfig({ plugins: [...] })` tuple 中。
+无法证明某个条目一定存在，因此不会向 Page config 暴露 key。需要 Page 配置的插件应
+直接保留在 `defineConfig({ plugins: [...] })` tuple 中。
 
 ## 类型安全与校验
 

@@ -26,7 +26,6 @@ export async function runInspectCommand(
     config ?? undefined,
     {
       cwd,
-      runLifecycleHooks: false,
     },
   );
 

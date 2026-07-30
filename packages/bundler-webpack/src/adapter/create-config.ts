@@ -10,9 +10,10 @@ import {
   canonicalPortableArtifactPathKey,
   type ResolvedBuildOutputPaths,
   resolveBuildOutputPaths,
+  runConfigureBundlerHook,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
-import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
+import type { ConfigureBundlerContext, PluginHooks } from "@evjs/ev/plugin";
 import type {
   BuildEntry,
   BuildPlan,
@@ -197,7 +198,7 @@ export async function createWebpackConfigs(
     return expectation ? [expectation] : [];
   });
 
-  const ctx: BundlerCtx<WebpackConfig> = {
+  const ctx: ConfigureBundlerContext<WebpackConfig> = {
     mode: plan.mode,
     command: plan.mode === "production" ? "build" : "dev",
     cwd,
@@ -213,54 +214,50 @@ export async function createWebpackConfigs(
     addWatchFile: options.addWatchFile ?? missingFrameworkWatchCollector,
   };
 
-  for (const h of hooks) {
-    if (h.bundlerConfig) {
-      await h.bundlerConfig(configs, ctx);
-      await assertFrameworkWebpackOutputs(
-        cwd,
-        configs,
-        frameworkOutputExpectations,
-        outputPaths,
-      );
-    }
-  }
-
-  await assertFrameworkWebpackOutputs(
-    cwd,
-    configs,
-    frameworkOutputExpectations,
-    outputPaths,
-  );
-
-  const cleanOutputs: Array<{
-    configName: string;
-    field: string;
-    path: string;
-  }> = [];
-  for (const bundlerConfig of configs) {
-    if (!bundlerConfig.output?.clean) continue;
-    const outputPath = bundlerConfig.output.path;
-    const configName = bundlerConfig.name ?? "unnamed";
-    if (!outputPath) {
-      throw new Error(
-        `[evjs] Webpack config "${configName}" enables recursive output cleaning without an explicit output.path.`,
-      );
-    }
-    const field = getWebpackOutputField(bundlerConfig);
-    await assertSafeBundlerCleanOutputPath(
+  const validateConfigs = async () => {
+    await assertFrameworkWebpackOutputs(
       cwd,
-      field,
-      outputPaths.rootDir,
-      outputPath,
-    );
-    assertOwnedWebpackCleanOutput(
-      cwd,
-      { configName, field, path: outputPath },
+      configs,
+      frameworkOutputExpectations,
       outputPaths,
-      cleanOutputs,
     );
-    cleanOutputs.push({ configName, field, path: outputPath });
+
+    const cleanOutputs: Array<{
+      configName: string;
+      field: string;
+      path: string;
+    }> = [];
+    for (const bundlerConfig of configs) {
+      if (!bundlerConfig.output?.clean) continue;
+      const outputPath = bundlerConfig.output.path;
+      const configName = bundlerConfig.name ?? "unnamed";
+      if (!outputPath) {
+        throw new Error(
+          `[evjs] Webpack config "${configName}" enables recursive output cleaning without an explicit output.path.`,
+        );
+      }
+      const field = getWebpackOutputField(bundlerConfig);
+      await assertSafeBundlerCleanOutputPath(
+        cwd,
+        field,
+        outputPaths.rootDir,
+        outputPath,
+      );
+      assertOwnedWebpackCleanOutput(
+        cwd,
+        { configName, field, path: outputPath },
+        outputPaths,
+        cleanOutputs,
+      );
+      cleanOutputs.push({ configName, field, path: outputPath });
+    }
+  };
+
+  for (const h of hooks) {
+    await runConfigureBundlerHook(h, configs, ctx, validateConfigs);
   }
+
+  await validateConfigs();
 
   return configs;
 }
@@ -277,7 +274,7 @@ async function assertFrameworkWebpackOutputs(
     );
     if (matches.length !== 1) {
       throw new Error(
-        `[evjs] Webpack bundlerConfig hooks must preserve exactly one framework config named "${expectation.configName}"; found ${matches.length}.`,
+        `[evjs] Webpack configureBundler hooks must preserve exactly one framework config named "${expectation.configName}"; found ${matches.length}.`,
       );
     }
     await assertFrameworkWebpackOutput(
@@ -379,7 +376,7 @@ async function assertFrameworkWebpackOutput(
   const expectedPath = expectation.path;
   if (actualPath !== expectedPath) {
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" output.path "${actualPath ? formatProjectRelativeOutputPath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${expectation.field} directory "${formatProjectRelativeOutputPath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by bundlerConfig hooks.`,
+      `[evjs] Webpack config "${expectation.configName}" output.path "${actualPath ? formatProjectRelativeOutputPath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${expectation.field} directory "${formatProjectRelativeOutputPath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by configureBundler hooks.`,
     );
   }
 
@@ -429,14 +426,14 @@ function assertFrameworkWebpackEntryNames(
   const actualNames = readExplicitWebpackEntryNames(config);
   if (!actualNames) {
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" must keep a static entry object so framework entry names can be validated after bundlerConfig hooks.`,
+      `[evjs] Webpack config "${expectation.configName}" must keep a static entry object so framework entry names can be validated after configureBundler hooks.`,
     );
   }
 
   for (const expectedName of expectation.entryNames) {
     if (actualNames.includes(expectedName)) continue;
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" must preserve framework entry name "${expectedName}" after bundlerConfig hooks.`,
+      `[evjs] Webpack config "${expectation.configName}" must preserve framework entry name "${expectedName}" after configureBundler hooks.`,
     );
   }
 }
@@ -446,7 +443,7 @@ function assertPortableWebpackArtifactNames(configs: Configuration[]): void {
     const configName = config.name ?? "unnamed";
     if (typeof config.entry === "function") {
       throw new Error(
-        `[evjs] Webpack config "${configName}" must use static entries so evjs can validate emitted entry names after bundlerConfig hooks.`,
+        `[evjs] Webpack config "${configName}" must use static entries so evjs can validate emitted entry names after configureBundler hooks.`,
       );
     }
 
@@ -511,7 +508,7 @@ function assertStaticWebpackChunkName(value: unknown, field: string): void {
   if (value === undefined || value === false) return;
   if (typeof value !== "string") {
     throw new Error(
-      `[evjs] ${field} must be a static portable relative artifact path so evjs can validate it after bundlerConfig hooks.`,
+      `[evjs] ${field} must be a static portable relative artifact path so evjs can validate it after configureBundler hooks.`,
     );
   }
   assertPortableRelativeArtifactPath(value, field);
@@ -547,7 +544,7 @@ function assertWebpackOutputTemplates(
     const expected = expectation.templates[field];
     if (Object.is(actual, expected)) continue;
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" output.${field} ${formatOutputTemplate(actual)} must remain the framework-owned template ${formatOutputTemplate(expected)}. bundlerConfig hooks cannot override framework output file templates.`,
+      `[evjs] Webpack config "${expectation.configName}" output.${field} ${formatOutputTemplate(actual)} must remain the framework-owned template ${formatOutputTemplate(expected)}. configureBundler hooks cannot override framework output file templates.`,
     );
   }
 
@@ -565,7 +562,7 @@ function assertWebpackOutputTemplates(
       continue;
     }
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" MiniCssExtractPlugin ${field} ${formatOutputTemplate(actualCssTemplates[field])} must remain the framework-owned template ${formatOutputTemplate(expectation.cssTemplates[field])}. bundlerConfig hooks cannot override framework CSS output file templates.`,
+      `[evjs] Webpack config "${expectation.configName}" MiniCssExtractPlugin ${field} ${formatOutputTemplate(actualCssTemplates[field])} must remain the framework-owned template ${formatOutputTemplate(expectation.cssTemplates[field])}. configureBundler hooks cannot override framework CSS output file templates.`,
     );
   }
 }

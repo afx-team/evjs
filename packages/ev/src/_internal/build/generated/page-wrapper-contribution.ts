@@ -20,9 +20,6 @@ export function applyPageWrapperContributions(
   );
   if (contributions.length === 0) return;
 
-  const projectionCounts = new Map(
-    contributions.map((contribution) => [contribution.key, 0]),
-  );
   const matchingContributions = (
     pageId: string,
     runtime: "client" | "server",
@@ -32,14 +29,6 @@ export function applyPageWrapperContributions(
         contribution.runtime !== (runtime === "client" ? "server" : "client") &&
         targetMatchesPage(contribution.target, graph, pageId),
     );
-  const recordProjection = (matches: PageWrapperSlotPlanItem[]) => {
-    for (const contribution of matches) {
-      projectionCounts.set(
-        contribution.key,
-        (projectionCounts.get(contribution.key) ?? 0) + 1,
-      );
-    }
-  };
   // Entry metadata is outer-to-inner. Contributions use component-transform
   // order, so a later declaration wraps an earlier declaration.
   const contributedLayers = (matches: PageWrapperSlotPlanItem[]) =>
@@ -58,7 +47,6 @@ export function applyPageWrapperContributions(
           ...(route.wrappers ?? []),
           ...contributedLayers(matches).map((layer) => layer.module),
         ];
-        recordProjection(matches);
       }
       continue;
     }
@@ -72,7 +60,6 @@ export function applyPageWrapperContributions(
         ...(entry.metadata.layers ?? []),
         ...contributedLayers(matches),
       ];
-      recordProjection(matches);
       continue;
     }
     if (entry.metadata?.type === "react-server-page") {
@@ -82,7 +69,6 @@ export function applyPageWrapperContributions(
         ...(entry.metadata.layers ?? []),
         ...contributedLayers(matches),
       ];
-      recordProjection(matches);
     }
   }
 
@@ -96,20 +82,75 @@ export function applyPageWrapperContributions(
       ...contributedLayers(matches),
     ];
   }
+}
 
-  for (const contribution of contributions) {
-    if ((projectionCounts.get(contribution.key) ?? 0) > 0) continue;
-    const target = contribution.target
-      ? describeTarget(contribution.target)
-      : "any Page";
-    const runtime =
-      contribution.runtime === "all"
-        ? "client or server"
-        : contribution.runtime;
-    throw new Error(
-      `[evjs] Plugin "${contribution.pluginName}" page.wrapper contribution "${contribution.id}" targets ${target}, but no ${runtime} Page runtime projection exists for that target.`,
-    );
+/** Return the deterministic diagnostic for an unprojectable Page wrapper. */
+export function getPageWrapperProjectionError(
+  plan: BuildPlan,
+  graph: CoreGraph,
+  contribution: PageWrapperSlotPlanItem,
+): string | undefined {
+  return hasPageWrapperRuntimeProjection(plan, graph, contribution)
+    ? undefined
+    : createPageWrapperProjectionError(contribution);
+}
+
+function hasPageWrapperRuntimeProjection(
+  plan: BuildPlan,
+  graph: CoreGraph,
+  contribution: PageWrapperSlotPlanItem,
+): boolean {
+  const matches = (pageId: string, runtime: "client" | "server") =>
+    contribution.runtime !== (runtime === "client" ? "server" : "client") &&
+    targetMatchesPage(contribution.target, graph, pageId);
+
+  for (const entry of plan.entries) {
+    if (entry.metadata?.type === "pages-app") {
+      if (
+        entry.metadata.routes.some(
+          (route) =>
+            route.target?.kind === "page" &&
+            matches(route.target.pageId, "client"),
+        )
+      ) {
+        return true;
+      }
+      continue;
+    }
+
+    const pageId = entry.owner?.pageId;
+    if (!pageId) continue;
+    if (
+      entry.metadata?.type === "react-component-page" &&
+      matches(pageId, "client")
+    ) {
+      return true;
+    }
+    if (
+      entry.metadata?.type === "react-server-page" &&
+      matches(pageId, "server")
+    ) {
+      return true;
+    }
   }
+
+  return (plan.server.renderers ?? []).some(
+    (renderer) =>
+      renderer.owner?.pageId !== undefined &&
+      renderer.metadata?.type === "react-server-page" &&
+      matches(renderer.owner.pageId, "server"),
+  );
+}
+
+function createPageWrapperProjectionError(
+  contribution: PageWrapperSlotPlanItem,
+): string {
+  const target = contribution.target
+    ? describeTarget(contribution.target)
+    : "any Page";
+  const runtime =
+    contribution.runtime === "all" ? "client or server" : contribution.runtime;
+  return `[evjs] Plugin "${contribution.pluginName}" page.wrapper contribution "${contribution.id}" targets ${target}, but no ${runtime} Page runtime projection exists for that target.`;
 }
 
 function targetMatchesPage(

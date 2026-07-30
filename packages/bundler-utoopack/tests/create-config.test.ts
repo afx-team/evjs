@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import {
+  collectPluginHooks,
   createBuildPlan,
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
@@ -149,7 +150,7 @@ describe("createUtoopackConfig", () => {
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
       name: "generated-alias",
-      contributions(ctx) {
+      emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
           scope: { kind: "application" },
@@ -811,7 +812,7 @@ describe("createUtoopackConfig", () => {
     ]);
   });
 
-  it("awaits async bundlerConfig hooks before returning config", async () => {
+  it("awaits async configureBundler hooks before returning config", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const watchedFiles: string[] = [];
@@ -822,7 +823,7 @@ describe("createUtoopackConfig", () => {
       process.cwd(),
       [
         {
-          async bundlerConfig(cfg, ctx) {
+          async configureBundler(cfg, ctx) {
             await Promise.resolve();
             cfg.output ??= {};
             cfg.output.publicPath = "runtime";
@@ -846,7 +847,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) {
               utoopackConfig.output.path = path.resolve(
                 process.cwd(),
@@ -861,7 +862,7 @@ describe("createUtoopackConfig", () => {
     );
   });
 
-  it("validates output ownership after each bundlerConfig hook", async () => {
+  it("validates output ownership after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const events: string[] = [];
@@ -869,7 +870,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("mutate");
             if (utoopackConfig.output) {
               utoopackConfig.output.path = path.resolve(
@@ -880,7 +881,7 @@ describe("createUtoopackConfig", () => {
           },
         },
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("restore");
             if (utoopackConfig.output) {
               utoopackConfig.output.path = path.resolve(
@@ -897,7 +898,110 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("validates output file templates after each bundlerConfig hook", async () => {
+  it("attributes post-hook output validation to the managed plugin", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const hooks = await collectPluginHooks<ConfigComplete>(
+      [
+        {
+          name: "@test/utoopack-invalid-output",
+          setup() {
+            return {
+              configureBundler(utoopackConfig) {
+                if (utoopackConfig.output) {
+                  utoopackConfig.output.path = path.resolve(
+                    process.cwd(),
+                    "dist/server",
+                  );
+                }
+              },
+            };
+          },
+        },
+      ],
+      {
+        mode: "development",
+        command: "dev",
+        cwd: process.cwd(),
+        config,
+        logger: console as never,
+        addWatchFile() {},
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      await createUtoopackConfig(config, plan, process.cwd(), hooks);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      name: "PluginHookError",
+      code: "EV_PLUGIN_HOOK_ERROR",
+      plugin: "@test/utoopack-invalid-output",
+      hook: "configureBundler",
+    });
+    const cause = (thrown as Error).cause;
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).message).toContain(
+      'Utoopack output.path "dist/server"',
+    );
+    expect(cause).not.toMatchObject({ name: "PluginHookError" });
+  });
+
+  it("attributes dev worker cloneability validation to the managed plugin", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const hooks = await collectPluginHooks<ConfigComplete>(
+      [
+        {
+          name: "@test/utoopack-non-cloneable-config",
+          setup() {
+            return {
+              configureBundler(utoopackConfig) {
+                (
+                  utoopackConfig as ConfigComplete & {
+                    nonCloneable?: () => void;
+                  }
+                ).nonCloneable = () => {};
+              },
+            };
+          },
+        },
+      ],
+      {
+        mode: "development",
+        command: "dev",
+        cwd: process.cwd(),
+        config,
+        logger: console as never,
+        addWatchFile() {},
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      await createUtoopackConfig(config, plan, process.cwd(), hooks);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      name: "PluginHookError",
+      code: "EV_PLUGIN_HOOK_ERROR",
+      plugin: "@test/utoopack-non-cloneable-config",
+      hook: "configureBundler",
+    });
+    const cause = (thrown as Error).cause;
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).message).toContain(
+      "Utoopack development config must be structured-cloneable",
+    );
+    expect(cause).not.toMatchObject({ name: "PluginHookError" });
+  });
+
+  it("validates output file templates after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const events: string[] = [];
@@ -905,7 +1009,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("mutate");
             if (utoopackConfig.output) {
               utoopackConfig.output.filename = "../../escape.js";
@@ -913,7 +1017,7 @@ describe("createUtoopackConfig", () => {
           },
         },
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("restore");
             if (utoopackConfig.output) {
               utoopackConfig.output.filename = "[name].js";
@@ -927,7 +1031,7 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("rejects portable artifact escapes in added entry names after each bundlerConfig hook", async () => {
+  it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const events: string[] = [];
@@ -935,7 +1039,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("mutate");
             utoopackConfig.entry.push({
               import: "./src/plugin-entry.ts",
@@ -944,7 +1048,7 @@ describe("createUtoopackConfig", () => {
           },
         },
         {
-          bundlerConfig() {
+          configureBundler() {
             events.push("restore");
           },
         },
@@ -955,7 +1059,7 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("validates entry names even when no bundlerConfig hook runs", async () => {
+  it("validates entry names even when no configureBundler hook runs", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const [entry] = plan.entries;
@@ -982,7 +1086,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             utoopackConfig.optimization = {
               ...utoopackConfig.optimization,
               splitChunks,
@@ -995,14 +1099,14 @@ describe("createUtoopackConfig", () => {
     );
   });
 
-  it("preserves framework entry names across bundlerConfig hooks", async () => {
+  it("preserves framework entry names across configureBundler hooks", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
 
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             utoopackConfig.entry = utoopackConfig.entry.filter(
               (entry) => entry.name !== "main",
             );
@@ -1010,7 +1114,7 @@ describe("createUtoopackConfig", () => {
         },
       ]),
     ).rejects.toThrow(
-      'Utoopack bundlerConfig hooks must preserve framework entry name "main" exactly once; found 0',
+      'Utoopack configureBundler hooks must preserve framework entry name "main" exactly once; found 0',
     );
   });
 
@@ -1021,7 +1125,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) {
               utoopackConfig.output.clean = false;
               utoopackConfig.output.path = "dist/client";
@@ -1050,7 +1154,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) {
               utoopackConfig.output.clean = false;
               utoopackConfig.output.path = path.resolve(
@@ -1068,7 +1172,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) utoopackConfig.output.clean = false;
             if (utoopackConfig.server?.output) {
               utoopackConfig.server.output.path = path.resolve(

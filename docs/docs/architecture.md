@@ -78,8 +78,9 @@ suffix is only a source-organization convention.
 ## Typed Plugin Settings
 
 Applications install plugin factories through `config.plugins`. Each factory
-receives its independent typed Application configuration. A Page-aware plugin
-also declares a short key and a separate Page contract consumed from adjacent
+receives its independent typed Application configuration. A plugin declaring
+Application or Page options has one short key shared by both CoreGraph setting
+bags. A Page contract exposes that same key through adjacent
 `page.config.ts#plugins`.
 
 Application and Page contracts never merge with each other. Authored values
@@ -102,17 +103,18 @@ sequenceDiagram
   participant Bundler as bundler adapter
 
   CLI->>Core: load config and select bundler
-  Core->>Plugin: config() and resolve Application settings
-  Core->>Plugin: setup() and buildStart()
+  Core->>Plugin: configure() and resolve Application settings
+  Core->>Plugin: setup()
   Core->>Core: resolve Page settings and create CoreGraph/BuildPlan
-  Core->>Plugin: contributions(framework view)
+  Core->>Plugin: emitIR(framework view)
   Core->>Core: materialize .ev
-  Core->>Plugin: bundlerConfig()
+  Core->>Plugin: configureBundler()
   Core->>Bundler: build(BuildPlan)
   Bundler-->>Core: build facts
+  Core->>Plugin: beforeBuild(isRebuild)
   Core->>Core: link BuildOutput
-  Core->>Plugin: buildOutput()
-  Core->>Plugin: transformHtml() and buildEnd()
+  Core->>Plugin: transformOutput()
+  Core->>Plugin: transformHtml() and afterBuild()
 ```
 
 `ev prepare` stops after materializing the generated framework IR:
@@ -125,6 +127,9 @@ sequenceDiagram
 ├── plugins/
 └── manifest.json
 ```
+
+Because `ev prepare` and `ev inspect` do not receive bundler facts, they do not
+invoke `beforeBuild()` or `afterBuild()`.
 
 The IR records generated modules, import edges, framework slots, and concrete
 entry facades. Bundler adapters compile those entries and return asset/build

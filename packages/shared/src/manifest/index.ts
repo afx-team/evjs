@@ -948,6 +948,8 @@ export interface GeneratedEntryPlan {
   originalImport: string;
   kind: BuildEntry["kind"];
   environment: BuildEnvironment;
+  /** Stable digest of the generated compiler-entry source. */
+  sourceHash?: string;
 }
 
 export interface GeneratedImportEdgePlan {

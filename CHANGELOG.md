@@ -12,6 +12,16 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   factories in `config.plugins`; Pages use one generated short-keyed `plugins`
   map. The previous owner-scoped extension registries and separate Route or
   Document configuration surfaces are removed.
+- **Direct plugin authoring vocabulary** — The public plugin model now uses
+  `pluginOptions()`, `name` / `key`, `configure()`, `emitIR()` /
+  `emitPageIR()`, `withPageOptIn()`, and the lifecycle hooks `beforeBuild()`,
+  `configureBundler()`, `transformOutput()`, `transformHtml()`,
+  `afterBuild()`, and `dispose()`. Previous spellings are removed without
+  compatibility aliases. Public contexts follow the same vocabulary, including
+  `PluginConfigureContext`, `PluginSetupContext`,
+  `PluginEmitIRContext`, `ConfigureBundlerContext`,
+  `BeforeBuildContext`, `TransformOutputContext`, `TransformHtmlContext`, and
+  `DisposeContext`.
 - **Application-level qiankun route overlay** — The qiankun master no longer
   exposes a Page contract or derives micro-app bindings from `page.config.ts`.
   Its async Application resolver returns the authoritative `apps/routes`
@@ -24,13 +34,25 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 - **Stable Page plugin types** — `prepare`, `dev`, and `build` generate
   `src/plugin-types.d.ts` as a static bridge to `ev.config.ts`, so Page keys and
   values for definitely installed plugins retain editor types without Page
-  imports. JavaScript config stays isolated from `any` rather than claiming
-  exact Page keys.
+  imports. The bridge is generated before Page graph analysis and stays under
+  normally included `src` rather than normally excluded `.ev`. JavaScript
+  config stays isolated from `any` rather than claiming exact Page keys.
+- **Declarative plugin IR emission** — `emitIR()` and `emitPageIR()` register
+  deterministic modules, data, facades, and slot records in memory. evjs
+  validates the complete declaration set before materializing `.ev`; the
+  methods are not immediate file-write APIs.
+- **Safer plugin setup and diagnostics** — `setup()` can register cleanup
+  immediately with `ctx.onDispose()`, including rollback when setup fails or
+  returns invalid hooks. Plugin failures expose stable plugin and hook
+  attribution through `PluginHookError`. `configure()` now rejects adding,
+  removing, replacing, or reordering `config.plugins` so one pipeline keeps a
+  stable plugin snapshot.
 - **Predictable plugin activation** — Plugin factories distinguish normal
-  installation from Page-only opt-in with `forPages()` on defaultable Page
+  installation from Page-only opt-in with `withPageOptIn()` on defaultable Page
   contracts. Falsy entries in `config.plugins` conditionally omit a plugin; on
   an omitted Page, a normal installation uses declared Page defaults when
-  available, while `forPages()` always requires `true` or an options object.
+  available, while `withPageOptIn()` always requires `true` or an options
+  object.
 - **Composable plugin defaults** — Application and Page contracts remain
   independent, while authored fields deep-merge over defaults within each
   contract before validation.

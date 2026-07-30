@@ -13,7 +13,7 @@ import {
   createPluginApplicationSettingContext,
   type DefinedPluginDeclaration,
   getDefinedPluginDeclaration,
-  type PluginSettingContext,
+  type PluginOptionsContext,
   resolveDefinedPluginApplicationSetting,
   resolveDefinedPluginPageSetting,
 } from "../../plugin/defined.js";
@@ -72,32 +72,21 @@ export function collectPluginSettingsRegistry<TBundlerCfg>(
       const existing = byKey.get(declaration.key);
       if (existing) {
         throw new Error(
-          `[evjs] Plugin key "${declaration.key}" is declared by both "${existing.id}" and "${declaration.id}". Every installed Page plugin key must be unique.`,
+          `[evjs] Plugin key "${declaration.key}" is declared by both "${existing.name}" and "${declaration.name}". Every installed plugin key must be unique.`,
         );
       }
     }
     const registered = Object.freeze({ ...declaration, plugin });
     entries.push(registered);
-    if (registered.key) byKey.set(registered.key, registered);
-    if (Object.hasOwn(catalogEntries, registered.settingsKey)) {
-      throw new Error(
-        `[evjs] Plugin internal key "${registered.settingsKey}" is shared by multiple installed plugins. Application-only keys are derived from complete plugin ids; use distinct ids.`,
-      );
+    if (!registered.key) {
+      continue;
     }
-    defineRecordValue(catalogEntries, registered.settingsKey, {
-      id: registered.id,
-      ...(registered.application
-        ? { application: contractSnapshot(registered.application) }
-        : {}),
-      ...(registered.page
-        ? {
-            page: {
-              ...contractSnapshot(registered.page),
-              defaultable: registered.page.defaultable,
-            },
-          }
-        : {}),
-    });
+    byKey.set(registered.key, registered);
+    defineRecordValue(
+      catalogEntries,
+      registered.key,
+      createCatalogEntry(registered),
+    );
   }
 
   return Object.freeze({
@@ -123,8 +112,8 @@ export function resolvePluginSettingsState<TBundlerCfg>(
       context,
       { reusePrepared: options.reusePreparedApplicationSettings === true },
     );
-    if (setting) {
-      defineRecordValue(applicationSettings, entry.settingsKey, {
+    if (setting && entry.key) {
+      defineRecordValue(applicationSettings, entry.key, {
         enabled: setting.enabled,
       });
     }
@@ -224,13 +213,13 @@ function resolvePageSettings(
     if (!entry.page) continue;
     const setting = resolveDefinedPluginPageSetting(
       entry.plugin,
-      getOwn(configured, requirePageKey(entry)),
+      getOwn(configured, requirePluginKey(entry)),
       context,
     );
     if (setting) {
       defineRecordValue(
         settings,
-        requirePageKey(entry),
+        requirePluginKey(entry),
         cloneSetting(setting as CorePagePluginSetting),
       );
     }
@@ -255,7 +244,7 @@ function assertPageConfiguredKeys(
     }
     if (!entry.page) {
       throw new Error(
-        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${key}", but plugin "${entry.id}" does not declare Page configuration.`,
+        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${key}", but plugin "${entry.name}" does not declare Page options.`,
       );
     }
   }
@@ -266,18 +255,18 @@ function assertApplicationSettings(
   settings: CoreApplicationPluginSettings,
 ): void {
   for (const entry of registry.entries) {
-    if (!Object.hasOwn(settings, entry.settingsKey)) {
+    if (entry.key && !Object.hasOwn(settings, entry.key)) {
       throw new Error(
-        `[evjs] Application settings for installed plugin "${entry.id}" were not resolved before graph analysis.`,
+        `[evjs] Application options for installed plugin "${entry.name}" were not resolved before graph analysis.`,
       );
     }
   }
 }
 
-function requirePageKey(entry: RegisteredPluginSettings): string {
+function requirePluginKey(entry: RegisteredPluginSettings): string {
   if (entry.key) return entry.key;
   throw new Error(
-    `[evjs] Internal invariant: Page-aware plugin "${entry.id}" has no Page key.`,
+    `[evjs] Internal invariant: plugin "${entry.name}" with options has no key.`,
   );
 }
 
@@ -285,7 +274,7 @@ function graphApplicationContext(
   page: CoreGraph["pages"][string],
   application: CoreGraph["applications"][string] | undefined,
   configured: ResolvedPageFileConfig | undefined,
-): PluginSettingContext {
+): PluginOptionsContext {
   return Object.freeze({
     owner: "page",
     applicationId: page.applicationId,
@@ -308,6 +297,30 @@ function contractSnapshot(contract: { readonly schemaVersion?: string }): {
     : {};
 }
 
+function createCatalogEntry(
+  registered: RegisteredPluginSettings,
+): CorePluginCatalogEntrySnapshot {
+  const page = registered.page
+    ? {
+        ...contractSnapshot(registered.page),
+        defaultable: registered.page.defaultable,
+      }
+    : undefined;
+  if (registered.application) {
+    return {
+      name: registered.name,
+      application: contractSnapshot(registered.application),
+      ...(page ? { page } : {}),
+    };
+  }
+  if (page) {
+    return { name: registered.name, page };
+  }
+  throw new Error(
+    `[evjs] Internal invariant: plugin "${registered.name}" has a key without Application or Page options.`,
+  );
+}
+
 function cloneCatalog(
   catalog: CorePluginCatalogSnapshot,
 ): CorePluginCatalogSnapshot {
@@ -315,16 +328,29 @@ function cloneCatalog(
     entries: Object.fromEntries(
       Object.entries(catalog.entries).map(([key, entry]) => [
         key,
-        {
-          id: entry.id,
-          ...(entry.application
-            ? { application: { ...entry.application } }
-            : {}),
-          ...(entry.page ? { page: { ...entry.page } } : {}),
-        },
+        cloneCatalogEntry(entry),
       ]),
     ),
   };
+}
+
+function cloneCatalogEntry(
+  entry: CorePluginCatalogEntrySnapshot,
+): CorePluginCatalogEntrySnapshot {
+  const page = entry.page ? { ...entry.page } : undefined;
+  if (entry.application) {
+    return {
+      name: entry.name,
+      application: { ...entry.application },
+      ...(page ? { page } : {}),
+    };
+  }
+  if (page) {
+    return { name: entry.name, page };
+  }
+  throw new Error(
+    `[evjs] Internal invariant: catalog plugin "${entry.name}" has no Application or Page contract.`,
+  );
 }
 
 function cloneSettings(

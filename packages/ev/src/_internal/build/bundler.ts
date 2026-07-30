@@ -98,12 +98,17 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
     /**
      * Called by the bundler adapter after a dev compile has fresh build facts.
      * The ev orchestrator owns framework output linking, plugin output hooks,
-     * manifest emission, and HTML emission.
+     * manifest emission, and HTML emission. Resolution is the publish commit
+     * boundary: adapters must retain that plan if later server activation fails.
+     * A false result temporarily rejects facts produced while framework IR is
+     * being replaced. No hooks or output ran, so adapters must retain and retry
+     * their latest facts after admission resumes; they must not activate a
+     * server or mark the rejected cycle emitted.
      */
     onBuildFacts: (
       facts: BundlerBuildFacts,
-      options?: { isRebuild?: boolean },
-    ) => void | Promise<void>;
+      options: { isRebuild: boolean },
+    ) => false | void | Promise<false> | Promise<void>;
     onServerBundleReady: () => void | Promise<void>;
   };
 }
@@ -112,7 +117,7 @@ export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
   /** The resolved config that produced the next plan. */
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   /**
-   * True when framework config or a `bundlerConfig()` dependency changed and
+   * True when framework config or a `configureBundler()` dependency changed and
    * the adapter must refresh its effective bundler configuration.
    */
   configChanged: boolean;
@@ -122,6 +127,12 @@ export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
   /** Settles if the adapter-owned dev service terminates independently. */
   done?: Promise<void>;
   close?(): void | Promise<void>;
+  /**
+   * Apply a preflighted plan after its generated IR has been published.
+   * Reject updates the adapter cannot coordinate safely. Before rejecting an
+   * unpublished update, the adapter must restore its own compiler state; evjs
+   * restores only the previous generated IR and framework snapshot.
+   */
   updatePlan(
     update: BuildPlanUpdate,
     options?: BundlerDevUpdateOptions<TBundlerCfg>,
@@ -173,6 +184,36 @@ export function isArtifactOnlyBuildPlanUpdate(
   );
 }
 
+/**
+ * Whether generated modules or entry facades consumed by a persistent compiler
+ * changed. Other generated-plan fields can still change framework-owned
+ * manifests or HTML while safely reusing the latest bundler facts.
+ */
+export function hasGeneratedCompilerInputChanges(
+  update: BuildPlanUpdate,
+): boolean {
+  if (!update.generatedChanged) return false;
+  const previous = generatedCompilerInputs(update.previous);
+  const next = generatedCompilerInputs(update.next);
+  if (!previous || !next) return true;
+  return JSON.stringify(previous) !== JSON.stringify(next);
+}
+
+function generatedCompilerInputs(plan: BuildPlan):
+  | {
+      modules: NonNullable<BuildPlan["generated"]>["modules"];
+      entries: NonNullable<BuildPlan["generated"]>["entries"];
+    }
+  | undefined {
+  const generated = plan.generated;
+  if (!generated) return undefined;
+  if (generated.entries.some((entry) => !entry.sourceHash)) return undefined;
+  return {
+    modules: generated.modules,
+    entries: generated.entries,
+  };
+}
+
 export interface BundlerCapabilities {
   build: {
     /** Build conventional server-rendered Page entries. */
@@ -183,6 +224,8 @@ export interface BundlerCapabilities {
     ppr: boolean;
   };
   dev: {
+    /** Replace the effective framework and bundler configuration in place. */
+    configuration: boolean;
     /** Relink generated framework artifacts and HTML without restarting. */
     html: boolean;
     /** Add, remove, or replace bundler entries without restarting. */
@@ -270,12 +313,18 @@ export function getBundlerBuildCapabilityGaps(
 export function getBundlerDevCapabilityGaps(
   bundler: Pick<BundlerAdapter, "capabilities">,
   update: BuildPlanUpdate,
+  options: { configChanged?: boolean } = {},
 ): BundlerCapabilityGap[] {
   const requirements: Array<{
     capability: BundlerDevCapability;
     required: boolean;
     reason: string;
   }> = [
+    {
+      capability: "configuration",
+      required: options.configChanged === true,
+      reason: "framework or plugin bundler configuration changed",
+    },
     {
       capability: "html",
       required:
@@ -341,10 +390,11 @@ export function preflightBundlerBuild(
 export function preflightBundlerDevUpdate(
   bundler: Pick<BundlerAdapter, "name" | "capabilities">,
   update: BuildPlanUpdate,
+  options?: { configChanged?: boolean },
 ): void {
   assertNoBundlerCapabilityGaps(
     bundler.name,
-    getBundlerDevCapabilityGaps(bundler, update),
+    getBundlerDevCapabilityGaps(bundler, update, options),
   );
 }
 

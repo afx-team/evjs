@@ -262,9 +262,9 @@ evPluginQiankunSlave({
 
 Path-like references are resolved from the project root before bundling.
 Package specifiers are resolved from project dependencies. From another
-plugin's `contributions()` hook, pass the opaque `GeneratedModuleRef` returned
-by `ctx.emit.module()` directly to `contributeQiankunMaster()` or
-`contributeQiankunSlave()`.
+plugin's `emitIR()` method, pass the opaque `GeneratedModuleRef` returned
+by `ctx.emit.module()` directly to `emitQiankunMasterIR()` or
+`emitQiankunSlaveIR()`.
 
 ## Runtime Shape
 
@@ -445,145 +445,6 @@ export default async function resolveQiankunMaster() {
 root-relative JS/CSS URLs to relative URLs, so the same slave HTML can be
 consumed below a proxy prefix. Keep asset proxies in `dev.proxy`, not in
 `src/apis`; application request Routes should not proxy micro-frontend assets.
-
-## Composing A Tern Platform Plugin
-
-An internal Tern plugin sits above the public bridge. The ownership boundary
-is:
-
-- `@evjs/plugin-qiankun` owns entry wrapping, lifecycle integration, runtime
-  route components, base/history projection, and qiankun loading behavior.
-- The Tern plugin owns backend site DTOs, app-id adaptation, menus,
-  authorization, deployment metadata, environment conventions, and any
-  Tern-specific development services.
-- Business applications install the Tern factory. They do not also install the
-  standalone qiankun master/slave factory or repeat platform fields in Pages.
-
-The Tern plugin can reuse the public helpers from its own `definePlugin()`
-descriptor. A composed master uses both the contribution and hook helper:
-
-```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
-import {
-  contributeQiankunMaster,
-  createQiankunMasterHooks,
-} from "@evjs/plugin-qiankun";
-
-type TernMasterConfig = {
-  siteId: string;
-  externalQiankun?: boolean;
-};
-
-export const ternMaster = definePlugin({
-  id: "@company/evjs-plugin-tern:master",
-  application: pluginConfig<TernMasterConfig>(),
-
-  setup() {
-    return createQiankunMasterHooks();
-  },
-
-  async contributions(ctx) {
-    const resolver = ctx.emit.module({
-      id: "tern-master-resolver",
-      scope: { kind: "application" },
-      // Private Tern code builds this source from its backend DTO contract.
-      source: buildTernResolverSource(ctx.options.siteId),
-    });
-
-    await contributeQiankunMaster(ctx, {
-      resolver,
-      ...(ctx.options.externalQiankun === undefined
-        ? {}
-        : { externalQiankun: ctx.options.externalQiankun }),
-    });
-  },
-});
-```
-
-`buildTernResolverSource()` in this outline is private Tern implementation, not
-an evjs API. Its generated module must default-export a
-`defineQiankunMasterResolver()` result and adapt the backend DTO into the public
-snapshot. For example, the adapter can map a backend application id to a stable
-`app.name`, then use that name in `route.microApp`:
-
-```ts
-const appNameByYuyanId = new Map(
-  site.apps.map((app) => [app.yuyanId, app.name] as const),
-);
-
-function requireAppName(yuyanId: string | undefined): string {
-  const name = appNameByYuyanId.get(yuyanId);
-  if (!name) throw new Error(`Unknown Tern application "${yuyanId}".`);
-  return name;
-}
-
-function adaptRoute(route: TernRoute) {
-  if (route.redirect) {
-    return { path: route.path, redirect: route.redirect };
-  }
-  return {
-    path: route.path,
-    microApp: requireAppName(route.microApp),
-    ...(route.mode ? { mode: route.mode } : {}),
-    microAppProps: normalizeTernMicroAppProps(route.microAppProps),
-  };
-}
-
-return {
-  apps: site.apps.map((app) => ({
-    name: app.name,
-    entry: app.entry,
-    props: app.props,
-  })),
-  routes: site.routes.map(adaptRoute),
-};
-```
-
-`normalizeTernMicroAppProps()` is likewise private adapter code: it removes or
-translates Tern-only settings before returning the public route shape. The
-adapter must validate missing identities before returning the snapshot.
-Menu hierarchy, permission filtering, deployment records, and similar fields
-remain Tern data; they are not fields of the open qiankun route contract.
-
-A composed slave reuses the matching hook and contribution helpers:
-
-```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
-import {
-  contributeQiankunSlave,
-  createQiankunSlaveHooks,
-} from "@evjs/plugin-qiankun";
-
-type TernSlaveConfig = {
-  name?: string;
-  externalQiankun?: boolean;
-};
-
-export const ternSlave = definePlugin({
-  id: "@company/evjs-plugin-tern:slave",
-  application: pluginConfig<TernSlaveConfig>({ defaults: {} }),
-
-  setup(ctx) {
-    return createQiankunSlaveHooks(
-      ctx,
-      ctx.options.name === undefined ? {} : { name: ctx.options.name },
-    );
-  },
-
-  async contributions(ctx) {
-    await contributeQiankunSlave(ctx, {
-      ...(ctx.options.name === undefined ? {} : { name: ctx.options.name }),
-      ...(ctx.options.externalQiankun === undefined
-        ? {}
-        : { externalQiankun: ctx.options.externalQiankun }),
-    });
-  },
-});
-```
-
-If Tern also has lifecycle hooks with the same names, its implementation must
-invoke the returned qiankun hooks as part of its own composed hook rather than
-overwriting them.
 
 ## Boundaries
 

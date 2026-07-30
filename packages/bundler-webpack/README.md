@@ -14,10 +14,10 @@ import { defineConfig } from "@evjs/ev";
 import { definePlugin } from "@evjs/ev/plugin";
 
 const webpackCustomization = definePlugin({
-  id: "@example/webpack-customization",
+  name: "@example/webpack-customization",
   setup() {
     return {
-      bundlerConfig: webpack((configs) => {
+      configureBundler: webpack((configs) => {
         for (const cfg of configs) {
           cfg.resolve ??= {};
         }

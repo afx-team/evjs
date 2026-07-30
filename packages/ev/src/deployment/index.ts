@@ -1,7 +1,7 @@
 /**
  * Built-in deployment projections for linked BuildOutput. Pure helpers create
  * artifact contents; adapter factories reserve their output paths before
- * buildEnd writes files. Neither layer rediscovers routes from source files or
+ * afterBuild writes files. Neither layer rediscovers routes from source files or
  * bundler statistics.
  */
 
@@ -323,7 +323,7 @@ export function nodeDeploymentAdapter(
     name: "node-deployment-adapter",
     setup(ctx) {
       return {
-        buildEnd: declareDeploymentOutputReservations(
+        afterBuild: declareDeploymentOutputReservations(
           ({ output }) => {
             const files = resolveNodeDeploymentFileNames(output, options);
             const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
@@ -446,7 +446,7 @@ export function staticDeploymentAdapter(
     name: "static-deployment-adapter",
     setup(ctx) {
       return {
-        buildEnd: declareDeploymentOutputReservations(
+        afterBuild: declareDeploymentOutputReservations(
           ({ output }) => {
             const files = resolveStaticDeploymentFileNames(output, options);
             const publicDir = resolveOutputDir(ctx.cwd, output, "publicDir");
@@ -556,7 +556,7 @@ export function edgeDeploymentAdapter(
     name: "edge-deployment-adapter",
     setup(ctx) {
       return {
-        buildEnd: declareDeploymentOutputReservations(
+        afterBuild: declareDeploymentOutputReservations(
           ({ output }) => {
             const files = resolveEdgeDeploymentFileNames(output, options);
             const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");

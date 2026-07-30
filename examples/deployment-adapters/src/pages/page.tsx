@@ -121,8 +121,8 @@ export default function DeploymentAdaptersPage() {
       <section className="panel muted">
         <h2>Deployment hooks exercised by this business flow</h2>
         <p>
-          buildOutput, per-document transformHtml, and buildEnd all run against
-          this app.
+          transformOutput, per-document transformHtml, and afterBuild all run
+          against this app.
         </p>
       </section>
     </main>

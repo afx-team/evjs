@@ -77,12 +77,14 @@ server routes, examples, or scaffolds change.
    omits `hydrate`; PPR and RSC use `render: "ssr"` without Page-level
    hydration.
 8. Applications install and configure plugins through `config.plugins`,
-   normally as `pluginFactory(applicationConfig)`. Application and Page
-   contracts are independent. Page values are strict JSON; a Page key may be
-   omitted, `false`, `true` when defaults exist, or an options object according
-   to the plugin's declared defaults and `forPages()` activation mode. Route
-   and Document contributions derive from the normalized Page graph instead
-   of exposing separate plugin configuration surfaces.
+   normally as `pluginFactory(applicationOptions)`. Authors declare a stable
+   `name`, one short `key` whenever Application or Page options exist, and
+   independent contracts with `pluginOptions()`. The same key identifies both
+   owner settings. Page values are strict JSON; the key may be omitted on a
+   Page, set to `false`, set to `true` when defaults exist, or hold an options
+   object according to the plugin's declared defaults and `withPageOptIn()`
+   activation mode. Route and Document contributions derive from the normalized
+   Page graph instead of exposing separate plugin configuration surfaces.
 9. Treat `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
    `.turbo`, and `node_modules` as generated output. Scaffolds and templates
    must not copy generated route or plugin types. Keep declarations under

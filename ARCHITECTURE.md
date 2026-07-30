@@ -28,10 +28,12 @@ The semantic inputs are:
   `src/pages/**/page.*`. The containing directory owns the Page scope and
   determines its URL.
 - `config.plugins` installs typed plugin factories and supplies each plugin's
-  independent Application configuration.
+  independent Application configuration. A plugin with Application or Page
+  options declares one short key shared by both owner setting bags.
 - adjacent `page.config.ts` modules provide static title, named metadata,
-  rendering settings, and a generated short-keyed Page plugin map. Plugins
-  derive Route or Document behavior from the normalized Page graph.
+  rendering settings, and a generated short-keyed Page plugin map. Page-aware
+  plugins use the same key there. Plugins derive Route or Document behavior
+  from the normalized Page graph.
 - `application.routes` is an explicit SPA-only route tree. It normalizes into
   the same graph and cannot be combined with canonical `routing` discovery.
 - `src/apis/**/api.*` defines framework-managed request Routes.
@@ -95,23 +97,29 @@ sequenceDiagram
   participant Shared as @evjs/shared/manifest
 
   CLI->>EV: load config and select bundler
-  EV->>Plugin: config() and resolve typed Application settings
-  EV->>Plugin: setup() and buildStart()
+  EV->>Plugin: configure() and resolve typed Application settings
+  EV->>Plugin: setup()
   EV->>EV: create CoreGraph, resolve Page settings, and derive BuildPlan
-  EV->>Plugin: contributions(framework view)
+  EV->>Plugin: emitIR(framework view)
   EV->>EV: materialize .ev IR
-  EV->>Plugin: bundlerConfig()
+  EV->>Plugin: configureBundler()
   EV->>Bundler: build(BuildPlan)
   Bundler-->>EV: BundlerBuildFacts
+  EV->>Plugin: beforeBuild(isRebuild)
   EV->>Shared: link BuildOutput
-  EV->>Plugin: buildOutput()
+  EV->>Plugin: transformOutput()
   EV->>EV: emit deployment metadata and HTML
-  EV->>Plugin: transformHtml() and buildEnd()
+  EV->>Plugin: transformHtml() and afterBuild()
 ```
 
-`buildOutput()` may change asset-group contents and add plugin deployment
+`transformOutput()` may change asset-group contents and add plugin deployment
 metadata, but graph identity, runtime paths, routes, output paths, and owner
 relationships remain framework-owned.
+
+`beforeBuild()` starts each framework output/link cycle after the bundler
+reports fresh facts; `afterBuild()` completes each successful cycle. Commands
+without bundler facts, including `ev prepare` and `ev inspect`, call neither
+hook.
 
 ## Generated IR
 
@@ -130,8 +138,9 @@ reviewable intermediate representation containing:
 The manifest links generated modules, import edges, slot contributions, and
 final entry facades. Bundlers compile those concrete entries. `.ev`,
 `src/route-types.d.ts`, `src/plugin-types.d.ts`, and `dist` are generated
-output and are not application source. The plugin declaration stays under
-`src` so normal application TypeScript programs consume its augmentation.
+output and are not application source. Generated route and plugin declarations
+stay under `src` so normal application TypeScript programs consume their
+augmentations; `.ev` is commonly excluded from those programs.
 
 ## Runtime And Deployment Contracts
 

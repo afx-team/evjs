@@ -556,7 +556,8 @@ export function diffBuildPlan(
     entries: diffByKey(previous.entries, next.entries, buildEntryKey),
     html: diffByKey(previous.html, next.html, (html) => html.id),
     generatedChanged:
-      stableStringify(previous.generated) !== stableStringify(next.generated),
+      stableStringify(getBundlerObservableGeneratedPlan(previous.generated)) !==
+      stableStringify(getBundlerObservableGeneratedPlan(next.generated)),
     resolveChanged:
       stableStringify(previous.resolve) !== stableStringify(next.resolve),
     runtimeChanged,
@@ -572,6 +573,19 @@ export function diffBuildPlan(
     devRoutingChanged:
       stableStringify(previous.dev) !== stableStringify(next.dev),
   };
+}
+
+/**
+ * The CoreGraph digest keeps the persisted plan linked to its semantic IR
+ * snapshot, but changing that digest alone does not require a bundler update.
+ */
+function getBundlerObservableGeneratedPlan(
+  generated: BuildPlan["generated"],
+): BuildPlan["generated"] {
+  if (!generated) return generated;
+  const observable = { ...generated };
+  delete observable.coreGraphHash;
+  return observable;
 }
 
 function createEntries(

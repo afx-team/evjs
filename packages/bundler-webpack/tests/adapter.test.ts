@@ -185,7 +185,7 @@ function createFrameworkCallbacks(options: {
     callbacks: {
       async onBuildFacts(
         facts: BundlerBuildFacts,
-        callbackOptions?: { isRebuild?: boolean },
+        callbackOptions: { isRebuild: boolean },
       ) {
         await emitFrameworkArtifacts({
           config: options.config,
@@ -195,7 +195,7 @@ function createFrameworkCallbacks(options: {
           hooks,
           facts,
           onBuildOutput: options.onBuildOutput,
-          isRebuild: callbackOptions?.isRebuild,
+          isRebuild: callbackOptions.isRebuild,
         });
       },
       onDevServerReady: options.onDevServerReady,
@@ -1686,7 +1686,7 @@ describe("webpackAdapter build", () => {
           plan,
           hooks: [
             {
-              bundlerConfig(configs) {
+              configureBundler(configs) {
                 const items = Array.isArray(configs) ? configs : [configs];
                 const client = items.find((item) => item.name === "client");
                 if (client?.output) client.output.path = path.join(cwd, "src");
@@ -1728,7 +1728,7 @@ describe("webpackAdapter build", () => {
           plan,
           hooks: [
             {
-              bundlerConfig(configs) {
+              configureBundler(configs) {
                 const items = Array.isArray(configs) ? configs : [configs];
                 const client = items.find((item) => item.name === "client");
                 if (client?.output) {
@@ -2337,6 +2337,61 @@ describe("webpackAdapter build", () => {
 
 describe("webpackAdapter dev", () => {
   devIt(
+    "retries temporarily rejected build facts in source order",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/home/page.tsx":
+          "export default function Home() { return null; }",
+      });
+      const config = await resolveProjectConfig(cwd, {
+        dev: { port },
+        routing: { mode: "mpa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = await materializeTestPlan({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
+      });
+      const onBuildOutput = vi.fn();
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        onBuildOutput,
+      });
+      const attempts: boolean[] = [];
+
+      const controller = await webpackAdapter.dev({
+        config,
+        cwd,
+        plan,
+        hooks: [],
+        callbacks: {
+          ...framework.callbacks,
+          onBuildFacts(facts, options) {
+            attempts.push(options.isRebuild);
+            if (attempts.length === 1) return false;
+            return framework.callbacks.onBuildFacts(facts, options);
+          },
+        },
+      });
+      if (!controller) throw new Error("Expected webpack dev controller");
+      try {
+        expect(attempts).toEqual([false, false]);
+        expect(onBuildOutput).toHaveBeenCalledTimes(1);
+      } finally {
+        await controller.close?.();
+      }
+    },
+  );
+
+  devIt(
     "cleans up a listening dev server when initial artifact linking fails",
     async () => {
       const port = await getAvailablePort();
@@ -2612,10 +2667,8 @@ describe("webpackAdapter dev", () => {
     };
     const hooks: PluginHooks<WebpackConfig>[] = [
       {
-        bundlerConfig(bundlerConfig) {
-          const configs = Array.isArray(bundlerConfig)
-            ? bundlerConfig
-            : [bundlerConfig];
+        configureBundler(config) {
+          const configs = Array.isArray(config) ? config : [config];
           for (const webpackConfig of configs) {
             webpackConfig.plugins = [
               ...(webpackConfig.plugins ?? []),
@@ -2641,11 +2694,11 @@ describe("webpackAdapter dev", () => {
       ...framework.callbacks,
       async onBuildFacts(
         facts: BundlerBuildFacts,
-        options?: { isRebuild?: boolean },
+        options: { isRebuild: boolean },
       ) {
         activeBuildFacts += 1;
         maxActiveBuildFacts = Math.max(maxActiveBuildFacts, activeBuildFacts);
-        rebuildFlags.push(options?.isRebuild ?? false);
+        rebuildFlags.push(options.isRebuild);
         try {
           await new Promise((resolve) => setTimeout(resolve, 100));
           await framework.callbacks.onBuildFacts(facts, options);
@@ -2781,7 +2834,7 @@ describe("webpackAdapter dev", () => {
     let failBundlerConfig = false;
     const hooks: PluginHooks<WebpackConfig>[] = [
       {
-        bundlerConfig() {
+        configureBundler() {
           if (failBundlerConfig) {
             throw new Error("html-only update should not rebuild webpack");
           }
@@ -2839,7 +2892,7 @@ describe("webpackAdapter dev", () => {
   });
 
   devIt(
-    "refreshes the server runtime after page metadata-only plan updates",
+    "keeps a metadata-only plan after published server activation fails",
     async () => {
       const port = await getAvailablePort();
       const cwd = await createFixture({
@@ -2910,11 +2963,43 @@ describe("webpackAdapter dev", () => {
         expect(update.entries.removed).toHaveLength(0);
         expect(update.entries.changed).toHaveLength(0);
         expect(update.html.changed).toHaveLength(0);
-        expect(update.generatedChanged).toBe(true);
+        expect(update.generatedChanged).toBe(false);
         expect(update.serverCompilationChanged).toBe(false);
         expect(update.serverDocumentsChanged).toBe(true);
         expect(update.devRoutingChanged).toBe(false);
         expect(onServerBundleReady).toHaveBeenCalled();
+
+        const publishedGraph = structuredClone(nextGraph);
+        const publishedPage = publishedGraph.pages.home;
+        if (!publishedPage) throw new Error("Expected home Page.");
+        publishedPage.metadata = {
+          title: "Published home",
+          meta: { description: "Published description" },
+        };
+        const publishedPlan = await materializeTestPlan({
+          config,
+          cwd,
+          graph: publishedGraph,
+          plan: createBuildPlan(config, publishedGraph, {
+            mode: "development",
+          }),
+        });
+        const publishedUpdate = diffBuildPlan(
+          nextPlan,
+          publishedPlan,
+          "config",
+        );
+
+        framework.update(publishedGraph, publishedPlan);
+        onServerBundleReady.mockRejectedValueOnce(
+          new Error("server activation failed"),
+        );
+        await expect(controller?.updatePlan(publishedUpdate)).rejects.toThrow(
+          "server activation failed",
+        );
+
+        const session = controller as unknown as { plan: BuildPlan };
+        expect(session.plan).toBe(publishedPlan);
       } finally {
         await controller?.close?.();
       }
@@ -2951,7 +3036,7 @@ describe("webpackAdapter dev", () => {
     let failBundlerConfig = false;
     const hooks: PluginHooks<WebpackConfig>[] = [
       {
-        bundlerConfig() {
+        configureBundler() {
           if (failBundlerConfig) {
             throw new Error("forced update failure");
           }

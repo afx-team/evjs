@@ -677,7 +677,7 @@ describe("assertCoreGraph", () => {
   it("accepts Application enablement and independent Page plugin settings", () => {
     const graph = createValidGraph();
     graph.plugins.entries.example = {
-      id: "@company/example-plugin",
+      name: "@company/example-plugin",
       application: { schemaVersion: "1" },
       page: {
         schemaVersion: "2",
@@ -868,7 +868,7 @@ describe("assertCoreGraph", () => {
     );
 
     graph.plugins.entries.example = {
-      id: "@company/example-plugin",
+      name: "@company/example-plugin",
       application: {},
     };
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
@@ -876,27 +876,35 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("validates catalog keys, unique ids, and contracts", () => {
+  it("validates catalog keys, unique names, and contracts", () => {
     const graph = createValidGraph();
     graph.plugins.entries.analytics = {
-      id: "@company/analytics",
+      name: "@company/analytics",
       page: { defaultable: false },
     };
     graph.plugins.entries.monitor = {
-      id: "@company/analytics",
+      name: "@company/analytics",
       application: {},
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      'duplicates the plugin id registered by key "analytics"',
+      'duplicates the plugin name registered by key "analytics"',
     );
 
     const invalidKeyGraph = createValidGraph();
     const entries = Object.create(null) as Record<string, unknown>;
-    entries["invalid.key"] = { id: "@company/invalid" };
+    entries["invalid.key"] = { name: "@company/invalid" };
     invalidKeyGraph.plugins.entries = entries as never;
     expect(() => assertCoreGraph(invalidKeyGraph, "coreGraph")).toThrow(
       "must be a lowercase plugin key",
+    );
+
+    const missingContractGraph = createValidGraph();
+    missingContractGraph.plugins.entries.example = {
+      name: "@company/example",
+    } as never;
+    expect(() => assertCoreGraph(missingContractGraph, "coreGraph")).toThrow(
+      "must declare an Application or Page contract",
     );
 
     const invalidContractGraph = createValidGraph();
@@ -907,11 +915,11 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("requires non-empty plugin ids and boolean enabled flags", () => {
-    const emptyIdGraph = createValidGraph();
-    emptyIdGraph.plugins.entries.example = { id: "" };
-    expect(() => assertCoreGraph(emptyIdGraph, "coreGraph")).toThrow(
-      "coreGraph.plugins.entries.example.id must be a non-empty string",
+  it("requires non-empty plugin names and boolean enabled flags", () => {
+    const emptyNameGraph = createValidGraph();
+    emptyNameGraph.plugins.entries.example = { name: "", application: {} };
+    expect(() => assertCoreGraph(emptyNameGraph, "coreGraph")).toThrow(
+      "coreGraph.plugins.entries.example.name must be a non-empty string",
     );
 
     const invalidSettingGraph = createValidGraph();
@@ -933,7 +941,7 @@ describe("assertCoreGraph", () => {
     const entries = Object.create(null) as Record<string, unknown>;
     Object.defineProperty(entries, key, {
       enumerable: true,
-      value: { id: `@company/${key}` },
+      value: { name: `@company/${key}` },
     });
     graph.plugins.entries = entries as never;
 
@@ -1408,7 +1416,7 @@ function addPluginCatalogEntry(
   graph: CoreGraph,
 ): CoreGraph["plugins"]["entries"][string] {
   const entry: CoreGraph["plugins"]["entries"][string] = {
-    id: "@company/example-plugin",
+    name: "@company/example-plugin",
     page: { defaultable: true },
   };
   graph.plugins.entries.example = entry;

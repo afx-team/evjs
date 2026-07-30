@@ -196,17 +196,17 @@ CMD ["node", "dist/server.mjs"]
 
 ## 自定义部署插件
 
-部署插件可以使用 `buildEnd({ deploymentMetadata })` 输出平台文件。需要平台专属
+部署插件可以使用 `afterBuild({ deploymentMetadata })` 输出平台文件。需要平台专属
 schema 字段时，可以在写文件前包装这份 metadata：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deployAdapter = definePlugin({
-  id: "@example/deploy-adapter",
+  name: "@example/deploy-adapter",
   setup() {
     return {
-      buildEnd({ deploymentMetadata }) {
+      afterBuild({ deploymentMetadata }) {
         const artifact = {
           ...deploymentMetadata,
           platform: "custom",

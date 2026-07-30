@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  collectPluginHooks,
   createBuildPlan,
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
@@ -102,7 +103,7 @@ describe("createWebpackConfigs", () => {
     });
   });
 
-  it("forwards bundlerConfig watch files to the framework collector", async () => {
+  it("forwards configureBundler watch files to the framework collector", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
@@ -114,7 +115,7 @@ describe("createWebpackConfigs", () => {
       process.cwd(),
       [
         {
-          bundlerConfig(_configs, ctx) {
+          configureBundler(_configs, ctx) {
             ctx.addWatchFile("./webpack-plugin.config.ts");
           },
         },
@@ -137,7 +138,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             if (!Array.isArray(configs)) return;
             const index = configs.findIndex((item) => item.name === "client");
             const [client] = configs.splice(index, 1);
@@ -146,7 +147,7 @@ describe("createWebpackConfigs", () => {
         },
       ]),
     ).rejects.toThrow(
-      '[evjs] Webpack bundlerConfig hooks must preserve exactly one framework config named "client"; found 0.',
+      '[evjs] Webpack configureBundler hooks must preserve exactly one framework config named "client"; found 0.',
     );
   });
 
@@ -158,7 +159,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             if (!Array.isArray(configs)) return;
             const client = configs.find((item) => item.name === "client");
             if (!client) return;
@@ -171,7 +172,7 @@ describe("createWebpackConfigs", () => {
         },
       ]),
     ).rejects.toThrow(
-      '[evjs] Webpack bundlerConfig hooks must preserve exactly one framework config named "client"; found 2.',
+      '[evjs] Webpack configureBundler hooks must preserve exactly one framework config named "client"; found 2.',
     );
   });
 
@@ -182,7 +183,7 @@ describe("createWebpackConfigs", () => {
 
     const configs = await createWebpackConfigs(config, plan, process.cwd(), [
       {
-        bundlerConfig(configs) {
+        configureBundler(configs) {
           if (!Array.isArray(configs)) return;
           const index = configs.findIndex((item) => item.name === "client");
           const client = configs[index];
@@ -207,7 +208,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
             if (client?.output) {
@@ -230,7 +231,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
             if (client?.output) {
@@ -244,7 +245,7 @@ describe("createWebpackConfigs", () => {
     );
   });
 
-  it("validates output ownership after each bundlerConfig hook", async () => {
+  it("validates output ownership after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
@@ -253,7 +254,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             events.push("mutate");
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
@@ -263,7 +264,7 @@ describe("createWebpackConfigs", () => {
           },
         },
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             events.push("restore");
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
@@ -279,7 +280,62 @@ describe("createWebpackConfigs", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("validates output file templates after each bundlerConfig hook", async () => {
+  it("attributes post-hook output validation to the managed plugin", async () => {
+    const config = createResolvedConfig();
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "development");
+    const hooks = await collectPluginHooks<WebpackConfig>(
+      [
+        {
+          name: "@test/webpack-invalid-output",
+          setup() {
+            return {
+              configureBundler(configs) {
+                const items = Array.isArray(configs) ? configs : [configs];
+                const client = items.find((item) => item.name === "client");
+                if (client?.output) {
+                  client.output.path = path.resolve(
+                    process.cwd(),
+                    "dist/server",
+                  );
+                }
+              },
+            };
+          },
+        },
+      ],
+      {
+        mode: "development",
+        command: "dev",
+        cwd: process.cwd(),
+        config,
+        logger: console as never,
+        addWatchFile() {},
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      await createWebpackConfigs(config, plan, process.cwd(), hooks);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      name: "PluginHookError",
+      code: "EV_PLUGIN_HOOK_ERROR",
+      plugin: "@test/webpack-invalid-output",
+      hook: "configureBundler",
+    });
+    const cause = (thrown as Error).cause;
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).message).toContain(
+      'Webpack config "client" output.path "dist/server"',
+    );
+    expect(cause).not.toMatchObject({ name: "PluginHookError" });
+  });
+
+  it("validates output file templates after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
@@ -288,7 +344,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             events.push("mutate");
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
@@ -296,7 +352,7 @@ describe("createWebpackConfigs", () => {
           },
         },
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             events.push("restore");
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
@@ -310,7 +366,7 @@ describe("createWebpackConfigs", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("rejects portable artifact escapes in added entry names after each bundlerConfig hook", async () => {
+  it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
@@ -319,7 +375,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             events.push("mutate");
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
@@ -335,7 +391,7 @@ describe("createWebpackConfigs", () => {
           },
         },
         {
-          bundlerConfig() {
+          configureBundler() {
             events.push("restore");
           },
         },
@@ -346,7 +402,7 @@ describe("createWebpackConfigs", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("validates entry names even when no bundlerConfig hook runs", async () => {
+  it("validates entry names even when no configureBundler hook runs", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
@@ -368,7 +424,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
             if (!client) return;
@@ -384,7 +440,7 @@ describe("createWebpackConfigs", () => {
     );
   });
 
-  it("keeps server entrypoints self-contained after bundlerConfig hooks", async () => {
+  it("keeps server entrypoints self-contained after configureBundler hooks", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config, {
       pages: [
@@ -401,7 +457,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             const items = Array.isArray(configs) ? configs : [configs];
             const server = items.find((item) => item.name === "server");
             if (!server) return;
@@ -417,7 +473,7 @@ describe("createWebpackConfigs", () => {
     );
   });
 
-  it("preserves framework entry names across bundlerConfig hooks", async () => {
+  it("preserves framework entry names across configureBundler hooks", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
@@ -425,7 +481,7 @@ describe("createWebpackConfigs", () => {
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
         {
-          bundlerConfig(configs) {
+          configureBundler(configs) {
             const items = Array.isArray(configs) ? configs : [configs];
             const client = items.find((item) => item.name === "client");
             const entries = client?.entry;
@@ -462,7 +518,7 @@ describe("createWebpackConfigs", () => {
       await expect(
         createWebpackConfigs(config, plan, process.cwd(), [
           {
-            bundlerConfig(configs) {
+            configureBundler(configs) {
               const items = Array.isArray(configs) ? configs : [configs];
               const target = items.find((item) => item.name === configName);
               if (target?.output) {
@@ -526,7 +582,7 @@ describe("createWebpackConfigs", () => {
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<WebpackConfig> = {
       name: "generated-alias",
-      contributions(ctx) {
+      emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
           scope: { kind: "application" },

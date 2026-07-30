@@ -51,6 +51,7 @@ describe("programmatic API", () => {
       capabilities: {
         build: { server: true, rsc: true, ppr: true },
         dev: {
+          configuration: true,
           html: true,
           entries: true,
           routes: true,
@@ -96,6 +97,7 @@ describe("programmatic API", () => {
       capabilities: {
         build: { server: true, rsc: true, ppr: true },
         dev: {
+          configuration: true,
           html: true,
           entries: true,
           routes: true,

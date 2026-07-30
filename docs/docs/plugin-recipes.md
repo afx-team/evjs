@@ -7,16 +7,16 @@ wrappers, middleware, HTML tags, and resolution changes, use
 
 ## Add Deployment Metadata
 
-Use `buildOutput()` when a deployment adapter needs plugin-owned metadata:
+Use `transformOutput()` when a deployment adapter needs plugin-owned metadata:
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deployMetadata = definePlugin({
-  id: "@example/deploy-metadata",
+  name: "@example/deploy-metadata",
   setup() {
     return {
-      buildOutput(output) {
+      transformOutput(output) {
         output.deployment = {
           platform: "custom",
           builtAt: new Date().toISOString(),
@@ -27,7 +27,7 @@ export const deployMetadata = definePlugin({
 });
 ```
 
-`buildOutput()` can change only linked `AssetGroup` contents and `deployment`
+`transformOutput()` can change only linked `AssetGroup` contents and `deployment`
 metadata. See [Build Output Ownership](./plugin-hooks#build-output-ownership)
 for the framework-owned fields.
 
@@ -39,7 +39,7 @@ Use `ctx.owner.kind` to target Page-owned documents:
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const pageMetadata = definePlugin({
-  id: "@example/page-metadata",
+  name: "@example/page-metadata",
   setup() {
     return {
       transformHtml(doc, ctx) {
@@ -66,7 +66,7 @@ import crypto from "node:crypto";
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const cspNonce = definePlugin({
-  id: "@example/csp-nonce",
+  name: "@example/csp-nonce",
   setup() {
     return {
       transformHtml(doc) {

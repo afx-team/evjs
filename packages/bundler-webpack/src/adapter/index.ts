@@ -14,6 +14,7 @@ import type {
 import {
   assertPortableRelativeArtifactPath,
   assertSafeBuildOutputPaths,
+  hasGeneratedCompilerInputChanges,
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   portableArtifactPathsConflict,
@@ -46,6 +47,7 @@ import { copyServerPublicAssetsToClient } from "./server-public-assets.js";
 const logger = getLogger(["evjs", "bundler-webpack"]);
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const BUILD_ONLY_SERVER_CONFIG_NAME = "server-build";
+const REJECTED_FACTS_RETRY_MS = 25;
 
 interface WebpackDevServerInstance {
   start(): Promise<void>;
@@ -93,6 +95,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
       ppr: true,
     },
     dev: {
+      configuration: false,
       html: true,
       entries: false,
       routes: false,
@@ -196,6 +199,9 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
   private serverPublicAssetOwnership = new Map<string, Buffer>();
   private serverReadyPending = false;
   private startGeneration = 0;
+  private latestFactsRevision = 0;
+  private rejectedFactsRevision: number | undefined;
+  private rejectedFactsRetry: ReturnType<typeof setTimeout> | undefined;
   private hasEmittedDevArtifacts = false;
   private initialDone:
     | {
@@ -229,6 +235,8 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     this.latestServerPublicFiles = [];
     this.serverPublicAssetOwnership = new Map();
     this.serverReadyPending = false;
+    this.latestFactsRevision = 0;
+    this.clearRejectedFactsRetry();
 
     const configs = await createWebpackConfigs(
       this.config,
@@ -328,9 +336,15 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
         "[evjs] Webpack dev cannot safely replace persistent compiler entries, routes, server topology, or module resolution in place. Restart ev dev to apply this framework plan change.",
       );
     }
+    if (hasGeneratedCompilerInputChanges(update)) {
+      throw new Error(
+        "[evjs] Webpack dev cannot reuse build facts after generated compiler inputs change. Restart ev dev to apply this framework plan change.",
+      );
+    }
 
     const previousPlan = this.plan;
     this.plan = update.next;
+    let frameworkOutputPublished = false;
 
     try {
       await assertSafeBuildOutputPaths(
@@ -338,17 +352,19 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
         resolveBuildOutputPaths(this.ctx.cwd, this.plan),
       );
       const emitted = await this.generateDevArtifacts();
+      frameworkOutputPublished = emitted;
       if (emitted && hasRuntimeServerEntry(this.plan)) {
         await this.ctx.callbacks.onServerBundleReady();
       }
     } catch (error) {
-      this.plan = previousPlan;
+      if (!frameworkOutputPublished) this.plan = previousPlan;
       throw error;
     }
   }
 
   private async stop(): Promise<void> {
     this.startGeneration++;
+    this.clearRejectedFactsRetry();
     const errors: unknown[] = [];
 
     if (this.serverWatching) {
@@ -456,15 +472,20 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
       );
       this.serverReadyPending = true;
     }
+    this.latestFactsRevision++;
 
+    await this.publishLatestDevArtifacts();
+  }
+
+  private async publishLatestDevArtifacts(): Promise<boolean> {
     const emitted = await this.generateDevArtifacts();
-    if (emitted) {
-      this.completeInitialBuild();
-    }
-    if (emitted && this.serverReadyPending) {
+    if (!emitted) return false;
+    this.completeInitialBuild();
+    if (this.serverReadyPending) {
       this.serverReadyPending = false;
       await this.ctx.callbacks.onServerBundleReady();
     }
+    return true;
   }
 
   private async generateDevArtifacts(): Promise<boolean> {
@@ -508,9 +529,45 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
         this.latestServerMemoryFiles,
       );
     }
-    await this.ctx.callbacks.onBuildFacts(facts, { isRebuild });
+    const accepted = await this.ctx.callbacks.onBuildFacts(facts, {
+      isRebuild,
+    });
+    if (accepted === false) {
+      this.scheduleRejectedFactsRetry();
+      return false;
+    }
+    this.clearRejectedFactsRetry();
     this.hasEmittedDevArtifacts = true;
     return true;
+  }
+
+  private scheduleRejectedFactsRetry(): void {
+    this.clearRejectedFactsRetry();
+    const generation = this.startGeneration;
+    const revision = this.latestFactsRevision;
+    this.rejectedFactsRevision = revision;
+    this.rejectedFactsRetry = setTimeout(() => {
+      this.rejectedFactsRetry = undefined;
+      void this.enqueueDevWork(async () => {
+        if (
+          generation !== this.startGeneration ||
+          revision !== this.latestFactsRevision ||
+          revision !== this.rejectedFactsRevision
+        ) {
+          return;
+        }
+        await this.publishLatestDevArtifacts();
+      }).catch((error) => {
+        this.failInitialBuild(error);
+        logger.error`Failed to retry temporarily rejected webpack build facts: ${error}`;
+      });
+    }, REJECTED_FACTS_RETRY_MS);
+  }
+
+  private clearRejectedFactsRetry(): void {
+    if (this.rejectedFactsRetry) clearTimeout(this.rejectedFactsRetry);
+    this.rejectedFactsRetry = undefined;
+    this.rejectedFactsRevision = undefined;
   }
 
   private readClientOwnedFiles(): ReadonlySet<string> {
