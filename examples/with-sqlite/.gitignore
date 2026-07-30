@@ -2,6 +2,7 @@
 .evjs
 .turbopack
 route-types.d.ts
+evjs-env.d.ts
 
 # SQLite databases
 *.db
