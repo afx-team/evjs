@@ -113,6 +113,62 @@ The supported slots are:
 | `resolve.alias` | Semantic module aliasing to user modules, packages, absolute paths, or generated artifacts |
 | `resolve.external` | Externalized module resolution, usually paired with `html.tag` CDN resources |
 
+### Exact types for generated aliases
+
+A generated TypeScript module can provide an exact ambient declaration for an
+application-facing alias. Runtime source and declaration source stay separate:
+
+```ts
+const database = ctx.emit.module({
+  id: "database",
+  scope: { kind: "server" },
+  source: "export const database = {}; export type Database = {};",
+  declarationSource:
+    "export declare const database: {}; export type Database = {};",
+});
+
+ctx.slot("resolve.alias").add({
+  id: "database-alias",
+  specifier: "evdb:database",
+  replacement: database,
+  declaration: {
+    exports: [
+      { kind: "value", name: "database" },
+      { kind: "type", name: "Database", typeParameters: "none" },
+    ],
+  },
+});
+```
+
+`declarationSource` is an opaque, complete declaration module. It is accepted
+only for generated `.ts` or `.tsx` modules; evjs does not infer declarations by
+parsing runtime source. A declaration supports unchanged named values and
+named types that the plugin explicitly audits as non-generic with
+`typeParameters: "none"`. Relative or wildcard specifiers, renamed exports,
+generic types, duplicate names, and declaration metadata for a string-path
+replacement are rejected.
+
+evjs writes the companion below `src/.ev/types`, emits the ambient
+`declare module` wrapper in `.ev/types.d.ts`, and maintains
+`src/evjs-env.d.ts` so a conventional `include: ["src"]` project discovers it
+without a handwritten TypeScript `paths` mapping. A declaration-source callback
+may use its `importFile(file)` helper for an existing application source file
+below `src`; it cannot import the generated runtime tree. `ev prepare`,
+`ev dev`, and `ev build` update these files, while `ev inspect` remains
+read-only.
+
+The companion, export metadata, and runtime module are a plugin-authored
+contract. Plugin tests must keep them in sync because evjs intentionally does
+not parse arbitrary declaration or re-export graphs. Exact declarations do not
+change runtime scope: a server-scoped generated module must still remain out of
+client bundles.
+
+During `ev dev`, changing a server-scoped generated module requires the
+bundler's `dev.server` capability. The webpack adapter replaces its server
+compiler and API process transactionally after a fresh bundle succeeds. The
+current Utoopack adapter fails this update closed and asks for an `ev dev`
+restart; choose webpack when a plugin needs live server-schema regeneration.
+
 Use `client.entry` to import a side-effect module or call an explicit
 installer. The IR does not carry an inert runtime-plugin registry.
 

@@ -476,6 +476,17 @@ Available slots:
 | `resolve.alias` | Redirect a module specifier to a user module, package, absolute path, or generated module |
 | `resolve.external` | Mark a specifier as provided by an external runtime; inject CDN tags separately through `html.tag` |
 
+For an exact application-facing alias, a generated `.ts` or `.tsx` module may
+provide `declarationSource`, and its `resolve.alias` contribution may list
+unchanged named value exports and audited non-generic named type exports.
+evjs writes the opaque companion below `src/.ev/types`, the ambient wrapper in
+`.ev/types.d.ts`, and `src/evjs-env.d.ts` for TypeScript discovery. This avoids
+pulling runtime `.ev/plugins/*.ts` files into projects with
+`rootDir: "./src"`. Generic or renamed type exports are not supported, and the
+plugin must test that runtime source, declaration source, and export metadata
+remain consistent. See
+[Generated Contributions IR](./generated-contributions.md#exact-types-for-generated-aliases).
+
 Use `client.entry` when a generated entry must import a side-effect module or
 call an explicit installer. evjs does not expose an inert runtime-plugin
 registry; new runtime behavior requires an executable installer or a

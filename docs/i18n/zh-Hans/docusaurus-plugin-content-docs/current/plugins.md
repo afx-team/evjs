@@ -448,6 +448,16 @@ hydration marker 语义。使用该选项的替换 entry 需要负责首次 `sta
 | `resolve.alias` | 将模块 specifier 重定向到用户模块、package、绝对路径或 generated module |
 | `resolve.external` | 声明某个 specifier 由外部 runtime 提供；CDN tag 应另行通过 `html.tag` 注入 |
 
+面向应用的精确 alias 可以由 generated `.ts` 或 `.tsx` module 提供
+`declarationSource`，并在 `resolve.alias` contribution 中列出保持原名的 named
+value 和经过审计的非泛型 named type。evjs 会把 opaque companion 写到
+`src/.ev/types`，把 ambient wrapper 写到 `.ev/types.d.ts`，并维护
+`src/evjs-env.d.ts` 供 TypeScript 发现。这样 `rootDir: "./src"` project
+不会把 runtime `.ev/plugins/*.ts` 拉入类型 graph。当前不支持泛型或重命名 type
+export；插件必须用测试保证 runtime source、declaration source 与 export metadata
+持续一致。详见 [Generated Contributions
+IR](./generated-contributions.md#generated-alias-的精确类型)。
+
 Generated entry 需要 import side-effect module 或调用显式 installer 时，使用
 `client.entry`。evjs 不提供 inert runtime-plugin registry；新的 runtime 行为必须有
 可执行 installer 或 feature-specific typed hook。它的 runtime 只能是 `"client"`；
