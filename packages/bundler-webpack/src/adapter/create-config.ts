@@ -20,7 +20,7 @@ import type {
 } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import MiniCssExtractPlugin from "mini-css-extract-plugin";
-import type { Configuration, EntryObject } from "webpack";
+import type { Compiler, Configuration, EntryObject } from "webpack";
 import webpack from "webpack";
 
 const logger = getLogger(["evjs", "bundler-webpack", "config"]);
@@ -50,6 +50,15 @@ type RscClientReferenceConfig =
       include?: RegExp;
     };
 
+interface ProjectPostcssLoader {
+  loader: string;
+  options: {
+    postcssOptions: {
+      config: string;
+    };
+  };
+}
+
 export type WebpackConfig = Configuration | Configuration[];
 
 export async function createWebpackConfigs(
@@ -64,6 +73,7 @@ export async function createWebpackConfigs(
 ): Promise<Configuration[]> {
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
+  const postcssLoader = resolveProjectPostcssLoader(cwd);
   const configs: Configuration[] = [];
   const clientEntries = plan.entries.filter(
     (entry) => entry.environment === "client",
@@ -109,6 +119,7 @@ export async function createWebpackConfigs(
         ),
         reactServerConditions: false,
         clean: options.clean ?? true,
+        postcssLoader,
         target: "web",
       }),
     );
@@ -133,6 +144,7 @@ export async function createWebpackConfigs(
         ),
         enableRscClientRuntime: false,
         clean: (options.clean ?? true) && rscServerEntries.length === 0,
+        postcssLoader,
         reactServerConditions: false,
         target: "node",
       }),
@@ -158,6 +170,7 @@ export async function createWebpackConfigs(
         ),
         enableRscClientRuntime: false,
         clean: false,
+        postcssLoader,
         reactServerConditions: false,
         target: "node",
       }),
@@ -183,6 +196,7 @@ export async function createWebpackConfigs(
         ),
         enableRscClientRuntime: false,
         clean: false,
+        postcssLoader,
         reactServerConditions: true,
         target: "node",
       }),
@@ -689,12 +703,23 @@ function createWebpackConfig(options: {
   enableRscClientRuntime: boolean;
   reactServerConditions: boolean;
   clean: boolean;
+  postcssLoader?: ProjectPostcssLoader;
   target: "web" | "node";
 }): Configuration {
   const isProduction = options.mode === "production";
   const outputExtension = options.target === "node" ? ".cjs" : ".js";
   const chunkDirectory =
     options.target === "node" ? `chunks/${options.name}` : undefined;
+  const resolveAlias = createResolveAlias(options.cwd, {
+    ...(options.resolveAlias ?? {}),
+    ...(options.reactServerConditions
+      ? {
+          "@evjs/client$": clientRscPageContextEntry,
+          "@evjs/ev/route$": evRouteRscEntry,
+        }
+      : {}),
+  });
+  const customSchemeAliasPlugin = createCustomSchemeAliasPlugin(resolveAlias);
 
   return {
     name: options.name,
@@ -726,18 +751,14 @@ function createWebpackConfig(options: {
     experiments: {
       futureDefaults: true,
       css: false,
+      // Webpack 5.109 enables its native TypeScript experiment through
+      // futureDefaults. EVJS already owns TS/TSX parsing through swc-loader;
+      // running both parsers makes valid TSX fail before SWC can transform it.
+      typescript: false,
     },
     resolve: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs", ".json"],
-      alias: createResolveAlias(options.cwd, {
-        ...(options.resolveAlias ?? {}),
-        ...(options.reactServerConditions
-          ? {
-              "@evjs/client$": clientRscPageContextEntry,
-              "@evjs/ev/route$": evRouteRscEntry,
-            }
-          : {}),
-      }),
+      alias: resolveAlias,
       ...(options.reactServerConditions
         ? {
             conditionNames: [
@@ -790,7 +811,11 @@ function createWebpackConfig(options: {
         },
         {
           test: /\.css$/,
-          use: [miniCssExtractLoader, cssLoader],
+          use: [
+            miniCssExtractLoader,
+            cssLoader,
+            ...(options.postcssLoader ? [options.postcssLoader] : []),
+          ],
         },
       ],
     },
@@ -816,6 +841,7 @@ function createWebpackConfig(options: {
             }
           : {}),
       }),
+      ...(customSchemeAliasPlugin ? [customSchemeAliasPlugin] : []),
       ...createRscPlugins(options),
     ],
     stats: {
@@ -835,7 +861,7 @@ function createWebpackConfig(options: {
 function createResolveAlias(
   cwd: string,
   alias: Record<string, string>,
-): NonNullable<Configuration["resolve"]>["alias"] {
+): Record<string, string> {
   return Object.fromEntries(
     Object.entries(alias).map(([name, target]) => [
       name,
@@ -847,6 +873,155 @@ function createResolveAlias(
 function resolveAliasTarget(cwd: string, target: string): string {
   if (path.isAbsolute(target)) return target;
   return target.startsWith(".") ? path.resolve(cwd, target) : target;
+}
+
+const BUILD_PLAN_SCHEME_ALIAS_PLUGIN = "EvjsBuildPlanSchemeAliasPlugin";
+
+class BuildPlanSchemeAliasPlugin {
+  constructor(
+    private readonly aliasesByScheme: ReadonlyMap<
+      string,
+      ReadonlyMap<string, string>
+    >,
+  ) {}
+
+  apply(compiler: Compiler): void {
+    compiler.hooks.compilation.tap(
+      BUILD_PLAN_SCHEME_ALIAS_PLUGIN,
+      (_compilation, { normalModuleFactory }) => {
+        for (const [scheme, aliases] of this.aliasesByScheme.entries()) {
+          normalModuleFactory.hooks.resolveForScheme
+            .for(scheme)
+            .tap(BUILD_PLAN_SCHEME_ALIAS_PLUGIN, (resourceData) => {
+              const target = aliases.get(resourceData.resource);
+              if (!target) return;
+
+              resourceData.resource = target;
+              resourceData.path = target;
+              resourceData.query = "";
+              resourceData.fragment = "";
+              resourceData.context = path.dirname(target);
+              return true;
+            });
+        }
+      },
+    );
+  }
+}
+
+function createCustomSchemeAliasPlugin(
+  alias: Record<string, string>,
+): BuildPlanSchemeAliasPlugin | undefined {
+  const aliasesByScheme = new Map<string, Map<string, string>>();
+  for (const [specifier, target] of Object.entries(alias)) {
+    const scheme = getWebpackScheme(specifier);
+    if (!scheme) continue;
+    if (!path.isAbsolute(target)) {
+      throw new Error(
+        `[evjs] Webpack custom-scheme alias "${specifier}" must target an absolute or project-relative file, received "${target}".`,
+      );
+    }
+    const aliases = aliasesByScheme.get(scheme) ?? new Map<string, string>();
+    aliases.set(specifier, target);
+    aliasesByScheme.set(scheme, aliases);
+  }
+  return aliasesByScheme.size > 0
+    ? new BuildPlanSchemeAliasPlugin(aliasesByScheme)
+    : undefined;
+}
+
+function getWebpackScheme(specifier: string): string | undefined {
+  const match = /^([A-Za-z][A-Za-z0-9+-]*):(.*)$/u.exec(specifier);
+  if (!match) return undefined;
+  const [, rawScheme, remainder] = match;
+  if (
+    rawScheme.length === 1 &&
+    (remainder === "" || /^[\\/#?]/u.test(remainder))
+  ) {
+    return undefined;
+  }
+  return rawScheme.toLowerCase();
+}
+
+const POSTCSS_CONFIG_PATHS = [
+  "postcss.config.js",
+  "postcss.config.mjs",
+  "postcss.config.cjs",
+  "postcss.config.ts",
+  "postcss.config.mts",
+  "postcss.config.cts",
+  ".postcssrc",
+  ".postcssrc.json",
+  ".postcssrc.js",
+  ".postcssrc.mjs",
+  ".postcssrc.cjs",
+  ".postcssrc.ts",
+  ".postcssrc.mts",
+  ".postcssrc.cts",
+  ".postcssrc.yaml",
+  ".postcssrc.yml",
+  ".config/postcssrc",
+  ".config/postcssrc.json",
+  ".config/postcssrc.yaml",
+  ".config/postcssrc.yml",
+  ".config/postcssrc.js",
+  ".config/postcssrc.mjs",
+  ".config/postcssrc.cjs",
+  ".config/postcssrc.ts",
+  ".config/postcssrc.mts",
+  ".config/postcssrc.cts",
+] as const;
+
+function resolveProjectPostcssLoader(
+  cwd: string,
+): ProjectPostcssLoader | undefined {
+  const configPath = findProjectPostcssConfig(cwd);
+  if (!configPath) return undefined;
+
+  const projectRequire = createRequire(path.join(cwd, "package.json"));
+  try {
+    return {
+      loader: projectRequire.resolve("postcss-loader"),
+      options: {
+        postcssOptions: {
+          config: configPath,
+        },
+      },
+    };
+  } catch (cause) {
+    throw new Error(
+      `[evjs] Found PostCSS config "${path.relative(cwd, configPath) || path.basename(configPath)}", but "postcss-loader" cannot be resolved from the project. Install "postcss-loader" and "postcss" in ${cwd}.`,
+      { cause },
+    );
+  }
+}
+
+function findProjectPostcssConfig(cwd: string): string | undefined {
+  const packageJsonPath = path.join(cwd, "package.json");
+  if (fs.existsSync(packageJsonPath)) {
+    let packageJson: unknown;
+    try {
+      packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+    } catch (cause) {
+      throw new Error(
+        `[evjs] Cannot inspect PostCSS configuration because ${packageJsonPath} is not valid JSON.`,
+        { cause },
+      );
+    }
+    if (
+      packageJson &&
+      typeof packageJson === "object" &&
+      Object.hasOwn(packageJson, "postcss")
+    ) {
+      return packageJsonPath;
+    }
+  }
+
+  for (const relativePath of POSTCSS_CONFIG_PATHS) {
+    const configPath = path.join(cwd, relativePath);
+    if (fs.existsSync(configPath)) return configPath;
+  }
+  return undefined;
 }
 
 function createWebpackExternals(options: {
