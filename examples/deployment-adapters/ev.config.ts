@@ -5,7 +5,7 @@ import {
   nodeDeploymentAdapter,
   staticDeploymentAdapter,
 } from "@evjs/ev/deployment";
-import { deploymentExampleAdapter } from "./deploy-adapter.mjs";
+import { deploymentExampleAdapter } from "./src/deploy-adapter.mjs";
 
 export default defineConfig({
   bundler: webpackAdapter,

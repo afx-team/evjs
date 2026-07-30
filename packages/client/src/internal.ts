@@ -15,6 +15,9 @@ export type {
   PageDefinition,
   PageModule,
   PagesApp,
+  PagesAppHistoryDescriptor,
+  PagesAppHistoryInput,
+  PagesAppRuntimeOptions,
   RootLayoutModule,
 } from "./framework/page/page-route.js";
 export { createPagesApp } from "./framework/page/page-route.js";

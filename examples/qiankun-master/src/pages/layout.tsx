@@ -11,13 +11,10 @@ export default function RootLayout({ children }: { children?: ReactNode }) {
           <Link to="/" activeProps={{ className: "active" }}>
             Home
           </Link>
-          <Link to="/catalog" activeProps={{ className: "active" }}>
-            Catalog
-          </Link>
+          <a href="/catalog">Catalog</a>
         </nav>
       </header>
       {children}
-      <div id="slave-container" className="slave-container" />
     </main>
   );
 }

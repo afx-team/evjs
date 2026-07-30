@@ -20,14 +20,13 @@ const insightsRscCssAssetPattern = new RegExp(
 
 interface RenderModesPublicPage {
   document?: unknown;
-  module?: unknown;
+  metadata?: PageMetadata;
   path?: string;
   routeId?: string;
   ppr?: {
     delivery?: string;
     regions: Record<string, { id?: string; cache?: unknown }>;
   };
-  [key: string]: unknown;
 }
 
 interface RenderModesPublicRoute {
@@ -401,7 +400,7 @@ test.describe("render-modes", () => {
         betweenContentAndData: expect.any(String),
       }),
     );
-    expect(runtimePages["settlement-report"].module).toBeUndefined();
+    expect(runtimePages["settlement-report"]).not.toHaveProperty("module");
     expect(runtimePages.insights).toEqual(
       expect.objectContaining({
         path: "/insights",

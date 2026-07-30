@@ -24,10 +24,7 @@ import {
   coreRoutePatternsEqual,
   isCoreRoutePatternPrefix,
 } from "@evjs/shared/manifest";
-import type {
-  ResolvedConfigRoute,
-  ResolvedConfigRouteApplication,
-} from "../../../config/index.js";
+import type { ResolvedConfigRoute } from "../../../config/index.js";
 import { DEFAULT_PAGE_RENDER_MODE } from "../page-rendering-contract.js";
 import {
   PAGE_CONFIG_FILES,
@@ -71,59 +68,6 @@ interface ConfigRouteSiblingIdentityOwner {
   address: string;
   kind: "page" | "redirect" | "group";
   pattern: string;
-}
-
-export interface ConfigRoutePluginExtensionInput {
-  readonly source: string;
-  readonly extensions: Readonly<Record<string, unknown>>;
-}
-
-export interface ConfigRoutePluginExtensionInputs {
-  readonly routes: Readonly<Record<string, ConfigRoutePluginExtensionInput>>;
-  readonly documents: Readonly<Record<string, ConfigRoutePluginExtensionInput>>;
-}
-
-/**
- * Retain explicit route-tree extension inputs outside the provider graph until
- * plugin declarations have registered, merged, and validated their namespaces.
- */
-export function collectConfigRoutePluginExtensionInputs(
-  application: ResolvedConfigRouteApplication,
-): ConfigRoutePluginExtensionInputs {
-  const routes = createRecord<ConfigRoutePluginExtensionInput>();
-  const documents = createRecord<ConfigRoutePluginExtensionInput>();
-
-  const visit = (
-    declarations: ResolvedConfigRoute[],
-    parentAddress: number[],
-  ): void => {
-    for (const [index, declaration] of declarations.entries()) {
-      const address = [...parentAddress, index];
-      if (declaration.extensions) {
-        const routeId = createConfigRouteId(address);
-        const semanticRouteId =
-          typeof declaration.layout === "string"
-            ? `${routeId}:content`
-            : routeId;
-        defineRecordValue(routes, semanticRouteId, {
-          source: `application.${formatConfigRouteAddress(address)}.extensions`,
-          extensions: declaration.extensions,
-        });
-      }
-      if (declaration.routes) {
-        visit(declaration.routes, address);
-      }
-    }
-  };
-
-  visit(application.routes, []);
-  if (application.document.extensions) {
-    defineRecordValue(documents, "index", {
-      source: "application.document.extensions",
-      extensions: application.document.extensions,
-    });
-  }
-  return { routes, documents };
 }
 
 function createConfigRouteId(address: readonly number[]): string {
@@ -183,7 +127,7 @@ export async function createConfigRouteGraph(
     pageIds: state.pageIds,
     routeIds: state.routeIds,
     documentIds: ["index"],
-    extensions: {},
+    plugins: {},
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,
       source: config.application.pageRoot,
@@ -198,7 +142,6 @@ export async function createConfigRouteGraph(
     owner: { kind: "application" },
     mount: config.application.document.mount,
     bootstrap: { kind: "application" },
-    extensions: {},
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,
       source: config.application.document.template,
@@ -211,9 +154,7 @@ export async function createConfigRouteGraph(
     pages,
     routes,
     documents,
-    extensions: {
-      namespaces: {},
-    },
+    plugins: { entries: {} },
     serverFunctions: [],
     serverRoutes: [],
   };
@@ -365,7 +306,6 @@ async function materializeSpaConfigRoute(
       pattern,
       target: { kind: "group" },
       facets: { layout, wrappers: [] },
-      extensions: {},
       provenance: {
         producer: CONFIG_ROUTE_PRODUCER,
         source: layout,
@@ -386,7 +326,6 @@ async function materializeSpaConfigRoute(
       ...(layout === false ? { layout: false as const } : {}),
       wrappers,
     },
-    extensions: {},
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,
       ...(provenanceSource ? { source: provenanceSource } : {}),
@@ -497,7 +436,7 @@ async function defineConfigRoutePage(
       provider: CONFIG_ROUTE_PROVIDER_ID,
     },
     render: DEFAULT_PAGE_RENDER_MODE,
-    extensions: {},
+    plugins: {},
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,
       source: module,

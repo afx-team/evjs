@@ -14,11 +14,14 @@ import type {
   RenderMode,
 } from "@evjs/shared/manifest";
 import { assertPageMetadata, clonePageMetadata } from "@evjs/shared/manifest";
-import { resolveConfigExtensionValues } from "../../config/extensions.js";
 import type {
   PageAnchorMetadata,
   PageRouteDiscoveryMetadata,
 } from "../../config/index.js";
+import {
+  type ResolvedPagePluginConfigInput,
+  resolvePagePluginConfigValues,
+} from "../../config/plugins.js";
 import {
   clearStaticConfigModuleCache,
   loadStaticConfigModule,
@@ -32,9 +35,8 @@ const PAGE_CONFIG_FIELDS = new Set([
   "rsc",
   "title",
   "meta",
-  "extensions",
+  "plugins",
   "document",
-  "route",
 ]);
 type PageConfigMetadata = Pick<PageAnchorMetadata, "pageId"> & {
   configModule: string;
@@ -47,14 +49,12 @@ export interface ResolvedPageFileConfig {
   hydrate?: HydrationMode;
   prerender?: PrerenderConfig;
   metadata?: PageMetadata;
-  extensions: Record<string, unknown>;
+  plugins: Readonly<Record<string, ResolvedPagePluginConfigInput>>;
   document?: ResolvedPageDocumentConfig;
-  routeExtensions?: Record<string, unknown>;
 }
 
 export interface ResolvedPageDocumentConfig {
   aliases?: string[];
-  extensions?: Record<string, unknown>;
 }
 
 export interface ResolvedPageFileConfigs {
@@ -147,7 +147,7 @@ async function resolvePageConfigModule(
   for (const key of Object.keys(value)) {
     if (!PAGE_CONFIG_FIELDS.has(key)) {
       throw new Error(
-        `[evjs] Page "${page.pageId}" config "${source}" has unknown field "${key}". Expected render, hydrate, prerender, rsc, title, meta, extensions, document, or route.`,
+        `[evjs] Page "${page.pageId}" config "${source}" has unknown field "${key}". Expected render, hydrate, prerender, rsc, title, meta, plugins, or document.`,
       );
     }
   }
@@ -157,12 +157,11 @@ async function resolvePageConfigModule(
   const prerender = resolvePrerender(value.prerender, page);
   const componentModel = resolveComponentModel(value.rsc, page);
   const metadata = resolvePageMetadata(value, page);
-  const extensions = resolveConfigExtensionValues(
-    value.extensions,
-    `Page "${page.pageId}" config "${page.configModule}" extensions`,
+  const plugins = resolvePagePluginConfigValues(
+    value.plugins,
+    `Page "${page.pageId}" config "${page.configModule}" plugins`,
   );
   const document = resolvePageDocument(value.document, page);
-  const routeExtensions = resolvePageRouteExtensions(value.route, page);
   validatePageRenderingContract(`Page "${page.pageId}" config "${source}"`, {
     ...(render ? { render } : {}),
     ...(componentModel ? { componentModel } : {}),
@@ -178,9 +177,8 @@ async function resolvePageConfigModule(
       ...(hydrate ? { hydrate } : {}),
       ...(prerender ? { prerender } : {}),
       ...(metadata ? { metadata } : {}),
-      extensions,
+      plugins,
       ...(document ? { document } : {}),
-      ...(routeExtensions ? { routeExtensions } : {}),
     },
     dependencies: loaded.dependencies,
   };
@@ -197,9 +195,9 @@ function resolvePageDocument(
   }
   assertEnumerableStaticJsonProperties(value, source);
   for (const key of Object.keys(value)) {
-    if (key !== "aliases" && key !== "extensions") {
+    if (key !== "aliases") {
       throw new Error(
-        `[evjs] ${source} has unknown field "${key}". Expected aliases or extensions.`,
+        `[evjs] ${source} has unknown field "${key}". Expected aliases.`,
       );
     }
   }
@@ -220,19 +218,11 @@ function resolvePageDocument(
       aliases.push(alias as string);
     }
   }
-  const extensions =
-    value.extensions === undefined
-      ? undefined
-      : resolveConfigExtensionValues(value.extensions, `${source}.extensions`);
-  if (
-    (aliases === undefined || aliases.length === 0) &&
-    (extensions === undefined || Object.keys(extensions).length === 0)
-  ) {
+  if (aliases === undefined || aliases.length === 0) {
     return undefined;
   }
   return {
     ...(aliases?.length ? { aliases } : {}),
-    ...(extensions && Object.keys(extensions).length > 0 ? { extensions } : {}),
   };
 }
 
@@ -274,30 +264,6 @@ function assertStaticDocumentOutputPath(
       `[evjs] ${source} must end with ".html" or ".htm" because a Document alias contains HTML.`,
     );
   }
-}
-
-function resolvePageRouteExtensions(
-  value: unknown,
-  page: PageConfigMetadata,
-): Record<string, unknown> | undefined {
-  if (value === undefined) return undefined;
-  const source = `Page "${page.pageId}" config "${page.configModule}" route`;
-  if (!isPlainStaticJsonObject(value)) {
-    throw new Error(`[evjs] ${source} must be a plain object.`);
-  }
-  assertEnumerableStaticJsonProperties(value, source);
-  for (const key of Object.keys(value)) {
-    if (key !== "extensions") {
-      throw new Error(
-        `[evjs] ${source} has unknown field "${key}". Expected extensions.`,
-      );
-    }
-  }
-  const extensions = resolveConfigExtensionValues(
-    value.extensions,
-    `${source}.extensions`,
-  );
-  return Object.keys(extensions).length > 0 ? extensions : undefined;
 }
 
 function resolvePageMetadata(

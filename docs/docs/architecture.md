@@ -1,8 +1,8 @@
 # Architecture
 
 evjs resolves framework semantics before it invokes a bundler. Page routes,
-server routes, server functions, rendering settings, and plugin extensions all
-enter one normalized graph and one build plan.
+server routes, server functions, rendering settings, and typed plugin settings
+all enter one normalized graph and one build plan.
 
 ```mermaid
 flowchart LR
@@ -26,10 +26,10 @@ The CoreGraph has four client-side owner types:
 
 | Owner | Responsibility |
 | --- | --- |
-| Application | One SPA or MPA materialization, shared layout, and Application extensions. |
-| Page | Component source, rendering settings, metadata, private source scope, and Page extensions. |
-| Route | URL pattern, parent relationship, target, layouts/wrappers/boundaries, and Route extensions. |
-| Document | HTML template, output path, mount target, aliases, and Document extensions. |
+| Application | One SPA or MPA materialization, shared layout, and installed plugin enablement. |
+| Page | Component source, rendering settings, metadata, private source scope, and resolved Page plugin settings. |
+| Route | URL pattern, parent relationship, target, and layouts/wrappers/boundaries. |
+| Document | HTML template, output path, mount target, and aliases. |
 
 Server functions and server request Routes are also normalized into the graph
 so planning, conflict detection, dev routing, and deployment use the same
@@ -44,17 +44,17 @@ src/pages/**/page.{ts,tsx,js,jsx}
 ```
 
 The containing directory owns the Page scope and determines the URL. Adjacent
-`page.config.ts` supplies static Page metadata, rendering settings, and
-namespaced extensions. SPA and MPA use the same Page and Route identities;
-only their Documents and client entries differ.
+`page.config.ts` supplies static Page metadata, rendering settings, and a
+generated short-keyed `plugins` map. SPA and MPA use the same Page and Route
+identities; only their Documents and client entries differ.
 
 ### Explicit SPA input
 
 `application.routes` accepts an explicit SPA route tree with `page` or
-`component` targets, nested `routes`, layouts, wrappers, redirects, and Route
-extensions. It cannot be combined with `routing` and cannot materialize MPA.
-Both inputs normalize into the same Application, Page, Route, and Document
-contracts.
+`component` targets, nested `routes`, layouts, wrappers, and redirects. It
+cannot be combined with `routing` and cannot materialize MPA. Both inputs
+normalize into the same Application, Page, Route, and Document contracts;
+plugin configuration remains Page-owned.
 
 ### Server input
 
@@ -75,20 +75,22 @@ Reachable modules beginning with `"use server";` contribute named server
 functions. The directive and graph reachability drive discovery; a filename
 suffix is only a source-organization convention.
 
-## Plugin Extensions
+## Typed Plugin Settings
 
-Plugins register namespaced extension owners in `describe()`:
+Applications install plugin factories through `config.plugins`. Each factory
+receives its independent typed Application configuration. A Page-aware plugin
+also declares a short key and a separate Page contract consumed from adjacent
+`page.config.ts#plugins`.
 
-- `applicationExtension()` for top-level `config.extensions`;
-- `pageExtension()` for `page.config.ts` `extensions`;
-- `routeExtension()` for Page-owned or explicit Route extensions;
-- `documentExtension()` for Page-owned or Application-owned Document
-  extensions.
+Application and Page contracts never merge with each other. Authored values
+deep-merge over defaults within their own contract. Page settings are strict
+static JSON; executable callbacks belong in Application options or plugin
+code. Plugins derive Route and Document contributions from normalized Pages
+and explicitly project any runtime code or data.
 
-Extension values are strict static JSON. Application values resolve before
-`setup()`; Page, Route, and Document values resolve during graph analysis.
-Runtime code or data appears only when the plugin explicitly projects it
-through generated contributions or another runtime contract.
+`ev prepare`, `ev dev`, and `ev build` generate `src/plugin-types.d.ts` from
+the static `ev.config.ts` type so Page config receives key and value completion
+without importing plugin packages.
 
 ## Build Stages
 
@@ -100,9 +102,9 @@ sequenceDiagram
   participant Bundler as bundler adapter
 
   CLI->>Core: load config and select bundler
-  Core->>Plugin: config() and describe()
+  Core->>Plugin: config() and resolve Application settings
   Core->>Plugin: setup() and buildStart()
-  Core->>Core: create CoreGraph and BuildPlan
+  Core->>Core: resolve Page settings and create CoreGraph/BuildPlan
   Core->>Plugin: contributions(framework view)
   Core->>Core: materialize .ev
   Core->>Plugin: bundlerConfig()

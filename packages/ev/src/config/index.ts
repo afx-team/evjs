@@ -24,23 +24,29 @@ import {
   assertSeparateFrameworkOutputDirectories,
 } from "../_internal/build/output-path-conventions.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
+import {
+  copyDefinedPluginRuntime,
+  isDefinedPluginRuntimePropertyKey,
+} from "../plugin/defined.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
-import {
-  type ConfigExtensionValues,
-  type ResolvedApplicationExtensionValues,
-  resolveConfigExtensionValues,
-  type StaticConfigValue,
-} from "./extensions.js";
+import type {
+  PagePluginConfigValues,
+  PagePluginConfigValuesCheck,
+} from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
 export type {
-  ConfigExtensionNamespace,
-  ConfigExtensionValues,
-  ResolvedApplicationExtensionValues,
+  ExtractInstalledPlugin,
+  InstalledPluginRegistry,
+  PagePluginConfigValues,
+  PagePluginConfigValuesCheck,
+} from "./plugins.js";
+export type {
   StaticConfigCompatible,
+  StaticConfigObject,
   StaticConfigValue,
-} from "./extensions.js";
+} from "./static.js";
 
 /**
  * Default bundler config shape used by framework-core APIs.
@@ -118,12 +124,6 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   routing?: ResolvedPageRoutingConfig;
   /** @internal Normalized explicit SPA route-tree input. */
   application?: ResolvedConfigRouteApplication;
-  /**
-   * Statically validated Application extension input authored in ev.config.
-   *
-   * Plugin defaults, merge, and validation run later, before setup().
-   */
-  extensions: Readonly<Record<string, StaticConfigValue>>;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
   /** Server configuration. */
@@ -137,17 +137,13 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
 }
 
 /**
- * Framework config after plugin Application extensions have been materialized.
+ * Framework config exposed to plugin lifecycle and bundler contexts.
  *
  * This is the config snapshot exposed to setup, lifecycle, contribution, and
  * bundler contexts.
  */
-export type ResolvedFrameworkConfig<TBundlerCfg = DefaultBundlerConfig> = Omit<
-  ResolvedConfig<TBundlerCfg>,
-  "extensions"
-> & {
-  extensions: ResolvedApplicationExtensionValues;
-};
+export type ResolvedFrameworkConfig<TBundlerCfg = DefaultBundlerConfig> =
+  ResolvedConfig<TBundlerCfg>;
 
 /**
  * evjs framework configuration.
@@ -201,22 +197,13 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    */
   application?: ConfigRouteApplication;
 
-  /**
-   * Namespaced, static Application configuration owned by active plugins.
-   *
-   * Values are validated and merged by the matching
-   * `applicationExtension()` declaration. Executable plugin options belong in
-   * the plugin factory instead of this CoreGraph-bound data.
-   */
-  extensions?: ConfigExtensionValues;
-
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
 
   /**
    * Framework plugins to extend behavior or modify the bundler config.
    */
-  plugins?: Plugin<TBundlerCfg>[];
+  plugins?: readonly (Plugin<TBundlerCfg> | false | null | undefined)[];
 }
 
 /** Client dev server options. */
@@ -322,27 +309,19 @@ export interface PageRoutingConfig {
 
 export type PageRoutingMode = "spa" | "mpa";
 
-interface PageFileConfigBase<
-  TExtensions extends ConfigExtensionValues = ConfigExtensionValues,
-> extends PageMetadata {
+interface PageFileConfigBase extends PageMetadata {
   /** Prerender behavior for SSR/SSG Pages. */
   readonly prerender?: PrerenderConfig;
   /** Enable React Server Components. Requires `render: "ssr"`. */
   readonly rsc?: true;
-  /** Namespaced plugin-owned Page configuration. */
-  readonly extensions?: TExtensions;
+  /** Settings for plugins installed by `ev.config.ts`. */
+  readonly plugins?: PagePluginConfigValues;
   /**
    * Static HTML Document output owned by this Page.
    *
    * This is valid only when the Page materializes its own static Document.
    */
   readonly document?: PageFileDocumentConfig;
-  /**
-   * Configuration for the unique semantic Route anchored by this Page.
-   *
-   * Route-owned data remains separate from Page `extensions`.
-   */
-  readonly route?: PageFileRouteConfig;
 }
 
 type PageFileRenderingConfig =
@@ -363,14 +342,17 @@ type PageFileRenderingConfig =
  * Canonical configuration colocated with a `page.*` Page anchor.
  *
  * The module is evaluated by evjs at build time. Its resolved value must be
- * static JSON data; plugins decide whether an extension is consumed while
+ * static JSON data; plugins decide whether a Page setting is consumed while
  * building or explicitly projected into generated runtime code. Omitting
  * `render` always selects CSR. Hydration applies only to SSR/SSG Pages because
  * CSR mounts a new client tree instead of adopting existing HTML.
  */
-export type PageFileConfig<
-  TExtensions extends ConfigExtensionValues = ConfigExtensionValues,
-> = PageFileConfigBase<TExtensions> & PageFileRenderingConfig;
+export type PageFileConfig = PageFileConfigBase & PageFileRenderingConfig;
+
+type PageFileConfigPluginCheck<TConfig extends PageFileConfig> =
+  TConfig extends { readonly plugins: infer TPlugins }
+    ? { readonly plugins: PagePluginConfigValuesCheck<TPlugins> }
+    : unknown;
 
 export interface PageFileDocumentConfig {
   /**
@@ -379,13 +361,6 @@ export interface PageFileDocumentConfig {
    * Aliases do not create Routes or additional semantic Documents.
    */
   readonly aliases?: readonly string[];
-  /** Namespaced plugin-owned configuration for this Page-owned Document. */
-  readonly extensions?: ConfigExtensionValues;
-}
-
-export interface PageFileRouteConfig {
-  /** Namespaced plugin-owned Route configuration. */
-  readonly extensions?: ConfigExtensionValues;
 }
 
 export interface ConfigRouteApplication {
@@ -409,14 +384,11 @@ export interface ConfigRouteApplicationDocument {
   template?: string;
   /** Default mount selector. */
   mount?: string;
-  /** Namespaced plugin-owned Document configuration. */
-  extensions?: ConfigExtensionValues;
 }
 
 export interface ResolvedConfigRouteApplicationDocument {
   template: string;
   mount: string;
-  extensions?: Readonly<Record<string, StaticConfigValue>>;
 }
 
 export interface ResolvedConfigRouteApplication {
@@ -447,8 +419,6 @@ export interface ConfigRoute {
   layout?: string | false;
   /** Nested explicit Route declarations. */
   routes?: ConfigRoute[];
-  /** Namespaced plugin-owned configuration for this semantic Route. */
-  extensions?: ConfigExtensionValues;
   /**
    * Acknowledges the exact terminal-match semantics already represented by
    * the Core Route. `false` is not representable and is rejected.
@@ -466,7 +436,6 @@ export interface ResolvedConfigRoute {
   wrappers?: string[];
   layout?: string | false;
   routes?: ResolvedConfigRoute[];
-  extensions?: Readonly<Record<string, StaticConfigValue>>;
 }
 
 /** Internal discovery metadata retained for a canonical `page.*` Page. */
@@ -526,7 +495,6 @@ const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "transport",
   "routing",
   "application",
-  "extensions",
   "bundler",
   "plugins",
 ]);
@@ -545,13 +513,11 @@ const PUBLIC_CONFIG_ROUTE_KEYS = new Set([
   "wrappers",
   "layout",
   "routes",
-  "extensions",
   "exact",
 ]);
 const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
   "template",
   "mount",
-  "extensions",
 ]);
 const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set(["basePath", "rsc", "dev"]);
@@ -573,10 +539,11 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
 ]);
 const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
   "name",
+  "id",
+  "key",
   "dependencies",
   "optionalDependencies",
   "enforce",
-  "describe",
   "config",
   "setup",
   "contributions",
@@ -624,7 +591,7 @@ function resolveRscEndpoint(rsc: ServerConfig["rsc"]): string | undefined {
 /**
  * Strictly validate author config and apply scalar defaults.
  *
- * Source discovery and plugin extension resolution happen in later build
+ * Source discovery and plugin setting resolution happen in later build
  * phases; this function only produces their normalized input state.
  */
 export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
@@ -698,10 +665,6 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
           application: resolvedApplication,
         }
       : {}),
-    extensions: resolveConfigExtensionValues(
-      config.extensions,
-      "config.extensions",
-    ),
     dev: {
       port: clientPort,
       https: devHttps,
@@ -752,9 +715,13 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
     throw new Error("[evjs] plugins must be an array of plugin objects.");
   }
   assertConfigArray(plugins, "plugins");
-  return plugins.map((plugin, index) =>
-    resolvePluginConfig<TBundlerCfg>(plugin, index),
-  );
+  const resolved: Plugin<TBundlerCfg>[] = [];
+  for (let index = 0; index < plugins.length; index++) {
+    const plugin = plugins[index];
+    if (plugin === false || plugin === null || plugin === undefined) continue;
+    resolved.push(resolvePluginConfig<TBundlerCfg>(plugin, index));
+  }
+  return resolved;
 }
 
 function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
@@ -762,12 +729,17 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   index: number,
 ): Plugin<TBundlerCfg> {
   const path = `plugins[${index}]`;
-  const pluginConfig = assertPlainConfigRecord(plugin, path, "a plugin object");
+  const pluginConfig = assertPlainConfigRecord(
+    plugin,
+    path,
+    "a plugin object",
+    isDefinedPluginRuntimePropertyKey,
+  );
   assertKnownConfigKeys(
     pluginConfig,
     PUBLIC_PLUGIN_CONFIG_KEYS,
     path,
-    "name, dependencies, optionalDependencies, enforce, describe, config, setup, or contributions",
+    "name, id, key, dependencies, optionalDependencies, enforce, config, setup, or contributions",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -775,10 +747,11 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   );
   const {
     name: rawName,
+    id: rawId,
+    key: rawKey,
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
     enforce: rawEnforce,
-    describe: rawDescribe,
     config: rawConfig,
     setup: rawSetup,
     contributions: rawContributions,
@@ -802,12 +775,6 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       `${path}.contributions`,
     );
   }
-  if (rawDescribe !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["describe"]>>(
-      rawDescribe,
-      `${path}.describe`,
-    );
-  }
   const dependencies =
     rawDependencies === undefined
       ? undefined
@@ -823,8 +790,14 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     assertDisjointPluginDependencies(dependencies, optionalDependencies, path);
   }
 
-  return {
+  const resolved: Plugin<TBundlerCfg> = {
     name: assertTrimmedNonEmptyString(rawName, `${path}.name`),
+    ...(rawId !== undefined
+      ? { id: assertTrimmedNonEmptyString(rawId, `${path}.id`) }
+      : {}),
+    ...(rawKey !== undefined
+      ? { key: assertTrimmedNonEmptyString(rawKey, `${path}.key`) }
+      : {}),
     ...(dependencies !== undefined ? { dependencies } : {}),
     ...(optionalDependencies !== undefined ? { optionalDependencies } : {}),
     ...(rawEnforce !== undefined
@@ -832,13 +805,14 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
           enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
         }
       : {}),
-    ...(rawDescribe !== undefined ? { describe: rawDescribe } : {}),
     ...(rawConfig !== undefined ? { config: rawConfig } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
     ...(rawContributions !== undefined
       ? { contributions: rawContributions }
       : {}),
   };
+  copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
+  return resolved;
 }
 
 function assertDisjointPluginDependencies(
@@ -1017,7 +991,7 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     config,
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
-    "conventions, output, dev, server, transport, routing, application, extensions, bundler, or plugins",
+    "conventions, output, dev, server, transport, routing, application, bundler, or plugins",
   );
 }
 
@@ -1127,15 +1101,8 @@ function resolveConfigRouteApplicationDocument(
     document,
     PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS,
     "application.document",
-    "template, mount, or extensions",
+    "template or mount",
   );
-  const extensions =
-    document.extensions === undefined
-      ? undefined
-      : resolveConfigExtensionValues(
-          document.extensions,
-          "application.document.extensions",
-        );
   return {
     template:
       document.template === undefined
@@ -1148,7 +1115,6 @@ function resolveConfigRouteApplicationDocument(
       document.mount === undefined
         ? CONFIG_DEFAULTS.mount
         : assertNonEmptyString(document.mount, "application.document.mount"),
-    ...(extensions ? { extensions } : {}),
   };
 }
 
@@ -1229,7 +1195,7 @@ function resolveConfigRoute(
     route,
     PUBLIC_CONFIG_ROUTE_KEYS,
     routePath,
-    "path, page, component, redirect, wrappers, layout, routes, extensions, or exact",
+    "path, page, component, redirect, wrappers, layout, routes, or exact",
   );
 
   const pathValue = resolveOptionalConfigRoutePath(
@@ -1350,13 +1316,6 @@ function resolveConfigRoute(
       `[evjs] ${routePath}.exact: true is valid only on a terminal Route without nested routes.`,
     );
   }
-  const extensions =
-    route.extensions === undefined
-      ? undefined
-      : resolveConfigExtensionValues(
-          route.extensions,
-          `${routePath}.extensions`,
-        );
   return {
     ...(pathValue !== undefined ? { path: pathValue } : {}),
     ...(page
@@ -1369,7 +1328,6 @@ function resolveConfigRoute(
     ...(wrappers ? { wrappers } : {}),
     ...(layout !== undefined ? { layout } : {}),
     ...(routes ? { routes } : {}),
-    ...(extensions ? { extensions } : {}),
   };
 }
 
@@ -1464,16 +1422,22 @@ function assertPlainConfigRecord(
   value: unknown,
   path: string,
   description: string,
+  allowPropertyKey?: (key: PropertyKey) => boolean,
 ): Record<string, unknown> {
   if (isPlainConfigRecord(value)) {
-    assertEnumerableStringOwnKeys(value, path);
+    assertEnumerableStringOwnKeys(value, path, allowPropertyKey);
     return value;
   }
   throw new Error(`[evjs] ${path} must be ${description}.`);
 }
 
-function assertEnumerableStringOwnKeys(value: object, path: string): void {
+function assertEnumerableStringOwnKeys(
+  value: object,
+  path: string,
+  allowPropertyKey?: (key: PropertyKey) => boolean,
+): void {
   for (const key of Reflect.ownKeys(value)) {
+    if (allowPropertyKey?.(key)) continue;
     if (typeof key !== "string") {
       throw new Error(`[evjs] ${path} must not contain symbol fields.`);
     }
@@ -1961,21 +1925,48 @@ function throwPathPatternError(
 /**
  * Define the evjs framework configuration with type inference.
  *
+ * Custom-bundler configs must keep `bundler` statically required. This avoids
+ * typing plugins for one adapter while an optional adapter falls back to the
+ * framework default at runtime.
+ *
  * @param config - The framework configuration object.
  * @returns The exact same configuration object.
  */
-export function defineConfig<TBundlerCfg = DefaultBundlerConfig>(
-  config: Config<TBundlerCfg>,
-): Config<TBundlerCfg> {
+type InferBundlerConfig<TBundler> = [TBundler] extends [
+  BundlerAdapter<infer TBundlerCfg>,
+]
+  ? TBundlerCfg
+  : never;
+
+export function defineConfig<
+  const TConfig extends { readonly bundler: object },
+>(
+  config: TConfig &
+    Config<InferBundlerConfig<TConfig["bundler"]>> &
+    Record<
+      Exclude<
+        keyof TConfig,
+        keyof Config<InferBundlerConfig<TConfig["bundler"]>>
+      >,
+      never
+    >,
+): TConfig;
+export function defineConfig<const TConfig extends object>(
+  config: TConfig & { readonly bundler?: Config["bundler"] } & Config &
+    Record<Exclude<keyof TConfig, keyof Config>, never>,
+): TConfig;
+export function defineConfig(config: object): object {
   return config;
 }
 
 /**
  * Define the build-time configuration colocated with a canonical `page.*`
- * anchor while preserving extension value inference.
+ * anchor while preserving installed-plugin value inference.
  */
 export function definePageConfig<const TConfig extends PageFileConfig>(
-  config: TConfig & Record<Exclude<keyof TConfig, keyof PageFileConfig>, never>,
+  config: TConfig &
+    Record<Exclude<keyof TConfig, keyof PageFileConfig>, never> &
+    PageFileConfigPluginCheck<TConfig>,
 ): TConfig {
   return config;
 }

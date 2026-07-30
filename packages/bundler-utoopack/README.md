@@ -30,26 +30,27 @@ export default defineConfig({
 The `utoopack()` helper wraps your plugin hooks for type-safe configuration mutation:
 
 ```ts
-import { defineConfig } from "@evjs/ev";
 import { merge, utoopack } from "@evjs/bundler-utoopack";
+import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
+
+const myUtoopackPlugin = definePlugin({
+  id: "@example/my-utoopack-plugin",
+  setup() {
+    return {
+      bundlerConfig: utoopack((config) => {
+        // config is typed as ConfigComplete from @utoo/pack
+        merge(config, {
+          define: {
+            __MY_VAR__: JSON.stringify("value"),
+          },
+        });
+      }),
+    };
+  },
+});
 
 export default defineConfig({
-  plugins: [
-    {
-      name: "my-utoopack-plugin",
-      setup() {
-        return {
-          bundlerConfig: utoopack((config) => {
-            // config is typed as ConfigComplete from @utoo/pack
-            merge(config, {
-              define: {
-                __MY_VAR__: JSON.stringify("value"),
-              },
-            });
-          }),
-        };
-      },
-    },
-  ],
+  plugins: [myUtoopackPlugin()],
 });
 ```

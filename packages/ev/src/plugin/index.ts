@@ -1,3 +1,4 @@
+import type { FrameworkRuntime } from "@evjs/server";
 import type {
   AppRouteTarget,
   AssetGroup,
@@ -30,13 +31,10 @@ import type {
   ServerRuntime,
 } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
-import type { FrameworkRuntimeOutput } from "../_internal/build/framework-runtime.js";
 import type {
   Config,
-  ConfigExtensionNamespace,
   DefaultBundlerConfig,
   ResolvedFrameworkConfig,
-  StaticConfigCompatible,
 } from "../config/index.js";
 
 export type {
@@ -50,6 +48,24 @@ export type {
   HtmlTagName,
   HtmlTagPlacement,
 } from "@evjs/shared/manifest";
+export {
+  type DefinedPluginApplicationInput,
+  type DefinedPluginConfigContext,
+  type DefinedPluginContributionContext,
+  type DefinedPluginDescriptor,
+  type DefinedPluginFactory,
+  type DefinedPluginInstance,
+  type DefinedPluginPageContributionContext,
+  type DefinedPluginPageDefaultable,
+  type DefinedPluginPageInput,
+  type DefinedPluginPageOptions,
+  type DefinedPluginSetupContext,
+  definePlugin,
+  type PluginConfigContract,
+  type PluginConfigOptions,
+  type PluginSettingContext,
+  pluginConfig,
+} from "./defined.js";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -141,19 +157,19 @@ export interface HtmlDocument {
  */
 export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
   /** The current mode. */
-  mode: "development" | "production";
+  readonly mode: "development" | "production";
   /** The current working directory. */
-  cwd: string;
-  /** The fully resolved framework config. */
-  config: ResolvedFrameworkConfig<TBundlerCfg>;
+  readonly cwd: string;
+  /** The fully resolved, read-only framework config. */
+  readonly config: ReadonlyFrameworkConfig<TBundlerCfg>;
   /** The current command. */
-  command: "dev" | "build";
+  readonly command: "dev" | "build";
   /** Selected bundler adapter name. */
-  bundlerName: string;
+  readonly bundlerName: string;
   /** Environment currently being configured when known. */
-  environment?: BuildEnvironment | "mixed";
+  readonly environment?: BuildEnvironment | "mixed";
   /** Logger plugins can use for framework-scoped messages. */
-  logger: Logger;
+  readonly logger: Logger;
   /** Adds an extra framework-level watch file in dev mode. */
   addWatchFile(file: string): void;
 }
@@ -161,13 +177,13 @@ export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
 /** Context passed to plugin config hooks. */
 export interface PluginConfigContext {
   /** The current mode. */
-  mode: "development" | "production";
+  readonly mode: "development" | "production";
   /** The current working directory. */
-  cwd: string;
+  readonly cwd: string;
   /** Extra CLI flags made available to plugins. */
-  flags?: CliFlags;
+  readonly flags?: DeepReadonly<CliFlags>;
   /** The current command. */
-  command: "dev" | "build";
+  readonly command: "dev" | "build";
 }
 
 type ConfigHookResult<TBundlerCfg> =
@@ -186,160 +202,70 @@ type PluginSetupResult<TBundlerCfg> =
 
 type ContributionsHookResult = void | Promise<void>;
 
-type DeepReadonly<T> = T extends object
-  ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
-  : T;
+type AnyFunction = (...args: never[]) => unknown;
 
-type StaticExtensionConstraint<T> = [StaticConfigCompatible<T>] extends [never]
-  ? never
-  : unknown extends T
-    ? unknown
-    : [T] extends [StaticConfigCompatible<T>]
-      ? unknown
-      : never;
+declare const pluginBundlerConfigType: unique symbol;
 
-type StaticExtensionDefinitionConstraint<TValue, TConfigured> =
-  StaticExtensionConstraint<TValue> & StaticExtensionConstraint<TConfigured>;
+type PluginBundlerConfigType<TBundlerCfg> = (config: TBundlerCfg) => void;
 
-type StaticExtensionCheck<TValue, TConfigured> = [
-  StaticExtensionDefinitionConstraint<TValue, TConfigured>,
-] extends [never]
-  ? [staticConfigError: "Extension values must be static JSON"]
-  : [];
+type DeepReadonly<T> = T extends AnyFunction
+  ? T
+  : T extends readonly unknown[]
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T extends object
+      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+      : T;
 
-/** Context available while an Application extension value is resolved. */
-export interface PluginApplicationExtensionContext {
-  readonly applicationId: string;
-  readonly applicationRoot: string;
-  readonly routingMode: "spa" | "mpa";
-}
+type ReadonlyPlugin<TBundlerCfg> = Readonly<
+  Omit<Plugin<TBundlerCfg>, "dependencies" | "optionalDependencies">
+> & {
+  readonly dependencies?: readonly string[];
+  readonly optionalDependencies?: readonly string[];
+};
 
-/** Context available while a Page extension value is resolved. */
-export interface PluginPageExtensionContext {
-  readonly pageId: string;
-  readonly pageModule: string;
-  readonly pageRoot?: string;
-  /** Canonical build-time `page.config.*` module, when present. */
-  readonly configSource?: string;
-}
+type ReadonlyFrameworkConfig<TBundlerCfg> = DeepReadonly<
+  Omit<ResolvedFrameworkConfig<TBundlerCfg>, "plugins">
+> & {
+  readonly plugins: readonly ReadonlyPlugin<TBundlerCfg>[];
+};
 
-/** Context available while a client Route extension value is resolved. */
-export interface PluginRouteExtensionContext {
-  readonly routeId: string;
-  readonly applicationId: string;
-  readonly parentId?: string;
-  readonly pattern: DeepReadonly<CoreRoutePattern>;
-  readonly target: DeepReadonly<CoreClientRouteTarget>;
-  readonly facets: DeepReadonly<CoreRouteFacets>;
-  readonly source?: string;
-}
+type PluginConfigHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  config: Config<TActualBundlerCfg>,
+  ctx: PluginConfigContext,
+) => ConfigHookResult<TActualBundlerCfg>;
 
-/** Context available while a Document extension value is resolved. */
-export interface PluginDocumentExtensionContext {
-  readonly documentId: string;
-  readonly applicationId: string;
-  readonly template: string;
-  readonly output: string;
-  readonly aliases?: readonly string[];
-  readonly owner: DeepReadonly<CoreDocumentOwner>;
-  readonly mount?: string;
-  readonly bootstrap?: DeepReadonly<CoreDocumentBootstrap>;
-  readonly source?: string;
-}
+type PluginSetupHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  ctx: PluginContext<TActualBundlerCfg>,
+) => PluginSetupResult<TBundlerCfg>;
 
-/** Shared declaration shape for a plugin-owned CoreGraph extension. */
-export interface PluginExtensionDefinition<
-  TValue = unknown,
-  TConfigured = unknown,
-  TContext = unknown,
-> {
-  /** Globally unique namespaced extension id, for example `@company/access`. */
-  namespace: ConfigExtensionNamespace;
-  /** Optional schema version recorded in the CoreGraph extension registry. */
-  schemaVersion?: string;
-  /** Default value, evaluated independently for every target owner. */
-  defaults?: TValue | ((context: TContext) => TValue | undefined);
-  /**
-   * Merge defaults with an explicitly authored namespaced value. This callback
-   * is not invoked when the owner omits the namespace; defaults are
-   * materialized directly in that case. By default plain objects are
-   * shallow-merged with configured fields winning; other configured values
-   * replace defaults.
-   */
-  merge?: (
-    defaults: TValue | undefined,
-    configured: TConfigured,
-    context: TContext,
-  ) => TValue | undefined;
-  /**
-   * Return false/a message or throw to reject the materialized value.
-   *
-   * The value is an isolated, deeply read-only snapshot.
-   */
-  validate?: (
-    value: DeepReadonly<TValue>,
-    context: TContext,
-  ) => undefined | boolean | string;
-}
-
-/** Declarative Application extension registered by a plugin descriptor. */
-export type PluginApplicationExtensionDefinition<
-  TValue = unknown,
-  TConfigured = unknown,
-> = PluginExtensionDefinition<
-  TValue,
-  TConfigured,
-  PluginApplicationExtensionContext
->;
-
-/** Declarative Page extension registered by a plugin descriptor. */
-export type PluginPageExtensionDefinition<
-  TValue = unknown,
-  TConfigured = unknown,
-> = PluginExtensionDefinition<TValue, TConfigured, PluginPageExtensionContext>;
-
-/** Declarative client Route extension registered by a plugin descriptor. */
-export type PluginRouteExtensionDefinition<
-  TValue = unknown,
-  TConfigured = unknown,
-> = PluginExtensionDefinition<TValue, TConfigured, PluginRouteExtensionContext>;
-
-/** Declarative Document extension registered by a plugin descriptor. */
-export type PluginDocumentExtensionDefinition<
-  TValue = unknown,
-  TConfigured = unknown,
-> = PluginExtensionDefinition<
-  TValue,
-  TConfigured,
-  PluginDocumentExtensionContext
->;
-
-/** Registration context passed to a plugin's `describe` hook. */
-export interface PluginDescribeContext {
-  applicationExtension<TValue = unknown, TConfigured = unknown>(
-    definition: PluginApplicationExtensionDefinition<TValue, TConfigured>,
-    ...check: StaticExtensionCheck<TValue, TConfigured>
-  ): void;
-  pageExtension<TValue = unknown, TConfigured = unknown>(
-    definition: PluginPageExtensionDefinition<TValue, TConfigured>,
-    ...check: StaticExtensionCheck<TValue, TConfigured>
-  ): void;
-  routeExtension<TValue = unknown, TConfigured = unknown>(
-    definition: PluginRouteExtensionDefinition<TValue, TConfigured>,
-    ...check: StaticExtensionCheck<TValue, TConfigured>
-  ): void;
-  documentExtension<TValue = unknown, TConfigured = unknown>(
-    definition: PluginDocumentExtensionDefinition<TValue, TConfigured>,
-    ...check: StaticExtensionCheck<TValue, TConfigured>
-  ): void;
-}
+type PluginContributionsHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  ctx: ContributionContext<TActualBundlerCfg>,
+) => ContributionsHookResult;
 
 /**
  * An evjs plugin.
+ *
+ * A bare `Plugin` is valid with any bundler. Pass a concrete bundler config
+ * type only when the plugin intentionally depends on that config shape.
  */
-export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
+export interface Plugin<TBundlerCfg = unknown> {
+  /** Type-only marker that keeps bundler-specific plugins incompatible. */
+  readonly [pluginBundlerConfigType]?: PluginBundlerConfigType<TBundlerCfg>;
+
   /** Plugin name for debugging and logging. */
   name: string;
+
+  /** @internal Stable descriptor identity for a `definePlugin()` instance. */
+  id?: string;
+
+  /** @internal Page configuration key for a `definePlugin()` instance. */
+  key?: string;
 
   /**
    * Required plugin dependencies that must run before this plugin.
@@ -362,10 +288,7 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
    * Use this for framework-level config such as `server.basePath` that must
    * be visible to dev proxy setup and build-time runtime defines.
    */
-  config?: (
-    config: Config<TBundlerCfg>,
-    ctx: PluginConfigContext,
-  ) => ConfigHookResult<TBundlerCfg>;
+  config?: PluginConfigHook<TBundlerCfg>;
 
   /**
    * Initialize the plugin and return lifecycle hooks.
@@ -373,7 +296,7 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
    * Receives the fully resolved config and build context. All returned
    * hooks share state through closure.
    */
-  setup?: (ctx: PluginContext<TBundlerCfg>) => PluginSetupResult<TBundlerCfg>;
+  setup?: PluginSetupHook<TBundlerCfg>;
 
   /**
    * Declare generated framework contributions for the `.ev` IR.
@@ -382,12 +305,7 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
    * modules, structured framework slots, and resolution changes before bundler
    * configuration is created.
    */
-  contributions?: (
-    ctx: ContributionContext<TBundlerCfg>,
-  ) => ContributionsHookResult;
-
-  /** Declare namespaced framework extensions before graph analysis. */
-  describe?: (context: PluginDescribeContext) => void;
+  contributions?: PluginContributionsHook<TBundlerCfg>;
 
   /**
    * Relative ordering tier for plugins without an explicit dependency edge.
@@ -397,30 +315,24 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
   enforce?: "pre" | "normal" | "post";
 }
 
-/**
- * Define an evjs plugin while preserving its inferred authoring shape.
- */
-export function definePlugin<
-  TBundlerCfg = DefaultBundlerConfig,
-  const TPlugin extends Plugin<TBundlerCfg> = Plugin<TBundlerCfg>,
->(plugin: TPlugin): TPlugin {
-  return plugin;
+interface PluginBaseContext<TBundlerCfg = DefaultBundlerConfig> {
+  /** Current mode. */
+  readonly mode: "development" | "production";
+  /** The current working directory. */
+  readonly cwd: string;
+  /** The fully resolved, read-only framework config. */
+  readonly config: ReadonlyFrameworkConfig<TBundlerCfg>;
+  /** Extra CLI flags made available to plugins. */
+  readonly flags?: DeepReadonly<CliFlags>;
+  /** Current command. */
+  readonly command: "dev" | "build";
+  /** Logger plugins can use for framework-scoped messages. */
+  readonly logger: Logger;
 }
 
 /** Context passed to plugin setup(). */
-export interface PluginContext<TBundlerCfg = DefaultBundlerConfig> {
-  /** Current mode. */
-  mode: "development" | "production";
-  /** The current working directory. */
-  cwd: string;
-  /** The fully resolved framework config. */
-  config: ResolvedFrameworkConfig<TBundlerCfg>;
-  /** Extra CLI flags made available to plugins. */
-  flags?: CliFlags;
-  /** Current command. */
-  command: "dev" | "build";
-  /** Logger plugins can use for framework-scoped messages. */
-  logger: Logger;
+export interface PluginContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginBaseContext<TBundlerCfg> {
   /** Adds an extra framework-level watch file in dev mode. */
   addWatchFile(file: string): void;
 }
@@ -462,13 +374,26 @@ export interface FrameworkDocumentView {
   readonly mount?: string;
   readonly bootstrap?: DeepReadonly<CoreDocumentBootstrap>;
   readonly provenance: DeepReadonly<CoreNodeProvenance>;
-  readonly extensions: DeepReadonly<Record<string, unknown>>;
 }
+
+export type FrameworkApplicationPluginSettingsView = Readonly<
+  Record<string, { readonly enabled: boolean }>
+>;
+
+export type FrameworkPagePluginSettingsView = Readonly<
+  Record<
+    string,
+    {
+      readonly enabled: boolean;
+      readonly config?: Readonly<Record<string, unknown>>;
+    }
+  >
+>;
 
 export interface FrameworkApplicationView {
   readonly id: string;
-  /** Resolved CoreGraph Application extensions. */
-  readonly extensions: DeepReadonly<Record<string, unknown>>;
+  /** Effective settings for installed plugins on this Application. */
+  readonly plugins: FrameworkApplicationPluginSettingsView;
   /** Source boundary claimed by the Application provider. */
   readonly root: string;
   /** Route and Document materialization mode for this Application. */
@@ -491,8 +416,8 @@ export interface FrameworkPageView {
   readonly applicationId: string;
   /** Canonical Page source and its private-code ownership boundary. */
   readonly source: FrameworkPageSourceView;
-  /** Resolved Page extensions available to plugin consumers. */
-  readonly extensions: DeepReadonly<Record<string, unknown>>;
+  /** Effective settings for installed plugins on this Page. */
+  readonly plugins: FrameworkPagePluginSettingsView;
   readonly render: RenderMode;
   readonly componentModel?: ComponentModel;
   readonly hydrate?: HydrationMode;
@@ -522,8 +447,6 @@ export interface FrameworkRouteView {
   readonly target: DeepReadonly<CoreClientRouteTarget>;
   /** Complete client Route composition facets. */
   readonly facets: DeepReadonly<CoreRouteFacets>;
-  /** Resolved CoreGraph client Route extensions. */
-  readonly extensions: DeepReadonly<Record<string, unknown>>;
   /** Producer and source that declared this Route. */
   readonly provenance: DeepReadonly<CoreNodeProvenance>;
 }
@@ -766,17 +689,56 @@ export interface BuildStartContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginContext<TBundlerCfg> {}
 
 export interface BuildOutputContext<TBundlerCfg = DefaultBundlerConfig>
-  extends PluginContext<TBundlerCfg> {}
+  extends PluginBaseContext<TBundlerCfg> {}
 
 export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
-  extends PluginContext<TBundlerCfg> {}
+  extends PluginBaseContext<TBundlerCfg> {}
+
+type BuildStartHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  ctx: BuildStartContext<TActualBundlerCfg>,
+) => void | Promise<void>;
+
+type BuildOutputHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  output: BuildOutput,
+  ctx: BuildOutputContext<TActualBundlerCfg>,
+) => void | Promise<void>;
+
+type BundlerConfigHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  config: TActualBundlerCfg,
+  ctx: BundlerCtx<TActualBundlerCfg>,
+) => void | Promise<void>;
+
+type DisposeHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  ctx: DisposeContext<TActualBundlerCfg>,
+) => void | Promise<void>;
+
+type TransformHtmlHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  doc: HtmlDocument,
+  ctx: HtmlTransformContext<TActualBundlerCfg>,
+) => void | Promise<void>;
 
 /**
  * Lifecycle hooks returned from plugin setup().
+ *
+ * Bare `PluginHooks` are safe with every bundler. Pass a concrete bundler
+ * config type for hooks that intentionally depend on one config shape.
  */
-export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
+export interface PluginHooks<TBundlerCfg = unknown> {
+  /** Type-only marker that keeps bundler-specific hooks incompatible. */
+  readonly [pluginBundlerConfigType]?: PluginBundlerConfigType<TBundlerCfg>;
+
   /** Called before compilation begins. */
-  buildStart?: (ctx: BuildStartContext<TBundlerCfg>) => void | Promise<void>;
+  buildStart?: BuildStartHook<TBundlerCfg>;
 
   /**
    * Inspect or mutate the linked framework build output before deployment
@@ -787,22 +749,15 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
    * to add data to the in-memory BuildOutput before projection.
    * CoreGraph-owned Document file names and aliases are immutable here.
    */
-  buildOutput?: (
-    output: BuildOutput,
-    ctx: BuildOutputContext<TBundlerCfg>,
-  ) => void | Promise<void>;
+  buildOutput?: BuildOutputHook<TBundlerCfg>;
 
   /**
    * Modify the underlying bundler configuration directly.
    *
-   * The config type defaults to Utoopack's config shape because Utoopack is
-   * the default adapter. Projects that switch bundlers can pass a narrower
-   * generic or use the typed helper exported by that adapter.
+   * Bare hooks are bundler-polymorphic. Use the typed helper exported by an
+   * adapter or pass a concrete config type for adapter-specific changes.
    */
-  bundlerConfig?: (
-    config: TBundlerCfg,
-    ctx: BundlerCtx<TBundlerCfg>,
-  ) => void | Promise<void>;
+  bundlerConfig?: BundlerConfigHook<TBundlerCfg>;
 
   /**
    * Called after compilation completes. Receives an isolated snapshot of the
@@ -811,7 +766,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
   buildEnd?: (result: BuildResult) => void | Promise<void>;
 
   /** Called when the command is shutting down or after a build finishes. */
-  dispose?: (ctx: DisposeContext<TBundlerCfg>) => void | Promise<void>;
+  dispose?: DisposeHook<TBundlerCfg>;
 
   /**
    * Transform the output HTML document after asset injection.
@@ -822,10 +777,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
    * document is serialized for static emission or compiled into a request-time
    * server shell. Multiple plugins are applied in order.
    */
-  transformHtml?: (
-    doc: HtmlDocument,
-    ctx: HtmlTransformContext<TBundlerCfg>,
-  ) => void | Promise<void>;
+  transformHtml?: TransformHtmlHook<TBundlerCfg>;
 }
 
 /** Build result passed to plugin hooks. */
@@ -833,7 +785,7 @@ export interface BuildResult {
   /** Single framework build output. */
   output: BuildOutput;
   /** Server runtime contract generated from BuildOutput plus runtime-only facts. */
-  frameworkRuntime?: FrameworkRuntimeOutput;
+  frameworkRuntime?: FrameworkRuntime;
   /** Deployment metadata projection for adapters and tooling. */
   deploymentMetadata: DeploymentMetadata;
   /** True if this is a rebuild triggered by file change (dev watch mode only). */
@@ -858,7 +810,7 @@ export interface HtmlDocumentInfo {
 export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
   BuildResult &
     HtmlDocumentInfo &
-    PluginContext<TBundlerCfg> & {
+    PluginBaseContext<TBundlerCfg> & {
       buildId: string;
       publicPath: BuildOutput["publicPath"];
     };

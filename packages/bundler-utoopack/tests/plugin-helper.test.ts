@@ -1,8 +1,19 @@
+import type { PluginHooks } from "@evjs/ev/plugin";
 import type { ConfigComplete } from "@utoo/pack";
-import { describe, expect, it } from "vitest";
-import { merge } from "../src/plugin-helper.js";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { merge, utoopack } from "../src/plugin-helper.js";
 
-describe("merge", () => {
+describe("utoopack plugin helpers", () => {
+  it("keeps adapter narrowing inside a bundler-agnostic hook", () => {
+    const hook = utoopack((config) => {
+      expectTypeOf(config).toEqualTypeOf<ConfigComplete>();
+    });
+
+    expectTypeOf(hook).toMatchTypeOf<
+      NonNullable<PluginHooks<{ output: string }>["bundlerConfig"]>
+    >();
+  });
+
   it("merges nested config sections", () => {
     const config: ConfigComplete = {
       entry: [],

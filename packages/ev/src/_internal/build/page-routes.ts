@@ -166,7 +166,7 @@ async function discoverPageAnchorRoutes(
       diagnostics.push({
         level: "error",
         file: toDiagnosticPath(toProjectPath(cwd, file)),
-        message: `Page config modules must be colocated with a ${PAGE_ENTRY_LABEL} anchor. A componentless layout or pathless group Route cannot own page.config.ts route extensions; add the Page anchor, keep its data in explicit application.routes, use Route-extension defaults, or rename this ordinary module.`,
+        message: `Page config modules must be colocated with a ${PAGE_ENTRY_LABEL} anchor. A componentless layout or pathless group Route cannot own page.config.ts plugin settings; add the Page anchor, keep its data in explicit application.routes, or rename this ordinary module.`,
       });
     }
   }

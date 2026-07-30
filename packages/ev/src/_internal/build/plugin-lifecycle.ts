@@ -1,7 +1,14 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { type Config, resolvePluginsConfig } from "../../config/index.js";
+import {
+  copyDefinedPluginRuntime,
+  createPluginApplicationSettingContext,
+  isDefinedPluginRuntimePropertyKey,
+  prepareDefinedPluginApplicationSetting,
+} from "../../plugin/defined.js";
 import { PLUGIN_HOOK_NAMES } from "../../plugin/hook-names.js";
 import type {
+  BuildOutputContext,
   BuildResult,
   Plugin,
   PluginConfigContext,
@@ -43,7 +50,8 @@ export function orderPluginsByDependencies<
     dependencyName: string,
     optional: boolean,
   ): void {
-    if (!pluginByName.has(dependencyName)) {
+    const dependency = pluginByName.get(dependencyName);
+    if (!dependency) {
       if (optional) return;
       throw new Error(
         `[evjs] Plugin "${plugin.name}" depends on missing plugin "${dependencyName}".`,
@@ -216,7 +224,9 @@ function resolvePluginSetupHooks<TBundlerCfg>(
   return hookConfig as PluginHooks<TBundlerCfg>;
 }
 
-function isPluginHookName(value: string): value is keyof PluginHooks {
+function isPluginHookName(
+  value: string,
+): value is Extract<keyof PluginHooks, string> {
   return (typedPluginHookNames as readonly string[]).includes(value);
 }
 
@@ -238,22 +248,85 @@ export async function runConfigHooks<TBundlerCfg>(
   userConfig: Config<TBundlerCfg> | undefined,
   ctx: PluginConfigContext,
 ): Promise<Config<TBundlerCfg> | undefined> {
-  let config = userConfig;
+  let config = cloneConfigHookInput(userConfig);
   const plugins = orderPluginsByDependencies(
-    resolvePluginsConfig<TBundlerCfg>(userConfig?.plugins),
+    resolvePluginsConfig<TBundlerCfg>(config?.plugins),
   );
+  const applicationSettingContext =
+    createPluginApplicationSettingContext(config);
+
+  for (const plugin of plugins) {
+    prepareDefinedPluginApplicationSetting(plugin, applicationSettingContext);
+  }
 
   for (const plugin of plugins) {
     if (!plugin.config) continue;
     const nextConfig = await plugin.config(config ?? {}, ctx);
     if (nextConfig !== undefined) {
-      config = resolvePluginConfigHookResult<TBundlerCfg>(
-        plugin.name,
-        nextConfig,
+      config = cloneConfigHookInput(
+        resolvePluginConfigHookResult<TBundlerCfg>(plugin.name, nextConfig),
       );
     }
   }
   return config;
+}
+
+function cloneConfigHookInput<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+): Config<TBundlerCfg> | undefined {
+  return cloneConfigHookValue(config, new WeakMap()) as
+    | Config<TBundlerCfg>
+    | undefined;
+}
+
+function cloneConfigHookValue(
+  value: unknown,
+  seen: WeakMap<object, object>,
+): unknown {
+  if (!value || typeof value !== "object") return value;
+  if (!Array.isArray(value) && !isPlainObject(value)) return value;
+
+  const existing = seen.get(value);
+  if (existing) return existing;
+  let clone: object;
+  if (Array.isArray(value)) {
+    const arrayClone: unknown[] = [];
+    arrayClone.length = value.length;
+    clone = arrayClone;
+  } else {
+    clone = Object.create(Object.getPrototypeOf(value));
+  }
+  seen.set(value, clone);
+
+  for (const key of Reflect.ownKeys(value)) {
+    if (
+      (Array.isArray(value) && key === "length") ||
+      isDefinedPluginRuntimePropertyKey(key)
+    ) {
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor) continue;
+    Object.defineProperty(
+      clone,
+      key,
+      "value" in descriptor
+        ? {
+            configurable: true,
+            enumerable: descriptor.enumerable,
+            value: cloneConfigHookValue(descriptor.value, seen),
+            writable: true,
+          }
+        : descriptor,
+    );
+  }
+  copyDefinedPluginRuntime(value, clone);
+  return clone;
+}
+
+function isPlainObject(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function resolvePluginConfigHookResult<TBundlerCfg>(
@@ -281,9 +354,10 @@ export async function runBuildOutputHooks<TBundlerCfg>(
   ctx: PluginContext<TBundlerCfg>,
   validate?: () => void,
 ): Promise<void> {
+  const outputContext = createLatePluginContext(ctx);
   for (const hook of hooks) {
     if (!hook.buildOutput) continue;
-    await hook.buildOutput(output, ctx);
+    await hook.buildOutput(output, outputContext);
     validate?.();
   }
 }
@@ -310,14 +384,29 @@ export async function runDisposeHooks<TBundlerCfg>(
   ctx: PluginContext<TBundlerCfg>,
 ): Promise<void> {
   const errors: unknown[] = [];
+  const disposeContext = createLatePluginContext(ctx);
   for (const hook of [...hooks].reverse()) {
     try {
-      await hook.dispose?.(ctx);
+      await hook.dispose?.(disposeContext);
     } catch (error) {
       errors.push(error);
     }
   }
   throwCollectedErrors(errors, "[evjs] Multiple plugin dispose hooks failed.");
+}
+
+/** Remove analysis-only capabilities before invoking late lifecycle hooks. */
+export function createLatePluginContext<TBundlerCfg>(
+  ctx: PluginContext<TBundlerCfg>,
+): BuildOutputContext<TBundlerCfg> {
+  return {
+    mode: ctx.mode,
+    command: ctx.command,
+    cwd: ctx.cwd,
+    config: ctx.config,
+    ...(ctx.flags === undefined ? {} : { flags: ctx.flags }),
+    logger: ctx.logger,
+  };
 }
 
 export function hasSamePluginIdentity<TBundlerCfg>(

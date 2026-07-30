@@ -210,6 +210,7 @@ const expectedBuildToolsRuntimeExports = [
   "SERVER_FUNCTION_TRANSFORM_RUNTIME",
   "analyzePageComponentExports",
   "applyHtmlTagContributions",
+  "applyPluginSettings",
   "applyRouteScopedMiddlewares",
   "assertBundlerEmittedFiles",
   "assertPortableRelativeArtifactPath",
@@ -220,8 +221,10 @@ const expectedBuildToolsRuntimeExports = [
   "build",
   "buildHtml",
   "canonicalPortableArtifactPathKey",
+  "collectPluginSettingsRegistry",
   "createBuildPlan",
   "createCoreGraph",
+  "createPluginSettingsResolutionSession",
   "detectUseClient",
   "dev",
   "diffBuildPlan",
@@ -232,6 +235,7 @@ const expectedBuildToolsRuntimeExports = [
   "extractServerFunctionExports",
   "generateHtml",
   "generatePageRouteTypes",
+  "generatePluginTypes",
   "inspectFrameworkBuild",
   "isArtifactOnlyBuildPlanUpdate",
   "isEmptyBuildPlanUpdate",
@@ -242,6 +246,8 @@ const expectedBuildToolsRuntimeExports = [
   "removeOwnedOutputFile",
   "resolveBuildOutputPaths",
   "resolveBundlerClientEntryAssets",
+  "resolvePluginSettingsState",
+  "syncPluginTypes",
   "transformRscClientFile",
   "transformServerFile",
   "validateHtmlTemplate",
@@ -524,12 +530,18 @@ describe("workspace package surface", () => {
   });
 
   it("keeps plugin authoring types on one canonical public vocabulary", async () => {
-    expect(Object.keys(pluginAuthoring).sort()).toEqual(["definePlugin"]);
+    expect(Object.keys(pluginAuthoring).sort()).toEqual([
+      "definePlugin",
+      "pluginConfig",
+    ]);
 
     const pluginSource = await fs.readFile(
       path.join(repoRoot, "packages/ev/src/plugin/index.ts"),
       "utf-8",
     );
+
+    expect(pluginSource).not.toContain("BundlerAgnostic");
+    expect(pluginSource).not.toContain("AnyPluginConfigContract");
 
     for (const alias of forbiddenPluginAuthoringAliases) {
       expect(pluginSource).not.toMatch(

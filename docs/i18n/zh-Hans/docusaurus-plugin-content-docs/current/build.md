@@ -26,7 +26,7 @@ diagnostic。
 
 canonical inspect 输出不会展示 provider、resolver 实现或 route-types path。它会
 报告 resolved Page、Route、Document、server function、server route、rendering
-metadata、extension registry、Page config source、provenance 与 diagnostic。
+metadata、已安装 plugin settings、Page config source、provenance 与 diagnostic。
 错误会让 inspect 非零退出。
 
 ## 生成 IR
@@ -127,8 +127,8 @@ export default definePageConfig({
   },
   render: "ssr",
   hydrate: "load",
-  extensions: {
-    "@company/analytics": {
+  plugins: {
+    analytics: {
       channel: "report",
     },
   },
@@ -138,7 +138,7 @@ export default definePageConfig({
 该 module 在 graph build 阶段同步求值。Core rendering 字段进入 rendering
 BuildPlan。对于实际发射的 MPA/SSG Document，以及构建期编译的 SSR/PPR/RSC
 request-time document shell，静态 `title` 和 named `meta` 会物化缺失 tag，并覆盖
-模板中匹配的 baseline 值；未声明值保留 baseline。已注册 plugin extension 保持
+模板中匹配的 baseline 值；未声明值保留 baseline。Page plugin setting 保持
 static graph data，除非能力所属插件把它显式投影到 generated runtime artifact。
 Plugin `transformHtml` hook 在框架元信息、assets 与结构化 HTML contribution
 物化后运行，可以显式覆盖最终结果。

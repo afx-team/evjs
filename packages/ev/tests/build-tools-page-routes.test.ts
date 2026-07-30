@@ -108,8 +108,8 @@ describe("discoverPageRoutes", () => {
         "src/pages/about/index.html": '<div id="about"></div>',
         "src/pages/about/page.config.ts": `
           export default {
-            extensions: {
-              "@company/feature": { enabled: true },
+            plugins: {
+              feature: true,
             },
           };
         `,
@@ -285,10 +285,8 @@ describe("discoverPageRoutes", () => {
           "export default function AdminLayout({ children }) { return children; }",
         "src/pages/admin/page.config.ts": `
           export default {
-            route: {
-              extensions: {
-                "@company/access": { policy: "admin" },
-              },
+            plugins: {
+              access: { policy: "admin" },
             },
           };
         `,
@@ -305,7 +303,7 @@ describe("discoverPageRoutes", () => {
           level: "error",
           file: "src/pages/admin/page.config.ts",
           message: expect.stringContaining(
-            "A componentless layout or pathless group Route cannot own page.config.ts route extensions",
+            "A componentless layout or pathless group Route cannot own page.config.ts plugin settings",
           ),
         }),
       );

@@ -234,7 +234,7 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
       pageIds: [],
       routeIds: [],
       documentIds: [documentId],
-      extensions: {},
+      plugins: {},
       provenance: { producer, source: app.entry },
     };
     documents[documentId] = {
@@ -245,7 +245,6 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
       owner: { kind: "application" },
       ...(app.mount ? { mount: app.mount } : {}),
       bootstrap: { kind: "application" },
-      extensions: {},
       provenance: { producer, source: app.html },
     };
   }
@@ -257,7 +256,7 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
       pageIds: [],
       routeIds: [],
       documentIds: [],
-      extensions: {},
+      plugins: {},
       provenance: { producer },
     };
   }
@@ -282,7 +281,7 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
       ...(page.prerender ? { prerender: page.prerender } : {}),
       ...(page.ppr ? { ppr: page.ppr } : {}),
       ...(page.metadata ? { metadata: page.metadata } : {}),
-      extensions: {},
+      plugins: {},
       provenance: { producer, source: module },
     };
     applications[applicationId]?.pageIds.push(page.id);
@@ -295,7 +294,6 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
         owner: { kind: "page", pageId: page.id },
         ...(page.mount ? { mount: page.mount } : {}),
         bootstrap: { kind: "page", pageId: page.id },
-        extensions: {},
         provenance: { producer, source: page.html },
       };
       applications[applicationId]?.documentIds.push(page.id);
@@ -333,7 +331,6 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
         ...(route.notFoundModule ? { notFound: route.notFoundModule } : {}),
         wrappers: [],
       },
-      extensions: {},
       provenance: {
         producer,
         ...(route.module ? { source: route.module } : {}),
@@ -348,7 +345,7 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
     pages,
     routes,
     documents,
-    extensions: { namespaces: {} },
+    plugins: { entries: {} },
     serverFunctions: fixture.serverFunctions,
     serverRoutes: fixture.serverRoutes,
     ...(fixture.clientReferences

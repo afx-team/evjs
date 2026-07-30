@@ -6,6 +6,7 @@
  */
 
 import path from "node:path";
+import type { FrameworkRuntime } from "@evjs/server";
 import type {
   BuildOutput,
   DeploymentDocumentOutput,
@@ -21,10 +22,7 @@ import {
   type DeploymentOutputReservation,
   declareDeploymentOutputReservations,
 } from "../_internal/build/deployment-output-reservations.js";
-import {
-  createFrameworkRuntime,
-  type FrameworkRuntimeOutput,
-} from "../_internal/build/framework-runtime.js";
+import { createFrameworkRuntime } from "../_internal/build/framework-runtime.js";
 import {
   assertPortableRelativeArtifactPath,
   FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
@@ -52,7 +50,7 @@ export interface NodeDeploymentAdapterOptions
    * Linked runtime snapshot, including compiled Document shells and RSC
    * manifests.
    */
-  frameworkRuntime?: FrameworkRuntimeOutput;
+  frameworkRuntime?: FrameworkRuntime;
 }
 
 export interface StaticDeploymentAdapterOptions
@@ -70,7 +68,7 @@ export interface EdgeDeploymentAdapterOptions
    * Linked runtime snapshot, including compiled Document shells and RSC
    * manifests.
    */
-  frameworkRuntime?: FrameworkRuntimeOutput;
+  frameworkRuntime?: FrameworkRuntime;
 }
 
 export interface NodeDeploymentFiles {

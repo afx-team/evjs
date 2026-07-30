@@ -85,6 +85,22 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
+export type {
+  PluginSettingsRegistry,
+  PluginSettingsResolutionSession,
+  ResolvedPluginSettingsState,
+} from "./plugin-settings.js";
+export {
+  applyPluginSettings,
+  collectPluginSettingsRegistry,
+  createPluginSettingsResolutionSession,
+  resolvePluginSettingsState,
+} from "./plugin-settings.js";
+export type {
+  GeneratePluginTypesOptions,
+  SyncPluginTypesOptions,
+} from "./plugin-types.js";
+export { generatePluginTypes, syncPluginTypes } from "./plugin-types.js";
 export {
   assertPortableRelativeArtifactPath,
   assertPortableRelativeBrowserArtifactPath,

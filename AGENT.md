@@ -23,8 +23,10 @@
 - `routing.mode` selects SPA or MPA materialization without changing semantic
   Application, Page, Route, or Document identity.
 - adjacent `page.config.ts` supplies static Page metadata, rendering settings,
-  and namespaced Page/Route/Page-owned Document extensions.
-- top-level `config.extensions` supplies namespaced Application extensions.
+  and a generated short-keyed `plugins` map for installed Page-aware plugins.
+- top-level `config.plugins` installs plugin factories and supplies each
+  plugin's independent Application configuration. Route and Document behavior
+  is derived from normalized Pages rather than configured on separate owners.
 - `application.routes` is an explicit SPA-only input into the same CoreGraph.
 - `src/apis/**/api.*` supplies framework-managed request Routes;
   `src/middleware.ts` and route-tree `middleware.ts` supply middleware.
@@ -38,7 +40,7 @@
 | --- | --- |
 | `@evjs/ev` | Basic config and Page-config authoring. |
 | `@evjs/ev/config` | Advanced config utilities and resolved types. |
-| `@evjs/ev/plugin` | Plugin descriptors, hooks, extensions, and framework view. |
+| `@evjs/ev/plugin` | Plugin descriptors, typed settings, hooks, and framework view. |
 | `@evjs/ev/deployment` | Deployment artifact helpers and built-in adapters. |
 | `@evjs/ev/route` | Page params, search, and loader data. |
 | `@evjs/ev/navigation` | File-convention SPA navigation helpers. |
@@ -61,8 +63,9 @@ extensions, and type-only imports use `import type`.
    explicit route tree, or nesting explicit routes with `children`.
 4. Putting Page metadata or rendering fields on the component export instead
    of adjacent `page.config.ts`.
-5. Treating plugin extension values as executable runtime config. They are
-   strict JSON graph data until a plugin explicitly projects them.
+5. Putting callbacks or secrets in Page plugin values. Page settings are
+   strict JSON graph data; executable options belong in the Application
+   factory configuration or plugin code, and runtime projection is explicit.
 6. Publishing server request Routes from basenames other than `api.*`, using
    lowercase method exports, or exporting route middleware from the anchor.
 7. Scanning programmatic `@evjs/server` `createRoute()` calls as framework

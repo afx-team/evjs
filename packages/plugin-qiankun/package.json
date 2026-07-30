@@ -41,8 +41,13 @@
     "@evjs/ev": "*",
     "qiankun": "^3.0.0-rc.21"
   },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
   "devDependencies": {
+    "@evjs/bundler-webpack": "*",
     "@types/node": "^22.19.15",
+    "@types/react": ">=18.0.0",
     "domparser-rs": "^0.1.0",
     "typescript": "^6.0.2"
   },

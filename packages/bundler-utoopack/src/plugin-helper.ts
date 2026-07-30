@@ -4,10 +4,6 @@ import type { ConfigComplete } from "@utoo/pack";
 
 export type { ConfigPatch } from "@evjs/ev/config";
 
-type UtoopackBundlerConfigHook = NonNullable<
-  PluginHooks<ConfigComplete>["bundlerConfig"]
->;
-
 /**
  * Typed wrapper for utoopack configuration in plugin bundler hooks.
  *
@@ -35,11 +31,13 @@ export function utoopack(
     config: ConfigComplete,
     ctx: BundlerCtx<ConfigComplete>,
   ) => void | Promise<void>,
-): UtoopackBundlerConfigHook {
+): NonNullable<PluginHooks["bundlerConfig"]> {
   return async (config, ctx) => {
-    if (ctx.bundlerName === "utoopack") {
-      await fn(config, ctx);
-    }
+    if (ctx.bundlerName !== "utoopack") return;
+    await fn(
+      config as ConfigComplete,
+      ctx as unknown as BundlerCtx<ConfigComplete>,
+    );
   };
 }
 export { merge };

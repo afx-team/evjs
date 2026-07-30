@@ -121,9 +121,9 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/feature": {
-      enabled: true,
+  plugins: {
+    analytics: {
+      channel: "home",
     },
   },
 });
@@ -131,13 +131,13 @@ export default definePageConfig({
 
 The module is evaluated synchronously at build time. It default-exports a plain
 object containing static JSON data. Core owns `title`, named `meta`, `render`,
-`hydrate`, `prerender`, and `rsc`; plugins register and own namespaced values
-under `extensions`. Omitted `render` always means CSR, which must omit
+`hydrate`, `prerender`, and `rsc`; installed Page-aware plugins use generated
+short keys under `plugins`. Omitted `render` always means CSR, which must omit
 `hydrate`; explicit SSR/SSG Pages may select `"load"` or `"none"`. `meta` maps
 string keys and values only to
 `<meta name="key" content="value">`. It does not provide `property`, `charset`,
 links, scripts, dynamic metadata, or a general head DSL. Core title/meta are
-materialized for the Page; plugin extension values require explicit plugin
+materialized for the Page; Page plugin values require explicit plugin
 projection before runtime use.
 
 ### Page HTML
@@ -312,6 +312,8 @@ The framework may generate:
 
 - `.ev/**` framework IR and entry facades;
 - `src/route-types.d.ts` from canonical SPA file routes when supported;
+- `src/plugin-types.d.ts`, a stable type bridge to the project
+  `ev.config.ts`;
 - `dist/**` build output.
 
 Do not edit or scaffold these files. Keep them ignored.
@@ -331,10 +333,10 @@ normalizer accepts `application.routes` plus `page` or
 input and does not change the fixed `src/pages` convention root. It rejects
 `children`; nested declarations use `routes`. `exact: true` is accepted only
 as a terminal-match assertion; `exact: false` and nested routes below an exact
-Route are rejected. Route capability data uses registered, namespaced
-`extensions`. Shared template, mount, and Document extension values live under
-`application.document`. This profile can materialize only SPA. A `page`
-reference resolves to one
+Route are rejected. Plugin configuration remains Page-owned; explicit Route
+and Document objects do not expose plugin bags. Shared template and mount
+values live under `application.document`. This profile can materialize only
+SPA. A `page` reference resolves to one
 canonical `page.*` anchor. An explicit `component` ending in `index.*` or
 `page.*` owns its containing directory; other component basenames are
 module-scoped and do not consume adjacent `page.config.ts`.

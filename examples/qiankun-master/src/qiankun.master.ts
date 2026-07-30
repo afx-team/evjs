@@ -7,9 +7,9 @@ export default defineQiankunMasterResolver(async () => ({
     {
       name: "catalog",
       entry: new URL(`${slaveBase}/index.html`, window.location.href).href,
-      container: "#slave-container",
     },
   ],
-  sandbox: true,
+  routes: [{ path: "/catalog", microApp: "catalog" }],
+  settings: { sandbox: true },
   prefetch: true,
 }));

@@ -11,7 +11,7 @@ Framework-managed applications normalize authored source into one semantic
 graph before bundling:
 
 ```txt
-ev.config.ts + Page tree + server conventions + plugin extension declarations
+ev.config.ts + Page tree + server conventions + typed plugin declarations
   -> ResolvedFrameworkConfig
   -> CoreGraph (Application / Page / Route / Document)
   -> BuildPlan
@@ -27,9 +27,11 @@ The semantic inputs are:
 - `routing: { mode: "spa" | "mpa" }` enables canonical Page discovery from
   `src/pages/**/page.*`. The containing directory owns the Page scope and
   determines its URL.
+- `config.plugins` installs typed plugin factories and supplies each plugin's
+  independent Application configuration.
 - adjacent `page.config.ts` modules provide static title, named metadata,
-  rendering settings, and namespaced Page, Route, or Page-owned Document
-  extensions.
+  rendering settings, and a generated short-keyed Page plugin map. Plugins
+  derive Route or Document behavior from the normalized Page graph.
 - `application.routes` is an explicit SPA-only route tree. It normalizes into
   the same graph and cannot be combined with canonical `routing` discovery.
 - `src/apis/**/api.*` defines framework-managed request Routes.
@@ -54,7 +56,7 @@ are derived from Page config into the same graph and build plan.
 | `@evjs/bundler-webpack` | Validation/fallback adapter for server rendering, RSC, and PPR builds. |
 | `@evjs/cli` | Command parsing and selection of the default bundler. |
 | `@evjs/create-app` | Project scaffolding from repository templates. |
-| `@evjs/plugin-qiankun` | Optional qiankun integration through plugin extensions and generated contributions. |
+| `@evjs/plugin-qiankun` | Optional qiankun integration through typed plugin configuration and generated contributions. |
 
 Bundler adapters consume `BuildPlan` and return build facts. They own module
 graphs, chunks, assets, stats, and HMR; they do not rediscover framework
@@ -70,7 +72,7 @@ use explicit subpaths:
 | --- | --- |
 | `@evjs/ev` | `defineConfig`, `definePageConfig`, and their basic types. |
 | `@evjs/ev/config` | Advanced config utilities and resolved config types. |
-| `@evjs/ev/plugin` | Plugin declarations, hooks, extension owners, and the read-only framework view. |
+| `@evjs/ev/plugin` | Plugin declarations, typed setting contracts, hooks, and the read-only framework view. |
 | `@evjs/ev/deployment` | Built-in deployment adapters and artifact helpers. |
 | `@evjs/ev/route`, `/navigation`, `/query` | File-convention Page data, navigation, and query APIs. |
 | `@evjs/ev/server-context`, `/transport` | Framework request context and browser-to-server transport APIs. |
@@ -93,10 +95,9 @@ sequenceDiagram
   participant Shared as @evjs/shared/manifest
 
   CLI->>EV: load config and select bundler
-  EV->>Plugin: config() and describe()
-  EV->>EV: resolve config and Application extensions
+  EV->>Plugin: config() and resolve typed Application settings
   EV->>Plugin: setup() and buildStart()
-  EV->>EV: create CoreGraph and BuildPlan
+  EV->>EV: create CoreGraph, resolve Page settings, and derive BuildPlan
   EV->>Plugin: contributions(framework view)
   EV->>EV: materialize .ev IR
   EV->>Plugin: bundlerConfig()
@@ -128,8 +129,9 @@ reviewable intermediate representation containing:
 
 The manifest links generated modules, import edges, slot contributions, and
 final entry facades. Bundlers compile those concrete entries. `.ev`,
-`src/route-types.d.ts`, and `dist` are generated output and are not application
-source.
+`src/route-types.d.ts`, `src/plugin-types.d.ts`, and `dist` are generated
+output and are not application source. The plugin declaration stays under
+`src` so normal application TypeScript programs consume its augmentation.
 
 ## Runtime And Deployment Contracts
 

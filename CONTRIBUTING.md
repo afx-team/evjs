@@ -67,12 +67,14 @@ Release automation replaces them with the release version before publishing.
 4. Framework Pages use `src/pages/**/page.*`; server request Routes use
    `src/apis/**/api.*`. The containing directory owns scope and URL
    in both trees.
-5. Put Page metadata, rendering settings, and namespaced Page/Route/Document
-   extensions in adjacent `page.config.ts`.
+5. Put Page metadata, rendering settings, and the generated short-keyed plugin
+   map in adjacent `page.config.ts`. Configure plugins at Application scope
+   through factory calls in `config.plugins`; do not add Route or Document
+   plugin configuration surfaces.
 6. Server-function modules begin with `"use server";` and export named callable
    values. Use `.server.*` when colocation makes the boundary easier to see.
-7. Keep `.ev`, `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` out
-   of authored source and scaffold templates.
+7. Keep `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
+   `.turbo`, and `node_modules` out of authored source and scaffold templates.
 8. Prefer a subpath export on the package that owns a capability before adding
    a distributed package.
 9. Update English and Chinese docs together when behavior changes. Keep release
@@ -87,8 +89,8 @@ Release automation replaces them with the release version before publishing.
    catch-all, and pathless segments.
 3. Keep components, hooks, models, services, tests, styles, and assets in the
    Page directory; only `page.*` creates another Page.
-4. Add adjacent `page.config.ts` for static metadata, rendering, or registered
-   plugin extensions.
+4. Add adjacent `page.config.ts` for static metadata, rendering, or typed
+   Page plugin settings.
 
 ### Add a server function
 
@@ -106,12 +108,15 @@ Release automation replaces them with the release version before publishing.
 
 ### Add plugin-owned configuration
 
-1. Register the namespace and allowed owner kinds from `describe()`.
-2. Author Application values in top-level `extensions`; author Page, Route,
-   and Page-owned Document values in `page.config.ts`.
-3. Keep values strict JSON. Pass callbacks through plugin factory options or
-   explicit module references.
-4. Project runtime behavior explicitly through contributions or another
+1. Declare independent Application and optional Page contracts with
+   `definePlugin()` and `pluginConfig()`.
+2. Install the factory in `config.plugins` and pass its typed Application
+   options there.
+3. Configure installed Page-aware plugins under the generated short key in
+   adjacent `page.config.ts`. Page values are strict JSON; callbacks and
+   secrets stay in Application options or plugin code.
+4. Derive Route or Document behavior from the normalized Page graph and
+   project runtime behavior explicitly through contributions or another
    runtime contract.
 
 ### Add an example
@@ -127,9 +132,9 @@ Release automation replaces them with the release version before publishing.
 
 ```txt
 load config
-run config hooks and resolve Application extensions
+run config hooks and resolve Application plugin settings
 run setup/buildStart hooks
-create CoreGraph while resolving Page/Route/Document extensions
+create CoreGraph while resolving Page plugin settings
 derive BuildPlan
 collect generated contributions
 materialize .ev

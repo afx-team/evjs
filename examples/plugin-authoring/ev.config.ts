@@ -1,62 +1,86 @@
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { defineConfig } from "@evjs/ev";
-import { definePlugin } from "@evjs/ev/plugin";
+import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+
+type ApplicationMetadata = {
+  channel: string;
+};
+
+type PageMetadata = {
+  label: string;
+};
 
 const metadataPlugin = definePlugin({
-  name: "example-metadata-plugin",
-  describe(api) {
-    api.applicationExtension<
-      { enabled: boolean; channel: string },
-      { enabled?: boolean }
-    >({
-      namespace: "@example/metadata",
-      schemaVersion: "1",
-      defaults: { enabled: false, channel: "web" },
-    });
-    api.pageExtension({
-      namespace: "@example/metadata",
-      schemaVersion: "1",
-      defaults: { label: "Plugin authoring Page" },
-    });
-    api.routeExtension({
-      namespace: "@example/metadata",
-      schemaVersion: "1",
-      defaults: ({ routeId }) => ({ label: `Route ${routeId}` }),
-    });
-    api.documentExtension({
-      namespace: "@example/metadata",
-      schemaVersion: "1",
-      defaults: ({ output }) => ({
-        label: `Document ${output}`,
-        theme: "light",
-      }),
-    });
-  },
+  id: "@example/metadata",
+  key: "metadata",
+  application: pluginConfig<ApplicationMetadata>({ schemaVersion: "1" }),
+  page: pluginConfig<PageMetadata>({
+    schemaVersion: "1",
+    defaults: { label: "Plugin authoring Page" },
+  }),
   setup(ctx) {
-    const metadata = ctx.config.extensions["@example/metadata"];
+    const metadata = ctx.options;
     console.log(
       `[example-metadata-plugin] Application value: ${JSON.stringify(metadata)}`,
     );
   },
   contributions(ctx) {
-    for (const page of ctx.framework.pages) {
-      const metadata = page.extensions["@example/metadata"];
+    for (const { page, options } of ctx.pages) {
       console.log(
-        `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(metadata)}`,
+        `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(options)}`,
       );
     }
-    for (const route of ctx.framework.routes) {
-      const metadata = route.extensions["@example/metadata"];
-      console.log(
-        `[example-metadata-plugin] Route ${route.id}: ${JSON.stringify(metadata)}`,
-      );
-    }
-    for (const document of ctx.framework.documents) {
-      const metadata = document.extensions["@example/metadata"];
-      console.log(
-        `[example-metadata-plugin] Document ${document.id}: ${JSON.stringify(metadata)}`,
-      );
-    }
+  },
+});
+
+const txtPlugin = definePlugin({
+  id: "@example/txt",
+  config(config) {
+    config.server = {
+      ...(typeof config.server === "object" ? config.server : {}),
+      basePath: "/api",
+    };
+    return config;
+  },
+  setup(ctx) {
+    console.log(`[example-txt-plugin] mode: ${ctx.mode}`);
+
+    return {
+      buildStart() {
+        console.log("[example-txt-plugin] build starting...");
+      },
+
+      // Type-safe bundler config mutation via the utoopack helper.
+      // This hook only runs when utoopack is the active bundler.
+      bundlerConfig: utoopack((cfg) => {
+        // Add custom loaders or rules to utoopack
+        merge(cfg, {
+          module: { rules: { ".txt": { type: "raw" } } },
+        });
+      }),
+
+      buildEnd(result) {
+        const appAssets = Object.values(result.output.apps);
+        const pageAssets = Object.values(result.output.pages);
+        const jsCount = [...appAssets, ...pageAssets].reduce(
+          (count, entry) => count + entry.assets.js.length,
+          0,
+        );
+        console.log(
+          `[example-txt-plugin] build complete — ${jsCount} JS asset(s)`,
+        );
+      },
+
+      // Modify the parsed HTML document after evjs injects script/link tags
+      transformHtml(doc, ctx) {
+        const assetCount = ctx.assets.js.length + ctx.assets.css.length;
+
+        const comment = doc.createComment(
+          ` Built with evjs | ${ctx.fileName} | ${assetCount} asset(s) `,
+        );
+        doc.head?.appendChild(comment);
+      },
+    };
   },
 });
 
@@ -72,62 +96,5 @@ const metadataPlugin = definePlugin({
  */
 export default defineConfig({
   routing: { mode: "spa" },
-  extensions: {
-    "@example/metadata": {
-      enabled: true,
-    },
-  },
-  plugins: [
-    metadataPlugin,
-    {
-      name: "example-txt-plugin",
-      config(config) {
-        config.server = {
-          ...(typeof config.server === "object" ? config.server : {}),
-          basePath: "/api",
-        };
-        return config;
-      },
-      setup(ctx) {
-        console.log(`[example-txt-plugin] mode: ${ctx.mode}`);
-
-        return {
-          buildStart() {
-            console.log("[example-txt-plugin] build starting...");
-          },
-
-          // Type-safe bundler config mutation via the utoopack helper.
-          // This hook only runs when utoopack is the active bundler.
-          bundlerConfig: utoopack((cfg) => {
-            // Add custom loaders or rules to utoopack
-            merge(cfg, {
-              module: { rules: { ".txt": { type: "raw" } } },
-            });
-          }),
-
-          buildEnd(result) {
-            const appAssets = Object.values(result.output.apps);
-            const pageAssets = Object.values(result.output.pages);
-            const jsCount = [...appAssets, ...pageAssets].reduce(
-              (count, entry) => count + entry.assets.js.length,
-              0,
-            );
-            console.log(
-              `[example-txt-plugin] build complete — ${jsCount} JS asset(s)`,
-            );
-          },
-
-          // Modify the parsed HTML document after evjs injects script/link tags
-          transformHtml(doc, ctx) {
-            const assetCount = ctx.assets.js.length + ctx.assets.css.length;
-
-            const comment = doc.createComment(
-              ` Built with evjs | ${ctx.fileName} | ${assetCount} asset(s) `,
-            );
-            doc.head?.appendChild(comment);
-          },
-        };
-      },
-    },
-  ],
+  plugins: [metadataPlugin({ channel: "web" }), txtPlugin()],
 });

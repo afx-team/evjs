@@ -1025,7 +1025,6 @@ function createFrameworkRouteViews(
       target: cloneJson(route.target),
       facets: cloneJson(route.facets),
       provenance: cloneJson(route.provenance),
-      extensions: cloneJson(route.extensions),
     }),
   );
 }
@@ -1047,7 +1046,7 @@ function createCoreApplicationView(
     pageIds: [...application.pageIds],
     routeIds: [...application.routeIds],
     documentIds: [...application.documentIds],
-    extensions: cloneJson(application.extensions),
+    plugins: cloneJson(application.plugins),
     provenance: cloneJson(application.provenance),
   };
 }
@@ -1064,7 +1063,7 @@ function createFrameworkPageView(
       provider: page.source.provider,
       ...(page.source.config ? { config: page.source.config } : {}),
     },
-    extensions: cloneJson(page.extensions),
+    plugins: cloneJson(page.plugins),
     render: page.render,
     ...(page.componentModel ? { componentModel: page.componentModel } : {}),
     ...(page.hydrate ? { hydrate: page.hydrate } : {}),

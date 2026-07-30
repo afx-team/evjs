@@ -4,6 +4,10 @@
 resolved Page-and-Route graph, generated framework entries, plugin additions,
 and how generated pieces attach to framework slots.
 
+This is the canonical reference for declarative plugin output. Start with
+[Plugin Authoring](./plugin-authoring) for identity and typed settings, or use
+[Plugin Hooks](./plugin-hooks) for lifecycle side effects.
+
 ## Concept
 
 A contribution is a declarative unit in the framework IR. It can produce
@@ -90,6 +94,22 @@ they need framework runtime internals. Plugin source should not import those
 subpaths; plugin authoring uses `@evjs/ev/plugin`. The `ctx.framework` object
 is immutable so plugins can inspect the IR but cannot mutate framework state.
 
+Application and Page views expose resolved `plugins` setting bags. The
+Application bag contains enablement only; private factory configuration never
+enters CoreGraph. Page bags may contain the validated static Page value. A
+defined plugin normally uses its narrower `ctx.options` and `ctx.pages` views;
+each enabled Page entry is `{ page, options }`. The per-Page
+`contributePage()` form receives `ctx.pageOptions`. These flat fields preserve
+the descriptor's inferred types. Internal provenance and resolved settings are
+available before `contributions()` materializes generated code.
+
+The Application view also exposes its `root`, `routingMode`, and owned Page,
+Route, and Document ids. An MPA therefore appears as one logical Application
+with many Pages and Documents, not as unrelated entries. Client Route views
+come from CoreGraph and include normalized patterns, semantic targets,
+wrappers/layout facets, and provenance. Pathless groups and redirects remain
+visible even when they have no component module.
+
 ## Authoring API
 
 Use `ctx.emit.module()` for generated code, `ctx.emit.data()` for generated JSON
@@ -100,6 +120,76 @@ Use `ctx.emit.importOf(ref)` or `helpers.importOf(ref)` to link generated
 artifacts together. The returned specifier is valid only inside generated
 source. Application source should not import `.ev` paths or
 `evjs:generated/*` specifiers.
+
+Generated modules use opaque refs instead of exposing filesystem paths:
+
+```ts
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const analytics = definePlugin({
+  id: "@company/analytics",
+  contributions(ctx) {
+    const runtime = ctx.emit.module({
+      id: "runtime",
+      scope: { kind: "application" },
+      source: "export function install() { console.log('analytics'); }",
+    });
+
+    const entry = ctx.emit.module({
+      id: "entry",
+      scope: { kind: "application" },
+      source: ({ importOf }) =>
+        `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
+    });
+
+    ctx.slot("client.entry").add({
+      id: "entry",
+      module: entry,
+      position: "after-main",
+    });
+  },
+});
+```
+
+When a plugin replaces an entry but still needs the original framework facade,
+use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
+
+```ts
+contributions(ctx) {
+  const entry = ctx.framework.getApplicationEntry();
+  if (!entry) return;
+
+  const original = ctx.emit.entryFacade({
+    id: "original-entry",
+    entry,
+  });
+
+  const wrapper = ctx.emit.module({
+    id: "entry-wrapper",
+    scope: { kind: "application" },
+    source: ({ importOf }) =>
+      `export const load = () => import(${JSON.stringify(importOf(original))});`,
+  });
+
+  ctx.slot("client.entry").add({
+    id: "entry-wrapper-slot",
+    module: wrapper,
+    position: "before-main",
+    mode: "replace",
+  });
+}
+```
+
+For a generated SPA Application entry, `autoStart: false` creates and exports
+the framework `app` without mounting it. It also exports `start(container)`,
+which preserves the framework hydration-marker behavior for the first mount. A
+replacement entry owns that first `start()` call and later `app.render()`
+remounts. Other entry types cannot disable framework startup.
+
+Generated plugin paths are stable and readable. For example, a plugin with id
+`@evjs/plugin-qiankun:slave` writes modules under
+`.ev/plugins/qiankun/slave/*` and exposes specifiers such as
+`evjs:generated/qiankun/slave/entry-wrapper`.
 
 Use `ctx.slot(name).add(...)` to attach generated artifacts to the framework.
 The supported slots are:
@@ -129,11 +219,39 @@ points exist. A filter with no matching projection fails. Later contributions
 wrap earlier contributions; route layouts and wrappers remain outside plugin
 Page wrappers.
 
+```ts
+contributions(ctx) {
+  ctx.slot("page.wrapper").add({
+    id: "auth-boundary",
+    module: "./src/plugin/AuthBoundary.tsx",
+    runtime: "all",
+    target: { kind: "application", applicationId: "default" },
+  });
+}
+```
+
+Application targets expand to their Pages; Page targets select one semantic
+Page. Client projection means SPA route composition or an MPA Page client
+entry. Server projection means each SSR, SSG, PPR-shell, or RSC Page renderer.
+A runtime filter that has no matching projection fails instead of becoming
+inert.
+
+Wrapper contributions run in plugin/contribution order with component wrapping
+semantics: a later contribution wraps an earlier one. Route-declared layouts
+and wrappers remain outside contributed Page wrappers. The normalized `layers`
+metadata records the resulting outer-to-inner order for both MPA client entries
+and server Page entries.
+
 An explicit Application/Page target must match a materialized client entry for
 `client.entry`, or an HTML Document for `html.tag`.
 A semantic SPA page normally shares both with its application, so page-targeted
 entry or HTML contributions fail with a diagnostic instead of
 becoming silent no-ops.
+
+A CSR SPA Page shares the Application Document and therefore rejects
+page-targeted HTML contributions. An SSR/PPR/RSC SPA Page has a build-compiled,
+Page-specific request-time document shell, so page-targeted `html.tag`
+contributions and `transformHtml()` handling apply to that shell.
 
 A canonical MPA exposes one logical `default` Application even though it
 materializes one page-client entry and one Document per Page. An Application target
@@ -143,6 +261,11 @@ so the same Application/Page target works in SPA and MPA. A Page target remains
 exact. This expansion is recorded in the generated plan. Explicit config-route
 input must normalize to the same
 Application/Page/Document ownership before using these semantics.
+
+`resolve.external` accepts `runtime: "client" | "server" | "all"`. The
+Webpack adapter applies that filter per target. The current Utoopack adapter
+only exposes a top-level externals config, so client/all externals are mapped
+there and server-only externals fail fast when client entries are present.
 
 ## Boundaries
 

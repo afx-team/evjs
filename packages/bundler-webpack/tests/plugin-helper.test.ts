@@ -1,9 +1,14 @@
-import type { BundlerCtx } from "@evjs/ev/plugin";
-import { describe, expect, it } from "vitest";
+import {
+  type BundlerCtx,
+  definePlugin,
+  type Plugin,
+  type PluginHooks,
+} from "@evjs/ev/plugin";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type { WebpackConfig } from "../src/index.js";
 import { webpack } from "../src/plugin-helper.js";
 
-describe("webpack", () => {
+describe("webpack plugin helper", () => {
   function createCtx(bundlerName: string): BundlerCtx<WebpackConfig> {
     return {
       mode: "production",
@@ -22,9 +27,32 @@ describe("webpack", () => {
       events.push(`${ctx.bundlerName}:${Array.isArray(config)}`);
     });
 
+    expectTypeOf(hook).toMatchTypeOf<
+      NonNullable<PluginHooks<{ output: string }>["bundlerConfig"]>
+    >();
     await hook([], createCtx("utoopack"));
     await hook([], createCtx("webpack"));
 
     expect(events).toEqual(["webpack:true"]);
+  });
+
+  it("keeps a default definePlugin factory bundler-agnostic", () => {
+    const factory = definePlugin({
+      id: "@test/webpack-helper",
+      setup() {
+        return {
+          bundlerConfig: webpack((config) => {
+            for (const webpackConfig of Array.isArray(config)
+              ? config
+              : [config]) {
+              webpackConfig.resolve ??= {};
+            }
+          }),
+        };
+      },
+    });
+
+    const plugin: Plugin<{ output: string }> = factory();
+    expect(plugin.name).toBe("@test/webpack-helper");
   });
 });

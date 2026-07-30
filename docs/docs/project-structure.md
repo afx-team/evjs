@@ -110,7 +110,7 @@ project root unless stated otherwise.
 | `conventions: false` | Disable framework file discovery | Whole project | Disables Page/Route anchors, server file routes, and global/route middleware together. |
 | `routing.mode` | Output materialization | Application | `"spa"` creates Client Routes; `"mpa"` creates Page-owned Documents for static Page paths. It does not select a different route model. |
 | `src/pages/**/page.{ts,tsx,js,jsx}` | Canonical Page and Route anchor | Entire containing directory | The Page root is fixed. Exactly one source-extension variant is allowed per route directory. Default-export the Page component. |
-| `<Page directory>/page.config.{ts,js}` | Optional canonical Page, Page-anchored Route, and Page-owned Document configuration | Build graph | Default-export static config. Top-level `extensions` belong to the Page; `route.extensions` belong to its unique semantic Route; `document.aliases` adds validated static output filenames without adding Routes. Prefer `definePageConfig()` and `page.config.ts`; exactly one variant per Page. |
+| `<Page directory>/page.config.{ts,js}` | Optional canonical Page configuration | Build graph | Default-export static config. Core metadata/rendering fields and the typed `plugins` map belong to the Page; `document.aliases` adds validated static output filenames without adding Routes. Prefer `definePageConfig()` and `page.config.ts`; exactly one variant per Page. |
 | `src/pages/**/$param/` | Dynamic route segment | Route path | Produces a semantic `:param` segment. |
 | `src/pages/**/$...splat/` | Catch-all route segment | Route path | Must be terminal. |
 | `src/pages/**/(group)/` | Pathless route group | Source organization | Participates in scope but contributes no URL segment. |
@@ -120,6 +120,7 @@ project root unless stated otherwise.
 | `<Page directory>/index.html` | Page Document template | MPA Page output | Overrides the shared template for that MPA Page. It is not a client Page entry. |
 | `index.html` / `routing.html` | Document template | Application output | `index.html` is the default template; it is unrelated to the Page entry filename. |
 | `src/route-types.d.ts` | SPA file-route navigation types, when emitted | Generated output | Ignore it; do not copy it into scaffolds or import it from app code. |
+| `src/plugin-types.d.ts` | Static `ev.config.ts` type bridge | Generated output | Ignore it; Page config consumes its augmentation automatically and does not import plugin packages. |
 | Reachable source module with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory or filename suffix; `.server.*` is recommended for clarity. |
 | `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route anchor | Entire containing directory | The server route root is fixed. Exactly one source-extension variant is allowed per route directory. Export callable uppercase HTTP method handlers only. Registration uses segment-wise specificity: static segments precede dynamic segments at the first differing position. |
 | Other files below a server route directory | Route-private source | Nearest server Route | Helpers, schemas, stores, tests, and `index.*` do not create routes. |
@@ -225,43 +226,45 @@ import { useQuery } from "@evjs/ev/query";
 The exact exports are documented in [Client Routes](./client-routes) and
 [Server Functions](./server-functions).
 
-### Application, Page, Route, and Document extension scopes
+### Application and Page plugin scopes
 
-Application-wide plugin data is authored once at top-level
-`ev.config.ts#extensions` and registered with
-`applicationExtension()`. Per-Page plugin data is authored under the adjacent
-`page.config.ts#extensions` and registered with `pageExtension()`. Route-owned
-data for a canonical Page route is authored under
-`page.config.ts#route.extensions` and registered with `routeExtension()`.
-This explicit nesting keeps menu, access, tracing, and micro-frontend data on
-the semantic Route rather than silently treating it as Page data.
+An Application installs and configures a plugin in `ev.config.ts#plugins`:
 
-All owner kinds use the same CoreGraph extension registry. One plugin may own
-the same namespace for more than one owner kind as long as it declares each
-owner. Explicit SPA Route values are authored on
-`application.routes[*].extensions`; canonical Page Route values are authored
-on `page.config.ts#route.extensions`. Runtime projection is always explicit.
+```ts
+import { defineConfig } from "@evjs/ev";
+import { analytics } from "@company/evjs-plugin-analytics";
 
-`page.config.ts#route.extensions` requires exactly one semantic Route targeting
-that Page. If an explicit config-route tree reuses one Page from multiple
-Routes, configure each `application.routes[*].extensions` value separately
-until the routes have distinct canonical Page anchors. A componentless layout
-Route cannot borrow a descendant Page config, and a pathless directory without
-a Page or layout does not materialize a Route at all. Plugins may apply
-Route-extension defaults to such structural Routes. Otherwise retain explicit
-`application.routes` configuration until the componentless Route data has
-another real owner; evjs diagnoses an orphan `page.config.ts` instead of
-inheriting it.
+export default defineConfig({
+  routing: { mode: "spa" },
+  plugins: [analytics({ endpoint: "/events" })],
+});
+```
 
-Application-owned Document values in an explicit SPA profile use
-`application.document.extensions` and `documentExtension()`. A canonical
-Page-owned Document uses `page.config.ts#document.extensions`; this is valid
-only when that Page materializes its own Document, such as MPA or an SPA SSG
-Page. A CSR SPA Page shares the Application-owned Document, so Page-specific
-Document configuration is diagnosed instead of being applied globally.
-Plugins may register Document defaults for either materialization.
+The factory call is the only Application-level plugin configuration surface.
+Its argument is typed by the plugin package and may contain executable options
+when that package explicitly supports them.
 
-### Page configuration and extensions
+A Page-aware installed plugin exposes a short key in the adjacent
+`page.config.ts#plugins` map. Application and Page contracts are independent
+and never merge with each other. Authored fields deep-merge over defaults
+within their own contract. With a normal factory call, an omitted Page key uses
+Page defaults when they exist and otherwise disables that Page. A defaultable
+Page contract also exposes `forPages()`, where omission always disables the
+Page. `false` disables the plugin for a Page, `true` requires Page defaults,
+and an object enables it with an independently typed, strict-JSON Page value.
+
+`ev prepare`, `ev dev`, and `ev build` generate `src/plugin-types.d.ts` as a
+stable bridge to `ev.config.ts`. TypeScript config provides Page key and value
+completion without a plugin import; conditional or widened plugin arrays expose
+only entries that are statically certain to install. The declaration lives in
+`src`, not `.ev`, because normal project tsconfigs include `src`.
+
+Route and Document objects do not expose separate plugin configuration. A
+Page-aware plugin derives route patterns, Document ownership, and other
+semantic context from the normalized Page graph, then explicitly projects its
+runtime or build contribution.
+
+### Page configuration and plugins
 
 An adjacent `page.config.ts` default-exports build-time Page configuration:
 
@@ -277,16 +280,12 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/analytics": {
+  plugins: {
+    analytics: {
       channel: "orders",
     },
-  },
-  route: {
-    extensions: {
-      "@company/access": {
-        policy: "canReadOrders",
-      },
+    access: {
+      policy: "canReadOrders",
     },
   },
 });
@@ -298,12 +297,11 @@ omit `hydrate`; explicit SSR/SSG Pages may select `"load"` or `"none"`. Each
 `meta` entry becomes
 `<meta name="key" content="value">`; it does not represent `property`,
 `charset`, `link`, `script`, dynamic metadata, or an arbitrary head DSL.
-Plugin-owned Page values live below top-level `extensions`; Route-owned values
-live below `route.extensions`. Both use registered namespaced keys, and the
-resolved config must be static JSON data. Core title and meta values are
-materialized for the active Page; extension values enter their corresponding
-normalized graph owners but require their plugin to explicitly project runtime
-data or behavior through generated contributions.
+Plugin-owned Page values live below `plugins` and use generated short keys.
+The resolved Page objects must be static JSON data. Core title and meta values
+are materialized for the active Page; plugin values enter Page analysis but
+require their plugin to explicitly project runtime data or behavior through
+generated contributions.
 
 When a Page owns a static Document (MPA CSR/SSG or SPA SSG), it may publish the
 same transformed HTML at additional validated paths:
@@ -396,6 +394,7 @@ Treat these as generated:
 - `.turbo/`
 - `node_modules/`
 - `src/route-types.d.ts`
+- `src/plugin-types.d.ts`
 
 Do not edit them or copy them into templates.
 
@@ -410,7 +409,7 @@ separate SPA-only configuration input that normalizes into the same CoreGraph.
 | --- | --- | --- |
 | `routing.mode` | Discovers the canonical Page tree and selects SPA or MPA materialization. | Only `src/pages/**/page.*` publishes a Page. Other files, including `index.*`, remain private source. Page settings live in adjacent `page.config.ts` modules. |
 | `application.pageRoot` | Page source root for both `page` and `component` references in the explicit SPA route tree; defaults to `./src/pages`. | Applies only with `application.routes`; it does not customize canonical `src/pages` discovery. `@/pages/...` aliases this configured root. |
-| `application.routes` | Accepts `routes` nesting (not `children`), `page` or `component`, layout/wrapper/redirect structure, and registered namespaced `extensions`. `exact: true` is a terminal-match assertion; `exact: false`, or `exact: true` with nested routes, is rejected. This input cannot be combined with `routing` and cannot select MPA. | A `page` resolves to exactly one `page.*` anchor below `application.pageRoot`. A `component` must remain below the same root, including after resolving symbolic links. An `index.*` or `page.*` component owns its containing directory; other component basenames are module-scoped and do not consume `page.config.ts`. Layouts and wrappers remain project-source references. |
+| `application.routes` | Accepts `routes` nesting (not `children`), `page` or `component`, and layout/wrapper/redirect structure. Plugin configuration is Page-owned rather than authored on Route declarations. `exact: true` is a terminal-match assertion; `exact: false`, or `exact: true` with nested routes, is rejected. This input cannot be combined with `routing` and cannot select MPA. | A `page` resolves to exactly one `page.*` anchor below `application.pageRoot`. A `component` must remain below the same root, including after resolving symbolic links. An `index.*` or `page.*` component owns its containing directory; other component basenames are module-scoped and do not consume `page.config.ts`. Layouts and wrappers remain project-source references. |
 
 ## Naming Guidance
 
@@ -421,7 +420,7 @@ separate SPA-only configuration input that normalizes into the same CoreGraph.
 - Keep shared business modules outside individual Page directories when several
   Pages use them.
 - Put static document title and named meta in the core `title` and `meta`
-  fields. Keep product/plugin capability data behind namespaced
-  `page.config.ts` extensions.
-- Keep static title, named meta, rendering settings, and namespaced extension
-  values together in the adjacent `page.config.ts` module.
+  fields. Keep product/plugin capability data under generated short keys in
+  `page.config.ts#plugins`.
+- Keep static title, named meta, rendering settings, and Page plugin values
+  together in the adjacent `page.config.ts` module.

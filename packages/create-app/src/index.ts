@@ -18,12 +18,31 @@ const templateCopyExcludedBasenames = new Set([
   ".ev",
   ".evjs",
   "route-types.d.ts",
+  "plugin-types.d.ts",
 ]);
+
+const generatedFrameworkTypeFiles = [
+  "route-types.d.ts",
+  "plugin-types.d.ts",
+] as const;
 
 export function shouldCopyTemplatePath(src: string): boolean {
   return !src
     .split(/[\\/]+/)
     .some((segment) => templateCopyExcludedBasenames.has(segment));
+}
+
+export function withGeneratedFrameworkIgnores(source: string): string {
+  const lineEnding = source.includes("\r\n") ? "\r\n" : "\n";
+  const ignoredPaths = new Set(source.split(/\r?\n/));
+  const missing = generatedFrameworkTypeFiles.filter(
+    (file) => !ignoredPaths.has(file),
+  );
+  if (missing.length === 0) return source;
+
+  const separator =
+    source.length === 0 || /\r?\n$/.test(source) ? "" : lineEnding;
+  return `${source}${separator}${missing.join(lineEnding)}${lineEnding}`;
 }
 
 export async function runCreateAppCli(argv = process.argv): Promise<void> {
@@ -110,6 +129,15 @@ export async function runCreateAppCli(argv = process.argv): Promise<void> {
         dereference: true,
         filter: shouldCopyTemplatePath,
       });
+
+      const gitignorePath = path.join(targetDir, ".gitignore");
+      if (fs.existsSync(gitignorePath)) {
+        const gitignore = fs.readFileSync(gitignorePath, "utf-8");
+        const resolvedGitignore = withGeneratedFrameworkIgnores(gitignore);
+        if (resolvedGitignore !== gitignore) {
+          fs.writeFileSync(gitignorePath, resolvedGitignore);
+        }
+      }
 
       // Post-process package.json: sync @evjs/* versions and set project name
       const pkgPath = path.join(targetDir, "package.json");

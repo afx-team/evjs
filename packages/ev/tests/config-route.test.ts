@@ -157,7 +157,11 @@ describe("explicit SPA route graph", () => {
       owner: { kind: "application" },
       bootstrap: { kind: "application" },
     });
-    expect(graph.extensions).toEqual({ namespaces: {} });
+    expect(graph.plugins).toEqual({ entries: {} });
+    expect(graph.applications.default?.plugins).toEqual({});
+    expect(graph.pages.home?.plugins).toEqual({});
+    expect(graph.routes.every((route) => !("plugins" in route))).toBe(true);
+    expect(graph.documents.index).not.toHaveProperty("plugins");
 
     expect(graph.applications.default).toMatchObject({
       layout: "./src/layouts/AppLayout.tsx",

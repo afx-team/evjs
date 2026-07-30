@@ -63,9 +63,8 @@ npx biome check --write
 3. Use `$param`, terminal `$...splat`, or `(group)` directories when needed.
 4. Put Page-private source in the same directory; no `_` prefix is required.
 5. Add `page.config.ts` when the Page needs a static title, supported named
-   metadata, core rendering fields, or a registered namespaced plugin
-   extension. Runtime use of extension values requires explicit plugin
-   projection.
+   metadata, core rendering fields, or Page settings for an installed plugin.
+   Runtime use of plugin settings requires explicit plugin projection.
 
 ### Add A Server Function
 

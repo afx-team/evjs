@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "ev dev",
     "build": "ev build",
-    "check-types": "tsc --noEmit"
+    "check-types": "ev prepare && tsc --noEmit"
   },
   "dependencies": {
     "@evjs/ev": "*",

@@ -397,7 +397,7 @@ describe("inspect", () => {
             provider: "@evjs/provider/config-route",
             scope: { kind: "directory", root: "./src/pages/home" },
           },
-          extensions: {},
+          plugins: {},
         },
       },
       documents: {
@@ -414,10 +414,19 @@ describe("inspect", () => {
       ["index.html"],
     );
     expect(result.routeFiles).toEqual([]);
+    result.graph.plugins.entries.analytics = {
+      id: "@company/analytics",
+      application: { schemaVersion: "1" },
+      page: { schemaVersion: "2", defaultable: true },
+    };
     const text = formatInspectText(result);
     expect(text).toContain("client:route:0: /account -> page:account");
     expect(text).not.toContain("provider=@evjs/provider/config-route");
-    expect(text).toContain("Extensions");
+    expect(text).toContain("Plugins");
+    expect(text).toContain(
+      "analytics: id=@company/analytics, contracts=application,page, pageDefaultable=true",
+    );
+    expect(text).not.toContain("owners=");
     expect(text).not.toMatch(/CoreGraph v\d+/);
     expect(text).not.toContain("@evjs/compat/");
     expect(text).not.toContain("@evjs/provider/");

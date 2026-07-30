@@ -17,12 +17,28 @@ const templateCopyExcludedBasenames = new Set([
   ".ev",
   ".evjs",
   "route-types.d.ts",
+  "plugin-types.d.ts",
 ]);
+
+const generatedFrameworkTypeFiles = ["route-types.d.ts", "plugin-types.d.ts"];
 
 export function shouldDerefTemplatePath(src) {
   return !src
     .split(/[\\/]+/)
     .some((segment) => templateCopyExcludedBasenames.has(segment));
+}
+
+export function withGeneratedFrameworkIgnores(source) {
+  const lineEnding = source.includes("\r\n") ? "\r\n" : "\n";
+  const ignoredPaths = new Set(source.split(/\r?\n/));
+  const missing = generatedFrameworkTypeFiles.filter(
+    (file) => !ignoredPaths.has(file),
+  );
+  if (missing.length === 0) return source;
+
+  const separator =
+    source.length === 0 || /\r?\n$/.test(source) ? "" : lineEnding;
+  return `${source}${separator}${missing.join(lineEnding)}${lineEnding}`;
 }
 
 function dereferenceTemplates() {
@@ -38,6 +54,14 @@ function dereferenceTemplates() {
         recursive: true,
         filter: shouldDerefTemplatePath,
       });
+      const gitignorePath = path.join(entryPath, ".gitignore");
+      if (fs.existsSync(gitignorePath)) {
+        const gitignore = fs.readFileSync(gitignorePath, "utf-8");
+        fs.writeFileSync(
+          gitignorePath,
+          withGeneratedFrameworkIgnores(gitignore),
+        );
+      }
     }
   }
 }
