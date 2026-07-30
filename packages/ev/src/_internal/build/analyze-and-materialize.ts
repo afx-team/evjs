@@ -6,7 +6,10 @@ import type {
 } from "../../config/index.js";
 import type { PluginContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
-import { materializeFrameworkIR } from "./generated-contributions.js";
+import {
+  type PreparedFrameworkIRMaterialization,
+  prepareFrameworkIRMaterialization,
+} from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
 import { type CreateBuildPlanOptions, createBuildPlan } from "./plan/index.js";
@@ -25,7 +28,19 @@ export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   applicationExtensions: ResolvedApplicationExtensionValues;
   plan?: CreateBuildPlanOptions;
   write?: boolean;
+  /**
+   * Prepare and preflight framework-owned files, but leave publication to the
+   * caller. Used by dev bundler transactions so the active compiler cannot
+   * observe candidate generated modules before it has been quarantined.
+   */
+  deferWrite?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
+}
+
+export interface DeferredFrameworkIRMaterialization {
+  readonly committed: boolean;
+  preflight(): Promise<void>;
+  commit(): Promise<void>;
 }
 
 export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
@@ -33,11 +48,12 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
 ): Promise<{
   analysis: GraphAnalysisResult;
   plan: BuildPlan;
+  materialization?: DeferredFrameworkIRMaterialization;
 }> {
   async function materialize(
     analysis: GraphAnalysisResult,
-  ): Promise<BuildPlan> {
-    return materializeFrameworkIR({
+  ): Promise<PreparedFrameworkIRMaterialization> {
+    return prepareFrameworkIRMaterialization({
       cwd: options.cwd,
       mode: options.mode,
       command: options.command,
@@ -49,7 +65,6 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
         mode: options.mode,
         ...options.plan,
       }),
-      write: options.write,
     });
   }
 
@@ -73,13 +88,40 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);
-    const plan = await materialize(analysis);
+    const prepared = await materialize(analysis);
+    const plan = prepared.plan;
     const nextAliases = getFrameworkSourceAliases(options.cwd, plan);
     if (haveSameAliases(aliases, nextAliases)) {
-      if (options.write !== false && options.config.routing) {
-        await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
+      if (options.write === false) {
+        return { analysis, plan };
       }
-      return { analysis, plan };
+
+      await prepared.preflight();
+      let commitPromise: Promise<void> | undefined;
+      let committed = false;
+      const materialization: DeferredFrameworkIRMaterialization = {
+        get committed() {
+          return committed;
+        },
+        preflight: prepared.preflight,
+        commit() {
+          commitPromise ??= (async () => {
+            await prepared.commit();
+            if (options.config.routing) {
+              await syncPageRouteTypesFromCoreGraph(
+                options.cwd,
+                analysis.graph,
+              );
+            }
+            committed = true;
+          })();
+          return commitPromise;
+        },
+      };
+      if (!options.deferWrite) {
+        await materialization.commit();
+      }
+      return { analysis, plan, materialization };
     }
     aliases = nextAliases;
   }

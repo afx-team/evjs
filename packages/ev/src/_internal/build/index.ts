@@ -16,6 +16,7 @@ export {
   type BundlerDevController,
   type BundlerDevUpdateOptions,
   type BundlerEmittedFiles,
+  hasServerGeneratedRuntimeChange,
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   resolveBundlerClientEntryAssets,

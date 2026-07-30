@@ -232,6 +232,7 @@ const expectedBuildToolsRuntimeExports = [
   "extractServerFunctionExports",
   "generateHtml",
   "generatePageRouteTypes",
+  "hasServerGeneratedRuntimeChange",
   "inspectFrameworkBuild",
   "isArtifactOnlyBuildPlanUpdate",
   "isEmptyBuildPlanUpdate",

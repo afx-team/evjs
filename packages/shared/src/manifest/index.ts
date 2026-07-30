@@ -940,6 +940,11 @@ export interface GeneratedModulePlan {
   extension: string;
   /** Stable digest of the fully resolved generated module source. */
   sourceHash: string;
+  /**
+   * Framework-owned declaration-only companion below the application source
+   * root. Present only when the producer supplied `declarationSource`.
+   */
+  declarationFile?: string;
 }
 
 export interface GeneratedEntryPlan {
@@ -1018,6 +1023,32 @@ export interface ResolveAliasSlotPlanItem extends FrameworkSlotPlanItemBase {
   slot: "resolve.alias";
   specifier: string;
   replacement: string;
+  declaration?: GeneratedModuleDeclaration;
+}
+
+export interface GeneratedModuleDeclaration {
+  readonly exports: readonly (
+    | (GeneratedModuleDeclarationExport & {
+        readonly kind: "value";
+        readonly typeParameters?: never;
+      })
+    | (GeneratedModuleDeclarationExport & {
+        readonly kind: "type";
+        readonly typeParameters: "none";
+      })
+  )[];
+}
+
+export interface GeneratedModuleDeclarationExport {
+  readonly kind: "value" | "type";
+  /** Named export exposed unchanged by the alias declaration. */
+  readonly name: string;
+  /**
+   * Required as `"none"` for type entries in `GeneratedModuleDeclaration`.
+   * This asserts that the source type has no type parameters; generic type
+   * exports are not supported.
+   */
+  readonly typeParameters?: "none";
 }
 
 export interface ResolveExternalSlotPlanItem extends FrameworkSlotPlanItemBase {

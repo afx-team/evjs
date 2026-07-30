@@ -13,6 +13,66 @@ export async function writeOwnedOutputFile(
   contents: string | Uint8Array,
   field: string,
 ): Promise<void> {
+  await writeOwnedOutputFileInternal(rootDir, filePath, contents, field);
+}
+
+/**
+ * Atomically write a framework-owned file only when its bytes changed.
+ *
+ * Avoiding an unchanged rename keeps file watchers quiet. When replacing an
+ * existing file, its permission bits are retained.
+ */
+export async function writeOwnedOutputFileIfChanged(
+  rootDir: string,
+  filePath: string,
+  contents: string | Uint8Array,
+  field: string,
+): Promise<boolean> {
+  const absoluteRoot = path.resolve(rootDir);
+  const destination = path.resolve(filePath);
+  const relativeDestination = path.relative(absoluteRoot, destination);
+  if (!isStrictDescendantPath(relativeDestination)) {
+    throw new Error(
+      `[evjs] ${field} must stay inside its framework-owned output directory.`,
+    );
+  }
+
+  await ensureOwnedDirectory(absoluteRoot, path.dirname(destination), field);
+  await assertSafeDestination(destination, field);
+
+  const nextContents =
+    typeof contents === "string"
+      ? Buffer.from(contents)
+      : Buffer.from(contents);
+  let existingMode: number | undefined;
+  try {
+    const [stats, existingContents] = await Promise.all([
+      fs.stat(destination),
+      fs.readFile(destination),
+    ]);
+    existingMode = stats.mode & 0o777;
+    if (existingContents.equals(nextContents)) return false;
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
+  }
+
+  await writeOwnedOutputFileInternal(
+    absoluteRoot,
+    destination,
+    nextContents,
+    field,
+    existingMode,
+  );
+  return true;
+}
+
+async function writeOwnedOutputFileInternal(
+  rootDir: string,
+  filePath: string,
+  contents: string | Uint8Array,
+  field: string,
+  mode?: number,
+): Promise<void> {
   const absoluteRoot = path.resolve(rootDir);
   const destination = path.resolve(filePath);
   const relativeDestination = path.relative(absoluteRoot, destination);
@@ -31,6 +91,9 @@ export async function writeOwnedOutputFile(
   );
   try {
     await fs.writeFile(temporary, contents, { flag: "wx" });
+    if (mode !== undefined) {
+      await fs.chmod(temporary, mode);
+    }
     await fs.rename(temporary, destination);
   } finally {
     await fs.rm(temporary, { force: true });
