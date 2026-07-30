@@ -27,7 +27,9 @@ import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import { createBuildResult } from "./build-result.js";
 import {
   type BundlerAdapter,
+  type BundlerBuildFacts,
   type BundlerDevController,
+  hasServerGeneratedRuntimeChange,
   isEmptyBuildPlanUpdate,
   preflightBundlerBuild,
   preflightBundlerDevUpdate,
@@ -67,7 +69,12 @@ import {
   validateHtmlTemplates,
 } from "./framework-output.js";
 import type { createFrameworkRuntime } from "./framework-runtime.js";
-import { GENERATED_IR_DIR } from "./generated-contributions.js";
+import {
+  GENERATED_IR_DIR,
+  type GeneratedOutputOwnership,
+  getGeneratedTypesCompanionOwnership,
+  getGeneratedTypesDiscoveryOwnership,
+} from "./generated-contributions.js";
 import type { createCoreGraph } from "./graph/index.js";
 import {
   removeOwnedOutputFile,
@@ -259,6 +266,12 @@ async function createGeneratedDevStateSnapshot(
   );
   const generatedIrPath = path.resolve(cwd, GENERATED_IR_DIR);
   const generatedIrSnapshot = path.join(snapshotRoot, "generated-ir");
+  const generatedTypeCompanionsPath = path.resolve(cwd, "src/.ev/types");
+  const generatedTypeCompanionsSnapshot = path.join(
+    snapshotRoot,
+    "generated-type-companions",
+  );
+  const generatedTypeDiscoveryFile = path.resolve(cwd, "src/evjs-env.d.ts");
   const routeTypeFiles = new Map<string, Buffer | undefined>();
 
   try {
@@ -267,6 +280,29 @@ async function createGeneratedDevStateSnapshot(
       await fs.promises.cp(generatedIrPath, generatedIrSnapshot, {
         recursive: true,
       });
+    }
+    const generatedTypeCompanionsOwnership =
+      await getGeneratedTypesCompanionOwnership(cwd);
+    if (generatedTypeCompanionsOwnership === "owned") {
+      await fs.promises.cp(
+        generatedTypeCompanionsPath,
+        generatedTypeCompanionsSnapshot,
+        { recursive: true },
+      );
+    }
+    const generatedTypeDiscoveryOwnership =
+      await getGeneratedTypesDiscoveryOwnership(cwd);
+    const generatedTypeDiscoverySource =
+      generatedTypeDiscoveryOwnership === "owned"
+        ? await readFileIfExists(generatedTypeDiscoveryFile)
+        : undefined;
+    if (
+      generatedTypeDiscoveryOwnership === "owned" &&
+      !generatedTypeDiscoverySource
+    ) {
+      throw new Error(
+        "[evjs] Generated type discovery file disappeared while capturing dev state.",
+      );
     }
 
     const routeTypesFile = getPageRouteTypesPath(cwd).file;
@@ -289,6 +325,20 @@ async function createGeneratedDevStateSnapshot(
               generatedIrSnapshot,
               hadGeneratedIr,
             ),
+          () =>
+            restoreGeneratedTypeCompanions(
+              cwd,
+              generatedTypeCompanionsPath,
+              generatedTypeCompanionsSnapshot,
+              generatedTypeCompanionsOwnership,
+            ),
+          () =>
+            restoreGeneratedTypeDiscoveryFile(
+              cwd,
+              generatedTypeDiscoveryFile,
+              generatedTypeDiscoveryOwnership,
+              generatedTypeDiscoverySource,
+            ),
           () => restorePageRouteTypes(cwd, routeTypeFiles),
         ]);
         settled = true;
@@ -310,23 +360,94 @@ async function restoreGeneratedIr(
   generatedIrSnapshot: string,
   hadGeneratedIr: boolean,
 ): Promise<void> {
-  if (!hadGeneratedIr) {
-    await fs.promises.rm(generatedIrPath, { force: true, recursive: true });
+  await restoreGeneratedDirectory(
+    cwd,
+    generatedIrPath,
+    generatedIrSnapshot,
+    hadGeneratedIr,
+    "generated-ir",
+  );
+}
+
+async function restoreGeneratedDirectory(
+  cwd: string,
+  destination: string,
+  snapshot: string,
+  existed: boolean,
+  snapshotName: string,
+): Promise<void> {
+  if (!existed) {
+    await fs.promises.rm(destination, { force: true, recursive: true });
     return;
   }
 
   const restoreRoot = await fs.promises.mkdtemp(
     path.join(cwd, `${GENERATED_IR_DIR}-restore-`),
   );
-  const restoredIrPath = path.join(restoreRoot, "generated-ir");
+  const restoredPath = path.join(restoreRoot, snapshotName);
   try {
-    await fs.promises.cp(generatedIrSnapshot, restoredIrPath, {
+    await fs.promises.cp(snapshot, restoredPath, {
       recursive: true,
     });
-    await fs.promises.rm(generatedIrPath, { force: true, recursive: true });
-    await fs.promises.rename(restoredIrPath, generatedIrPath);
+    await fs.promises.rm(destination, { force: true, recursive: true });
+    await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+    await fs.promises.rename(restoredPath, destination);
   } finally {
     await fs.promises.rm(restoreRoot, { force: true, recursive: true });
+  }
+}
+
+async function restoreGeneratedTypeCompanions(
+  cwd: string,
+  destination: string,
+  snapshot: string,
+  ownership: GeneratedOutputOwnership,
+): Promise<void> {
+  if (ownership === "unowned") return;
+  const currentOwnership = await getGeneratedTypesCompanionOwnership(cwd);
+  if (currentOwnership === "unowned") {
+    throw new Error(
+      `[evjs] Refusing to restore generated declaration companions over user-owned path "${destination}".`,
+    );
+  }
+  if (ownership === "absent") {
+    if (currentOwnership === "owned") {
+      await fs.promises.rm(destination, { force: true, recursive: true });
+    }
+    return;
+  }
+  await restoreGeneratedDirectory(
+    cwd,
+    destination,
+    snapshot,
+    true,
+    "generated-type-companions",
+  );
+}
+
+async function restoreGeneratedTypeDiscoveryFile(
+  cwd: string,
+  file: string,
+  ownership: GeneratedOutputOwnership,
+  source: Buffer | undefined,
+): Promise<void> {
+  if (ownership === "unowned") return;
+  const currentOwnership = await getGeneratedTypesDiscoveryOwnership(cwd);
+  if (currentOwnership === "unowned") {
+    throw new Error(
+      `[evjs] Refusing to restore generated type discovery over user-owned path "${file}".`,
+    );
+  }
+  if (currentOwnership === "owned") {
+    await removeOwnedOutputFile(cwd, file, "Generated type discovery rollback");
+  }
+  if (ownership === "owned" && source) {
+    await writeOwnedOutputFile(
+      cwd,
+      file,
+      source,
+      "Generated type discovery rollback",
+    );
   }
 }
 
@@ -825,6 +946,27 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   }
   let restartQueue: Promise<void> = Promise.resolve();
   let devUpdateQueue: Promise<void> = Promise.resolve();
+  let frameworkUpdatePhase: "idle" | "analyzing" | "applying" | "recovering" =
+    "idle";
+  let activePlanGeneration = 0;
+  let nextPlanGeneration = 1;
+  let applyingPlanGeneration: number | undefined;
+  let applyingFrameworkStateCommitted: (() => boolean) | undefined;
+  let applyingDefersBuildFacts = false;
+  let applyingHasRuntimeServerEntry = false;
+  let requireTaggedBundlerCallbacks = false;
+  let serverReadyDuringAnalysis = false;
+  let serverReadyDuringApply = false;
+  let apiRestartedDuringApply = false;
+  let serverReadyDuringRollback = false;
+  let serverBundleRecoveryRequired = false;
+  let pendingBuildFacts:
+    | {
+        facts: BundlerBuildFacts;
+        isRebuild: boolean;
+        planGeneration: number;
+      }
+    | undefined;
   let devController: BundlerDevController<TBundlerCfg> | undefined;
   let releaseDevDistLock: DevRuntimeRelease | undefined;
   let unregisterDevDistExitCleanup = () => {};
@@ -932,13 +1074,115 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     }
   };
 
-  const handleServerBundleReady = async () => {
+  const publishBuildFacts = async (
+    bundlerFacts: BundlerBuildFacts,
+    isRebuild: boolean,
+  ) => {
+    const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
+      bundlerFacts,
+      graph: activeAnalysis.graph,
+      plan: activePlan,
+      config: activeConfig,
+      cwd,
+      hooks,
+      pluginCtx,
+      isRebuild,
+    });
+    await runBuildEndHooks(
+      hooks,
+      createBuildResult(output, isRebuild, { frameworkRuntime }),
+      { cwd, emittedFiles: bundlerFacts.emittedFiles },
+    );
+    activeFrameworkRuntime = frameworkRuntime;
+    activeServerEntry = output.server.entry;
+  };
+
+  const resolveBundlerCallbackGeneration = (
+    reportedGeneration: number | undefined,
+  ): number | undefined => {
+    if (
+      reportedGeneration !== undefined &&
+      Number.isSafeInteger(reportedGeneration) &&
+      reportedGeneration >= 0
+    ) {
+      return reportedGeneration;
+    }
+    if (!requireTaggedBundlerCallbacks) return activePlanGeneration;
+    return undefined;
+  };
+
+  const publishPendingBuildFacts = async (
+    expectedGeneration = activePlanGeneration,
+  ) => {
+    const pending = pendingBuildFacts;
+    if (!pending) return;
+    pendingBuildFacts = undefined;
+    if (
+      pending.planGeneration !== expectedGeneration ||
+      expectedGeneration !== activePlanGeneration
+    ) {
+      return;
+    }
+    await publishBuildFacts(pending.facts, pending.isRebuild);
+  };
+
+  const restartActiveApi = async (allowRecovery = false): Promise<boolean> => {
+    if (serverBundleRecoveryRequired && !allowRecovery) return false;
+
     const state = captureApiRuntimeState();
+    let restarted = false;
     restartQueue = restartQueue
       .catch(() => {})
-      .then(() => restartApiServer(state))
+      .then(async () => {
+        if (await restartApiServer(state)) {
+          restarted = true;
+          serverBundleRecoveryRequired = false;
+        }
+      })
       .then(() => {});
     await restartQueue;
+    return restarted;
+  };
+
+  const handleServerBundleReady = async (options?: {
+    planGeneration?: number;
+  }) => {
+    const planGeneration = resolveBundlerCallbackGeneration(
+      options?.planGeneration,
+    );
+    if (planGeneration === undefined) return;
+
+    if (frameworkUpdatePhase === "analyzing") {
+      if (planGeneration !== activePlanGeneration) return;
+      serverReadyDuringAnalysis = true;
+      return;
+    }
+    if (frameworkUpdatePhase === "applying") {
+      if (planGeneration !== applyingPlanGeneration) return;
+      if (!applyingFrameworkStateCommitted?.()) {
+        throw new Error(
+          "[evjs] Bundler reported a candidate server bundle before committing staged framework state.",
+        );
+      }
+      await publishPendingBuildFacts(planGeneration);
+      serverReadyDuringApply = true;
+      const restarted = await restartActiveApi(true);
+      if (applyingHasRuntimeServerEntry && !restarted) {
+        throw new Error(
+          "[evjs] Bundler reported a fresh server bundle, but its runtime entry output is unavailable.",
+        );
+      }
+      apiRestartedDuringApply = true;
+      return;
+    }
+    if (frameworkUpdatePhase === "recovering") {
+      if (planGeneration !== activePlanGeneration) return;
+      await publishPendingBuildFacts(planGeneration);
+      serverReadyDuringRollback = true;
+      return;
+    }
+    if (planGeneration !== activePlanGeneration) return;
+    await restartActiveApi();
   };
 
   const loadCurrentConfig = async (
@@ -1091,79 +1335,111 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   const handleDevDependencyChange = async (changedFiles: readonly string[]) => {
-    const configDependencyFiles = new Set(listConfigDependencyFiles(cwd));
-    const isFrameworkConfigChange = changedFiles.some((file) =>
-      configDependencyFiles.has(file),
-    );
-    const isBundlerConfigChange = changedFiles.some((file) =>
-      bundlerConfigWatchFiles.has(file),
-    );
-    const requiresBundlerConfigReload =
-      isFrameworkConfigChange || isBundlerConfigChange;
-    const reason: BuildPlanUpdate["reason"] = requiresBundlerConfigReload
-      ? "config"
-      : "route-declaration";
-
-    const baseNextConfig = await loadCurrentConfig((state) => {
-      activeServerRouteWatchState = state;
-      refreshDevDependencyWatchers();
-    });
-    if (!hasSamePluginIdentity(activeConfig.plugins, baseNextConfig.plugins)) {
-      logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
-      return;
-    }
-
-    const nextPluginExtensions = isFrameworkConfigChange
-      ? collectPluginExtensionRegistry(baseNextConfig.plugins)
-      : activePluginExtensions;
-    let nextApplicationExtensions = activeApplicationExtensions;
-    let nextConfig: ResolvedFrameworkConfig<TBundlerCfg> = {
-      ...baseNextConfig,
-      extensions: activeApplicationExtensions,
-    };
-    if (isFrameworkConfigChange) {
-      const nextPluginExtensionState = resolvePluginExtensionState(
-        baseNextConfig,
-        nextPluginExtensions,
-      );
-      nextApplicationExtensions =
-        nextPluginExtensionState.applicationExtensions;
-      nextConfig = nextPluginExtensionState.config;
-    }
-
-    validateHtmlTemplates(cwd, nextConfig);
+    frameworkUpdatePhase = "analyzing";
+    applyingPlanGeneration = undefined;
+    applyingFrameworkStateCommitted = undefined;
+    applyingDefersBuildFacts = false;
+    applyingHasRuntimeServerEntry = false;
+    serverReadyDuringAnalysis = false;
+    serverReadyDuringApply = false;
+    apiRestartedDuringApply = false;
+    serverReadyDuringRollback = false;
+    pendingBuildFacts = undefined;
+    let replayDeferredServerReady = false;
     let stagedPluginHooks:
       | Awaited<ReturnType<typeof stagePluginHooks>>
       | undefined;
-    if (isFrameworkConfigChange) {
-      stagedPluginHooks = await stagePluginHooks(nextConfig);
-    }
     let generatedStateSnapshot: GeneratedDevStateSnapshot | undefined;
-    const rollbackCandidateState = () =>
-      runCleanupTasks([
+    let rollbackCandidateStatePromise: Promise<void> | undefined;
+    const rollbackCandidateState = () => {
+      rollbackCandidateStatePromise ??= runCleanupTasks([
         () => stagedPluginHooks?.rollback(),
         () => generatedStateSnapshot?.restore(),
       ]);
+      return rollbackCandidateStatePromise;
+    };
 
     try {
+      const configDependencyFiles = new Set(listConfigDependencyFiles(cwd));
+      const isFrameworkConfigChange = changedFiles.some((file) =>
+        configDependencyFiles.has(file),
+      );
+      const isBundlerConfigChange = changedFiles.some((file) =>
+        bundlerConfigWatchFiles.has(file),
+      );
+      const requiresBundlerConfigReload =
+        isFrameworkConfigChange || isBundlerConfigChange;
+      const reason: BuildPlanUpdate["reason"] = requiresBundlerConfigReload
+        ? "config"
+        : "route-declaration";
+
+      const baseNextConfig = await loadCurrentConfig((state) => {
+        activeServerRouteWatchState = state;
+        refreshDevDependencyWatchers();
+      });
+      if (
+        !hasSamePluginIdentity(activeConfig.plugins, baseNextConfig.plugins)
+      ) {
+        replayDeferredServerReady = serverReadyDuringAnalysis;
+        logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
+        return;
+      }
+
+      const nextPluginExtensions = isFrameworkConfigChange
+        ? collectPluginExtensionRegistry(baseNextConfig.plugins)
+        : activePluginExtensions;
+      let nextApplicationExtensions = activeApplicationExtensions;
+      let nextConfig: ResolvedFrameworkConfig<TBundlerCfg> = {
+        ...baseNextConfig,
+        extensions: activeApplicationExtensions,
+      };
+      if (isFrameworkConfigChange) {
+        const nextPluginExtensionState = resolvePluginExtensionState(
+          baseNextConfig,
+          nextPluginExtensions,
+        );
+        nextApplicationExtensions =
+          nextPluginExtensionState.applicationExtensions;
+        nextConfig = nextPluginExtensionState.config;
+      }
+
+      validateHtmlTemplates(cwd, nextConfig);
+      if (isFrameworkConfigChange) {
+        stagedPluginHooks = await stagePluginHooks(nextConfig);
+      }
       generatedStateSnapshot = await createGeneratedDevStateSnapshot(cwd);
-      const { analysis: nextAnalysis, plan: nextPlan } =
-        await analyzeAndMaterializeFrameworkIR({
-          cwd,
-          mode: "development",
-          command: "dev",
+      const {
+        analysis: nextAnalysis,
+        plan: nextPlan,
+        materialization: frameworkMaterialization,
+      } = await analyzeAndMaterializeFrameworkIR({
+        cwd,
+        mode: "development",
+        command: "dev",
+        config: nextConfig,
+        pluginContext: {
+          ...pluginCtx,
           config: nextConfig,
-          pluginContext: {
-            ...pluginCtx,
-            config: nextConfig,
-          },
-          pluginExtensions: nextPluginExtensions,
-          applicationExtensions: nextApplicationExtensions,
-          plan: { distDir: DEV_DIST_DIR },
-          onAnalysis: reportGraphDiagnostics,
-        });
+        },
+        pluginExtensions: nextPluginExtensions,
+        applicationExtensions: nextApplicationExtensions,
+        plan: { distDir: DEV_DIST_DIR },
+        deferWrite: true,
+        onAnalysis: reportGraphDiagnostics,
+      });
+      if (!frameworkMaterialization) {
+        throw new Error(
+          "[evjs] Framework dev analysis did not produce a staged materialization.",
+        );
+      }
       const update = diffBuildPlan(activePlan, nextPlan, reason);
+      const serverGeneratedRuntimeChanged = hasServerGeneratedRuntimeChange(
+        activePlan,
+        nextPlan,
+      );
       if (isEmptyBuildPlanUpdate(update) && !requiresBundlerConfigReload) {
+        await publishPendingBuildFacts(activePlanGeneration);
+        await frameworkMaterialization.commit();
         activeConfig = nextConfig;
         activePluginExtensions = nextPluginExtensions;
         activeApplicationExtensions = nextApplicationExtensions;
@@ -1172,11 +1448,14 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         pluginCtx.config = nextConfig;
         await commitStagedPluginHooks(stagedPluginHooks);
         await generatedStateSnapshot.commit();
+        replayDeferredServerReady = serverReadyDuringAnalysis;
         return;
       }
 
       if (!devController) {
         await rollbackCandidateState();
+        pendingBuildFacts = undefined;
+        replayDeferredServerReady = serverReadyDuringAnalysis;
         logger.warn`The selected bundler does not expose a dev controller. Please restart ev dev to apply framework plan changes.`;
         return;
       }
@@ -1186,6 +1465,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       const previousApplicationExtensions = activeApplicationExtensions;
       const previousAnalysis = activeAnalysis;
       const previousPlan = activePlan;
+      const previousPlanGeneration = activePlanGeneration;
       const previousFrameworkRuntime = activeFrameworkRuntime;
       const previousServerEntry = activeServerEntry;
       const previousApiRuntimeState: DevApiRuntimeState<TBundlerCfg> = {
@@ -1195,36 +1475,166 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         serverEntry: previousServerEntry,
       };
       const previousApiProcess = apiProcessController.checkpoint();
+      const previousHasRuntimeServerEntry = previousPlan.entries.some(
+        (entry) => entry.environment === "server" && entry.phase !== "build",
+      );
+      const nextHasRuntimeServerEntry = nextPlan.entries.some(
+        (entry) => entry.environment === "server" && entry.phase !== "build",
+      );
+      const removesLastRuntimeServerEntry =
+        previousHasRuntimeServerEntry && !nextHasRuntimeServerEntry;
+      const requiresApiReplacement =
+        serverGeneratedRuntimeChanged || removesLastRuntimeServerEntry;
+      const candidatePlanGeneration = nextPlanGeneration++;
+
+      let transactionState:
+        | "prepared"
+        | "committing"
+        | "committed"
+        | "rolling-back"
+        | "rolled-back"
+        | "accepted" = "prepared";
+      const getTransactionState = () => transactionState;
+      let commitFrameworkStatePromise: Promise<void> | undefined;
+      let rollbackFrameworkStatePromise: Promise<void> | undefined;
+      const commitFrameworkState = () => {
+        if (
+          transactionState === "rolling-back" ||
+          transactionState === "rolled-back"
+        ) {
+          return Promise.reject(
+            new Error(
+              "[evjs] Bundler attempted to commit framework state after rollback started.",
+            ),
+          );
+        }
+        commitFrameworkStatePromise ??= (async () => {
+          transactionState = "committing";
+          await frameworkMaterialization.commit();
+          transactionState = "committed";
+        })();
+        return commitFrameworkStatePromise;
+      };
+      const rollbackFrameworkState = () => {
+        if (transactionState === "accepted") {
+          return Promise.reject(
+            new Error(
+              "[evjs] Bundler attempted to roll back an accepted framework plan.",
+            ),
+          );
+        }
+        rollbackFrameworkStatePromise ??= (async () => {
+          transactionState = "rolling-back";
+          frameworkUpdatePhase = "recovering";
+          applyingPlanGeneration = undefined;
+          applyingFrameworkStateCommitted = undefined;
+          activeConfig = previousConfig;
+          activePluginExtensions = previousPluginExtensions;
+          activeApplicationExtensions = previousApplicationExtensions;
+          activeAnalysis = previousAnalysis;
+          activePlan = previousPlan;
+          activePlanGeneration = previousPlanGeneration;
+          activeFrameworkRuntime = previousFrameworkRuntime;
+          activeServerEntry = previousServerEntry;
+          pluginCtx.config = previousConfig;
+          pendingBuildFacts = undefined;
+          serverReadyDuringRollback = false;
+          try {
+            await commitFrameworkStatePromise;
+          } catch {
+            // A failed/partial commit still needs its snapshot restored.
+          }
+          await rollbackCandidateState();
+          transactionState = "rolled-back";
+        })();
+        return rollbackFrameworkStatePromise;
+      };
 
       preflightBundlerBuild(bundler, nextPlan);
       preflightBundlerDevUpdate(bundler, update);
 
-      activeConfig = nextConfig;
-      activePluginExtensions = nextPluginExtensions;
-      activeApplicationExtensions = nextApplicationExtensions;
-      activeAnalysis = nextAnalysis;
-      activePlan = nextPlan;
-      pluginCtx.config = nextConfig;
-
       try {
+        if (requiresApiReplacement) {
+          serverBundleRecoveryRequired = true;
+          restartQueue = restartQueue
+            .catch(() => {})
+            .then(() => apiProcessController.stopForReplacement());
+          await restartQueue;
+        }
+
+        activeConfig = nextConfig;
+        activePluginExtensions = nextPluginExtensions;
+        activeApplicationExtensions = nextApplicationExtensions;
+        activeAnalysis = nextAnalysis;
+        activePlan = nextPlan;
+        activePlanGeneration = candidatePlanGeneration;
+        pluginCtx.config = nextConfig;
+        frameworkUpdatePhase = "applying";
+        applyingPlanGeneration = candidatePlanGeneration;
+        applyingFrameworkStateCommitted = () =>
+          frameworkMaterialization.committed;
+        applyingDefersBuildFacts =
+          requiresApiReplacement && nextHasRuntimeServerEntry;
+        applyingHasRuntimeServerEntry = nextHasRuntimeServerEntry;
+        requireTaggedBundlerCallbacks = true;
+        serverReadyDuringApply = false;
+        apiRestartedDuringApply = false;
+        pendingBuildFacts = undefined;
+
         await devController.updatePlan(update, {
           config: nextConfig,
           configChanged: requiresBundlerConfigReload,
+          planGeneration: candidatePlanGeneration,
+          commitFrameworkState,
+          rollbackFrameworkState,
         });
+        if (!frameworkMaterialization.committed) {
+          throw new Error(
+            "[evjs] Bundler plan update completed without committing staged framework state.",
+          );
+        }
+        if (getTransactionState() !== "committed") {
+          throw new Error(
+            "[evjs] Bundler plan update completed after rolling back candidate framework state.",
+          );
+        }
+        if (
+          requiresApiReplacement &&
+          nextHasRuntimeServerEntry &&
+          !serverReadyDuringApply
+        ) {
+          throw new Error(
+            "[evjs] Bundler plan update completed without reporting a fresh server bundle.",
+          );
+        }
+        await publishPendingBuildFacts(candidatePlanGeneration);
+        const shouldRestartApi =
+          !apiRestartedDuringApply &&
+          !requiresApiReplacement &&
+          serverReadyDuringAnalysis;
+        if (shouldRestartApi) {
+          await restartActiveApi(true);
+        } else if (removesLastRuntimeServerEntry) {
+          serverBundleRecoveryRequired = false;
+        }
+        transactionState = "accepted";
       } catch (err) {
-        activeConfig = previousConfig;
-        activePluginExtensions = previousPluginExtensions;
-        activeApplicationExtensions = previousApplicationExtensions;
-        activeAnalysis = previousAnalysis;
-        activePlan = previousPlan;
-        activeFrameworkRuntime = previousFrameworkRuntime;
-        activeServerEntry = previousServerEntry;
-        pluginCtx.config = previousConfig;
         try {
-          await runCleanupTasks([
-            rollbackCandidateState,
-            () =>
-              apiProcessController.rollback(previousApiProcess, async () => {
+          const candidateStateWasCommitted = frameworkMaterialization.committed;
+          await rollbackFrameworkState();
+          const apiProcessWasDisplaced =
+            apiProcessController.checkpoint().replacementGeneration !==
+            previousApiProcess.replacementGeneration;
+          const canRestorePreviousApi =
+            !apiProcessWasDisplaced ||
+            !previousApiProcess.hadProcess ||
+            !previousHasRuntimeServerEntry ||
+            !candidateStateWasCommitted ||
+            serverReadyDuringRollback;
+          if (canRestorePreviousApi) {
+            await apiProcessController.rollback(
+              previousApiProcess,
+              async () => {
                 const restarted = await restartApiServer(
                   previousApiRuntimeState,
                 );
@@ -1233,8 +1643,13 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
                     "[evjs] Unable to restore the previous API server because its development bundle is no longer available.",
                   );
                 }
-              }),
-          ]);
+              },
+            );
+            serverBundleRecoveryRequired = false;
+          } else {
+            serverBundleRecoveryRequired = true;
+            logger.warn`The failed bundler update did not report a freshly recompiled previous server bundle. The API server remains stopped to avoid loading mixed-generation output; restart ev dev to recover.`;
+          }
         } catch (rollbackError) {
           throw new AggregateError(
             [err, rollbackError],
@@ -1247,12 +1662,38 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       }
       await commitStagedPluginHooks(stagedPluginHooks);
       await generatedStateSnapshot.commit();
+      replayDeferredServerReady = false;
     } catch (err) {
-      return rethrowAfterCleanup(
-        err,
-        rollbackCandidateState,
-        "[evjs] Framework dev state update failed and rollback also failed.",
-      );
+      const shouldReplayDeferredServerReady = serverReadyDuringAnalysis;
+      pendingBuildFacts = undefined;
+      try {
+        await rollbackCandidateState();
+      } catch (rollbackError) {
+        replayDeferredServerReady = false;
+        throw new AggregateError(
+          [err, rollbackError],
+          "[evjs] Framework dev state update failed and rollback also failed.",
+          { cause: err },
+        );
+      }
+      replayDeferredServerReady = shouldReplayDeferredServerReady;
+      throw err;
+    } finally {
+      frameworkUpdatePhase = "idle";
+      applyingPlanGeneration = undefined;
+      applyingFrameworkStateCommitted = undefined;
+      applyingDefersBuildFacts = false;
+      applyingHasRuntimeServerEntry = false;
+      serverReadyDuringAnalysis = false;
+      serverReadyDuringApply = false;
+      apiRestartedDuringApply = false;
+      serverReadyDuringRollback = false;
+      if (replayDeferredServerReady) {
+        await publishPendingBuildFacts(activePlanGeneration);
+        await restartActiveApi(true);
+      } else {
+        pendingBuildFacts = undefined;
+      }
     }
   };
 
@@ -1304,6 +1745,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         cwd,
         hooks,
         plan: activePlan,
+        planGeneration: activePlanGeneration,
         addWatchFile: addBundlerConfigWatchFile,
         callbacks: {
           onDevServerReady(context) {
@@ -1315,23 +1757,44 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
           },
           async onBuildFacts(bundlerFacts, options) {
             const isRebuild = options?.isRebuild ?? false;
-            const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
-              bundlerFacts,
-              graph: activeAnalysis.graph,
-              plan: activePlan,
-              config: activeConfig,
-              cwd,
-              hooks,
-              pluginCtx,
-              isRebuild,
-            });
-            await runBuildEndHooks(
-              hooks,
-              createBuildResult(output, isRebuild, { frameworkRuntime }),
-              { cwd, emittedFiles: bundlerFacts.emittedFiles },
+            const planGeneration = resolveBundlerCallbackGeneration(
+              options?.planGeneration,
             );
-            activeFrameworkRuntime = frameworkRuntime;
-            activeServerEntry = output.server.entry;
+            if (planGeneration === undefined) return;
+            if (frameworkUpdatePhase === "analyzing") {
+              if (planGeneration !== activePlanGeneration) return;
+              pendingBuildFacts = {
+                facts: bundlerFacts,
+                isRebuild,
+                planGeneration,
+              };
+              return;
+            }
+            if (frameworkUpdatePhase === "applying") {
+              if (planGeneration !== applyingPlanGeneration) return;
+              if (!applyingFrameworkStateCommitted?.()) {
+                throw new Error(
+                  "[evjs] Bundler reported candidate build facts before committing staged framework state.",
+                );
+              }
+              if (applyingDefersBuildFacts) {
+                pendingBuildFacts = {
+                  facts: bundlerFacts,
+                  isRebuild,
+                  planGeneration,
+                };
+                return;
+              }
+              await publishBuildFacts(bundlerFacts, isRebuild);
+              return;
+            }
+            if (frameworkUpdatePhase === "recovering") {
+              if (planGeneration !== activePlanGeneration) return;
+              await publishBuildFacts(bundlerFacts, isRebuild);
+              return;
+            }
+            if (planGeneration !== activePlanGeneration) return;
+            await publishBuildFacts(bundlerFacts, isRebuild);
           },
           onServerBundleReady: handleServerBundleReady,
         },

@@ -89,6 +89,8 @@ export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
 
 export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
   extends BundlerBuildContext<TBundlerCfg> {
+  /** Generation owned by the initial framework plan. */
+  planGeneration: number;
   callbacks: {
     /**
      * Called after the client development server is listening and framework
@@ -102,9 +104,11 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
      */
     onBuildFacts: (
       facts: BundlerBuildFacts,
-      options?: { isRebuild?: boolean },
+      options?: { isRebuild?: boolean; planGeneration?: number },
     ) => void | Promise<void>;
-    onServerBundleReady: () => void | Promise<void>;
+    onServerBundleReady: (options?: {
+      planGeneration?: number;
+    }) => void | Promise<void>;
   };
 }
 
@@ -116,6 +120,25 @@ export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
    * the adapter must refresh its effective bundler configuration.
    */
   configChanged: boolean;
+  /** Generation assigned to the candidate framework plan. */
+  planGeneration: number;
+  /**
+   * Publish staged framework-owned sources after the old compiler/watch has
+   * been quarantined and immediately before compiling the candidate plan.
+   *
+   * This callback is strictly idempotent. A successful updatePlan call must
+   * have consumed it; the framework verifies that contract.
+   */
+  commitFrameworkState(): Promise<void>;
+  /**
+   * Restore the previous framework-owned sources before recompiling the
+   * previous plan after a failed candidate update.
+   *
+   * This callback is strictly idempotent. If candidate state was committed,
+   * an adapter must await this callback and then report fresh previous-plan
+   * build facts/server readiness before rejecting updatePlan.
+   */
+  rollbackFrameworkState(): Promise<void>;
 }
 
 export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
@@ -126,6 +149,77 @@ export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
     update: BuildPlanUpdate,
     options?: BundlerDevUpdateOptions<TBundlerCfg>,
   ): void | Promise<void>;
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
+
+/**
+ * Whether server-scoped generated runtime bytes differ between two plans.
+ *
+ * Generated declaration companions are intentionally excluded: changing only
+ * editor-facing types must not restart the API process. Invalid or duplicate
+ * runtime metadata fails closed and requires a fresh server compilation.
+ */
+export function hasServerGeneratedRuntimeChange(
+  previous: BuildPlan,
+  next: BuildPlan,
+): boolean {
+  const previousModules = indexServerGeneratedModules(previous);
+  const nextModules = indexServerGeneratedModules(next);
+  if (!previousModules || !nextModules) return true;
+  if (previousModules.size !== nextModules.size) return true;
+
+  for (const [key, fingerprint] of nextModules) {
+    const previousFingerprint = previousModules.get(key);
+    if (
+      !previousFingerprint ||
+      previousFingerprint.sourceHash !== fingerprint.sourceHash ||
+      previousFingerprint.file !== fingerprint.file ||
+      previousFingerprint.specifier !== fingerprint.specifier ||
+      previousFingerprint.extension !== fingerprint.extension
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+interface ServerGeneratedRuntimeFingerprint {
+  sourceHash: string;
+  file: string;
+  specifier: string;
+  extension: string;
+}
+
+function indexServerGeneratedModules(
+  plan: BuildPlan,
+): Map<string, ServerGeneratedRuntimeFingerprint> | undefined {
+  const modules = new Map<string, ServerGeneratedRuntimeFingerprint>();
+  for (const generatedModule of plan.generated?.modules ?? []) {
+    if (generatedModule.scope.kind !== "server") continue;
+    if (
+      typeof generatedModule.key !== "string" ||
+      generatedModule.key.length === 0 ||
+      typeof generatedModule.sourceHash !== "string" ||
+      !SHA256_HEX.test(generatedModule.sourceHash) ||
+      typeof generatedModule.file !== "string" ||
+      generatedModule.file.length === 0 ||
+      typeof generatedModule.specifier !== "string" ||
+      generatedModule.specifier.length === 0 ||
+      typeof generatedModule.extension !== "string" ||
+      generatedModule.extension.length === 0 ||
+      modules.has(generatedModule.key)
+    ) {
+      return undefined;
+    }
+    modules.set(generatedModule.key, {
+      sourceHash: generatedModule.sourceHash,
+      file: generatedModule.file,
+      specifier: generatedModule.specifier,
+      extension: generatedModule.extension,
+    });
+  }
+  return modules;
 }
 
 /** Whether a plan update carries no observable build or delivery change. */
@@ -155,6 +249,7 @@ export function isArtifactOnlyBuildPlanUpdate(
   update: BuildPlanUpdate,
 ): boolean {
   return (
+    !hasServerGeneratedRuntimeChange(update.previous, update.next) &&
     !update.serverCompilationChanged &&
     !update.devRoutingChanged &&
     !update.runtimeChanged &&
@@ -304,6 +399,7 @@ export function getBundlerDevCapabilityGaps(
     {
       capability: "server",
       required:
+        hasServerGeneratedRuntimeChange(update.previous, update.next) ||
         update.serverCompilationChanged ||
         update.runtimeChanged ||
         [
