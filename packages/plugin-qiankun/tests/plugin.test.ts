@@ -2,7 +2,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ResolvedConfig } from "@evjs/ev/config";
+import { resolvePluginSettingsState } from "@evjs/ev/_internal/build";
+import { type ResolvedConfig, resolveConfig } from "@evjs/ev/config";
 import type {
   ContributionContext,
   EmitApi,
@@ -12,18 +13,17 @@ import type {
   FrameworkSlotInput,
   FrameworkSlotName,
   GeneratedModuleRef,
+  Plugin,
   PluginContext,
 } from "@evjs/ev/plugin";
 import { DOMParser } from "domparser-rs";
 import { describe, expect, it } from "vitest";
 import {
-  applyQiankunSlaveBundlerConfig,
-  applyQiankunSlaveHtmlTransform,
   contributeQiankunMaster,
   contributeQiankunSlave,
+  createQiankunSlaveHooks,
   evPluginQiankunMaster,
   evPluginQiankunSlave,
-  QIANKUN_ROUTE_EXTENSION_NAMESPACE,
 } from "../src/index.js";
 
 const qiankunRuntime = path.join(
@@ -47,14 +47,14 @@ interface CapturedSlot {
 }
 
 describe("@evjs/plugin-qiankun plugin", () => {
-  it("contributes a master entry wrapper module after the framework app entry", async () => {
+  it("replaces the master entry so runtime routes install before render", async () => {
     const cwd = await createProject({
       "src/pages/page.tsx": "export default function Page() { return null; }",
       "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
     });
-    const plugin = evPluginQiankunMaster({
-      resolver: "./src/qiankun.master.ts",
-    });
+    const plugin = activatePlugin(
+      evPluginQiankunMaster({ resolver: "./src/qiankun.master.ts" }),
+    );
     const captured = createContributionCapture(cwd, {});
     const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:master");
 
@@ -64,14 +64,19 @@ describe("@evjs/plugin-qiankun plugin", () => {
       path.join(cwd, "src/qiankun.master.ts"),
       qiankunRuntime,
     ]);
-    expect(captured.modules).toHaveLength(1);
-    expect(captured.modules[0]?.id).toBe("entry-wrapper");
-    const source = renderModule(
-      captured.modules[0],
-      captured.importOf,
-      (file) => toRelativeImport(sourceDir, file),
+    expect(captured.modules).toHaveLength(2);
+    const wrapper = captured.modules.find(
+      (module) => module.id === "entry-wrapper",
+    );
+    const source = renderModule(wrapper, captured.importOf, (file) =>
+      toRelativeImport(sourceDir, file),
     );
     expect(source).toContain("startQiankunMaster");
+    expect(source).toContain("resolver: masterResolver");
+    expect(source).toContain('mount: "#app"');
+    expect(source).toContain(
+      'loadEntry: () => import("virtual:original-entry")',
+    );
     expect(source).toContain(
       toRelativeImport(sourceDir, path.join(cwd, "src/qiankun.master.ts")),
     );
@@ -81,80 +86,17 @@ describe("@evjs/plugin-qiankun plugin", () => {
       name: "client.entry",
       input: expect.objectContaining({
         id: "entry-wrapper-slot",
-        position: "after-main",
+        position: "before-main",
+        mode: "replace",
         target: { kind: "application" },
       }),
     });
-  });
-
-  it("projects static CoreGraph Route extensions into the master resolver", async () => {
-    const cwd = await createProject({
-      "src/pages/catalog/page.tsx":
-        "export default function Catalog() { return null; }",
-      "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
-    });
-    const plugin = evPluginQiankunMaster({
-      resolver: "./src/qiankun.master.ts",
-    });
-    let routeExtension:
-      | {
-          namespace: string;
-          validate?: (value: never, context: never) => unknown;
-        }
-      | undefined;
-    plugin.describe?.({
-      routeExtension(definition: unknown) {
-        routeExtension = definition as typeof routeExtension;
-      },
-    } as never);
-    expect(routeExtension?.namespace).toBe(QIANKUN_ROUTE_EXTENSION_NAMESPACE);
-
-    const framework = createQiankunRouteFramework({
-      segments: [{ kind: "static", value: "catalog" }],
-    });
-    const captured = createContributionCapture(cwd, {}, framework);
-    await plugin.contributions?.(captured.ctx);
-
-    const source = renderModule(
-      captured.modules.find((module) => module.id === "entry-wrapper"),
-      captured.importOf,
-    );
-    expect(source).toContain(
-      'const routeMappings = [{"path":"/catalog","microApp":"catalog"}]',
-    );
-    expect(source).toContain(
-      "startQiankunMaster(masterResolver, routeMappings)",
-    );
-
-    const route = framework.routes[0];
-    expect(route).toBeDefined();
-    expect(
-      routeExtension?.validate?.(
-        { microApp: "catalog", extra: true } as never,
-        createRouteExtensionContext(route) as never,
-      ),
-    ).toContain('unknown field "extra"');
-  });
-
-  it("rejects dynamic CoreGraph qiankun Route mappings", async () => {
-    const cwd = await createProject({
-      "src/pages/catalog/$item/page.tsx":
-        "export default function CatalogItem() { return null; }",
-      "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
-    });
-    const plugin = evPluginQiankunMaster({
-      resolver: "./src/qiankun.master.ts",
-    });
-    const framework = createQiankunRouteFramework({
-      segments: [
-        { kind: "static", value: "catalog" },
-        { kind: "param", name: "item" },
-      ],
-    });
-
-    await expect(
-      plugin.contributions?.(createContributionCapture(cwd, {}, framework).ctx),
-    ).rejects.toThrow("requires a static Route pattern");
+    expect(captured.entryFacades).toEqual([
+      expect.objectContaining({
+        id: "original-entry",
+        autoStart: false,
+      }),
+    ]);
   });
 
   it("composes a master contribution from an opaque generated resolver", async () => {
@@ -168,9 +110,8 @@ describe("@evjs/plugin-qiankun plugin", () => {
       source: "export default async () => ({ apps: [] });",
     });
 
-    const state = await contributeQiankunMaster(captured.ctx, { resolver });
+    await contributeQiankunMaster(captured.ctx, { resolver });
 
-    expect(state).toMatchObject({ role: "master" });
     expect(captured.watched).toEqual([qiankunRuntime]);
     const wrapper = captured.modules.find(
       (module) => module.id === "entry-wrapper",
@@ -182,7 +123,8 @@ describe("@evjs/plugin-qiankun plugin", () => {
       name: "client.entry",
       input: expect.objectContaining({
         id: "entry-wrapper-slot",
-        position: "after-main",
+        position: "before-main",
+        mode: "replace",
         target: { kind: "application" },
       }),
     });
@@ -194,9 +136,9 @@ describe("@evjs/plugin-qiankun plugin", () => {
       "src/pages/page.tsx": "export default function Page() { return null; }",
       "src/qiankun.slave.ts": "export default {};",
     });
-    const plugin = evPluginQiankunSlave({
-      runtime: "./src/qiankun.slave.ts",
-    });
+    const plugin = activatePlugin(
+      evPluginQiankunSlave({ runtime: "./src/qiankun.slave.ts" }),
+    );
     const captured = createContributionCapture(
       cwd,
       {},
@@ -260,12 +202,11 @@ describe("@evjs/plugin-qiankun plugin", () => {
       source: "export const runtime = {};",
     });
 
-    const state = await contributeQiankunSlave(captured.ctx, {
+    await contributeQiankunSlave(captured.ctx, {
       name: "platform-slave",
       runtime: { module: runtime, exportName: "runtime" },
     });
 
-    expect(state).toEqual({ role: "slave", appName: "platform-slave" });
     expect(captured.watched).toEqual([qiankunRuntime]);
     const wrapper = captured.modules.find(
       (module) => module.id === "entry-wrapper",
@@ -277,7 +218,14 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const webpackConfig: Record<string, unknown> = {
       entry: { main: "./.ev/entries/main.ts" },
     };
-    applyQiankunSlaveBundlerConfig(webpackConfig, "webpack", state);
+    const hooks = await createQiankunSlaveHooks(
+      createPluginContext(cwd, [], {}),
+      { name: "platform-slave" },
+    );
+    await hooks.bundlerConfig?.(
+      webpackConfig as never,
+      createBundlerContext(cwd, "webpack"),
+    );
     expect(webpackConfig.entry).toEqual({
       main: {
         import: "./.ev/entries/main.ts",
@@ -289,18 +237,9 @@ describe("@evjs/plugin-qiankun plugin", () => {
       '<!doctype html><html><head></head><body><script src="/main.js"></script></body></html>',
       "text/html",
     );
-    applyQiankunSlaveHtmlTransform(doc as never, state);
+    await hooks.transformHtml?.(doc as never, {} as never);
     expect(doc.querySelector("script")?.textContent).toContain(
       'var appName = "platform-slave"',
-    );
-
-    const defaultDoc = new DOMParser().parseFromString(
-      '<!doctype html><html><body><script src="/main.js"></script></body></html>',
-      "text/html",
-    );
-    applyQiankunSlaveHtmlTransform(defaultDoc as never);
-    expect(defaultDoc.querySelector("script")?.textContent).toContain(
-      'var appName = "evjs-qiankun-slave"',
     );
   });
 
@@ -309,7 +248,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       "package.json": JSON.stringify({ name: "console" }),
       "src/pages/page.tsx": "export default function Page() { return null; }",
     });
-    const plugin = evPluginQiankunSlave();
+    const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(cwd, {});
     await plugin.contributions?.(captured.ctx);
 
@@ -335,7 +274,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       "package.json": JSON.stringify({ name: "console" }),
       "src/pages/page.tsx": "export default function Page() { return null; }",
     });
-    const plugin = evPluginQiankunSlave();
+    const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(cwd, {});
     await plugin.contributions?.(captured.ctx);
     const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
@@ -360,7 +299,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       "src/pages/page.tsx": "export default function Home() { return null; }",
       "src/pages/error.tsx": "export default function Error() { return null; }",
     });
-    const plugin = evPluginQiankunSlave();
+    const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(
       cwd,
       {},
@@ -395,10 +334,12 @@ describe("@evjs/plugin-qiankun plugin", () => {
       "src/pages/page.tsx": "export default function Page() { return null; }",
       "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
     });
-    const plugin = evPluginQiankunMaster({
-      resolver: "./src/qiankun.master.ts",
-      externalQiankun: true,
-    });
+    const plugin = activatePlugin(
+      evPluginQiankunMaster({
+        resolver: "./src/qiankun.master.ts",
+        externalQiankun: true,
+      }),
+    );
     const captured = createContributionCapture(cwd, {});
 
     await plugin.contributions?.(captured.ctx);
@@ -419,9 +360,9 @@ describe("@evjs/plugin-qiankun plugin", () => {
       "src/pages/page.tsx": "export default function Page() { return null; }",
       "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
     });
-    const plugin = evPluginQiankunMaster({
-      resolver: "./src/qiankun.master.ts",
-    });
+    const plugin = activatePlugin(
+      evPluginQiankunMaster({ resolver: "./src/qiankun.master.ts" }),
+    );
 
     await expect(
       plugin.contributions?.(
@@ -512,6 +453,13 @@ function renderModule(
   return typeof module?.source === "function"
     ? module.source({ importFile, importOf })
     : (module?.source ?? "");
+}
+
+function activatePlugin<TPlugin extends Plugin>(plugin: TPlugin): TPlugin {
+  resolvePluginSettingsState(
+    resolveConfig({ routing: { mode: "spa" }, plugins: [plugin] }),
+  );
+  return plugin;
 }
 
 async function createProject(files: Record<string, string>): Promise<string> {
@@ -628,7 +576,7 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
         pageIds: ["index"],
         routeIds: ["index"],
         documentIds: ["app:default"],
-        extensions: {},
+        plugins: {},
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
         },
@@ -643,7 +591,7 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
           scope: { kind: "directory", root: "./src/pages" },
           provider: "evjs:page-anchor",
         },
-        extensions: {},
+        plugins: {},
         render: "csr",
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
@@ -660,7 +608,6 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
         },
-        extensions: {},
       },
     ],
     [
@@ -675,44 +622,9 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
         },
-        extensions: {},
       },
     ],
   );
-}
-
-function createQiankunRouteFramework(
-  pattern: FrameworkIRView["routes"][number]["pattern"],
-): FrameworkIRView {
-  const framework = createApplicationFramework();
-  const route = framework.routes[0];
-  if (!route) throw new Error("Expected fixture Route.");
-  return {
-    ...framework,
-    routes: [
-      {
-        ...route,
-        id: "catalog",
-        pattern,
-        extensions: {
-          [QIANKUN_ROUTE_EXTENSION_NAMESPACE]: { microApp: "catalog" },
-        },
-      },
-    ],
-  };
-}
-
-function createRouteExtensionContext(
-  route: FrameworkIRView["routes"][number] | undefined,
-) {
-  if (!route) throw new Error("Expected fixture Route.");
-  return {
-    routeId: route.id,
-    applicationId: route.applicationId,
-    pattern: route.pattern,
-    target: route.target,
-    facets: route.facets,
-  };
 }
 
 function createMpaFramework(): FrameworkIRView {
@@ -726,7 +638,7 @@ function createMpaFramework(): FrameworkIRView {
         pageIds: ["home"],
         routeIds: ["home"],
         documentIds: ["home"],
-        extensions: {},
+        plugins: {},
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
         },
@@ -741,7 +653,7 @@ function createMpaFramework(): FrameworkIRView {
           scope: { kind: "directory", root: "./src/pages/home" },
           provider: "evjs:page-anchor",
         },
-        extensions: {},
+        plugins: {},
         render: "csr",
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
@@ -776,7 +688,7 @@ function createMultipleAppFramework(): FrameworkIRView {
         pageIds: [],
         routeIds: [],
         documentIds: [],
-        extensions: {},
+        plugins: {},
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
         },
@@ -788,7 +700,7 @@ function createMultipleAppFramework(): FrameworkIRView {
         pageIds: [],
         routeIds: [],
         documentIds: [],
-        extensions: {},
+        plugins: {},
         provenance: {
           producer: { kind: "provider", id: "evjs:page-anchor" },
         },

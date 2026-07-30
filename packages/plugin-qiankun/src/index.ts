@@ -3,15 +3,17 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-  ContributionContext,
-  FrameworkIRView,
-  GeneratedModuleRef,
-  HtmlDocument,
-  Plugin,
-  PluginRouteExtensionContext,
+import type { DefaultBundlerConfig } from "@evjs/ev/config";
+import {
+  type ContributionContext,
+  definePlugin,
+  type FrameworkIRView,
+  type GeneratedModuleRef,
+  type HtmlDocument,
+  type PluginContext,
+  type PluginHooks,
+  pluginConfig,
 } from "@evjs/ev/plugin";
-import type { QiankunMicroAppRoute } from "./runtime.js";
 
 export interface QiankunModuleRefObject {
   module: string | GeneratedModuleRef;
@@ -28,25 +30,15 @@ export interface QiankunMasterPluginOptions {
   externalQiankun?: boolean;
 }
 
-export interface QiankunRouteExtension {
-  microApp: string;
-}
-
 export interface QiankunSlavePluginOptions {
   runtime?: QiankunModuleRef;
   name?: string;
   externalQiankun?: boolean;
 }
 
-/**
- * State returned by the composable qiankun contribution helpers.
- *
- * Pass this value to the slave bundler and HTML helpers so they use the same
- * application name selected while generating the entry wrapper.
- */
-export interface QiankunContributionState {
-  readonly role: "master" | "slave";
-  readonly appName?: string;
+interface QiankunSlaveState {
+  readonly role: "slave";
+  readonly appName: string;
 }
 
 interface ResolvedExternalModuleRef {
@@ -71,12 +63,23 @@ interface ResolvedAppEntry {
   mount: string;
 }
 
-interface EntryWrapperState extends QiankunContributionState {
+interface BaseEntryWrapperState {
   entry: ResolvedAppEntry;
   qiankunRuntime: string;
-  moduleRef?: ResolvedModuleRef;
-  routeMappings?: QiankunMicroAppRoute[];
 }
+
+interface MasterEntryWrapperState extends BaseEntryWrapperState {
+  readonly role: "master";
+  moduleRef: ResolvedModuleRef;
+}
+
+interface SlaveEntryWrapperState
+  extends BaseEntryWrapperState,
+    QiankunSlaveState {
+  moduleRef?: ResolvedModuleRef;
+}
+
+type EntryWrapperState = MasterEntryWrapperState | SlaveEntryWrapperState;
 
 interface GeneratedSourceHelpers {
   importOf(ref: GeneratedModuleRef): string;
@@ -88,35 +91,42 @@ const slavePluginName = "@evjs/plugin-qiankun:slave";
 const qiankunRuntime = resolveQiankunRuntimeModulePath();
 const qiankunRuntimeImport = "@evjs/plugin-qiankun/runtime";
 const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
-export const QIANKUN_ROUTE_EXTENSION_NAMESPACE = "@evjs/qiankun";
 
 /**
  * Add the qiankun master entry contribution to an existing plugin.
  *
  * This is the composable form of {@link evPluginQiankunMaster}.
  */
-export async function contributeQiankunMaster(
-  ctx: ContributionContext,
+export async function contributeQiankunMaster<
+  TBundlerCfg = DefaultBundlerConfig,
+>(
+  ctx: ContributionContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
-): Promise<QiankunContributionState> {
-  const state = await createMasterState(ctx, options);
+): Promise<void> {
+  const state = createMasterState(ctx, options);
   addEntryWrapperWatchFiles(ctx.addWatchFile, state);
   await validateEntryWrapperState(state);
   if (options.externalQiankun) {
     addQiankunExternalContribution(ctx);
   }
+  const originalEntry = emitOriginalEntryModule(ctx);
   const wrapper = ctx.emit.module({
     id: "entry-wrapper",
     scope: { kind: "application" },
-    source: (helpers) => createMasterEntryWrapperSource(state, helpers),
+    source: ({ importFile, importOf }) =>
+      createMasterEntryWrapperSource(
+        state,
+        { importFile, importOf },
+        importOf(originalEntry),
+      ),
   });
   ctx.slot("client.entry").add({
     id: "entry-wrapper-slot",
     module: wrapper,
-    position: "after-main",
+    position: "before-main",
+    mode: "replace",
     target: { kind: "application" },
   });
-  return { role: state.role };
 }
 
 /**
@@ -124,10 +134,12 @@ export async function contributeQiankunMaster(
  *
  * This is the composable form of {@link evPluginQiankunSlave}.
  */
-export async function contributeQiankunSlave(
-  ctx: ContributionContext,
+export async function contributeQiankunSlave<
+  TBundlerCfg = DefaultBundlerConfig,
+>(
+  ctx: ContributionContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions = {},
-): Promise<QiankunContributionState> {
+): Promise<void> {
   const state = await createSlaveState(ctx, options);
   addEntryWrapperWatchFiles(ctx.addWatchFile, state);
   await validateEntryWrapperState(state);
@@ -152,54 +164,58 @@ export async function contributeQiankunSlave(
     mode: "replace",
     target: { kind: "application" },
   });
-  return { role: state.role, appName: state.appName };
 }
 
-export function evPluginQiankunMaster(
-  options: QiankunMasterPluginOptions,
-): Plugin {
+export const evPluginQiankunMaster = definePlugin({
+  id: masterPluginName,
+  application: pluginConfig<QiankunMasterPluginOptions>(),
+  enforce: "pre",
+  async contributions(ctx) {
+    await contributeQiankunMaster(ctx, ctx.options);
+  },
+  setup() {
+    return createQiankunMasterHooks();
+  },
+});
+
+export const evPluginQiankunSlave = definePlugin({
+  id: slavePluginName,
+  application: pluginConfig<QiankunSlavePluginOptions>({ defaults: {} }),
+  enforce: "pre",
+  async contributions(ctx) {
+    await contributeQiankunSlave(ctx, ctx.options);
+  },
+  async setup(ctx) {
+    return createQiankunSlaveHooks(ctx, ctx.options);
+  },
+});
+
+/** Lifecycle hooks reused by standalone and platform-composed master plugins. */
+export function createQiankunMasterHooks(): PluginHooks {
   return {
-    name: masterPluginName,
-    enforce: "pre",
-    describe(api) {
-      api.routeExtension<QiankunRouteExtension, QiankunRouteExtension>({
-        namespace: QIANKUN_ROUTE_EXTENSION_NAMESPACE,
-        validate: validateQiankunRouteExtension,
-      });
-    },
-    async contributions(ctx) {
-      await contributeQiankunMaster(ctx, options);
-    },
-    setup() {
-      return {
-        bundlerConfig(_config, bundlerCtx) {
-          assertSupportedBundler(bundlerCtx.bundlerName);
-        },
-      };
+    bundlerConfig(_config, bundlerCtx) {
+      assertSupportedBundler(bundlerCtx.bundlerName);
     },
   };
 }
 
-export function evPluginQiankunSlave(
-  options: QiankunSlavePluginOptions = {},
-): Plugin {
-  let state: QiankunContributionState | undefined;
-
+/** Lifecycle hooks reused by standalone and platform-composed slave plugins. */
+export async function createQiankunSlaveHooks<
+  TBundlerCfg = DefaultBundlerConfig,
+>(
+  ctx: PluginContext<TBundlerCfg>,
+  options: Pick<QiankunSlavePluginOptions, "name"> = {},
+): Promise<PluginHooks> {
+  const state: QiankunSlaveState = {
+    role: "slave",
+    appName: options.name ?? (await readPackageName(ctx.cwd)),
+  };
   return {
-    name: slavePluginName,
-    enforce: "pre",
-    async contributions(ctx) {
-      state = await contributeQiankunSlave(ctx, options);
+    bundlerConfig(config, bundlerCtx) {
+      applyQiankunSlaveBundlerConfig(config, bundlerCtx.bundlerName, state);
     },
-    setup() {
-      return {
-        bundlerConfig(config, bundlerCtx) {
-          applyQiankunSlaveBundlerConfig(config, bundlerCtx.bundlerName, state);
-        },
-        transformHtml(doc) {
-          applyQiankunSlaveHtmlTransform(doc, state);
-        },
-      };
+    transformHtml(doc) {
+      applyQiankunSlaveHtmlTransform(doc, state);
     },
   };
 }
@@ -305,10 +321,10 @@ function resolveModulePath(cwd: string, specifier: string): string {
   return path.isAbsolute(specifier) ? specifier : path.resolve(cwd, specifier);
 }
 
-async function createMasterState(
-  ctx: ContributionContext,
+function createMasterState<TBundlerCfg>(
+  ctx: ContributionContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
-): Promise<EntryWrapperState> {
+): MasterEntryWrapperState {
   const entry = resolveSingleAppEntry(ctx.framework, "master");
   const resolver = resolveModuleRef(ctx.cwd, options.resolver);
   return {
@@ -316,14 +332,13 @@ async function createMasterState(
     entry,
     qiankunRuntime,
     moduleRef: resolver,
-    routeMappings: collectQiankunRouteMappings(ctx.framework),
   };
 }
 
-async function createSlaveState(
-  ctx: ContributionContext,
+async function createSlaveState<TBundlerCfg>(
+  ctx: ContributionContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions,
-): Promise<EntryWrapperState> {
+): Promise<SlaveEntryWrapperState> {
   const entry = resolveSingleAppEntry(ctx.framework, "slave");
   const runtime = options.runtime
     ? resolveModuleRef(ctx.cwd, options.runtime)
@@ -338,7 +353,9 @@ async function createSlaveState(
   };
 }
 
-function addQiankunExternalContribution(ctx: ContributionContext): void {
+function addQiankunExternalContribution<TBundlerCfg>(
+  ctx: ContributionContext<TBundlerCfg>,
+): void {
   ctx.slot("resolve.external").add({
     id: "qiankun-external",
     specifier: "qiankun",
@@ -348,15 +365,11 @@ function addQiankunExternalContribution(ctx: ContributionContext): void {
 }
 
 function createMasterEntryWrapperSource(
-  state: EntryWrapperState,
+  state: MasterEntryWrapperState,
   helpers: GeneratedSourceHelpers,
+  originalEntry: string,
 ): string {
   const resolver = state.moduleRef;
-  if (!resolver) {
-    throw new Error(
-      "[evjs:plugin-qiankun] master resolver was not initialized.",
-    );
-  }
   return [
     `import { type QiankunMasterResolver, resolveQiankunModuleExport, startQiankunMaster } from ${JSON.stringify(qiankunRuntimeImport)};`,
     `import * as masterResolverModule from ${JSON.stringify(toModuleImport(resolver, helpers))};`,
@@ -366,89 +379,18 @@ function createMasterEntryWrapperSource(
     `  ${JSON.stringify(resolver.exportName)},`,
     `  "qiankun master resolver",`,
     ");",
-    `const routeMappings = ${JSON.stringify(state.routeMappings ?? [])};`,
     "",
-    "void startQiankunMaster(masterResolver, routeMappings);",
+    "export const ready = startQiankunMaster({",
+    "  resolver: masterResolver,",
+    `  mount: ${JSON.stringify(state.entry.mount)},`,
+    `  loadEntry: () => import(${JSON.stringify(originalEntry)}),`,
+    "});",
   ].join("\n");
 }
 
-function validateQiankunRouteExtension(
-  value: Readonly<QiankunRouteExtension>,
-  context: PluginRouteExtensionContext,
-): true | string {
-  if (!isRecord(value)) {
-    return "expected an object with exactly one microApp field";
-  }
-  const unknownField = Object.keys(value).find((key) => key !== "microApp");
-  if (unknownField) {
-    return `unknown field "${unknownField}"; expected only microApp`;
-  }
-  if (typeof value.microApp !== "string" || !value.microApp.trim()) {
-    return "microApp must be a non-empty string";
-  }
-  if (context.target.kind !== "page") {
-    return "qiankun route mapping must target a Page Route";
-  }
-  if (context.pattern.segments.some((segment) => segment.kind !== "static")) {
-    return "qiankun route mapping requires a static Route pattern";
-  }
-  return true;
-}
-
-function collectQiankunRouteMappings(
-  framework: FrameworkIRView,
-): QiankunMicroAppRoute[] {
-  const mappings = new Map<string, QiankunMicroAppRoute>();
-  for (const route of framework.routes) {
-    const value = route.extensions[QIANKUN_ROUTE_EXTENSION_NAMESPACE];
-    if (value === undefined) continue;
-    const validation = validateQiankunRouteExtension(
-      value as QiankunRouteExtension,
-      {
-        routeId: route.id,
-        applicationId: route.applicationId,
-        ...(route.parentId ? { parentId: route.parentId } : {}),
-        pattern: route.pattern,
-        target: route.target,
-        facets: route.facets,
-        ...(route.provenance.source ? { source: route.provenance.source } : {}),
-      },
-    );
-    if (validation !== true) {
-      throw new Error(
-        `[evjs:plugin-qiankun] Route "${route.id}" extension "${QIANKUN_ROUTE_EXTENSION_NAMESPACE}" is invalid: ${validation}.`,
-      );
-    }
-    const path = formatStaticRoutePattern(route.pattern);
-    const microApp = (value as QiankunRouteExtension).microApp.trim();
-    const previous = mappings.get(path);
-    if (previous && previous.microApp !== microApp) {
-      throw new Error(
-        `[evjs:plugin-qiankun] Static Route "${path}" maps to both micro-app "${previous.microApp}" and "${microApp}".`,
-      );
-    }
-    mappings.set(path, { path, microApp });
-  }
-  return [...mappings.values()];
-}
-
-function formatStaticRoutePattern(
-  pattern: FrameworkIRView["routes"][number]["pattern"],
-): string {
-  if (pattern.segments.length === 0) return "/";
-  return `/${pattern.segments
-    .map((segment) => {
-      if (segment.kind !== "static") {
-        throw new Error(
-          "[evjs:plugin-qiankun] qiankun route mapping requires a static Route pattern.",
-        );
-      }
-      return segment.value;
-    })
-    .join("/")}`;
-}
-
-function emitOriginalEntryModule(ctx: ContributionContext): GeneratedModuleRef {
+function emitOriginalEntryModule<TBundlerCfg>(
+  ctx: ContributionContext<TBundlerCfg>,
+): GeneratedModuleRef {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) {
     throw new Error(
@@ -463,7 +405,7 @@ function emitOriginalEntryModule(ctx: ContributionContext): GeneratedModuleRef {
 }
 
 function createSlaveEntryWrapperSource(
-  state: EntryWrapperState,
+  state: SlaveEntryWrapperState,
   helpers: GeneratedSourceHelpers,
   originalEntry: string,
 ): string {
@@ -488,7 +430,7 @@ function createSlaveEntryWrapperSource(
     runtimeValue,
     "",
     "const qiankunSlave = createQiankunSlaveLifecycles({",
-    `  name: ${JSON.stringify(state.appName ?? "evjs-qiankun-slave")},`,
+    `  name: ${JSON.stringify(state.appName)},`,
     `  mount: ${JSON.stringify(state.entry.mount)},`,
     "  runtime: slaveRuntime,",
     `  loadEntry: () => import(${JSON.stringify(originalEntry)}),`,
@@ -501,7 +443,7 @@ function createSlaveEntryWrapperSource(
     "",
     "const qiankunLifecycles = { bootstrap, mount, unmount, update };",
     'if (typeof window !== "undefined") {',
-    `  (window as unknown as Record<string, unknown>)[${JSON.stringify(state.appName ?? "evjs-qiankun-slave")}] = qiankunLifecycles;`,
+    `  (window as unknown as Record<string, unknown>)[${JSON.stringify(state.appName)}] = qiankunLifecycles;`,
     "}",
     "",
     "if (!qiankunSlave.isPoweredByQiankun()) {",
@@ -532,20 +474,14 @@ function assertSupportedBundler(bundlerName: string): void {
 }
 
 /**
- * Apply qiankun slave bundler requirements using contribution state.
+ * Apply qiankun slave bundler requirements using resolved plugin options.
  */
-export function applyQiankunSlaveBundlerConfig(
+function applyQiankunSlaveBundlerConfig(
   config: unknown,
   bundlerName: string,
-  state: QiankunContributionState | undefined,
+  state: QiankunSlaveState,
 ): void {
   assertSupportedBundler(bundlerName);
-  if (!state) {
-    throw new Error(
-      "[evjs:plugin-qiankun] qiankun entry wrapper was not initialized. The contributions hook must run before bundlerConfig.",
-    );
-  }
-  assertSlaveContributionState(state);
   if (bundlerName === "webpack") {
     applyWebpackSlaveLibraryToConfig(config, state);
   }
@@ -553,7 +489,7 @@ export function applyQiankunSlaveBundlerConfig(
 
 function applyWebpackSlaveLibraryToConfig(
   config: unknown,
-  state: QiankunContributionState,
+  state: QiankunSlaveState,
 ): void {
   const configs = Array.isArray(config) ? config : [config];
   for (const webpackConfig of configs) {
@@ -565,10 +501,9 @@ function applyWebpackSlaveLibraryToConfig(
 
 function applyWebpackSlaveLibrary(
   config: Record<string, unknown>,
-  state: QiankunContributionState,
+  state: QiankunSlaveState,
 ): void {
-  const libraryName = state.appName ?? "evjs-qiankun-slave";
-  const library = { name: libraryName, type: "umd" };
+  const library = { name: state.appName, type: "umd" };
   const entry = config.entry;
   if (!isRecord(entry)) {
     config.output = {
@@ -601,14 +536,8 @@ function addEntryWrapperWatchFiles(
 }
 
 async function validateEntryWrapperState(
-  state: EntryWrapperState | undefined,
+  state: EntryWrapperState,
 ): Promise<void> {
-  if (!state) {
-    throw new Error(
-      "[evjs:plugin-qiankun] qiankun entry wrapper was not initialized. The plugin setup hook must run before buildStart.",
-    );
-  }
-
   await assertFileExists(state.role, "qiankun runtime", state.qiankunRuntime);
   const moduleRef = state.moduleRef;
   if (moduleRef?.kind !== "generated" && moduleRef?.absolutePath) {
@@ -637,14 +566,13 @@ async function assertFileExists(
 /**
  * Rewrite qiankun slave HTML and install the lifecycle proxy.
  *
- * Pass the state returned by {@link contributeQiankunSlave} when a custom
- * application name is used. Omitting it preserves the default slave name.
+ * The lifecycle hooks and generated entry resolve the same deterministic
+ * application name independently because setup precedes contributions.
  */
-export function applyQiankunSlaveHtmlTransform(
+function applyQiankunSlaveHtmlTransform(
   doc: HtmlDocument,
-  state?: QiankunContributionState,
+  state: QiankunSlaveState,
 ): void {
-  if (state) assertSlaveContributionState(state);
   for (const link of doc.getElementsByTagName("link")) {
     if (link.getAttribute("rel") === "stylesheet") {
       rewriteRootRelativeAttribute(link, "href");
@@ -667,17 +595,8 @@ export function applyQiankunSlaveHtmlTransform(
 
   const proxyScript = doc.createElement("script");
   proxyScript.id = qiankunLifecycleProxyId;
-  proxyScript.textContent = createQiankunLifecycleProxyScript(
-    state?.appName ?? "evjs-qiankun-slave",
-  );
+  proxyScript.textContent = createQiankunLifecycleProxyScript(state.appName);
   entryScript.before(proxyScript);
-}
-
-function assertSlaveContributionState(state: QiankunContributionState): void {
-  if (state.role === "slave") return;
-  throw new Error(
-    "[evjs:plugin-qiankun] Expected qiankun slave contribution state.",
-  );
 }
 
 function createQiankunLifecycleProxyScript(appName: string): string {

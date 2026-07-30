@@ -3,7 +3,7 @@
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
 evjs is a React fullstack framework with one Page-and-Route application model,
-server functions, route handlers, rendering extension points, and
+server functions, route handlers, rendering customization, and
 deployment-oriented output.
 
 The framework keeps a clear split between:
@@ -24,7 +24,7 @@ the framework. MPA page routes use the page runtime without adding a router.
 ## Features
 
 - **One Page-and-Route model** — `src/pages/**/page.*` anchors Pages and Routes; each containing directory owns private code and determines its URL.
-- **One Page config model** — optional `page.config.ts` supplies static titles, named metadata, core rendering settings, and registered namespaced plugin extensions in both SPA and MPA.
+- **One Page config model** — optional `page.config.ts` supplies static titles, named metadata, core rendering settings, and typed short-keyed Page plugin settings in both SPA and MPA.
 - **SPA and MPA materialization** — `routing.mode` keeps the same semantic Page/Route tree while selecting a browser route tree or independent Page-owned Documents.
 - **Page rendering settings** — `page.config.ts` normalizes SSR, SSG, PPR, and RSC settings without changing canonical Page identity; Page components do not export rendering configuration.
 - **Server functions** — `"use server"` modules become browser-callable functions.

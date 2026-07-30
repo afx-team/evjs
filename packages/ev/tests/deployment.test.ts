@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createBuildResult } from "../src/_internal/build/build-result.js";
 import { createStaticPageDocumentOutput } from "../src/_internal/build/page-document-output.js";
 import {
+  createLatePluginContext,
   runBuildEndHooks,
   runBuildOutputHooks,
 } from "../src/_internal/build/plugin-lifecycle.js";
@@ -20,7 +21,7 @@ import {
   nodeDeploymentAdapter,
   staticDeploymentAdapter,
 } from "../src/deployment/index.js";
-import type { PluginHooks } from "../src/plugin/index.js";
+import type { PluginContext, PluginHooks } from "../src/plugin/index.js";
 
 const tempDirs: string[] = [];
 const NFC_HANGUL_SYLLABLE = "\uac00";
@@ -40,6 +41,19 @@ afterEach(async () => {
 });
 
 describe("createDeploymentArtifact", () => {
+  it("removes analysis watch capabilities from late hook contexts", () => {
+    const context = {
+      mode: "development",
+      command: "dev",
+      cwd: "/project",
+      config: {} as PluginContext["config"],
+      logger: {} as PluginContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginContext;
+
+    expect(createLatePluginContext(context)).not.toHaveProperty("addWatchFile");
+  });
+
   it("creates a platform-neutral deployment artifact from BuildOutput", () => {
     const output: BuildOutput = {
       version: 1,

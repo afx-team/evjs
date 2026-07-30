@@ -70,16 +70,3 @@ a {
   font-size: 13px;
   text-transform: uppercase;
 }
-
-.slave-container {
-  margin: 24px;
-  padding: 20px;
-  border: 1px solid #d9deea;
-  border-radius: 8px;
-  background: #ffffff;
-  min-height: 240px;
-}
-
-.slave-container:empty {
-  display: none;
-}

@@ -821,7 +821,6 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       },
     },
     transport: {},
-    extensions: {},
     plugins: [],
   };
 }
@@ -906,7 +905,7 @@ function createGraph(
         pageIds,
         routeIds,
         documentIds,
-        extensions: {},
+        plugins: {},
         provenance,
       },
     },
@@ -934,7 +933,7 @@ function createGraph(
           ...(!page.rsc && page.render !== undefined && page.render !== "csr"
             ? { hydrate: "load" as const }
             : {}),
-          extensions: {},
+          plugins: {},
           provenance,
         },
       ]),
@@ -945,7 +944,6 @@ function createGraph(
       pattern: toRoutePattern(page.path),
       target: { kind: "page" as const, pageId: page.id },
       facets: { wrappers: [] },
-      extensions: {},
       provenance,
     })),
     documents: Object.fromEntries(
@@ -961,7 +959,6 @@ function createGraph(
                 owner: { kind: "application" as const },
                 mount: config.routing?.mount ?? "#app",
                 bootstrap: { kind: "application" as const },
-                extensions: {},
                 provenance,
               },
             ],
@@ -977,12 +974,11 @@ function createGraph(
               owner: { kind: "page" as const, pageId: page.id },
               mount: config.routing?.mount ?? "#app",
               bootstrap: { kind: "page" as const, pageId: page.id },
-              extensions: {},
               provenance,
             },
           ]),
     ),
-    extensions: { namespaces: {} },
+    plugins: { entries: {} },
     serverFunctions: [],
     serverRoutes: options.serverRoutes ?? [],
   };

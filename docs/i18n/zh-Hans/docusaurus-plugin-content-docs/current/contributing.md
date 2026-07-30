@@ -60,9 +60,9 @@ npx biome check --write
 2. 默认导出 Page component。
 3. 需要时使用 `$param`、终止 `$...splat` 或 `(group)` 目录。
 4. Page 私有源码放在同一目录，不需要 `_` 前缀。
-5. Page 需要静态标题、受支持的 named metadata、core rendering 字段或已注册
-   namespaced plugin extension 时添加 `page.config.ts`；extension 值供 runtime
-   消费时需要插件显式投影。
+5. Page 需要静态标题、受支持的 named metadata、core rendering 字段或已安装插件的
+   Page settings 时添加 `page.config.ts`；plugin settings 供 runtime 消费时需要插件
+   显式投影。
 
 ### 添加服务端函数
 

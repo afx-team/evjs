@@ -108,10 +108,11 @@ export function createPagesAppEntryMainSource(
   return [
     ...imports,
     "",
-    "const { app } = createPagesApp({",
+    "export const pagesApp = createPagesApp({",
     metadata.rootModule ? "  rootModule," : "",
     `  routes: [${routeDefinitions.join(", ")}],`,
     "});",
+    "const { app } = pagesApp;",
     autoStart
       ? `startPagesApp(app, ${JSON.stringify(metadata.mount)});`
       : `export const start = (container: string | HTMLElement = ${JSON.stringify(metadata.mount)}) => startPagesApp(app, container);`,

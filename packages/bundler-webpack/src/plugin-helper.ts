@@ -1,10 +1,6 @@
 import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import type { WebpackConfig } from "./adapter/create-config.js";
 
-type WebpackBundlerConfigHook = NonNullable<
-  PluginHooks<WebpackConfig>["bundlerConfig"]
->;
-
 /**
  * Typed wrapper for webpack configuration in plugin bundler hooks.
  *
@@ -16,10 +12,12 @@ export function webpack(
     config: WebpackConfig,
     ctx: BundlerCtx<WebpackConfig>,
   ) => void | Promise<void>,
-): WebpackBundlerConfigHook {
+): NonNullable<PluginHooks["bundlerConfig"]> {
   return async (config, ctx) => {
-    if (ctx.bundlerName === "webpack") {
-      await fn(config, ctx);
-    }
+    if (ctx.bundlerName !== "webpack") return;
+    await fn(
+      config as WebpackConfig,
+      ctx as unknown as BundlerCtx<WebpackConfig>,
+    );
   };
 }

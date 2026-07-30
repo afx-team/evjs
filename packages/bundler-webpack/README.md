@@ -9,25 +9,26 @@ or development capabilities.
 To switch a project to webpack, pass the adapter explicitly:
 
 ```ts
+import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/ev";
-import { webpack, webpackAdapter, type WebpackConfig } from "@evjs/bundler-webpack";
+import { definePlugin } from "@evjs/ev/plugin";
 
-export default defineConfig<WebpackConfig>({
+const webpackCustomization = definePlugin({
+  id: "@example/webpack-customization",
+  setup() {
+    return {
+      bundlerConfig: webpack((configs) => {
+        for (const cfg of configs) {
+          cfg.resolve ??= {};
+        }
+      }),
+    };
+  },
+});
+
+export default defineConfig({
   bundler: webpackAdapter,
-  plugins: [
-    {
-      name: "webpack-customization",
-      setup() {
-        return {
-          bundlerConfig: webpack((configs) => {
-            for (const cfg of configs) {
-              cfg.resolve ??= {};
-            }
-          }),
-        };
-      },
-    },
-  ],
+  plugins: [webpackCustomization()],
 });
 ```
 

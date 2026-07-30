@@ -149,39 +149,38 @@ Page/Route identities. It accepts only static Page paths: `$param`, terminal
 compose in both modes. These errors do not activate another authoring model. A
 colocated `index.html` supplies that MPA Page's Document template.
 
-## Application Extension Configuration
+## Application Plugin Configuration
 
-Plugin-owned Application configuration uses the top-level `extensions` bag:
+Install and configure an Application plugin with one factory call in the
+top-level `plugins` array:
 
 ```ts
 import { defineConfig } from "@evjs/ev";
+import { analytics } from "@company/evjs-plugin-analytics";
 
 export default defineConfig({
   routing: { mode: "spa" },
-  extensions: {
-    "@company/analytics": {
-      enabled: true,
-      channel: "checkout",
-    },
-  },
-  plugins: [analyticsPlugin()],
+  plugins: [
+    analytics({
+      endpoint: "/events",
+      debug: false,
+    }),
+  ],
 });
 ```
 
-Every key must be registered by an active plugin
-`applicationExtension()` declaration. Core applies plugin defaults, merge, and
-validation before `setup()`, then stores the same value on the normalized
-Application. This contract is identical for canonical SPA, canonical MPA, and
-explicit SPA `application.routes` configuration.
+The factory both installs the plugin and supplies its Application
+configuration. Its argument is typed directly by the plugin package, so there
+is no second namespace, registration call, or configuration object to keep in
+sync. Conditional entries may use `false`, `null`, or `undefined`; inactive
+entries are omitted at runtime. Because they are not guaranteed to install,
+entries with a possible falsy branch do not expose Page keys. When the Page
+contract has defaults, use `plugin.forPages(config)` to keep the plugin and its
+Application options active while every Page opts in explicitly.
 
-Values must be strict static JSON. Put functions and other executable options
-in the plugin factory, for example `featurePlugin({ filter })`, or reference an
-explicit generated/runtime module. Do not place secrets here: extension values
-enter the build graph. They are not sent to the browser automatically; runtime
-projection remains an explicit plugin contribution.
-
-Application-wide plugin values use top-level `extensions`. `application` owns
-explicit SPA route configuration and does not contain an `extensions` field.
+Application configuration may contain typed executable options or explicit
+module references when the plugin contract allows them. Do not put secrets in
+values that the plugin projects into generated files or browser runtime.
 
 ## Page Scope And Configuration
 
@@ -217,9 +216,9 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/feature": {
-      enabled: true,
+  plugins: {
+    analytics: {
+      channel: "profile",
     },
   },
 });
@@ -233,14 +232,32 @@ and SSG Pages may use `hydrate: "none" | "load"`; ordinary SSR defaults to
 `"load"`, SSG defaults to `"none"`, and RSC/PPR remain unhydrated at Page level.
 `meta` is a string record for `<meta name="key" content="value">`; it does not
 accept `property`, `charset`, links, scripts, functions, or a generic head
-tree. Plugin-owned values must use registered namespaced keys under
-`extensions`.
+tree. Installed Page-aware plugins use generated short keys under `plugins`.
+The Page module does not import the plugin package: `ev prepare`, `ev dev`, and
+`ev build` generate `src/plugin-types.d.ts` as a stable bridge to the static
+type of `ev.config.ts`. TypeScript derives Page keys and values from that
+config type, but only for entries statically guaranteed to install. JavaScript
+config does not widen the Page registry to `any`; use `ev.config.ts` when Page
+plugin completion is required.
+
+Application and Page configuration are independent plugin contracts. evjs
+does not merge the object passed to the Application factory into a Page value.
+Within either contract, authored fields deep-merge over that contract's
+defaults before validation. Within the Page map, a normal factory call uses
+Page defaults for an omitted key when defaults exist; otherwise omission
+disables that Page. Defaultable Page contracts expose `forPages()`, which
+always treats omission as disabled; non-defaultable contracts are already
+opt-in-only. `false` disables the plugin for this Page, `true` requires Page
+defaults, and an object enables it after merging over Page defaults and
+validation. Page objects must be strict static JSON.
 
 The plugin API targets the same normalized Page identity in both modes.
 Core title/meta values are materialized for the Page in both modes. Configured
-extension values are build-time graph data and are not automatically published
-to browser runtime; the plugin must explicitly generate and attach any runtime
-projection it needs.
+Page plugin values are build-time graph data and are not automatically
+published to browser runtime; the plugin must explicitly generate and attach
+any runtime projection it needs. Plugins derive Route or Document behavior
+from the normalized Page instead of exposing separate Route or Document plugin
+configuration.
 
 ## Other Configuration
 
@@ -357,10 +374,11 @@ export default defineConfig({
 
 ### Plugins
 
-Register plugins through `plugins`. A plugin may register namespaced
-Application, Page, Route, and Document configuration owners and target the
-normalized graph through the same `Plugin` interface that owns config, setup,
-contributions, and lifecycle hooks. See [Plugins](./plugins).
+Install plugins through `plugins`, normally as
+`pluginFactory(applicationConfig)`. A plugin can declare an independent Page
+contract whose short key becomes available in adjacent `page.config.ts` files.
+The same Plugin descriptor owns config, setup, contributions, and lifecycle
+hooks. See [Plugins](./plugins).
 
 ### Bundler
 
@@ -404,12 +422,11 @@ cannot escape the configured Page source root. Layout and wrapper references
 keep their project-source resolution semantics. The `children` spelling is
 rejected; nested declarations use `routes`. `exact: true` is accepted only as
 a terminal-match structural assertion; `exact: false` and nested routes below
-an exact Route are rejected, and `exact` is not copied into the graph. Each
-explicit Route may carry a strict static,
-namespaced `extensions` bag; the owning plugin must register every namespace
-with `routeExtension()`. MPA materialization,
-Document alias conflicts, and component references outside the Page root are
-rejected.
+an exact Route are rejected, and `exact` is not copied into the graph. Plugin
+configuration is not authored on explicit Route or Document objects;
+Page-aware plugins derive those contributions from normalized Pages. MPA
+materialization, Document alias conflicts, and component references outside
+the Page root are rejected.
 Static segment identity is compared after exactly one URL decode. Raw and
 percent-encoded aliases therefore cannot coexist, and a segment that decodes
 to `.` or `..` is rejected because WHATWG URL parsing removes it before route

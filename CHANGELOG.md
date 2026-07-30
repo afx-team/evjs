@@ -6,6 +6,40 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Single plugin configuration model** — Applications install typed plugin
+  factories in `config.plugins`; Pages use one generated short-keyed `plugins`
+  map. The previous owner-scoped extension registries and separate Route or
+  Document configuration surfaces are removed.
+- **Application-level qiankun route overlay** — The qiankun master no longer
+  exposes a Page contract or derives micro-app bindings from `page.config.ts`.
+  Its async Application resolver returns the authoritative `apps/routes`
+  snapshot and installs prepend, match, redirect, and micro-app route
+  components before the first render. Resolver routes no longer require fixed
+  containers, `activeRule`, or physical Pages at the mounted master paths.
+
+### ✨ Improvements
+
+- **Stable Page plugin types** — `prepare`, `dev`, and `build` generate
+  `src/plugin-types.d.ts` as a static bridge to `ev.config.ts`, so Page keys and
+  values for definitely installed plugins retain editor types without Page
+  imports. JavaScript config stays isolated from `any` rather than claiming
+  exact Page keys.
+- **Predictable plugin activation** — Plugin factories distinguish normal
+  installation from Page-only opt-in with `forPages()` on defaultable Page
+  contracts. Falsy entries in `config.plugins` conditionally omit a plugin; on
+  an omitted Page, a normal installation uses declared Page defaults when
+  available, while `forPages()` always requires `true` or an options object.
+- **Composable plugin defaults** — Application and Page contracts remain
+  independent, while authored fields deep-merge over defaults within each
+  contract before validation.
+- **Qiankun runtime base projection** — A mounted slave now projects the
+  master-provided base and history into its generated Pages app before the first
+  render. Master runtime overlays remain outside the canonical CoreGraph,
+  BuildPlan, deployment routes, and generated `RoutePath` types, while platform
+  plugins can reuse the public qiankun contribution and lifecycle-hook helpers.
+
 ---
 
 ## [0.3.1] — 2026-07-29

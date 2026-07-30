@@ -30,7 +30,7 @@ directory-derived route patterns, Documents, and diagnostics.
 
 Canonical inspect output does not present a provider, resolver implementation,
 or route-types path. It reports resolved Pages, Routes, Documents, server
-functions, server routes, rendering metadata, extension registry state, Page
+functions, server routes, rendering metadata, installed plugin settings, Page
 config sources, provenance, and diagnostics. Errors make inspect exit non-zero.
 
 ## Generated IR
@@ -136,8 +136,8 @@ export default definePageConfig({
   },
   render: "ssr",
   hydrate: "load",
-  extensions: {
-    "@company/analytics": {
+  plugins: {
+    analytics: {
       channel: "report",
     },
   },
@@ -148,9 +148,9 @@ The module is synchronously evaluated at graph-build time. Core rendering
 fields flow into the rendering BuildPlan. For emitted MPA/SSG Documents and
 compiled SSR/PPR/RSC request-time document shells, static `title` and named
 `meta` materialize missing tags and override matching template baseline
-values; omitted values preserve the baseline. Registered plugin extensions
-remain static graph data unless the owning plugin explicitly projects them
-into a generated runtime artifact. Plugin `transformHtml` hooks run after
+values; omitted values preserve the baseline. Page plugin settings remain
+static graph data unless the owning plugin explicitly projects them into a
+generated runtime artifact. Plugin `transformHtml` hooks run after
 framework metadata, assets, and structured HTML contributions materialize and
 may explicitly override the result.
 

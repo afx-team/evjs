@@ -140,37 +140,33 @@ MPA discovery 接受相同的 `page.*` 锚点，并生成相同的语义 Page/Ro
 会在 graph 校验失败。Layout 在两种 mode 中都会组合。这些错误不会激活另一套
 创作模型。同一 Page 目录的 `index.html` 会提供该 MPA Page 的 Document 模板。
 
-## Application extension 配置
+## Application 插件配置
 
-插件持有的 Application 配置使用顶层 `extensions`：
+在顶层 `plugins` 数组中通过一次工厂调用安装插件并提供 Application 配置：
 
 ```ts
 import { defineConfig } from "@evjs/ev";
+import { analytics } from "@company/evjs-plugin-analytics";
 
 export default defineConfig({
   routing: { mode: "spa" },
-  extensions: {
-    "@company/analytics": {
-      enabled: true,
-      channel: "checkout",
-    },
-  },
-  plugins: [analyticsPlugin()],
+  plugins: [
+    analytics({
+      endpoint: "/events",
+      debug: false,
+    }),
+  ],
 });
 ```
 
-每个 key 都必须由当前插件的 `applicationExtension()` declaration 注册。Core 会在
-`setup()` 之前完成 default、merge 与 validation，然后把同一份值写入 normalized
-Application。canonical SPA、canonical MPA 与显式 `application.routes` 输入使用
-完全相同的合同。
+该工厂同时完成插件安装和 Application 配置。参数类型由插件包直接提供，因此
+不需要维护第二个 namespace、注册调用或配置对象。条件项可以使用 `false`、
+`null` 或 `undefined`；运行时会忽略这些非活跃项。可能进入 falsy 分支的条目不保证
+安装，因此不会暴露 Page key。Page 合同有 defaults，且插件与 Application options
+需要保持启用、但每个 Page 必须显式 opt in 时，使用 `plugin.forPages(config)`。
 
-value 必须是严格 static JSON。函数等可执行选项放入插件工厂，例如
-`featurePlugin({ filter })`，或引用显式 generated/runtime module。不要在这里存放
-secret：extension value 会进入 build graph。它们不会自动发送到浏览器；runtime
-投影仍必须由插件显式 contribution。
-
-Application-wide 插件值使用顶层 `extensions`。`application` 只描述显式 SPA
-route tree，不包含 `extensions` 字段。
+插件合同允许时，Application 配置可以包含类型安全的可执行选项或显式模块引用。
+不要把 secret 放进插件会投影到 generated file 或浏览器 runtime 的值中。
 
 ## Page Scope 与配置
 
@@ -205,9 +201,9 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/feature": {
-      enabled: true,
+  plugins: {
+    analytics: {
+      channel: "profile",
     },
   },
 });
@@ -221,13 +217,26 @@ evjs 构建 graph 时同步求值该 module。它必须 default-export plain obj
 不 hydration。
 `meta` 是生成
 `<meta name="key" content="value">` 的字符串 record；它不接受 `property`、
-`charset`、link、script、函数或通用 head tree。插件持有的值必须放在
-`extensions` 下已注册 namespaced key 中。
+`charset`、link、script、函数或通用 head tree。已安装且支持 Page 配置的插件使用
+`plugins` 下生成的短 key。Page module 不需要 import 插件包：`ev prepare`、
+`ev dev` 与 `ev build` 会生成 `src/plugin-types.d.ts`，稳定桥接 `ev.config.ts` 的
+静态类型。TypeScript 直接从该配置类型推导 Page key 与 value，但只包含静态上
+保证安装的条目。JavaScript 配置不会把 Page registry 扩散为 `any`；需要 Page
+插件补全时请使用 `ev.config.ts`。
+
+Application 与 Page 配置是两个独立的插件合同。evjs 不会把 Application 工厂的
+对象合并到 Page value。在任一合同内部，authoring 字段会先深度合并到该合同的
+defaults，再进行校验。普通工厂调用在 Page 有 defaults 时，会让省略 key 的 Page
+使用 defaults；没有 defaults 时，省略会关闭该 Page。defaultable Page 合同会暴露
+`forPages()`，并始终把省略视为关闭；non-defaultable 合同本身已经是 opt-in-only。
+`false` 对当前 Page 禁用插件，`true` 要求 Page defaults，对象则在合并 Page
+defaults 并校验后启用插件。Page 对象必须是严格 static JSON。
 
 插件 API 在两种 mode 下定位相同 normalized Page identity。配置后的
-core title/meta 会在两种 mode 下为 Page 物化。extension value 是 build-time
-graph data，不会自动发布到浏览器 runtime；插件必须显式生成并挂载所需 runtime
-projection。
+core title/meta 会在两种 mode 下为 Page 物化。Page 插件值是 build-time graph
+data，不会自动发布到浏览器 runtime；插件必须显式生成并挂载所需 runtime
+projection。插件根据 normalized Page 派生 Route 或 Document 行为，不再暴露单独
+的 Route/Document 插件配置。
 
 ## 其他配置
 
@@ -336,9 +345,10 @@ export default defineConfig({
 
 ### Plugins
 
-通过 `plugins` 注册插件。同一个 `Plugin` interface 可以注册 namespaced
-Application、Page、Route、Document 配置 owner、定位 normalized graph，并承载
-config、setup、contributions 与 lifecycle hooks。参见[插件](./plugins)。
+通过 `plugins` 安装插件，通常写成
+`pluginFactory(applicationConfig)`。插件可以声明独立 Page 合同，其短 key 会出现在
+相邻 `page.config.ts` 中。同一个 Plugin descriptor 承载 config、setup、
+contributions 与 lifecycle hooks。参见[插件](./plugins)。
 
 ### Bundler
 
@@ -378,11 +388,10 @@ redirect 和 document 配置会进入仅支持 SPA 的显式 route-tree normaliz
 symlink 后的真实路径都不能逃逸该 Page 源码根目录；layout 与 wrapper 仍保持
 项目源码 reference 的解析语义。`children` 会被拒绝，嵌套结构只使用
 `routes`。`exact: true` 只接受为 terminal-match 结构断言；`exact: false` 与
-exact Route 下的嵌套路由都会被拒绝，且 `exact` 不会写入 graph。每条显式
-Route 可以携带严格静态、
-namespaced 的 `extensions` bag；能力所属插件必须用
-`routeExtension()` 注册每个 namespace。MPA 物化模式、alias 冲突以及 Page
-根目录外的 component reference 会被拒绝。
+exact Route 下的嵌套路由都会被拒绝，且 `exact` 不会写入 graph。显式 Route 或
+Document 对象不承载插件配置；Page-aware 插件根据 normalized Page 派生这些
+contribution。MPA 物化模式、alias 冲突以及 Page 根目录外的 component reference
+会被拒绝。
 静态 segment identity 按恰好一次 URL decode 后比较，因此 raw 与
 percent-encoded alias 不能并存；decode 后为 `.` 或 `..` 的 segment 也会被拒绝，
 因为 WHATWG URL 解析会在 route matching 之前移除它。

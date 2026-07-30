@@ -3,7 +3,7 @@
 > **ev** = **Ev**aluation（执行）· **Ev**olution（演进）—— 跨运行时执行，借助 AI 工具演进。
 
 evjs 是一个使用唯一 Page-and-Route 应用模型的 React 全栈框架，提供服务端函数、
-路由处理器、渲染扩展点与面向部署的输出。
+路由处理器、渲染定制能力与面向部署的输出。
 
 框架会明确区分：
 
@@ -22,7 +22,7 @@ page runtime，不引入客户端路由器。
 ## 特性
 
 - **唯一 Page-and-Route 模型** —— `src/pages/**/page.*` 锚定 Page 与 Route，所在目录持有私有代码并决定 URL。
-- **唯一 Page config 模型** —— 可选 `page.config.ts` 在 SPA/MPA 中提供静态标题、named metadata、core rendering setting 与已注册 namespaced plugin extension。
+- **唯一 Page config 模型** —— 可选 `page.config.ts` 在 SPA/MPA 中提供静态标题、named metadata、core rendering setting 与已安装插件的类型安全 Page settings。
 - **SPA/MPA 物化** —— `routing.mode` 保留同一语义 Page/Route 树，只选择浏览器 route tree 或独立的 Page-owned Document。
 - **Page rendering setting** —— `page.config.ts` normalize SSR、SSG、PPR、RSC setting，但不改变 canonical Page identity；Page component 不读取这些 rendering export。
 - **服务端函数** —— `"use server"` 模块会变成浏览器可调用的函数。

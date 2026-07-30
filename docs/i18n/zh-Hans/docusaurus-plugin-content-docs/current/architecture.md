@@ -1,7 +1,8 @@
 # 架构
 
 evjs 在调用 bundler 之前先解析框架语义。Page route、server route、server
-function、渲染配置与插件扩展都会进入同一个规范化 graph 和同一个 build plan。
+function、渲染配置与 typed plugin setting 都会进入同一个规范化 graph 和同一个
+build plan。
 
 ```mermaid
 flowchart LR
@@ -25,10 +26,10 @@ CoreGraph 包含四种客户端 owner：
 
 | Owner | 职责 |
 | --- | --- |
-| Application | 一次 SPA 或 MPA 物化、共享 layout 与 Application extensions。 |
-| Page | Component 源码、渲染设置、metadata、私有源码 scope 与 Page extensions。 |
-| Route | URL pattern、父子关系、target、layout/wrapper/boundary 与 Route extensions。 |
-| Document | HTML template、输出路径、mount target、aliases 与 Document extensions。 |
+| Application | 一次 SPA 或 MPA 物化、共享 layout 与已安装插件的启用状态。 |
+| Page | Component 源码、渲染设置、metadata、私有源码 scope 与解析后的 Page plugin setting。 |
+| Route | URL pattern、父子关系、target 与 layout/wrapper/boundary。 |
+| Document | HTML template、输出路径、mount target 与 aliases。 |
 
 Server function 与 server request Route 也会规范化进 graph，因此规划、冲突检查、
 开发路由和部署都使用同一组 identity。
@@ -42,15 +43,15 @@ src/pages/**/page.{ts,tsx,js,jsx}
 ```
 
 所在目录拥有 Page scope 并决定 URL。相邻 `page.config.ts` 提供静态 Page
-metadata、渲染设置和 namespaced extensions。SPA 与 MPA 使用相同的 Page 与
+metadata、渲染设置和生成的短 key `plugins` map。SPA 与 MPA 使用相同的 Page 与
 Route identity，仅 Document 和 client entry 的物化方式不同。
 
 ### 显式 SPA 输入
 
 `application.routes` 接受显式 SPA route tree，包括 `page` 或 `component`
-target、嵌套 `routes`、layout、wrapper、redirect 与 Route extensions。它不能与
-`routing` 同时使用，也不能物化为 MPA。两种输入最终都进入相同的 Application、
-Page、Route 与 Document contract。
+target、嵌套 `routes`、layout、wrapper 与 redirect。它不能与 `routing` 同时使用，
+也不能物化为 MPA。两种输入最终都进入相同的 Application、Page、Route 与
+Document contract；插件配置仍归 Page 所有。
 
 ### 服务端输入
 
@@ -68,19 +69,20 @@ src/apis/**/api.{ts,tsx,js,jsx}
 以 `"use server";` 开头且可从应用 graph 到达的模块会贡献具名 server
 function。Directive 和 graph 可达性决定 discovery；文件名后缀只用于源码组织。
 
-## 插件扩展
+## Typed Plugin Setting
 
-插件在 `describe()` 中注册 namespaced extension owner：
+Application 通过 `config.plugins` 安装插件工厂；每个工厂接收独立、类型安全的
+Application 配置。Page-aware 插件还会声明短 key 与独立 Page contract，由相邻
+`page.config.ts#plugins` 消费。
 
-- `applicationExtension()` 对应顶层 `config.extensions`；
-- `pageExtension()` 对应 `page.config.ts` 的 `extensions`；
-- `routeExtension()` 对应 Page-owned 或显式 Route extensions；
-- `documentExtension()` 对应 Page-owned 或 Application-owned Document
-  extensions。
+Application 与 Page contract 不会彼此合并；显式值只在各自 contract 内覆盖并
+deep-merge defaults。Page setting 必须是严格静态 JSON；可执行 callback 属于
+Application options 或插件代码。插件从 normalized Page 派生 Route 与 Document
+贡献，并显式投影 runtime code 或 data。
 
-Extension value 必须是严格静态 JSON。Application value 在 `setup()` 前解析；
-Page、Route 与 Document value 在 graph analysis 期间解析。只有插件通过 generated
-contribution 或其他 runtime contract 明确投影后，这些值才会进入运行时。
+`ev prepare`、`ev dev` 与 `ev build` 会根据静态 `ev.config.ts` 类型生成
+`src/plugin-types.d.ts`，让 Page config 无需 import 插件包即可获得 key 与 value
+补全。
 
 ## 构建阶段
 
@@ -92,9 +94,9 @@ sequenceDiagram
   participant Bundler as bundler adapter
 
   CLI->>Core: 加载配置并选择 bundler
-  Core->>Plugin: config() 与 describe()
+  Core->>Plugin: config() 并解析 Application setting
   Core->>Plugin: setup() 与 buildStart()
-  Core->>Core: 创建 CoreGraph 与 BuildPlan
+  Core->>Core: 解析 Page setting 并创建 CoreGraph/BuildPlan
   Core->>Plugin: contributions(framework view)
   Core->>Core: 物化 .ev
   Core->>Plugin: bundlerConfig()

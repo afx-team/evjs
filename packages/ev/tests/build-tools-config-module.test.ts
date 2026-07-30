@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadConfigFile } from "../src/_internal/build/index.js";
+import {
+  loadConfigFile,
+  resolvePluginSettingsState,
+} from "../src/_internal/build/index.js";
+import { resolveConfig } from "../src/config/index.js";
 
 const tempDirs: string[] = [];
 
@@ -118,6 +122,48 @@ describe("loadConfigFile", () => {
       routing: { mode: "spa" },
       plugins: [{ name: "node-deployment-adapter" }],
     });
+  });
+
+  it("preserves defined plugin settings across the config loader boundary", async () => {
+    const setupResultKey = Symbol.for(
+      "@evjs/test/config-loader-plugin-setting",
+    );
+    const globalValues = globalThis as Record<PropertyKey, unknown>;
+    const cwd = await createFixture({
+      "ev.config.ts": `
+        import { defineConfig } from "@evjs/ev";
+        import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+
+        const analytics = definePlugin({
+          id: "@company/analytics",
+          key: "analytics",
+          application: pluginConfig({
+            defaults: { channel: "web" },
+          }),
+          page: pluginConfig({
+            defaults: { channel: "page" },
+          }),
+          setup(context) {
+            globalThis[Symbol.for("@evjs/test/config-loader-plugin-setting")] =
+              context.options;
+          },
+        });
+
+        export default defineConfig({ plugins: [analytics()] });
+      `,
+    });
+
+    try {
+      const loaded = await loadConfigFile(path.join(cwd, "ev.config.ts"));
+      const resolved = resolveConfig(loaded);
+      const state = resolvePluginSettingsState(resolved);
+
+      expect(state.applicationSettings.analytics).toEqual({ enabled: true });
+      await resolved.plugins[0]?.setup?.({} as never);
+      expect(globalValues[setupResultKey]).toEqual({ channel: "web" });
+    } finally {
+      delete globalValues[setupResultKey];
+    }
   });
 
   it("does not expose unpublished framework source paths through aliases", async () => {

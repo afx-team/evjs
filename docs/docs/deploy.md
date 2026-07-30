@@ -216,24 +216,26 @@ files. For platform-specific schema fields, wrap that metadata before writing
 files:
 
 ```ts
-export function deployAdapter() {
-  return {
-    name: "deploy-adapter",
-    setup() {
-      return {
-        buildEnd({ deploymentMetadata }) {
-          const artifact = {
-            ...deploymentMetadata,
-            platform: "custom",
-          };
+import { definePlugin } from "@evjs/ev/plugin";
 
-          emitPlatformFiles(artifact);
-        },
-      };
-    },
-  };
-}
+export const deployAdapter = definePlugin({
+  id: "@example/deploy-adapter",
+  setup() {
+    return {
+      buildEnd({ deploymentMetadata }) {
+        const artifact = {
+          ...deploymentMetadata,
+          platform: "custom",
+        };
+
+        emitPlatformFiles(artifact);
+      },
+    };
+  },
+});
 ```
+
+Applications install the resulting factory with `plugins: [deployAdapter()]`.
 
 Keep custom adapters focused on platform routing, asset serving, and process or
 worker bootstrap. Application code should continue to use evjs file

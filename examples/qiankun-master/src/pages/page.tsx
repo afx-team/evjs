@@ -1,5 +1,3 @@
-import { Link } from "@evjs/ev/navigation";
-
 export default function HomePage() {
   return (
     <section className="panel">
@@ -10,9 +8,9 @@ export default function HomePage() {
         the framework-managed SPA entry and starts qiankun without a manual{" "}
         <code>app.entry</code>.
       </p>
-      <Link className="button" to="/catalog">
+      <a className="button" href="/catalog">
         Open catalog
-      </Link>
+      </a>
     </section>
   );
 }

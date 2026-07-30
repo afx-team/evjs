@@ -1,9 +1,9 @@
 import path from "node:path";
-import type { BuildPlan } from "@evjs/shared/manifest";
 import type {
-  ResolvedApplicationExtensionValues,
-  ResolvedFrameworkConfig,
-} from "../../config/index.js";
+  BuildPlan,
+  CoreApplicationPluginSettings,
+} from "@evjs/shared/manifest";
+import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type { PluginContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
 import { materializeFrameworkIR } from "./generated-contributions.js";
@@ -11,9 +11,10 @@ import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
 import { type CreateBuildPlanOptions, createBuildPlan } from "./plan/index.js";
 import {
-  createPluginExtensionResolutionSession,
-  type PluginExtensionRegistry,
-} from "./plugin-extensions.js";
+  createPluginSettingsResolutionSession,
+  type PluginSettingsRegistry,
+} from "./plugin-settings.js";
+import { syncPluginTypes } from "./plugin-types.js";
 
 export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   cwd: string;
@@ -21,8 +22,8 @@ export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   pluginContext: PluginContext<TBundlerCfg>;
-  pluginExtensions: PluginExtensionRegistry;
-  applicationExtensions: ResolvedApplicationExtensionValues;
+  pluginSettings: PluginSettingsRegistry;
+  applicationPluginSettings: CoreApplicationPluginSettings;
   plan?: CreateBuildPlanOptions;
   write?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
@@ -60,16 +61,21 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
           options.config.routing.metadata,
         )
       : undefined;
-  const extensionResolutionSession = createPluginExtensionResolutionSession(
-    options.pluginExtensions,
+  if (options.write !== false) {
+    await syncPluginTypes({
+      cwd: options.cwd,
+    });
+  }
+  const pluginSettingsSession = createPluginSettingsResolutionSession(
+    options.pluginSettings,
   );
   let aliases: Record<string, string> = {};
   for (let attempt = 0; attempt < 5; attempt++) {
     const analysis = await createCoreGraph(options.config, options.cwd, {
       resolve: { alias: aliases },
-      pluginExtensions: options.pluginExtensions,
-      applicationExtensions: options.applicationExtensions,
-      extensionResolutionSession,
+      pluginSettings: options.pluginSettings,
+      applicationPluginSettings: options.applicationPluginSettings,
+      pluginSettingsSession,
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);

@@ -4,7 +4,10 @@
  * entries, Documents, and runtime delivery.
  */
 
-import { assertStaticJsonValue } from "../_internal/static-json.js";
+import {
+  assertStaticJsonValue,
+  type StaticJsonValue,
+} from "../_internal/static-json.js";
 import {
   BUILD_IDENTIFIER_DESCRIPTION,
   isBuildIdentifier,
@@ -49,10 +52,16 @@ export type PageId = string;
 export type RouteId = string;
 export type DocumentId = string;
 
+const UNSAFE_CORE_PLUGIN_KEYS = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
 /**
  * Canonical semantic source of truth for Applications, Pages, client Routes,
- * Documents, extensions, and server analysis facts. Record keys match node ids
- * and each Application stores complete inverse indexes for its owned nodes.
+ * Documents, plugin settings, and server analysis facts. Record keys match node
+ * ids and each Application stores complete inverse indexes for its owned nodes.
  */
 export interface CoreGraph {
   rootDir: string;
@@ -60,7 +69,7 @@ export interface CoreGraph {
   pages: Record<PageId, CorePageNode>;
   routes: CoreRouteNode[];
   documents: Record<DocumentId, CoreDocumentNode>;
-  extensions: CoreExtensionRegistrySnapshot;
+  plugins: CorePluginCatalogSnapshot;
   serverFunctions: ServerFunctionNode[];
   serverRoutes: ServerRouteNode[];
   clientReferences?: ClientReferenceNode[];
@@ -76,7 +85,7 @@ export interface CoreApplicationNode {
   pageIds: PageId[];
   routeIds: RouteId[];
   documentIds: DocumentId[];
-  extensions: CoreExtensionBag;
+  plugins: CoreApplicationPluginSettings;
   provenance: CoreNodeProvenance;
 }
 
@@ -91,7 +100,7 @@ export interface CorePageNode {
   prerender?: PrerenderConfig;
   ppr?: PprConfig;
   metadata?: PageMetadata;
-  extensions: CoreExtensionBag;
+  plugins: CorePagePluginSettings;
   provenance: CoreNodeProvenance;
 }
 
@@ -116,7 +125,6 @@ export interface CoreClientRouteNode {
   pattern: CoreRoutePattern;
   target: CoreClientRouteTarget;
   facets: CoreRouteFacets;
-  extensions: CoreExtensionBag;
   provenance: CoreNodeProvenance;
 }
 
@@ -169,41 +177,55 @@ export interface CoreDocumentNode {
   owner: CoreDocumentOwner;
   mount?: string;
   bootstrap?: CoreDocumentBootstrap;
-  extensions: CoreExtensionBag;
   provenance: CoreNodeProvenance;
 }
 
 export type CoreDocumentOwner =
   | { kind: "application" }
   | { kind: "page"; pageId: PageId }
-  | { kind: "extension"; extensionId: string };
+  | { kind: "plugin"; pluginId: string };
 
 export type CoreDocumentBootstrap =
   | { kind: "application" }
   | { kind: "page"; pageId: PageId };
 
-export type CoreExtensionBag = Record<string, unknown>;
-
 /**
- * Namespaced extension declarations captured with the graph. Each namespace
- * identifies its producer and allowed owner kinds; extension bags contain only
- * strict JSON values validated against this registry.
+ * Installed plugin contract metadata captured with the graph. Per-owner
+ * settings refer to these short keys and are validated against this catalog.
  */
-export interface CoreExtensionRegistrySnapshot {
-  namespaces: Record<string, CoreExtensionNamespaceSnapshot>;
+export interface CorePluginCatalogSnapshot {
+  entries: Record<string, CorePluginCatalogEntrySnapshot>;
 }
 
-export interface CoreExtensionNamespaceSnapshot {
-  producer: string;
-  owners: CoreExtensionOwnerKind[];
+export interface CorePluginCatalogEntrySnapshot {
+  id: string;
+  application?: CorePluginApplicationContractSnapshot;
+  page?: CorePluginPageContractSnapshot;
+}
+
+export interface CorePluginApplicationContractSnapshot {
   schemaVersion?: string;
 }
 
-export type CoreExtensionOwnerKind =
-  | "application"
-  | "page"
-  | "route"
-  | "document";
+export interface CorePluginPageContractSnapshot {
+  schemaVersion?: string;
+  defaultable: boolean;
+}
+
+export type CoreApplicationPluginSettings = Record<
+  string,
+  CoreApplicationPluginSetting
+>;
+
+export interface CoreApplicationPluginSetting {
+  enabled: boolean;
+}
+
+export type CorePagePluginSettings = Record<string, CorePagePluginSetting>;
+
+export interface CorePagePluginSetting extends CoreApplicationPluginSetting {
+  config?: Record<string, StaticJsonValue>;
+}
 
 export interface CoreNodeProvenance {
   producer: CoreProvenanceProducer;
@@ -257,7 +279,7 @@ export function resolveCorePageOwner(
 /**
  * Validate the complete normalized CoreGraph contract: strict data shape,
  * project paths, ids and inverse indexes, Page scope ownership, Route hierarchy
- * and terminal-shape uniqueness, Document output ownership, extension
+ * and terminal-shape uniqueness, Document output ownership, plugin
  * registration, provenance, and server analysis facts.
  */
 export function assertCoreGraph(
@@ -273,7 +295,7 @@ export function assertCoreGraph(
       "pages",
       "routes",
       "documents",
-      "extensions",
+      "plugins",
       "serverFunctions",
       "serverRoutes",
     ],
@@ -296,7 +318,7 @@ export function assertCoreGraph(
   if (graph.serverReferences !== undefined) {
     assertStrictArray(graph.serverReferences, `${source}.serverReferences`);
   }
-  assertExtensionRegistry(graph.extensions, `${source}.extensions`);
+  const pluginCatalog = assertPluginCatalog(graph.plugins, `${source}.plugins`);
   assertServerFunctionNodes(graph.serverFunctions, `${source}.serverFunctions`);
   assertServerRouteNodes(graph.serverRoutes, `${source}.serverRoutes`);
   if (graph.clientReferences !== undefined) {
@@ -327,9 +349,10 @@ export function assertCoreGraph(
     routesById.set(id, node);
   }
 
-  assertExtensionRegistrations(
+  assertPluginSettingsRegistrations(
     graph as unknown as CoreGraph,
-    `${source}.extensions.namespaces`,
+    pluginCatalog,
+    `${source}.plugins.entries`,
   );
 
   assertUniqueDocumentOutputs(documents, source);
@@ -350,62 +373,49 @@ export function assertCoreGraph(
   assertClientRouteParentCycles(routesById, source);
 }
 
-function assertExtensionRegistrations(graph: CoreGraph, source: string): void {
-  const namespaces = graph.extensions.namespaces;
+function assertPluginSettingsRegistrations(
+  graph: CoreGraph,
+  catalog: Record<string, CorePluginCatalogEntrySnapshot>,
+  source: string,
+): void {
   for (const [applicationId, application] of Object.entries(
     graph.applications,
   )) {
-    assertExtensionBagOwners(
-      application.extensions,
-      "application",
+    assertPluginSettingOwners(
+      application.plugins,
+      false,
       `${source} for Application "${applicationId}"`,
-      namespaces,
+      catalog,
     );
   }
   for (const [pageId, page] of Object.entries(graph.pages)) {
-    assertExtensionBagOwners(
-      page.extensions,
-      "page",
+    assertPluginSettingOwners(
+      page.plugins,
+      true,
       `${source} for Page "${pageId}"`,
-      namespaces,
-    );
-  }
-  for (const route of graph.routes) {
-    assertExtensionBagOwners(
-      route.extensions,
-      "route",
-      `${source} for Route "${route.id}"`,
-      namespaces,
-    );
-  }
-  for (const [documentId, document] of Object.entries(graph.documents)) {
-    assertExtensionBagOwners(
-      document.extensions,
-      "document",
-      `${source} for Document "${documentId}"`,
-      namespaces,
+      catalog,
     );
   }
 }
 
-function assertExtensionBagOwners(
-  bag: CoreExtensionBag,
-  owner: CoreExtensionOwnerKind,
+function assertPluginSettingOwners(
+  settings: CoreApplicationPluginSettings | CorePagePluginSettings,
+  requirePageContract: boolean,
   source: string,
-  namespaces: Record<string, CoreExtensionNamespaceSnapshot>,
+  catalog: Record<string, CorePluginCatalogEntrySnapshot>,
 ): void {
-  for (const namespace of Object.keys(bag)) {
-    const definition = getOwn(namespaces, namespace) as
-      | CoreExtensionNamespaceSnapshot
+  for (const key of Object.keys(settings)) {
+    const definition = getOwn(catalog, key) as
+      | CorePluginCatalogEntrySnapshot
       | undefined;
     if (!definition) {
       throw new Error(
-        `[evjs] ${source} uses unregistered extension namespace "${namespace}".`,
+        `[evjs] ${source} uses plugin key "${key}", but that plugin is not installed.`,
       );
     }
-    if (!definition.owners.includes(owner)) {
+    if (requirePageContract && !definition.page) {
       throw new Error(
-        `[evjs] ${source} uses extension namespace "${namespace}" which does not allow owner "${owner}".`,
+        `[evjs] ${source} uses plugin key "${key}", but plugin "${definition.id}" does not declare a Page contract.`,
       );
     }
   }
@@ -426,7 +436,7 @@ function assertApplicationNode(
       "pageIds",
       "routeIds",
       "documentIds",
-      "extensions",
+      "plugins",
       "provenance",
     ],
     ["layout"],
@@ -442,7 +452,7 @@ function assertApplicationNode(
   assertIdentifierList(application.pageIds, `${source}.pageIds`);
   assertIdentifierList(application.routeIds, `${source}.routeIds`);
   assertIdentifierList(application.documentIds, `${source}.documentIds`);
-  assertExtensionBag(application.extensions, `${source}.extensions`);
+  assertPluginSettings(application.plugins, `${source}.plugins`, false);
   assertProvenance(application.provenance, `${source}.provenance`);
 }
 
@@ -450,7 +460,7 @@ function assertPageNode(value: unknown, id: string, source: string): void {
   const page = assertObjectShape(
     value,
     source,
-    ["id", "applicationId", "source", "render", "extensions", "provenance"],
+    ["id", "applicationId", "source", "render", "plugins", "provenance"],
     ["componentModel", "hydrate", "prerender", "ppr", "metadata"],
   );
   assertNodeId(page.id, id, `${source}.id`);
@@ -516,7 +526,7 @@ function assertPageNode(value: unknown, id: string, source: string): void {
       `[evjs] ${source}.source.module must be lexically contained by ${source}.source.scope.root.`,
     );
   }
-  assertExtensionBag(page.extensions, `${source}.extensions`);
+  assertPluginSettings(page.plugins, `${source}.plugins`, true);
   const provenance = assertProvenance(page.provenance, `${source}.provenance`);
   const producer = provenance.producer as Record<string, unknown>;
   if (producer.kind !== "provider" || producer.id !== pageSource.provider) {
@@ -549,21 +559,12 @@ function assertRouteNode(
   assertObjectKeys(
     route,
     source,
-    [
-      "id",
-      "applicationId",
-      "pattern",
-      "target",
-      "facets",
-      "extensions",
-      "provenance",
-    ],
+    ["id", "applicationId", "pattern", "target", "facets", "provenance"],
     ["parentId"],
   );
   assertNonEmptyString(route.id, `${source}.id`);
   assertNonEmptyString(route.applicationId, `${source}.applicationId`);
   assertRoutePattern(route.pattern, `${source}.pattern`);
-  assertExtensionBag(route.extensions, `${source}.extensions`);
   assertProvenance(route.provenance, `${source}.provenance`);
 
   const parentId = getOwn(route, "parentId");
@@ -678,15 +679,7 @@ function assertDocumentNode(value: unknown, id: string, source: string): void {
   const document = assertObjectShape(
     value,
     source,
-    [
-      "id",
-      "template",
-      "output",
-      "applicationId",
-      "owner",
-      "extensions",
-      "provenance",
-    ],
+    ["id", "template", "output", "applicationId", "owner", "provenance"],
     ["aliases", "mount", "bootstrap"],
   );
   assertNodeId(document.id, id, `${source}.id`);
@@ -721,7 +714,6 @@ function assertDocumentNode(value: unknown, id: string, source: string): void {
   if (bootstrap !== undefined) {
     assertDocumentBootstrap(bootstrap, `${source}.bootstrap`);
   }
-  assertExtensionBag(document.extensions, `${source}.extensions`);
   assertProvenance(document.provenance, `${source}.provenance`);
 }
 
@@ -736,13 +728,13 @@ function assertDocumentOwner(value: unknown, source: string): void {
     assertNonEmptyString(owner.pageId, `${source}.pageId`);
     return;
   }
-  if (owner.kind === "extension") {
-    assertObjectKeys(owner, source, ["kind", "extensionId"]);
-    assertNonEmptyString(owner.extensionId, `${source}.extensionId`);
+  if (owner.kind === "plugin") {
+    assertObjectKeys(owner, source, ["kind", "pluginId"]);
+    assertNonEmptyString(owner.pluginId, `${source}.pluginId`);
     return;
   }
   throw new Error(
-    `[evjs] ${source}.kind must be "application", "page", or "extension".`,
+    `[evjs] ${source}.kind must be "application", "page", or "plugin".`,
   );
 }
 
@@ -1415,63 +1407,100 @@ function assertClientRouteParentPattern(
   );
 }
 
-function assertExtensionBag(value: unknown, source: string): void {
-  const bag = assertRecord(value, source);
-  for (const namespace of Reflect.ownKeys(bag)) {
-    if (typeof namespace !== "string") {
-      throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
+function assertPluginSettings(
+  value: unknown,
+  source: string,
+  allowConfig: boolean,
+): void {
+  const settings = assertRecord(value, source);
+  for (const [key, valueSetting] of Object.entries(settings)) {
+    assertCorePluginKey(key, `${source} key`);
+    const settingSource = `${source}.${key}`;
+    const setting = assertObjectShape(
+      valueSetting,
+      settingSource,
+      ["enabled"],
+      allowConfig ? ["config"] : [],
+    );
+    if (typeof setting.enabled !== "boolean") {
+      throw new Error(`[evjs] ${settingSource}.enabled must be a boolean.`);
     }
-    assertNonEmptyString(namespace, `${source} namespace`);
-    assertStaticJsonValue(bag[namespace], `${source}.${namespace}`);
+    const config = getOwn(setting, "config");
+    if (config !== undefined) {
+      assertRecord(config, `${settingSource}.config`);
+      assertStaticJsonValue(config, `${settingSource}.config`);
+    }
   }
 }
 
-function assertExtensionRegistry(value: unknown, source: string): void {
-  const registry = assertObjectShape(value, source, ["namespaces"]);
-  const namespaces = assertRecord(registry.namespaces, `${source}.namespaces`);
-  const ownerKinds = new Set<CoreExtensionOwnerKind>([
-    "application",
-    "page",
-    "route",
-    "document",
-  ]);
-  for (const [namespace, valueNamespace] of Object.entries(namespaces)) {
-    assertNonEmptyString(namespace, `${source}.namespaces key`);
-    const definition = assertObjectShape(
-      valueNamespace,
-      `${source}.namespaces.${namespace}`,
-      ["producer", "owners"],
-      ["schemaVersion"],
+function assertPluginCatalog(
+  value: unknown,
+  source: string,
+): Record<string, CorePluginCatalogEntrySnapshot> {
+  const catalog = assertObjectShape(value, source, ["entries"]);
+  const entries = assertRecord(catalog.entries, `${source}.entries`);
+  const keyById = new Map<string, string>();
+
+  for (const [key, valueEntry] of Object.entries(entries)) {
+    assertCorePluginKey(key, `${source}.entries key`);
+    const entrySource = `${source}.entries.${key}`;
+    const entry = assertObjectShape(
+      valueEntry,
+      entrySource,
+      ["id"],
+      ["application", "page"],
     );
-    assertNonEmptyString(
-      definition.producer,
-      `${source}.namespaces.${namespace}.producer`,
-    );
-    assertStrictArray(
-      definition.owners,
-      `${source}.namespaces.${namespace}.owners`,
-    );
-    const seenOwners = new Set<string>();
-    for (const [index, owner] of definition.owners.entries()) {
-      if (!ownerKinds.has(owner as CoreExtensionOwnerKind)) {
-        throw new Error(
-          `[evjs] ${source}.namespaces.${namespace}.owners[${index}] is not supported.`,
-        );
-      }
-      if (seenOwners.has(owner as string)) {
-        throw new Error(
-          `[evjs] ${source}.namespaces.${namespace}.owners must be unique.`,
-        );
-      }
-      seenOwners.add(owner as string);
-    }
-    const schemaVersion = getOwn(definition, "schemaVersion");
-    if (schemaVersion !== undefined) {
-      assertNonEmptyString(
-        schemaVersion,
-        `${source}.namespaces.${namespace}.schemaVersion`,
+    assertTrimmedNonEmptyString(entry.id, `${entrySource}.id`);
+    const id = entry.id as string;
+    const existingKey = keyById.get(id);
+    if (existingKey !== undefined) {
+      throw new Error(
+        `[evjs] ${entrySource}.id "${id}" duplicates the plugin id registered by key "${existingKey}".`,
       );
     }
+    keyById.set(id, key);
+
+    const application = getOwn(entry, "application");
+    if (application !== undefined) {
+      assertPluginContract(application, `${entrySource}.application`, false);
+    }
+    const page = getOwn(entry, "page");
+    if (page !== undefined) {
+      assertPluginContract(page, `${entrySource}.page`, true);
+    }
+  }
+
+  return entries as Record<string, CorePluginCatalogEntrySnapshot>;
+}
+
+function assertPluginContract(
+  value: unknown,
+  source: string,
+  page: boolean,
+): void {
+  const contract = assertObjectShape(
+    value,
+    source,
+    page ? ["defaultable"] : [],
+    ["schemaVersion"],
+  );
+  if (page && typeof contract.defaultable !== "boolean") {
+    throw new Error(`[evjs] ${source}.defaultable must be a boolean.`);
+  }
+  const schemaVersion = getOwn(contract, "schemaVersion");
+  if (schemaVersion !== undefined) {
+    assertTrimmedNonEmptyString(schemaVersion, `${source}.schemaVersion`);
+  }
+}
+
+function assertCorePluginKey(value: string, source: string): void {
+  if (
+    !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ||
+    UNSAFE_CORE_PLUGIN_KEYS.has(value)
+  ) {
+    throw new Error(
+      `[evjs] ${source} "${value}" must be a lowercase plugin key such as "analytics" or "error-reporting" and must not be __proto__, constructor, or prototype.`,
+    );
   }
 }
 

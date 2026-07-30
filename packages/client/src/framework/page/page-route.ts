@@ -3,6 +3,7 @@ import {
   getPathPatternValidationError,
   type PageRouteParamSegmentValidationError,
   type PathPatternValidationError,
+  pageRoutePathMatches,
   pageRoutePathShapeFromPath,
 } from "@evjs/shared";
 import {
@@ -13,11 +14,16 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import type {
   AnyRoute,
+  AnyRouter,
   ErrorRouteComponent,
   NotFoundRouteComponent,
   RouteComponent,
+  RouterHistory,
 } from "@tanstack/react-router";
 import {
+  createBrowserHistory,
+  createHashHistory,
+  createMemoryHistory,
   createRootRouteWithContext,
   redirect as createRouterRedirect,
   createRoute as createTanStackRoute,
@@ -102,11 +108,36 @@ interface NormalizedPageDefinition extends PageDefinition {
 export interface CreatePagesAppOptions {
   routes: PageDefinition[];
   rootModule?: RootLayoutModule;
+  basepath?: string;
+  history?: PagesAppHistoryInput;
+}
+
+export type PagesAppHistoryDescriptor =
+  | { type: "browser" }
+  | { type: "hash" }
+  | {
+      type: "memory";
+      initialEntries?: string[];
+      initialIndex?: number;
+    };
+
+export type PagesAppHistoryInput = RouterHistory | PagesAppHistoryDescriptor;
+
+/** Framework-only runtime projection layered over generated SPA routes. */
+export interface PagesAppRuntimeOptions {
+  /**
+   * Replace the complete runtime Route overlay. Runtime Routes take precedence
+   * over matching generated branches; all other generated Routes stay intact.
+   */
+  routes?: PageDefinition[];
+  basepath?: string;
+  history?: PagesAppHistoryInput;
 }
 
 /** Framework-generated SPA bootstrap contract. */
 export interface PagesApp {
   app: App;
+  updateRuntime(options: PagesAppRuntimeOptions): Promise<void>;
 }
 
 type PageModuleRouteOptions = Omit<PageModule, "default">;
@@ -114,10 +145,385 @@ type PageModuleRouteOptions = Omit<PageModule, "default">;
 /** Framework-generated SPA bootstrap. */
 export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   assertCreatePagesAppOptions(options);
-  const routeTree = createGeneratedRouteTree(options);
-  const app = createApp({ routeTree });
+  const canonicalRoutes = clonePageDefinitions(options.routes);
+  const rootModule = options.rootModule;
+  const initialHistory =
+    options.history === undefined
+      ? undefined
+      : resolvePagesAppHistory(options.history);
+  const routeTree = createGeneratedRouteTree({
+    routes: canonicalRoutes,
+    ...(rootModule ? { rootModule } : {}),
+  });
+  const app = createApp({
+    routeTree,
+    ...(options.basepath !== undefined ? { basepath: options.basepath } : {}),
+    ...(initialHistory ? { history: initialHistory.history } : {}),
+  });
+  let runtimeRoutes: PageDefinition[] = [];
+  let currentBasepath = options.basepath;
+  let currentHistory = captureInitialPagesAppHistory(
+    app.router,
+    initialHistory,
+  );
+  let runtimeUpdateQueue = Promise.resolve();
 
-  return { app };
+  function updateRuntime(
+    runtimeOptions: PagesAppRuntimeOptions,
+  ): Promise<void> {
+    const update = runtimeUpdateQueue.then(() =>
+      applyRuntimeUpdate(runtimeOptions),
+    );
+    runtimeUpdateQueue = update.catch(() => {});
+    return update;
+  }
+
+  async function applyRuntimeUpdate(
+    runtimeOptions: PagesAppRuntimeOptions,
+  ): Promise<void> {
+    assertPagesAppRuntimeOptions(runtimeOptions);
+    const hasRouteUpdate = runtimeOptions.routes !== undefined;
+    const runtimeRouteOverlay = runtimeOptions.routes ?? [];
+    const nextRuntimeRoutes = hasRouteUpdate
+      ? clonePageDefinitions(runtimeRouteOverlay)
+      : runtimeRoutes;
+    const nextRoutes = hasRouteUpdate
+      ? composePageDefinitions(canonicalRoutes, nextRuntimeRoutes)
+      : undefined;
+    if (nextRoutes) {
+      assertCreatePagesAppOptions({
+        routes: nextRoutes,
+        ...(rootModule ? { rootModule } : {}),
+      });
+    }
+    const nextBasepath = runtimeOptions.basepath ?? currentBasepath;
+    const nextRouteTree = hasRouteUpdate
+      ? createGeneratedRouteTree({
+          routes: nextRoutes ?? canonicalRoutes,
+          ...(rootModule ? { rootModule } : {}),
+        })
+      : app.router.routeTree;
+    const previousRouterOptions = app.router.options;
+    const previousRouteTree = app.router.routeTree;
+    const previousBasepath = app.router.basepath;
+    const previousHistory = app.router.history;
+    const previousMatches = snapshotRouterMatches(app.router);
+    const historyChanged =
+      runtimeOptions.history !== undefined &&
+      !pagesAppHistoryInputMatchesCurrent(
+        runtimeOptions.history,
+        currentHistory,
+      );
+    let nextHistory = currentHistory;
+    let destroyedCurrentHistoryBeforeReplace = false;
+
+    try {
+      if (historyChanged && runtimeOptions.history !== undefined) {
+        if (
+          !isRouterHistory(runtimeOptions.history) &&
+          currentHistory?.owned &&
+          currentHistory.descriptor &&
+          currentHistory.descriptor.type !== "memory"
+        ) {
+          // TanStack patches browser/hash globals, so release the current
+          // framework-owned instance before constructing its replacement.
+          currentHistory.history.destroy();
+          destroyedCurrentHistoryBeforeReplace = true;
+        }
+        nextHistory = resolvePagesAppHistory(runtimeOptions.history);
+      }
+      app.router.update({
+        ...app.router.options,
+        routeTree: nextRouteTree,
+        ...(nextBasepath !== undefined ? { basepath: nextBasepath } : {}),
+        ...(nextHistory ? { history: nextHistory.history } : {}),
+      });
+      if (hasRouteUpdate) pruneRouterMatches(app.router);
+      await loadUpdatedRouter(app.router);
+    } catch (error) {
+      let rollbackError: unknown;
+      try {
+        if (
+          nextHistory?.owned &&
+          nextHistory !== currentHistory &&
+          nextHistory.history !== previousHistory
+        ) {
+          nextHistory.history.destroy();
+        }
+        let rollbackHistory = previousHistory;
+        if (
+          destroyedCurrentHistoryBeforeReplace &&
+          currentHistory?.descriptor
+        ) {
+          const restoredHistory = resolvePagesAppHistory(
+            currentHistory.descriptor,
+          );
+          currentHistory = restoredHistory;
+          rollbackHistory = restoredHistory.history;
+        }
+        app.router.update({
+          ...previousRouterOptions,
+          routeTree: previousRouteTree,
+          basepath: previousBasepath,
+          ...(rollbackHistory ? { history: rollbackHistory } : {}),
+        });
+        restoreRouterMatches(app.router, previousMatches);
+      } catch (caught) {
+        rollbackError = caught;
+      }
+      if (rollbackError !== undefined) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "[evjs] PagesApp updateRuntime() failed and could not restore the previous router state.",
+        );
+      }
+      throw error;
+    }
+
+    runtimeRoutes = nextRuntimeRoutes;
+    currentBasepath = nextBasepath;
+    if (
+      historyChanged &&
+      !destroyedCurrentHistoryBeforeReplace &&
+      currentHistory?.owned &&
+      nextHistory !== currentHistory
+    ) {
+      // Retain the previous instance until the update commits so rollback can
+      // continue using it. Browser/hash replacements created from descriptors
+      // are the exception above because TanStack patches their shared globals.
+      currentHistory.history.destroy();
+    }
+    currentHistory = nextHistory;
+  }
+
+  return { app, updateRuntime };
+}
+
+interface ManagedPagesAppHistory {
+  history: RouterHistory;
+  owned: boolean;
+  descriptor?: PagesAppHistoryDescriptor;
+}
+
+type PagesRouterMatches = ReturnType<AnyRouter["stores"]["matches"]["get"]>;
+
+interface PagesRouterMatchSnapshot {
+  matches: PagesRouterMatches;
+  pending: PagesRouterMatches;
+  cached: PagesRouterMatches;
+}
+
+async function loadUpdatedRouter(router: AnyRouter): Promise<void> {
+  if (!router.history || !router.stores) return;
+  await router.load();
+}
+
+function snapshotRouterMatches(
+  router: AnyRouter,
+): PagesRouterMatchSnapshot | undefined {
+  if (!router.stores) return undefined;
+  return {
+    matches: [...router.stores.matches.get()],
+    pending: [...router.stores.pendingMatches.get()],
+    cached: [...router.stores.cachedMatches.get()],
+  };
+}
+
+function pruneRouterMatches(router: AnyRouter): void {
+  if (!router.stores) return;
+  // TanStack Router caches exiting matches during load. Remove matches for
+  // deleted overlay Routes first so cache cleanup never resolves a stale ID.
+  const keepKnownRoute = (match: PagesRouterMatches[number]) =>
+    Object.hasOwn(router.routesById, match.routeId);
+  router.batch(() => {
+    router.stores.setMatches(
+      router.stores.matches.get().filter(keepKnownRoute),
+    );
+    router.stores.setPending(
+      router.stores.pendingMatches.get().filter(keepKnownRoute),
+    );
+    router.stores.setCached(
+      router.stores.cachedMatches.get().filter(keepKnownRoute),
+    );
+  });
+}
+
+function restoreRouterMatches(
+  router: AnyRouter,
+  snapshot: PagesRouterMatchSnapshot | undefined,
+): void {
+  if (!router.stores || !snapshot) return;
+  router.batch(() => {
+    router.stores.setMatches(snapshot.matches);
+    router.stores.setPending(snapshot.pending);
+    router.stores.setCached(snapshot.cached);
+  });
+}
+
+function captureInitialPagesAppHistory(
+  router: AnyRouter,
+  configured: ManagedPagesAppHistory | undefined,
+): ManagedPagesAppHistory | undefined {
+  if (configured) return configured;
+  const history = router.history;
+  if (!history) return undefined;
+  if (router.isServer) return { history, owned: true };
+  return {
+    history,
+    owned: true,
+    descriptor: { type: "browser" },
+  };
+}
+
+function resolvePagesAppHistory(
+  input: PagesAppHistoryInput,
+): ManagedPagesAppHistory {
+  assertPagesAppHistoryInput(input, "history");
+  if (isRouterHistory(input)) {
+    return { history: input, owned: false };
+  }
+  const descriptor = clonePagesAppHistoryDescriptor(input);
+  switch (input.type) {
+    case "browser":
+      return { history: createBrowserHistory(), owned: true, descriptor };
+    case "hash":
+      return { history: createHashHistory(), owned: true, descriptor };
+    case "memory":
+      return {
+        history: createMemoryHistory({
+          initialEntries: input.initialEntries ?? ["/"],
+          ...(input.initialIndex !== undefined
+            ? { initialIndex: input.initialIndex }
+            : {}),
+        }),
+        owned: true,
+        descriptor,
+      };
+  }
+}
+
+function pagesAppHistoryInputMatchesCurrent(
+  input: PagesAppHistoryInput,
+  current: ManagedPagesAppHistory | undefined,
+): boolean {
+  if (!current) return false;
+  if (isRouterHistory(input)) return current.history === input;
+  return (
+    current.descriptor !== undefined &&
+    equalPagesAppHistoryDescriptors(current.descriptor, input)
+  );
+}
+
+function clonePagesAppHistoryDescriptor(
+  descriptor: PagesAppHistoryDescriptor,
+): PagesAppHistoryDescriptor {
+  if (descriptor.type !== "memory") return { type: descriptor.type };
+  return {
+    type: "memory",
+    ...(descriptor.initialEntries
+      ? { initialEntries: [...descriptor.initialEntries] }
+      : {}),
+    ...(descriptor.initialIndex !== undefined
+      ? { initialIndex: descriptor.initialIndex }
+      : {}),
+  };
+}
+
+function equalPagesAppHistoryDescriptors(
+  left: PagesAppHistoryDescriptor,
+  right: PagesAppHistoryDescriptor,
+): boolean {
+  if (left.type !== right.type) return false;
+  if (left.type !== "memory" || right.type !== "memory") return true;
+  if (left.initialIndex !== right.initialIndex) return false;
+  const leftEntries = left.initialEntries ?? ["/"];
+  const rightEntries = right.initialEntries ?? ["/"];
+  return (
+    leftEntries.length === rightEntries.length &&
+    leftEntries.every((entry, index) => entry === rightEntries[index])
+  );
+}
+
+function clonePageDefinitions(
+  definitions: readonly PageDefinition[],
+): PageDefinition[] {
+  return definitions.map((definition) => ({
+    ...definition,
+    ...(definition.module ? { module: { ...definition.module } } : {}),
+    ...(definition.redirect
+      ? { redirect: { ...definition.redirect } as PageRouteRedirect }
+      : {}),
+    ...(definition.wrappers
+      ? {
+          wrappers: definition.wrappers.map((wrapper) => ({ ...wrapper })),
+        }
+      : {}),
+    ...(definition.metadata
+      ? { metadata: clonePageMetadata(definition.metadata) }
+      : {}),
+  }));
+}
+
+function composePageDefinitions(
+  canonicalRoutes: readonly PageDefinition[],
+  runtimeRoutes: readonly PageDefinition[],
+): PageDefinition[] {
+  const shadowedRouteIds = new Set<string>();
+
+  canonicalRoutes.forEach((canonicalRoute, index) => {
+    if (
+      runtimeRoutes.some((runtimeRoute) =>
+        runtimeRouteShadowsCanonicalRoute(runtimeRoute, canonicalRoute),
+      )
+    ) {
+      shadowedRouteIds.add(getPageDefinitionId(canonicalRoute, index));
+    }
+  });
+
+  let removedDescendant = true;
+  while (removedDescendant) {
+    removedDescendant = false;
+    canonicalRoutes.forEach((canonicalRoute, index) => {
+      const routeId = getPageDefinitionId(canonicalRoute, index);
+      if (
+        !shadowedRouteIds.has(routeId) &&
+        canonicalRoute.parentId !== undefined &&
+        shadowedRouteIds.has(canonicalRoute.parentId)
+      ) {
+        shadowedRouteIds.add(routeId);
+        removedDescendant = true;
+      }
+    });
+  }
+
+  return [
+    ...canonicalRoutes.filter(
+      (route, index) =>
+        !shadowedRouteIds.has(getPageDefinitionId(route, index)),
+    ),
+    ...runtimeRoutes,
+  ];
+}
+
+function runtimeRouteShadowsCanonicalRoute(
+  runtimeRoute: PageDefinition,
+  canonicalRoute: PageDefinition,
+): boolean {
+  if (
+    typeof runtimeRoute.path !== "string" ||
+    typeof canonicalRoute.path !== "string"
+  ) {
+    return false;
+  }
+  const runtimePath = normalizeGeneratedRoutePath(runtimeRoute.path);
+  const canonicalPath = normalizeGeneratedRoutePath(canonicalRoute.path);
+  if (runtimePath.endsWith("/$") || runtimePath === "/$") {
+    return pageRoutePathMatches(runtimePath, canonicalPath);
+  }
+  return (
+    pageRoutePathShapeFromPath(runtimePath) ===
+    pageRoutePathShapeFromPath(canonicalPath)
+  );
 }
 
 function createGeneratedRouteTree(options: CreatePagesAppOptions): AnyRoute {
@@ -346,6 +752,8 @@ function assertCreatePagesAppOptions(
       "[evjs] createPagesApp() rootModule.default must be a React component.",
     );
   }
+  assertPagesAppBasepath(options.basepath, "basepath");
+  assertPagesAppHistoryInput(options.history, "history");
 
   const routeIdOwners = new Map<string, string>();
   const normalizedRoutes: NormalizedPageDefinition[] = [];
@@ -435,6 +843,103 @@ function assertCreatePagesAppOptions(
   });
   assertRouteParentReferences(normalizedRoutes);
   assertUniqueSiblingRouteIdentities(normalizedRoutes);
+}
+
+function assertPagesAppRuntimeOptions(
+  options: unknown,
+): asserts options is PagesAppRuntimeOptions {
+  if (!isRecord(options)) {
+    throw new Error(
+      "[evjs] PagesApp updateRuntime() options must be an object.",
+    );
+  }
+  if (options.routes !== undefined && !Array.isArray(options.routes)) {
+    throw new Error(
+      "[evjs] PagesApp updateRuntime() routes must be an array when provided.",
+    );
+  }
+  assertPagesAppBasepath(options.basepath, "updateRuntime() basepath");
+  assertPagesAppHistoryInput(options.history, "updateRuntime() history");
+}
+
+function assertPagesAppBasepath(value: unknown, source: string): void {
+  if (value === undefined) return;
+  if (typeof value !== "string" || !value) {
+    throw new Error(`[evjs] PagesApp ${source} must be a non-empty string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] PagesApp ${source} must not include leading or trailing whitespace.`,
+    );
+  }
+  if (!value.startsWith("/")) {
+    throw new Error(`[evjs] PagesApp ${source} must start with "/".`);
+  }
+  if (value.includes("?") || value.includes("#")) {
+    throw new Error(
+      `[evjs] PagesApp ${source} must not include a query string or hash.`,
+    );
+  }
+}
+
+function assertPagesAppHistoryInput(
+  value: unknown,
+  source: string,
+): asserts value is PagesAppHistoryInput | undefined {
+  if (value === undefined || isRouterHistory(value)) return;
+  if (!isRecord(value)) {
+    throw new Error(
+      `[evjs] PagesApp ${source} must be a RouterHistory or history descriptor.`,
+    );
+  }
+  if (
+    value.type !== "browser" &&
+    value.type !== "hash" &&
+    value.type !== "memory"
+  ) {
+    throw new Error(
+      `[evjs] PagesApp ${source}.type must be "browser", "hash", or "memory".`,
+    );
+  }
+  if (value.type !== "memory") return;
+  if (value.initialEntries !== undefined) {
+    if (
+      !Array.isArray(value.initialEntries) ||
+      value.initialEntries.length === 0 ||
+      value.initialEntries.some(
+        (entry) => typeof entry !== "string" || !entry.trim(),
+      )
+    ) {
+      throw new Error(
+        `[evjs] PagesApp ${source}.initialEntries must be a non-empty array of non-empty strings.`,
+      );
+    }
+  }
+  if (
+    value.initialIndex !== undefined &&
+    (typeof value.initialIndex !== "number" ||
+      !Number.isInteger(value.initialIndex) ||
+      value.initialIndex < 0)
+  ) {
+    throw new Error(
+      `[evjs] PagesApp ${source}.initialIndex must be a non-negative integer.`,
+    );
+  }
+}
+
+function isRouterHistory(value: unknown): value is RouterHistory {
+  if (!isRecord(value) || !isRecord(value.location)) return false;
+  return (
+    value.subscribers instanceof Set &&
+    typeof value.subscribe === "function" &&
+    typeof value.push === "function" &&
+    typeof value.replace === "function" &&
+    typeof value.go === "function" &&
+    typeof value.back === "function" &&
+    typeof value.forward === "function" &&
+    typeof value.createHref === "function" &&
+    typeof value.destroy === "function"
+  );
 }
 
 function normalizePageDefinitions(

@@ -75,8 +75,8 @@ export default definePageConfig({
 ```
 
 `title` 与 `meta` 是静态 core Page 元信息；`meta` 只生成
-`<meta name="..." content="...">`。插件持有的值使用 `extensions` 下已注册
-namespaced key，这些 extension 值不会自动发送到浏览器 runtime。
+`<meta name="..." content="...">`。已安装的 Page-aware 插件使用 `plugins`
+下生成的短 key，这些值不会自动发送到浏览器 runtime。
 
 ## Page 私有代码
 
@@ -188,7 +188,8 @@ npm run build
 - server output 写入 `dist/server`；
 - framework IR 位于 `.ev`。
 
-`.ev`、`dist`、`src/route-types.d.ts` 等都应视为生成物，不要编辑或复制到模板。
+`.ev`、`dist`、`src/route-types.d.ts`、`src/plugin-types.d.ts` 等都应视为生成物，
+不要编辑或复制到模板。
 
 ## 核心包
 
@@ -214,8 +215,8 @@ standalone/manual runtime composition 才直接使用 `@evjs/client` 和
 设置放在相邻 `page.config.ts`，并声明 `routing.mode: "spa" | "mpa"`。
 
 显式 `application.routes` 是独立、仅支持 SPA 的配置输入。它支持 `page` 或
-`component`、嵌套 `routes`、layout、wrapper、redirect 与已注册的 namespaced
-Route extension；不能与 `routing` 同时配置，也不会选择 MPA。
+`component`、嵌套 `routes`、layout、wrapper 与 redirect；插件配置仍由 Page
+持有。该输入不能与 `routing` 同时配置，也不会选择 MPA。
 
 无关的 `src/pages` 目录本身不会发布客户端路由。运行 `ev inspect` 可确认
 normalized Page/Route 结构。

@@ -147,6 +147,7 @@
     "@evjs/server": "*",
     "@evjs/shared": "*",
     "@logtape/logtape": "^2.0.4",
+    "@standard-schema/spec": "^1.1.0",
     "@swc/core": "^1.15.21",
     "@tanstack/react-router": "^1.168.3",
     "@utoo/pack": "^1.4.27",

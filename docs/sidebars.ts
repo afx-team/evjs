@@ -16,8 +16,21 @@ const sidebars: SidebarsConfig = {
         "client-routes",
         "server-functions",
         "server-routes",
+      ],
+    },
+    {
+      type: "category",
+      label: "Plugins",
+      link: {
+        type: "doc",
+        id: "plugins",
+      },
+      items: [
+        "plugin-authoring",
+        "plugin-hooks",
         "generated-contributions",
-        "plugins",
+        "plugin-recipes",
+        "qiankun",
       ],
     },
     {
@@ -26,7 +39,6 @@ const sidebars: SidebarsConfig = {
       items: [
         "architecture",
         "config",
-        "qiankun",
         "advanced-conventions",
         "dev",
         "build",

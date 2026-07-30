@@ -76,9 +76,9 @@ export default definePageConfig({
 ```
 
 `title` and `meta` are static core Page metadata. `meta` emits only
-`<meta name="..." content="...">` entries. Plugin-owned values use registered
-namespaced keys under `extensions`; those extension values are not
-automatically sent to browser runtime.
+`<meta name="..." content="...">` entries. Installed Page-aware plugins use
+generated short keys under `plugins`; those values are not automatically sent
+to browser runtime.
 
 ## Page-Private Code
 
@@ -194,8 +194,8 @@ By default:
 - server output goes to `dist/server`;
 - framework-generated IR lives under `.ev`.
 
-Treat `.ev`, `dist`, `src/route-types.d.ts`, and other generated artifacts as
-outputs. Do not edit them or copy them into templates.
+Treat `.ev`, `dist`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, and other
+generated artifacts as outputs. Do not edit them or copy them into templates.
 
 ## Core Packages
 
@@ -222,9 +222,9 @@ URL, name the entry `page.*`, keep Page settings in adjacent
 `page.config.ts`, and declare `routing.mode: "spa" | "mpa"`.
 
 Explicit `application.routes` is a separate SPA-only configuration input. It
-supports `page` or `component`, nested `routes`, layouts, wrappers, redirects,
-and registered namespaced Route extensions. It cannot be combined with `routing` and never
-selects MPA.
+supports `page` or `component`, nested `routes`, layouts, wrappers, and
+redirects. Plugin configuration remains Page-owned. It cannot be combined with
+`routing` and never selects MPA.
 
 An unrelated `src/pages` directory alone does not publish client routes. Run
 `ev inspect` to verify the normalized Page/Route structure.

@@ -48,12 +48,18 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
     lines,
     "Applications",
     Object.values(result.graph.applications),
-    (application) =>
-      `${application.id}: ${application.routingMode}, pages=${application.pageIds.length}, routes=${application.routeIds.length}, documents=${application.documentIds.length}`,
+    (application) => {
+      const plugins = Object.entries(application.plugins).map(
+        ([key, setting]) => `${key}:${setting.enabled ? "on" : "off"}`,
+      );
+      return `${application.id}: ${application.routingMode}, pages=${application.pageIds.length}, routes=${application.routeIds.length}, documents=${application.documentIds.length}${plugins.length > 0 ? `, plugins=${plugins.join(",")}` : ""}`;
+    },
   );
 
   appendList(lines, "Pages", Object.values(result.graph.pages), (page) => {
-    const extensions = Object.keys(page.extensions);
+    const plugins = Object.entries(page.plugins).map(
+      ([key, setting]) => `${key}:${setting.enabled ? "on" : "off"}`,
+    );
     const metadata = [
       `application=${page.applicationId}`,
       `render=${page.render}`,
@@ -66,7 +72,7 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
       (typeof page.prerender === "object" && page.prerender.partial === true)
         ? "ppr=true"
         : undefined,
-      extensions.length > 0 ? `extensions=${extensions.join(",")}` : undefined,
+      plugins.length > 0 ? `plugins=${plugins.join(",")}` : undefined,
     ]
       .filter(Boolean)
       .join(", ");
@@ -85,19 +91,23 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
 
   appendList(
     lines,
-    "Extensions",
-    Object.entries(result.graph.extensions.namespaces),
-    ([namespace, registration]) => {
+    "Plugins",
+    Object.entries(result.graph.plugins.entries),
+    ([key, registration]) => {
+      const contracts = [
+        registration.application ? "application" : undefined,
+        registration.page ? "page" : undefined,
+      ].filter(Boolean);
       const metadata = [
-        `producer=${formatCoreIdentifier(registration.producer)}`,
-        `owners=${registration.owners.join(",")}`,
-        registration.schemaVersion
-          ? `schema=${registration.schemaVersion}`
+        `id=${formatCoreIdentifier(registration.id)}`,
+        contracts.length > 0 ? `contracts=${contracts.join(",")}` : undefined,
+        registration.page
+          ? `pageDefaultable=${registration.page.defaultable}`
           : undefined,
       ]
         .filter(Boolean)
         .join(", ");
-      return `${namespace}: ${metadata}`;
+      return `${key}: ${metadata}`;
     },
   );
 

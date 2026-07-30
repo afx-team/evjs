@@ -24,7 +24,8 @@ description: Develop, migrate, review, or debug evjs applications and framework 
 - Publish Pages only with `src/pages/**/page.{ts,tsx,js,jsx}`. The containing
   directory owns Page-private source and determines the URL.
 - Put static `title`, named `meta`, `render`, `hydrate`, `prerender`, `rsc`,
-  and namespaced extensions in adjacent build-time `page.config.ts`.
+  and the generated short-keyed Page `plugins` map in adjacent build-time
+  `page.config.ts`.
 - Use `$param`, terminal `$...splat`, and `(group)` directories for dynamic,
   catch-all, and pathless client segments.
 - Publish server request Routes only with
@@ -37,8 +38,11 @@ description: Develop, migrate, review, or debug evjs applications and framework 
 - Treat `application.routes` as an explicit SPA-only input into the same
   CoreGraph. It cannot be combined with canonical `routing` or select MPA, and
   nested declarations use `routes`.
-- Keep Application, Page, Route, and Document extension values strict static
-  JSON; plugins explicitly project runtime behavior.
+- Install plugins through `config.plugins`, normally as
+  `pluginFactory(applicationConfig)`. Application and Page contracts remain
+  independent; Page values are strict static JSON. Plugins derive Route and
+  Document behavior from normalized Pages and explicitly project runtime
+  behavior.
 
 ## Import Boundaries
 
@@ -54,7 +58,9 @@ description: Develop, migrate, review, or debug evjs applications and framework 
 
 ## Generated And Runtime Boundaries
 
-- Treat `.ev`, `src/route-types.d.ts`, and `dist` as generated output.
+- Treat `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, and `dist` as
+  generated output. Keep generated declarations under `src` so the project
+  TypeScript program consumes them.
 - Bundler adapters consume `BuildPlan` and return build facts; framework
   semantics stay in `@evjs/ev`.
 - `BuildOutput` is the complete in-memory result.
@@ -71,6 +77,9 @@ description: Develop, migrate, review, or debug evjs applications and framework 
 - [Client routes](../docs/docs/client-routes.md)
 - [Server functions](../docs/docs/server-functions.md)
 - [Server request routes](../docs/docs/server-routes.md)
-- [Plugins and generated contributions](../docs/docs/plugins.md)
+- [Plugins](../docs/docs/plugins.md)
+- [Plugin authoring](../docs/docs/plugin-authoring.md)
+- [Plugin hooks](../docs/docs/plugin-hooks.md)
+- [Generated contributions](../docs/docs/generated-contributions.md)
 - [Build and deployment](../docs/docs/build.md)
 - [Framework architecture](../ARCHITECTURE.md)

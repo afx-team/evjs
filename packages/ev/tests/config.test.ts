@@ -1,16 +1,152 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type { BundlerAdapter } from "../src/_internal/build/bundler.js";
 import {
   createNoPageRoutesFoundMessage,
   withPageRoutingDefaults,
 } from "../src/_internal/build/convention-config.js";
-import type { PageFileConfig } from "../src/config/index.js";
+import type {
+  Config,
+  ExtractInstalledPlugin,
+  PageFileConfig,
+  PagePluginConfigValues,
+} from "../src/config/index.js";
 import {
   CONFIG_DEFAULTS,
   defineConfig,
   definePageConfig,
   resolveConfig,
 } from "../src/config/index.js";
+import {
+  edgeDeploymentAdapter,
+  nodeDeploymentAdapter,
+  staticDeploymentAdapter,
+} from "../src/deployment/index.js";
+import {
+  definePlugin,
+  type Plugin,
+  pluginConfig,
+} from "../src/plugin/index.js";
+
+interface TypedApplicationPluginConfig {
+  endpoint: string;
+  debug: boolean;
+}
+
+interface TypedPagePluginConfig {
+  channel: string;
+  enabled: boolean;
+  options?: {
+    sampleRate: number;
+  };
+}
+
+interface RequiredPagePluginConfig {
+  policy: "strict" | "relaxed";
+}
+
+interface RequiredApplicationPluginConfig {
+  endpoint: string;
+  retries?: number;
+}
+
+const analyticsPlugin = definePlugin({
+  id: "@test/analytics",
+  key: "analytics",
+  application: pluginConfig<TypedApplicationPluginConfig>({
+    defaults: {
+      endpoint: "/events",
+      debug: false,
+    },
+  }),
+  page: pluginConfig<TypedPagePluginConfig>({
+    defaults: {
+      channel: "default",
+      enabled: true,
+    },
+  }),
+});
+const installedAnalyticsPlugin = analyticsPlugin();
+
+const accessPlugin = definePlugin({
+  id: "@test/access",
+  key: "access",
+  page: pluginConfig<RequiredPagePluginConfig>(),
+});
+const installedAccessPlugin = accessPlugin();
+
+const applicationOnlyPlugin = definePlugin({
+  id: "@test/application-only",
+  application: pluginConfig<RequiredApplicationPluginConfig>(),
+});
+const installedApplicationOnlyPlugin = applicationOnlyPlugin({
+  endpoint: "/events",
+});
+
+const inferredDefaultsPlugin = definePlugin({
+  id: "@test/inferred-defaults",
+  application: pluginConfig({
+    defaults: { channel: "web" },
+  }),
+});
+const installedInferredDefaultsPlugin = inferredDefaultsPlugin({
+  channel: "checkout",
+});
+
+const customBundlerPageConfig = pluginConfig<{ variant: "a" | "b" }>();
+const customBundlerPlugin = definePlugin<
+  "@test/custom-bundler",
+  "custom-bundler",
+  undefined,
+  typeof customBundlerPageConfig,
+  { feature: boolean }
+>({
+  id: "@test/custom-bundler",
+  key: "custom-bundler",
+  page: customBundlerPageConfig,
+});
+const installedCustomBundlerPlugin = customBundlerPlugin();
+
+const conditionalEvConfig = defineConfig({
+  plugins: [
+    Math.random() > 0.5 ? analyticsPlugin() : false,
+    Math.random() > 0.5 ? accessPlugin() : false,
+    installedApplicationOnlyPlugin,
+    null,
+    undefined,
+  ],
+});
+
+type DeterministicTuplePlugin = ExtractInstalledPlugin<
+  { readonly plugins: readonly [typeof installedAnalyticsPlugin] },
+  "analytics"
+>;
+type ConditionalConfigPlugin = ExtractInstalledPlugin<
+  | { readonly plugins: readonly [typeof installedAnalyticsPlugin] }
+  | { readonly plugins: readonly [typeof installedAccessPlugin] },
+  "analytics"
+>;
+type ConditionalTuplePlugin = ExtractInstalledPlugin<
+  {
+    readonly plugins:
+      | readonly [typeof installedAnalyticsPlugin]
+      | readonly [typeof installedAccessPlugin];
+  },
+  "analytics"
+>;
+type WidenedArrayPlugin = ExtractInstalledPlugin<
+  { readonly plugins: readonly (typeof installedAnalyticsPlugin)[] },
+  "analytics"
+>;
+
+declare module "../src/config/index.js" {
+  interface InstalledPluginRegistry {
+    readonly config: typeof conditionalEvConfig;
+    readonly analytics: typeof installedAnalyticsPlugin;
+    readonly access: typeof installedAccessPlugin;
+    readonly "application-only": typeof installedApplicationOnlyPlugin;
+    readonly "custom-bundler": typeof installedCustomBundlerPlugin;
+  }
+}
 
 const fullBundlerCapabilities = {
   build: { server: true, rsc: true, ppr: true },
@@ -34,8 +170,8 @@ describe("config authoring", () => {
       render: "ssr",
       hydrate: "none",
       rsc: true,
-      extensions: {
-        "@company/feature": { enabled: true },
+      plugins: {
+        analytics: { channel: "orders", enabled: true },
       },
     } as const);
 
@@ -93,6 +229,210 @@ describe("config authoring", () => {
     expect(invalidDefaultCsrConfig).toHaveProperty("hydrate");
     expect(invalidCsrConfig).toHaveProperty("hydrate");
   });
+
+  it("uses the installed plugin registry for Page plugin configuration", () => {
+    const configured = definePageConfig({
+      plugins: {
+        analytics: {
+          channel: "checkout",
+          enabled: true,
+          options: { sampleRate: 0.5 },
+        },
+        access: { policy: "strict" },
+        "custom-bundler": { variant: "a" },
+      },
+    });
+    const defaultEnabled = definePageConfig({
+      plugins: { analytics: true },
+    });
+    const disabled = definePageConfig({
+      plugins: { analytics: false, access: false },
+    });
+
+    expectTypeOf(
+      configured.plugins.analytics.channel,
+    ).toEqualTypeOf<"checkout">();
+    expectTypeOf(configured.plugins.access.policy).toEqualTypeOf<"strict">();
+    expectTypeOf(
+      configured.plugins["custom-bundler"].variant,
+    ).toEqualTypeOf<"a">();
+    expect(configured.plugins.analytics.options).toEqual({ sampleRate: 0.5 });
+    expect(defaultEnabled.plugins.analytics).toBe(true);
+    expect(disabled.plugins).toEqual({ analytics: false, access: false });
+  });
+
+  it("exposes Page keys only from definitely installed config tuples", () => {
+    expectTypeOf<DeterministicTuplePlugin>().toEqualTypeOf<
+      typeof installedAnalyticsPlugin
+    >();
+    expectTypeOf<ConditionalConfigPlugin>().toEqualTypeOf<never>();
+    expectTypeOf<ConditionalTuplePlugin>().toEqualTypeOf<never>();
+    expectTypeOf<WidenedArrayPlugin>().toEqualTypeOf<never>();
+  });
+
+  it("accepts Page plugin settings widened to the public config type", () => {
+    const plugins: PagePluginConfigValues = {
+      analytics: false,
+      access: { policy: "relaxed" },
+    };
+    const configured: PageFileConfig = { plugins };
+
+    expect(definePageConfig({ plugins }).plugins).toBe(plugins);
+    expect(definePageConfig(configured)).toBe(configured);
+  });
+
+  it("accepts explicit and unioned undefined Page plugin maps", () => {
+    const explicitUndefined = definePageConfig({ plugins: undefined });
+    const defineWithOptionalPlugins = (
+      plugins: PagePluginConfigValues | undefined,
+    ) => definePageConfig({ plugins });
+    const unionedUndefined = defineWithOptionalPlugins(undefined);
+
+    expect(explicitUndefined.plugins).toBeUndefined();
+    expect(unionedUndefined.plugins).toBeUndefined();
+  });
+
+  it("rejects unknown plugins and invalid registered Page settings", () => {
+    const unknown = definePageConfig({
+      plugins: {
+        // @ts-expect-error Page plugin keys come from the installed config tuple.
+        missing: false,
+      },
+    });
+    const missingRequiredConfig = definePageConfig({
+      plugins: {
+        // @ts-expect-error true requires Page defaults declared by the plugin.
+        access: true,
+      },
+    });
+    const invalidNestedField = definePageConfig({
+      plugins: {
+        analytics: {
+          channel: "checkout",
+          enabled: true,
+          options: {
+            sampleRate: 1,
+            // @ts-expect-error registered Page settings are exact recursively.
+            samplRate: 1,
+          },
+        },
+      },
+    });
+    const nonStaticValue = definePageConfig({
+      plugins: {
+        analytics: {
+          channel: "checkout",
+          enabled: true,
+          // @ts-expect-error executable values cannot cross the static boundary.
+          callback: () => undefined,
+        },
+      },
+    });
+
+    expect(unknown.plugins).toBeDefined();
+    expect(missingRequiredConfig.plugins).toBeDefined();
+    expect(invalidNestedField.plugins).toBeDefined();
+    expect(nonStaticValue.plugins).toBeDefined();
+  });
+
+  it("keeps Application configuration on the typed plugin factory", () => {
+    const plugin = analyticsPlugin({
+      endpoint: "/checkout-events",
+      debug: true,
+    });
+    const config = defineConfig({ plugins: [plugin] });
+    const annotated: Config = { plugins: [plugin] };
+
+    expectTypeOf(plugin.id).toEqualTypeOf<"@test/analytics">();
+    expectTypeOf(plugin.key).toEqualTypeOf<"analytics">();
+    expect(config.plugins[0]).toBe(plugin);
+    expect(defineConfig(annotated)).toBe(annotated);
+    expect(installedApplicationOnlyPlugin.key).toBeUndefined();
+    expect(installedInferredDefaultsPlugin).toHaveProperty(
+      "name",
+      "@test/inferred-defaults",
+    );
+  });
+
+  it("infers custom bundler config while preserving the plugin tuple", () => {
+    const bundler: BundlerAdapter<{ feature: boolean }> = {
+      name: "custom",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+    const plugin = customBundlerPlugin();
+    const config = defineConfig({
+      bundler,
+      plugins: [
+        plugin,
+        nodeDeploymentAdapter(),
+        staticDeploymentAdapter(),
+        edgeDeploymentAdapter(),
+      ],
+    });
+    const composedConfig: Config<{ feature: boolean }> & {
+      readonly bundler: typeof bundler;
+    } = { bundler, plugins: [plugin] };
+    const composed = defineConfig(composedConfig);
+    const widened: Config<{ feature: boolean }> = composedConfig;
+    const conditionalBundler = Math.random() > 0.5 ? bundler : undefined;
+    const assertUnsafeBundlerSelection = () => {
+      // @ts-expect-error A custom config must retain its required adapter.
+      defineConfig(widened);
+      // @ts-expect-error An optional adapter could fall back to Utoopack.
+      defineConfig({ bundler: conditionalBundler, plugins: [plugin] });
+    };
+
+    expectTypeOf(config.bundler).toEqualTypeOf<typeof bundler>();
+    expectTypeOf(config.plugins).toEqualTypeOf<
+      readonly [typeof plugin, Plugin, Plugin, Plugin]
+    >();
+    expect(composed).toBe(composedConfig);
+    expect(assertUnsafeBundlerSelection).toBeTypeOf("function");
+  });
+
+  it("rejects invalid Application factory and Page plugin values at compile time", () => {
+    const assertInvalidAuthoring = () => {
+      // @ts-expect-error Application configuration is required.
+      applicationOnlyPlugin();
+      // @ts-expect-error endpoint is required by the Application contract.
+      applicationOnlyPlugin({});
+      // @ts-expect-error endpoint must be a string.
+      applicationOnlyPlugin({ endpoint: 42 });
+      applicationOnlyPlugin({
+        endpoint: "/events",
+        // @ts-expect-error Application configuration rejects unknown fields.
+        debug: true,
+      });
+      definePageConfig({
+        plugins: {
+          // @ts-expect-error access Page configuration requires policy.
+          access: {},
+        },
+      });
+      definePageConfig({
+        plugins: {
+          access: {
+            // @ts-expect-error policy must match the declared union.
+            policy: "admin",
+          },
+        },
+      });
+      definePageConfig({
+        plugins: {
+          // @ts-expect-error Application-only plugins cannot be configured by a Page.
+          "application-only": false,
+        },
+      });
+    };
+
+    expect(assertInvalidAuthoring).toBeTypeOf("function");
+  });
 });
 
 describe("resolveConfig", () => {
@@ -149,60 +489,15 @@ describe("resolveConfig", () => {
     expect(resolveConfig(nullPrototypeConfig).routing?.mode).toBe("spa");
   });
 
-  it("isolates strictly static namespaced Application extension config", () => {
-    const configured = {
-      enabled: true,
-      nested: { channel: "web" },
-      values: [1, null, "two"],
-    };
-    const resolved = resolveConfig({
-      routing: { mode: "spa" },
-      extensions: {
-        "@company/feature": configured,
-      },
-    });
-
-    expect(resolved.extensions).toEqual({
-      "@company/feature": configured,
-    });
-    expect(resolved.extensions["@company/feature"]).not.toBe(configured);
-    expect(Object.isFrozen(resolved.extensions)).toBe(true);
-    expect(Object.isFrozen(resolved.extensions["@company/feature"])).toBe(true);
-
-    for (const extensions of [
-      { feature: true },
-      { "@company/date": new Date() },
-      { "@company/function": () => undefined },
-      { "@company/number": Number.NaN },
-      { "@company/sparse": new Array(1) },
-      { "@company/extra-array": Object.assign(["value"], { extra: true }) },
-    ]) {
-      expect(() =>
-        resolveConfig({
-          routing: { mode: "spa" },
-          extensions: extensions as never,
-        }),
-      ).toThrow();
-    }
-
-    let getterCalls = 0;
-    const accessorValue = {};
-    Object.defineProperty(accessorValue, "enabled", {
-      enumerable: true,
-      get() {
-        getterCalls += 1;
-        return true;
-      },
-    });
+  it("rejects the removed root extension bag", () => {
     expect(() =>
       resolveConfig({
         routing: { mode: "spa" },
         extensions: {
-          "@company/accessor": accessorValue,
+          "@company/feature": { enabled: true },
         },
       } as never),
-    ).toThrow("must be an enumerable own data property");
-    expect(getterCalls).toBe(0);
+    ).toThrow("config.extensions is not supported");
   });
 
   it("rejects accessors without executing them", () => {
@@ -510,36 +805,19 @@ describe("resolveConfig", () => {
     ).toThrow("application.routes[0].document is not supported");
   });
 
-  it("accepts only static namespaced Route and Document extensions", () => {
-    const resolved = resolveConfig({
-      application: {
-        document: {
-          extensions: {
-            "@company/html": { theme: "dark" },
-          },
-        },
-        routes: [
-          {
-            page: "home",
+  it("rejects removed Route and Document extension bags", () => {
+    expect(() =>
+      resolveConfig({
+        application: {
+          document: {
             extensions: {
-              "@company/navigation": { label: "Home" },
+              "@company/html": { theme: "dark" },
             },
-          },
-        ],
-      },
-    });
-
-    expect(resolved.application?.document.extensions).toEqual({
-      "@company/html": { theme: "dark" },
-    });
-    expect(resolved.application?.routes[0]?.extensions).toEqual({
-      "@company/navigation": { label: "Home" },
-    });
-    expect(
-      Object.isFrozen(
-        resolved.application?.routes[0]?.extensions?.["@company/navigation"],
-      ),
-    ).toBe(true);
+          } as never,
+          routes: [{ page: "home" }],
+        },
+      }),
+    ).toThrow("application.document.extensions is not supported");
 
     expect(() =>
       resolveConfig({
@@ -554,7 +832,7 @@ describe("resolveConfig", () => {
           ],
         },
       }),
-    ).toThrow("must be JSON-serializable");
+    ).toThrow("application.routes[0].extensions is not supported");
   });
 
   it("validates explicit Page references and route-tree targets", () => {
@@ -826,17 +1104,35 @@ describe("resolveConfig", () => {
 
   it("accepts only the single plugin descriptor shape", () => {
     const setup = () => ({});
-    const describePlugin = () => {};
     const plugin = {
       name: "test-plugin",
+      id: "@test/plugin",
+      key: "test-plugin",
       dependencies: ["required"],
       optionalDependencies: ["optional"],
       enforce: "pre" as const,
-      describe: describePlugin,
       setup,
     };
+    const resolved = resolveConfig({
+      plugins: [false, plugin, null, undefined],
+    });
 
-    expect(resolveConfig({ plugins: [plugin] }).plugins).toEqual([plugin]);
+    expect(resolved.plugins).toEqual([plugin]);
+    expect(resolved.plugins[0]).toMatchObject({
+      name: "test-plugin",
+      id: "@test/plugin",
+      key: "test-plugin",
+    });
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "legacy-descriptor",
+            describe() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].describe is not supported");
     expect(() =>
       resolveConfig({
         plugins: [

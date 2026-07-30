@@ -22,6 +22,7 @@ server routes, examples, or scaffolds change.
 | Server request-route markers and URL segments | `packages/ev/src/_internal/build/server-route-conventions.ts` | `server-routes.ts`, `packages/ev/tests/build-tools-server-routes.test.ts` |
 | Public config and SPA/MPA selection | `packages/ev/src/config/index.ts` | `packages/ev/tests/config.test.ts` |
 | Semantic graph and build plan | `packages/ev/src/_internal/build/graph/*`, `plan/*` | `packages/ev/tests/build-tools-graph-plan.test.ts` |
+| Typed plugin settings and generated Page types | `packages/ev/src/config/plugins.ts`, `_internal/build/plugin-settings.ts`, `plugin-types.ts` | `packages/ev/tests/plugin-settings.test.ts`, `plugin-types.test.ts` |
 | Shared graph/output contracts | `packages/shared/src/manifest` | `packages/shared/tests/manifest.test.ts` |
 
 ## Architecture Rules
@@ -71,15 +72,21 @@ server routes, examples, or scaffolds change.
    functions or supported named async values. They do not default-export or
    runtime re-export functions.
 7. Adjacent build-time `page.config.ts` owns static title, named `meta`,
-   `render`, `hydrate`, `prerender`, `rsc`, and namespaced extensions. `meta`
-   emits only `<meta name="..." content="...">`. CSR omits `hydrate`; PPR and
-   RSC use `render: "ssr"` without Page-level hydration.
-8. Plugin static configuration uses one namespaced extension registry across
-   Application, Page, Route, and Document owners. Values are strict JSON and
-   runtime projection is explicit plugin behavior.
-9. Treat `.ev`, `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as
-   generated output. Scaffolds and templates must not copy generated route
-   types.
+   `render`, `hydrate`, `prerender`, `rsc`, and the generated short-keyed
+   `plugins` map. `meta` emits only `<meta name="..." content="...">`. CSR
+   omits `hydrate`; PPR and RSC use `render: "ssr"` without Page-level
+   hydration.
+8. Applications install and configure plugins through `config.plugins`,
+   normally as `pluginFactory(applicationConfig)`. Application and Page
+   contracts are independent. Page values are strict JSON; a Page key may be
+   omitted, `false`, `true` when defaults exist, or an options object according
+   to the plugin's declared defaults and `forPages()` activation mode. Route
+   and Document contributions derive from the normalized Page graph instead
+   of exposing separate plugin configuration surfaces.
+9. Treat `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
+   `.turbo`, and `node_modules` as generated output. Scaffolds and templates
+   must not copy generated route or plugin types. Keep declarations under
+   `src` because normal application tsconfigs include `src` and exclude `.ev`.
 10. `createApp({ framework })` consumes validated generated output contracts.
     Use the generated React framework server bridge unless a deployment adapter
     intentionally owns the runtime integration.

@@ -1,689 +1,148 @@
 # 插件
 
-evjs 插件扩展受支持的框架阶段，也可以在需要时修改当前 bundler 配置。多数插件面向
-config、bundler config、HTML 文档和最终构建结果工作。
+插件通过受支持的生命周期扩展框架，而无需扩大核心应用配置。应用在
+`ev.config.ts` 中安装一次插件；Page 再通过插件的短 key 配置、启用或禁用页面级
+行为。Lifecycle hook 与 generated contribution 继续负责 build、bundler、HTML 和
+runtime 集成。
 
-## 快速示例
+## 安装并配置 Application
 
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  plugins: [
-    {
-      name: "build-timer",
-      setup() {
-        const start = Date.now();
-        return {
-          buildEnd({ output }) {
-            console.log(`Build ${output.buildId} finished in ${Date.now() - start}ms`);
-            console.log(Object.keys(output.assets).length, "entry asset groups");
-          },
-        };
-      },
-    },
-  ],
-});
-```
-
-## 插件结构
-
-```ts
-import type { Config, DefaultBundlerConfig, ResolvedFrameworkConfig } from "@evjs/ev/config";
-import type { ContributionContext, Plugin, PluginConfigContext, PluginContext, PluginDescribeContext, PluginHooks } from "@evjs/ev/plugin";
-
-interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
-  name: string;
-  dependencies?: string[];
-  optionalDependencies?: string[];
-  enforce?: "pre" | "normal" | "post";
-
-  describe?(api: PluginDescribeContext): void;
-
-  config?(config: Config<TBundlerConfig>, ctx: PluginConfigContext):
-    | Config<TBundlerConfig>
-    | undefined
-    | Promise<Config<TBundlerConfig> | undefined>;
-
-  setup?(ctx: PluginContext<TBundlerConfig>):
-    | PluginHooks<TBundlerConfig>
-    | undefined
-    | Promise<PluginHooks<TBundlerConfig> | undefined>;
-
-  contributions?(ctx: ContributionContext<TBundlerConfig>):
-    | void
-    | Promise<void>;
-}
-```
-
-插件名必须唯一。提供 `config` 和 `setup` 时，它们必须是函数。`dependencies` 和
-`optionalDependencies` 控制排序，并同时作用于 `config()` 和 `setup()`。依赖列表中
-的 plugin name 必须非空且不能重复；同一个 plugin name 不能同时出现在
-`dependencies` 和 `optionalDependencies` 中。未知 plugin descriptor 字段会被拒绝，
-避免拼错的 hook 静默失效。插件包自己的 metadata 应放在 `Plugin` object 之外。
-`describe` 存在时是框架保留 hook。
-
-## Namespaced Extension Owner
-
-应用级插件配置统一写在顶层 `config.extensions`：
+导入插件工厂，并在 `plugins` 中调用：
 
 ```ts
 import { defineConfig } from "@evjs/ev";
+import { analytics } from "@company/analytics";
 
 export default defineConfig({
-  routing: { mode: "spa" },
-  extensions: {
-    "@company/analytics": {
-      endpoint: "/events",
-    },
-  },
-  plugins: [analyticsPlugin()],
+  plugins: [analytics({ endpoint: "/events" })],
 });
 ```
 
-插件通过 `applicationExtension()` 注册该 namespace：
+工厂调用会安装插件，并提供类型安全的 Application 配置。没有 Application 配置的
+插件不接收参数，例如 `buildTimer()`。
+
+`plugins` 数组是有序安装边界。配置直接放在各工厂调用中，因此不需要另一份 extension
+bag，也不需要重复 package key。
+
+## 配置 Page
+
+把页面行为放在 Page 旁边，并使用插件的短 key：
 
 ```ts
-import { definePlugin } from "@evjs/ev/plugin";
-
-export const analyticsPlugin = definePlugin({
-  name: "analytics",
-
-  describe(api) {
-    api.applicationExtension({
-      namespace: "@company/analytics",
-      defaults: { endpoint: "/events", debug: false },
-    });
-  },
-
-  setup(ctx) {
-    // 此时 defaults、merge、validation、clone 与 freeze 已完成。
-    const config = ctx.config.extensions["@company/analytics"];
-    console.log(config);
-  },
-
-  contributions(ctx) {
-    const value =
-      ctx.framework.applications[0]?.extensions["@company/analytics"];
-    console.log(value);
-  },
-});
-```
-
-Application extension 在 `setup()` 之前解析，随后投影到 normalized
-Application。SPA、MPA 与显式 `application.routes` 输入使用相同合同。
-
-Page 级配置仍与 canonical Page 同目录。
-
-插件可以注册 namespaced Page extension，并在 SPA/MPA 中从 canonical
-`page.config.ts` 消费：
-
-```ts
-// src/pages/page.config.ts
+// src/pages/checkout/page.config.ts
 import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
-  extensions: {
-    "@company/analytics": {
-      enabled: true,
-      channel: "checkout",
-    },
+  plugins: {
+    analytics: { channel: "checkout" },
   },
 });
 ```
 
-同一份相邻配置还可以通过 `route.extensions` 配置该 Page 的唯一 semantic Route，
-或通过 `document.extensions` 配置 Page-owned Document。后者要求 canonical MPA、
-SPA SSG 等独立 Document 物化；CSR SPA Page 会共享 Application Document。显式
-显式 `application.routes` 通过每条 Route 自己的 `extensions` 字段配置 Route，
-`application.document.extensions` 则配置 Application-owned Document。
+`page.config.ts` 不需要导入插件。`ev prepare`、`ev dev` 与 `ev build` 会生成
+`src/plugin-types.d.ts`，稳定桥接实际发现的配置。使用 `ev.config.ts` 时，TypeScript
+会从静态 config 类型推导精确的 plugin key 与 Page value；JavaScript 配置只生成不会
+扩散 `any` 的安全桥接，因此 Page 需要插件补全时应使用 TypeScript 配置。只有静态上
+保证安装的条目才会暴露给 Page config。不要编辑或导入这份生成声明，并确保项目
+`tsconfig.json` 包含 `src`。
+
+Page 保留一层 `plugins` map，避免第三方 key 与 `title`、`render` 等 core 字段冲突。
+进入该 map 后只使用短 key，不需要 package name 或另一层 plugin 嵌套。
+
+## Application 与 Page Setting 相互独立
+
+Application 配置与 Page 配置是两份独立的类型合同：
+
+- Application setting 通过 `ev.config.ts` 中的工厂参数传入。插件支持时，其中可以包含
+  只在构建期使用的 callback 或 module reference。
+- Page setting 位于 `page.config.ts`。它会跨越静态 CoreGraph 边界，因此必须是普通、
+  JSON 可序列化的 object。
+- Page object 不继承、不合并 Application 字段。
+- 在同一份合同内，显式字段会先深度合并到 defaults，再进行校验。
+
+插件配置只存在于 Application 与 Page scope。Page-aware 插件从 normalized Page graph
+派生 Route 或 Document 行为；应用不需要配置单独的 Route/Document plugin surface。
+
+## 按 Scope 启用或禁用
+
+两种工厂写法都会安装并执行插件，也会解析同一份类型安全 Application options；
+它们只在“Page 省略 key”时表现不同：
+
+| 写法 | 结果 |
+|---|---|
+| `analytics(config)` | 安装并执行插件。Page 有 defaults 时，省略 key 会使用 defaults；否则该 Page 关闭。 |
+| `analytics.forPages(config)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
+| `plugins` 中的 `false`、`null` 或 `undefined` | 条件式省略整个插件；不执行任何插件 hook。 |
+| `analytics(config)` 后 Page 省略 key | Page 合同有 defaults 时用 defaults 启用；否则关闭该 Page。 |
+| `analytics.forPages(config)` 后 Page 省略 key | 即使 Page 有 defaults，也关闭该 Page。 |
+| `analytics: false` | 在该 Page 禁用。 |
+| `analytics: true` | 使用 Page `defaults` 启用；合同没有 defaults 时会报错。 |
+| `analytics: { ... }` | 将 object 合并到 Page defaults，校验后启用该 Page。 |
+
+只在选定 Page 启用时，使用 `forPages()`：
 
 ```ts
-import { definePlugin } from "@evjs/ev/plugin";
-
-type AnalyticsValue = {
-  enabled: boolean;
-  channel: string;
-};
-
-export const analyticsPlugin = definePlugin({
-  name: "analytics",
-
-  describe(api) {
-    api.pageExtension<AnalyticsValue, Partial<AnalyticsValue>>({
-      namespace: "@company/analytics",
-      defaults: { enabled: false, channel: "web" },
-      merge(defaults, configured) {
-        return { ...defaults, ...configured };
-      },
-      validate(value) {
-        return value.channel.length > 0 || "channel must not be empty";
-      },
-    });
-  },
-
-  contributions(ctx) {
-    for (const page of ctx.framework.pages) {
-      const value = page.extensions["@company/analytics"];
-      if (value) console.log(page.id, value);
-    }
-  },
-});
-```
-
-`definePlugin()` 是唯一 `Plugin` interface 的类型辅助函数，不选择 API 版本或
-runtime path。`describe()` 与其他 plugin hook 使用相同的 `dependencies`、
-`optionalDependencies` 与 `enforce` 顺序：先完成插件排序，再执行
-`describe()`，最后才执行 `setup()`。dev 中 plugin configuration reload 时会
-重新执行，因此它必须幂等且同步；defaults 函数、`merge` 和 `validate` 也必须同步
-返回，以保持 graph 构造的确定性。在单次 framework analysis 内，alias 收敛会为每个
-输入未变化的 graph owner 复用首次验证通过的 extension snapshot，不会再次调用这些
-回调；后续 dev re-analysis 会创建新的解析 scope。
-
-`applicationExtension()`、`pageExtension()`、`routeExtension()` 与
-`documentExtension()` 使用相同 declaration 合同。
-未提供 `merge` 时，plain-object defaults 和 configured value 会进行浅合并，
-configured 字段优先。非 object configured value 会替换 default。其他输入形态由
-自定义 `merge` 处理。owner 未配置该 namespace 时会直接物化 defaults，不调用自定义
-`merge`；因此它的 `configured` 参数始终是作者显式提供的值。`validate` 可以返回
-`true`/void，返回 `false` 或错误消息，也可以抛错。所有物化后的 value 都必须严格可
-JSON 序列化；function、symbol、bigint、非有限数值、class instance、稀疏数组和循环
-引用都会被拒绝。
-
-一个 namespace 只能有一个生产插件。同一插件可以为 Application、Page、Route、
-Document owner 各注册一次同一 namespace，且全部 declaration 必须使用相同
-`schemaVersion`。重复注册同一 owner 或由其他插件抢占 namespace 都会报错。四种
-owner 共用同一配置机制与 producer contract。
-
-Extension 与其他框架能力解析同一份 normalized CoreGraph。canonical
-`page.tsx` anchor 在两种 mode 中都会提供该 graph；显式 route-tree 配置也会先
-normalize 到该 graph。在
-`contributions()` 中，`ctx.framework.applications`、`.pages`、client `.routes`
-和 `.documents` 会暴露各自解析完成、只读的 `extensions` bag。
-
-Extension bag 是 build-time graph data，不是自动 runtime payload。需要浏览器
-行为的插件必须显式 emit 最小 generated data/module，并通过受支持 contribution
-挂载。插件必须考虑 `routingMode`：SPA Page 不会仅因为存在 Page config 就持有独立
-client entry 或 HTML Document。函数等可执行选项属于 typed plugin factory 或显式
-module reference，secret 不能进入 graph extension。
-
-## Config Hook
-
-`config()` 用于修改必须早于默认值解析、路由发现、dev proxy 或运行时路径派生的框架配置。
-它可以返回 config object，也可以在原对象上就地修改后返回 `undefined`。`null`、
-array 和其他返回值会被拒绝。最终配置会经过和用户配置相同的 resolver 校验，然后才会
-运行 `setup()` hooks 或开始 bundling。
-
-```ts
-import { defineConfig } from "@evjs/ev";
-import { merge } from "@evjs/ev/config";
-
+// ev.config.ts
 export default defineConfig({
-  plugins: [
-    {
-      name: "server-base-path",
-      config(config) {
-        merge(config, {
-          server: {
-            basePath: "/_framework",
-          },
-        });
-        return config;
-      },
-    },
-  ],
+  plugins: [analytics.forPages({ endpoint: "/events" })],
 });
 ```
 
-不要用 `bundlerConfig()` 修改框架协议路径。服务端函数、PPR、RSC endpoint 都从
-`server.basePath` 派生。
-
-## Setup 上下文
+再在需要的 Page 中启用：
 
 ```ts
-interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
-  mode: "development" | "production";
-  command: "dev" | "build";
-  cwd: string;
-  config: ResolvedFrameworkConfig<TBundlerConfig>;
-  logger: Logger;
-  addWatchFile(file: string): void;
-}
-```
-
-在 `setup()` 中初始化共享状态并返回生命周期 hooks。返回值必须是 hooks object 或
-`undefined`；`null`、array 和非函数 hook 字段会在生命周期 hooks 运行前被拒绝。
-未知 hook key 也会被拒绝，避免拼写错误静默 no-op。插件包自有 metadata
-应放在 hooks object 之外。
-
-## 生命周期
-
-```mermaid
-flowchart TB
-  subgraph Configure["配置阶段"]
-    Config["config()"]
-    Resolve["resolve config"]
-    Describe["describe()\n每次 plugin config generation"]
-    AppExtensions["解析 Application extensions"]
-    Setup["setup()"]
-  end
-
-  subgraph Plan["框架规划"]
-    BuildStart["buildStart()"]
-    Graph["discover graph\nroutes + server functions"]
-    GraphExtensions["解析 Page/Route/Document extensions"]
-    BuildPlan["create BuildPlan"]
-    Contributions["contributions(ctx)\nmodules + slots"]
-    IR["materialize .ev"]
-  end
-
-  subgraph Build["Bundling 和输出"]
-    BundlerConfig["bundlerConfig()"]
-    Bundler["bundler build"]
-    BuildOutput["buildOutput()"]
-    HTML["transformHtml()\nper document"]
-    BuildEnd["buildEnd()"]
-    Dispose["dispose()"]
-  end
-
-  Config --> Resolve --> Describe --> AppExtensions --> Setup --> BuildStart --> Graph --> GraphExtensions --> BuildPlan
-  BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
-  Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
-
-  classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
-  classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
-  classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class Config,Resolve,Describe,AppExtensions,Setup config;
-  class BuildStart,Graph,GraphExtensions,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
-```
-
-| Hook | 用途 |
-|------|------|
-| `buildStart(ctx)` | 路由发现和 bundling 前的构建准备 |
-| `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
-| `buildOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
-| `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
-| `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
-| `dispose(ctx)` | 清理资源 |
-
-每个 `buildEnd()` 钩子都会收到规范构建结果的一份隔离快照。对该快照的修改仅在
-当前钩子内可见，不会改变后续钩子或部署适配器收到的输入。
-
-在 dev 中，首次链接输出后会以 `isRebuild: false` 调用 `buildEnd()`，之后每次重新链接
-的构建都会以 `isRebuild: true` 调用。无论从 `setup()` context 还是
-`bundlerConfig()` context 调用 `addWatchFile()`，依赖都会注册到同一个框架 dev
-watcher；文件变化后框架会重新分析并应用对应的 plan update。如果所选 adapter
-无法安全地原地替换实际 bundler config，更新会 fail-closed 并明确提示重启，不会继续
-使用过期配置。
-
-`buildOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。
-其他 BuildOutput 字段仍由 framework 持有，包括 build id、输出路径、public path、
-runtime endpoint 与 transport、server entry/renderers/functions/routes，以及
-Application/Page/RSC/PPR 语义。Hook 不能新增、删除或重排 framework record 或数组。
-具体来说，Hook 不能新增、删除或重命名 Application、Page、Route 或 Document，不能
-调整 Route 顺序、修改 Page path 或 Route ownership，也不能修改 Document file name
-和静态 alias；这些值必须在 graph linking 之前完成配置。
-
-## Generated Contributions
-
-Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
-并把它们挂到 framework slot 上。
-
-当插件需要扩展生成的 `.ev` IR 时，使用 `contributions()`。这一层适合处理 entry
-import 与显式 installer、HTML tag、语义 Page wrapper、framework request
-middleware 和语义化 resolution 变更。真正需要 bundler transform 的场景，例如编译
-自定义文件类型，仍应使用 loader。
-
-`.ev` 是生成产物，包含：
-
-- `.ev/framework/core-graph.json`：file-convention 发现后的 graph；
-- `.ev/framework/build-plan.json`：最终的 bundler 无关 build plan；
-- `.ev/entries/*`：bundler 消费的框架 entry facade；
-- `.ev/plugins/<plugin>/*`：插件生成模块和 entry facade；
-- `.ev/manifest.json`：graph、generated artifacts、slots、import edges 和最终 entries。
-
-Contribution 模型由四部分组成：
-
-| 概念 | 语义 |
-|------|------|
-| Generated artifact | 通过 `ctx.emit` 声明的 module、data file 或 framework entry facade。 |
-| Opaque ref | `ctx.emit` 返回的 `GeneratedModuleRef`；插件拿不到 `.ev` 文件路径。 |
-| Link edge | 通过 `ctx.emit.importOf(ref)` 或 `helpers.importOf(ref)` 声明的 generated-to-generated import。 |
-| Slot item | 通过 `ctx.slot(name).add(...)` 声明的结构化挂载。 |
-
-`ctx.framework` 是 immutable/read-only 的公开 framework IR view。它暴露 entries、applications、
-pages、routes、server routes 和 server functions，但不暴露内部 `BuildPlan` 或
-可变 graph 对象。插件代码应从 `@evjs/ev/plugin` 导入 authoring 类型；
-`@evjs/ev/_internal/*` 只用于 CLI tooling、bundler adapter 和框架生成代码。
-
-Application、Page、client Route 和 Document view 会暴露解析后的 namespaced
-`extensions`。因此内部 provenance 与解析出的 owner value 在
-`contributions()` 物化 generated code 前就可以读取。
-
-Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
-id。MPA 因而表现为一个拥有多个 Page/Document 的逻辑 Application，而不是
-互不关联的一组 entry。client Route view 还包含 normalized pattern、
-semantic target、wrapper/layout facet、provenance 与 extension；即使 pathless group
-或 redirect 没有 component module，也会出现在 view 中。
-
-插件生成模块使用 opaque ref，不暴露文件系统路径：
-
-```ts
-import type { Plugin } from "@evjs/ev/plugin";
-
-export function analyticsPlugin(): Plugin {
-  return {
-    name: "analytics",
-    contributions(ctx) {
-      const runtime = ctx.emit.module({
-        id: "runtime",
-        scope: { kind: "application" },
-        source: "export function install() { console.log('analytics'); }",
-      });
-
-      const entry = ctx.emit.module({
-        id: "entry",
-        scope: { kind: "application" },
-        source: ({ importOf }) =>
-          `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
-      });
-
-      ctx.slot("client.entry").add({
-        id: "entry",
-        module: entry,
-        position: "after-main",
-      });
-    },
-  };
-}
-```
-
-当插件需要替换 entry、但仍要保留原始 framework facade 时，使用
-`ctx.emit.entryFacade()`，不要在插件里重建 framework internal：
-
-```ts
-contributions(ctx) {
-  const entry = ctx.framework.getApplicationEntry();
-  if (!entry) return;
-
-  const original = ctx.emit.entryFacade({
-    id: "original-entry",
-    entry,
-  });
-
-  const wrapper = ctx.emit.module({
-    id: "entry-wrapper",
-    scope: { kind: "application" },
-    source: ({ importOf }) =>
-      `export const load = () => import(${JSON.stringify(importOf(original))});`,
-  });
-
-  ctx.slot("client.entry").add({
-    id: "entry-wrapper-slot",
-    module: wrapper,
-    position: "before-main",
-    mode: "replace",
-  });
-}
-```
-
-对于生成的 SPA Application entry，`autoStart: false` 会创建并导出 framework
-`app`，但不会挂载；同时会导出 `start(container)`，为首次挂载保留 framework
-hydration marker 语义。使用该选项的替换 entry 需要负责首次 `start()` 以及后续
-`app.render()` 重新挂载；其他 entry 类型不能关闭 framework startup。
-
-插件生成路径稳定且可读。例如名为 `@evjs/plugin-qiankun:slave` 的插件会写入
-`.ev/plugins/qiankun/slave/*`，并暴露类似
-`evjs:generated/qiankun/slave/entry-wrapper` 的 specifier。
-
-可用 slots：
-
-| Slot | 用途 |
-|------|------|
-| `client.entry` | 在 `polyfill`、`before-main-imports`、`after-main-imports`、`before-main` 或 `after-main` 位置向客户端 entry 添加生成模块 |
-| `page.wrapper` | 在选定的 `client`、`server` 或 `all` runtime projection 上包装语义 Page |
-| `server.request.middleware` | 向服务端请求 pipeline 添加 framework request middleware |
-| `html.tag` | 添加结构化的 `meta`、`link`、`script` 或 `style` tag |
-| `resolve.alias` | 将模块 specifier 重定向到用户模块、package、绝对路径或 generated module |
-| `resolve.external` | 声明某个 specifier 由外部 runtime 提供；CDN tag 应另行通过 `html.tag` 注入 |
-
-Generated entry 需要 import side-effect module 或调用显式 installer 时，使用
-`client.entry`。evjs 不提供 inert runtime-plugin registry；新的 runtime 行为必须有
-可执行 installer 或 feature-specific typed hook。它的 runtime 只能是 `"client"`；
-该 slot 没有 server projection，因此不接受 `"all"`。
-
-插件需要包装 Page component 本身时，使用 `page.wrapper`：
-
-```ts
-contributions(ctx) {
-  ctx.slot("page.wrapper").add({
-    id: "auth-boundary",
-    module: "./src/plugin/AuthBoundary.tsx",
-    runtime: "all",
-    target: { kind: "application", applicationId: "default" },
-  });
-}
-```
-
-模块必须 default-export 一个接收 `children` 的 component。Application target 会展开到
-它拥有的 Pages，Page target 只选择一个语义 Page。client projection 对应 SPA route
-composition 或 MPA Page client entry；server projection 对应每个 SSR、SSG、
-PPR shell 或 RSC Page renderer。runtime filter 没有匹配 projection 时会直接失败，
-不会静默失效。
-
-Wrapper contribution 按 plugin/contribution 顺序执行，并保持 component transform
-语义：后声明的 contribution 会包在先声明的 contribution 外层。route 声明的 layout
-和 wrapper 仍位于 contributed Page wrapper 外层。规范化后的 `layers` metadata
-会以 outer-to-inner 顺序同时记录 MPA client entry 与 server Page entry 的最终结构。
-
-显式 application/page target 会针对所选 materialization point 校验。Semantic SPA Page
-与 Application 共享 client entry，因此没有独立 Page entry 时仍不能使用
-page-targeted client-entry contribution。CSR SPA Page 同样共享 Application
-Document，所以拒绝 page-targeted HTML contribution。SSR/PPR/RSC SPA Page
-具有构建期编译的 Page-specific request-time document shell，因此 page-targeted
-`html.tag` contribution 与 `transformHtml` 处理会应用到该 shell。
-
-`resolve.external` 支持 `runtime: "client" | "server" | "all"`。Webpack
-adapter 会按 target 过滤。Utoopack adapter 只有 top-level externals 配置，因此会映射
-client/all externals；当存在 client entries 时，server-only externals 会快速报错。
-
-`contributions()` 和生命周期 hooks 是两个维度。已有的 `config()`、`setup()`、
-`bundlerConfig()`、`transformHtml()` 和 `buildEnd()` 仍分别用于配置、底层 bundler
-修改、AST 级 HTML 改写和部署产物输出。
-
-## HTML Transform 上下文
-
-`transformHtml()` 会为每个实际发射的 static HTML 文件，以及每个在构建期编译的
-Page-specific request-time document shell，分别接收一个已解析 HTML 文档。应通过
-`ctx.owner.kind` 判断当前文档归属，不要从文件名猜。
-
-```ts
-transformHtml(doc, ctx) {
-  doc.head?.appendChild(doc.createComment(` build ${ctx.buildId} `));
-
-  if (ctx.owner.kind === "application") {
-    doc.documentElement?.setAttribute("data-app", ctx.applicationId);
-  }
-
-  if (ctx.owner.kind === "page") {
-    doc.documentElement?.setAttribute("data-page", ctx.owner.pageId);
-  }
-}
-```
-
-常用字段：
-
-- `ctx.documentId` 与 `ctx.applicationId`；
-- `ctx.owner`：`{ kind: "application" }`、
-  `{ kind: "page", pageId }` 或 `{ kind: "extension", extensionId }`；
-- `ctx.fileName` 和 `ctx.template`；对于 request-time shell，`fileName` 是逻辑
-  Document filename，不会作为 static file 发射；
-- `ctx.assets`；
-- `ctx.output`: 当前构建输出；
-- `ctx.buildId` 和 `ctx.publicPath`。
-
-文档类型是 `HtmlDocument`，它是标准 DOM API 的 bundler 无关子集：
-
-```ts
-import type { HtmlDocument } from "@evjs/ev/plugin";
-```
-
-## Build Result
-
-`buildEnd()` 接收最终构建输出、framework runtime 与 canonical deployment metadata：
-
-```ts
-setup() {
-  return {
-    buildEnd({
-      output,
-      frameworkRuntime,
-      deploymentMetadata,
-      isRebuild,
-    }) {
-      console.log("Apps:", Object.keys(output.apps));
-      console.log("Pages:", Object.keys(output.pages));
-      console.log("Runtime routing:", frameworkRuntime.routing.kind);
-      console.log("Server entry:", deploymentMetadata.server.entry);
-      console.log("Deploy routes:", deploymentMetadata.routes.length);
-      console.log("Rebuild:", isRebuild);
-    },
-  };
-}
-```
-
-部署插件应优先从 `deploymentMetadata` 读取 routes、documents、assets 和 server entry。
-需要完整内部构建输出的插件仍可在内存中检查 `output`；需要 runtime 信息的插件可读取
-`frameworkRuntime`。部署规划应直接使用 `deploymentMetadata`，不要再派生拆分的
-client/server manifest。HTML hook 会收到同一组结果字段，并额外包含 `ctx.owner`、
-`ctx.fileName`、`ctx.assets` 等文档字段。
-
-## Bundler Config
-
-`Plugin` 默认使用 Utoopack 配置类型，和默认 bundler 保持一致。底层 bundler
-修改应使用 adapter helper。
-
-最终 BuildPlan 始终是 framework runtime endpoint 与 output ownership 的事实源。
-`bundlerConfig()` hook 可以定制受支持的 loader、resolution、optimization 等底层
-setting，但不能覆盖 framework client/server 输出路径。即使关闭 recursive clean，
-adapter 也会在 hook 运行后按 BuildPlan 校验这些路径；plugin 持有的 clean output
-同样必须保留在 framework 持有的 `distDir` 内，并且不能与 client 或 server 输出重叠。
-
-Utoopack 示例：
-
-```ts
-import { merge, utoopack } from "@evjs/bundler-utoopack";
-
-export function yamlPlugin() {
-  return {
-    name: "yaml-support",
-    setup() {
-      return {
-        bundlerConfig: utoopack((cfg) => {
-          merge(cfg, {
-            module: {
-              rules: {
-                ".yaml": { type: "json" },
-              },
-            },
-          });
-        }),
-      };
-    },
-  };
-}
-```
-
-切换到 webpack 的项目，需要显式切换 config generic 并使用 webpack adapter
-helper：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-import { webpack, webpackAdapter, type WebpackConfig } from "@evjs/bundler-webpack";
-
-export default defineConfig<WebpackConfig>({
-  bundler: webpackAdapter,
-  plugins: [
-    {
-      name: "webpack-alias",
-      setup() {
-        return {
-          bundlerConfig: webpack((configs) => {
-            for (const cfg of configs) {
-              cfg.resolve ??= {};
-              cfg.resolve.alias ??= {};
-              cfg.resolve.alias["@app"] = "./src";
-            }
-          }),
-        };
-      },
-    },
-  ],
+// src/pages/checkout/page.config.ts
+export default definePageConfig({
+  plugins: {
+    analytics: true,
+  },
 });
 ```
 
-## 示例
-
-### 部署 Metadata
+`true` 要求 Page 合同提供 defaults。如果插件要求显式 Page setting，则直接提供 object：
 
 ```ts
-export function deployMetadata() {
-  return {
-    name: "deploy-metadata",
-    setup() {
-      return {
-        buildOutput(output) {
-          output.deployment = {
-            platform: "custom",
-            builtAt: new Date().toISOString(),
-          };
-        },
-      };
-    },
-  };
-}
+export default definePageConfig({
+  plugins: {
+    analytics: { channel: "checkout" },
+  },
+});
 ```
 
-### 页面 Metadata
+需要广泛启用、只排除少数 Page 时，为 Page 合同提供 defaults，正常安装插件，再在
+例外 Page 中设置 `analytics: false`。没有 defaults 的 Page 合同始终把省略视为关闭，
+并要求通过 object 启用 Page。
+
+对于构建期条件，直接使用 falsy 数组项：
 
 ```ts
-export function pageMetadata() {
-  return {
-    name: "page-metadata",
-    setup() {
-      return {
-        transformHtml(doc, ctx) {
-          if (ctx.owner.kind !== "page") return;
-          const meta = doc.createElement("meta");
-          meta.setAttribute("name", "evjs-page");
-          meta.setAttribute("content", ctx.owner.pageId);
-          doc.head?.appendChild(meta);
-        },
-      };
-    },
-  };
-}
+plugins: [process.env.ANALYTICS === "1" && analytics(options)]
 ```
 
-### CSP Nonce
+可能进入 falsy 分支的插件并不保证安装，因此不会向 Page 暴露 key。这种写法适用于
+没有 Page setting 的整插件条件。Page 需要配置插件时，应确定性安装插件，再用
+`analytics: false` 或 `forPages()` 控制 Page 级启用。
 
-```ts
-import crypto from "node:crypto";
+Page key 只从 `defineConfig()` 推导出的 tuple 中确定存在的条目生成。宽化后的 plugin
+array、在多个 array 之间做条件选择，或在多个完整 config object 之间做条件选择，都
+无法证明某个条目一定存在，因此不会暴露 Page key。需要 Page 配置的插件应直接保留在
+`defineConfig({ plugins: [...] })` tuple 中。
 
-export function cspNonce() {
-  return {
-    name: "csp-nonce",
-    setup() {
-      return {
-        transformHtml(doc) {
-          const nonce = crypto.randomBytes(16).toString("base64");
-          for (const script of doc.querySelectorAll("script")) {
-            script.setAttribute("nonce", nonce);
-          }
-        },
-      };
-    },
-  };
-}
-```
+## 类型安全与校验
+
+TypeScript 会在 authoring site 检查 Application 工厂参数与 Page value。插件还可以在
+evjs 解析配置和分析 graph 时，同步校验两份合同。
+
+Page value 与解析后的 Page defaults 必须保持 static JSON。function、symbol、bigint、
+非有限数值、class instance、稀疏数组与循环引用都会被拒绝。Runtime projection 是插件的
+显式职责，插件不能泄露 Application 配置中的 secret。
+
+## 继续阅读
+
+| 目标 | 文档 |
+|---|---|
+| 定义类型安全的插件和 Application/Page 合同 | [插件开发](./plugin-authoring) |
+| 选择并实现生命周期 hooks | [插件 Hooks](./plugin-hooks) |
+| 生成模块并挂载到 framework slots | [Generated Contributions IR](./generated-contributions) |
+| 从聚焦的实现示例开始 | [插件配方](./plugin-recipes) |
+| 配置官方微前端桥接 | [qiankun](./qiankun) |

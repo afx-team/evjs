@@ -6,6 +6,7 @@ import type {
   PluginHooks,
 } from "../../plugin/index.js";
 import { createBuildResult } from "./build-result.js";
+import { createLatePluginContext } from "./plugin-lifecycle.js";
 
 export interface BuildHtmlOptions<TBundlerCfg = unknown> {
   /** Pre-parsed HTML document (from `generateHtml()`). */
@@ -35,6 +36,7 @@ export async function buildHtml<TBundlerCfg = unknown>(
   options: BuildHtmlOptions<TBundlerCfg>,
 ): Promise<string> {
   const { doc, hooks, html, output, pluginContext } = options;
+  const latePluginContext = createLatePluginContext(pluginContext);
 
   // The DOM composes across hooks, while manifest data is an isolated
   // observation. A transform must never be able to redirect later framework
@@ -48,7 +50,7 @@ export async function buildHtml<TBundlerCfg = unknown>(
         options.isRebuild ?? false,
       );
       const htmlContext = {
-        ...pluginContext,
+        ...latePluginContext,
         ...htmlSnapshot,
         ...buildResult,
         buildId: outputSnapshot.buildId,

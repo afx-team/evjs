@@ -103,7 +103,7 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `conventions: false` | 关闭框架文件发现 | 整个项目 | 一次性关闭 Page/Route 锚点、server file route 与全局/route middleware。 |
 | `routing.mode` | 输出物化模式 | Application | `"spa"` 创建 Client Route；`"mpa"` 为静态 Page path 创建 Page-owned Document。它不选择另一套路由模型。 |
 | `src/pages/**/page.{ts,tsx,js,jsx}` | canonical Page 与 Route 锚点 | 完整所在目录 | Page 根目录固定；每个 route 目录只允许一个源码扩展名变体；默认导出 Page 组件。 |
-| `<Page 目录>/page.config.{ts,js}` | 可选 canonical Page、Page 锚定 Route 与 Page-owned Document 配置 | Build graph | Default-export static config；顶层 `extensions` 属于 Page，`route.extensions` 属于其唯一 semantic Route；`document.aliases` 增加经过校验的静态输出文件名，但不会增加 Route。推荐 `definePageConfig()` 与 `page.config.ts`，每个 Page 只能有一个变体。 |
+| `<Page 目录>/page.config.{ts,js}` | 可选 canonical Page 配置 | Build graph | Default-export static config；core metadata/rendering 字段和类型安全的 `plugins` map 属于 Page；`document.aliases` 增加经过校验的静态输出文件名，但不会增加 Route。推荐 `definePageConfig()` 与 `page.config.ts`，每个 Page 只能有一个变体。 |
 | `src/pages/**/$param/` | 动态 route segment | Route path | 产生 semantic `:param` segment。 |
 | `src/pages/**/$...splat/` | Catch-all route segment | Route path | 必须位于末尾。 |
 | `src/pages/**/(group)/` | Pathless route group | 源码组织 | 参与 scope，但不增加 URL segment。 |
@@ -113,6 +113,7 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `<Page 目录>/index.html` | Page Document 模板 | MPA Page 输出 | 覆盖该 MPA Page 的共享模板，不是客户端 Page entry。 |
 | `index.html` / `routing.html` | Document template | Application 输出 | `index.html` 是默认模板，与 Page entry 文件名无关。 |
 | `src/route-types.d.ts` | SPA 文件路由导航类型（生成时） | 生成产物 | 忽略且不要复制到 scaffold 或从应用源码 import。 |
+| `src/plugin-types.d.ts` | `ev.config.ts` 静态类型桥 | 生成产物 | 忽略；Page config 会自动消费其 augmentation，无需 import 插件包。 |
 | 带 `"use server";` 的 reachable 源码 module | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录或文件后缀；推荐用 `.server.*` 提高可读性。 |
 | `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | Server route root 固定；每个 route 目录只允许一个源码扩展名变体；只导出 callable 的大写 HTTP method handler。注册顺序按 segment 逐段比较 specificity，在首个不同位置优先 static segment。 |
 | Server route 目录下其他文件 | Route 私有源码 | 最近的 server Route | Helper、schema、store、测试与 `index.*` 都不会创建 route。 |
@@ -210,38 +211,40 @@ import { useQuery } from "@evjs/ev/query";
 
 具体 API 参见[客户端路由](./client-routes)和[服务端函数](./server-functions)。
 
-### Application、Page、Route 与 Document extension scope
+### Application 与 Page 插件 scope
 
-应用级插件数据只在顶层 `ev.config.ts#extensions` author 一次，并通过
-`applicationExtension()` 注册。Page 级插件数据写在同目录
-`page.config.ts#extensions`，并通过 `pageExtension()` 注册。canonical Page
-route 的 Route-owned 数据写在 `page.config.ts#route.extensions`，并通过
-`routeExtension()` 注册。这个显式嵌套能让菜单、权限、埋点和微前端数据继续由
-semantic Route 持有，而不会被静默当成 Page 数据。
+Application 在 `ev.config.ts#plugins` 中安装并配置插件：
 
-所有 owner kind 共用同一个 CoreGraph extension registry。同一插件可以为多个
-owner kind 持有同一 namespace，但必须逐一声明。显式 SPA route tree 的严格
-static Route value 可以写在 `application.routes[*].extensions`；canonical Page
-tree 则把每个 Page route value 写在 `page.config.ts#route.extensions`。runtime
-投影始终需要显式声明。
+```ts
+import { defineConfig } from "@evjs/ev";
+import { analytics } from "@company/evjs-plugin-analytics";
 
-`page.config.ts#route.extensions` 要求该 Page 只被一个 semantic Route
-指向。如果显式 route tree 用多个 Route 复用同一个 Page，需要在每个
-`application.routes[*].extensions` 上分别配置，直到这些 Route 拥有各自的
-canonical Page anchor。componentless layout Route 不能借用后代 Page config；
-没有 Page 或 layout 的 pathless 目录也不会物化 Route。插件可以通过
-Route-extension default 处理这类结构 Route；否则应保留显式
-`application.routes`，直到 componentless Route 数据拥有其他真实
-owner。evjs 会诊断 orphan `page.config.ts`，而不是隐式继承。
+export default defineConfig({
+  routing: { mode: "spa" },
+  plugins: [analytics({ endpoint: "/events" })],
+});
+```
 
-显式 route-tree 配置中 Application-owned Document 的值使用
-`application.document.extensions` 与 `documentExtension()`。canonical
-Page-owned Document 使用 `page.config.ts#document.extensions`；只有 Page 自己物化
-Document（例如 MPA 或 SPA SSG Page）时才有效。CSR SPA Page 会共享
-Application-owned Document，因此 evjs 会诊断 Page-specific Document 配置，而
-不会把它全局应用。插件可以为两种物化方式注册 Document default。
+工厂调用是唯一的 Application 级插件配置入口。参数由插件包提供类型；插件合同
+明确允许时，也可以包含可执行选项。
 
-### Page 配置与 extension
+已安装且支持 Page 配置的插件会在相邻 `page.config.ts#plugins` map 中暴露短 key。
+Application 与 Page 是两个独立合同，不会相互合并；authoring 字段只在各自合同
+内部深度合并到 defaults。普通工厂调用在 Page 有 defaults 时，会让省略 key 的
+Page 使用 defaults；没有 defaults 时则关闭该 Page。defaultable Page 合同还会
+暴露 `forPages()`，并始终把省略视为关闭。`false` 对当前 Page 禁用插件，`true`
+要求 Page defaults，对象则用独立类型、严格 JSON 的 Page value 启用插件。
+
+`ev prepare`、`ev dev` 与 `ev build` 生成 `src/plugin-types.d.ts`，稳定桥接
+`ev.config.ts`。Page config 无需 import 插件包即可获得 key 与字段补全；条件化或
+被 widen 的插件数组只暴露静态确定会安装的条目。声明有意生成在 `src` 而不是
+`.ev`，因为常规项目 `tsconfig.json` 会包含 `src`。
+
+Route 与 Document 对象不暴露单独的插件配置。Page-aware 插件根据 normalized
+Page graph 派生 route pattern、Document ownership 等语义上下文，再显式投影自己
+持有的 runtime 或 build contribution。
+
+### Page 配置与插件
 
 同目录 `page.config.ts` default-export 构建期 Page 配置：
 
@@ -257,16 +260,12 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/analytics": {
+  plugins: {
+    analytics: {
       channel: "orders",
     },
-  },
-  route: {
-    extensions: {
-      "@company/access": {
-        policy: "canReadOrders",
-      },
+    access: {
+      policy: "canReadOrders",
     },
   },
 });
@@ -278,10 +277,9 @@ Core 字段包括静态 Page `title`、named `meta`、`render`、`hydrate`、
 项都会生成
 `<meta name="key" content="value">`；它不表示 `property`、`charset`、
 `link`、`script`、动态元信息或任意 head DSL。Plugin 持有的 Page value 放在
-顶层 `extensions`，Route-owned value 放在 `route.extensions`；两者都使用已注册
-namespaced key，求值结果必须是 static JSON data。Core title/meta 会为当前 Page
-物化；extension value 会进入各自的 normalized graph owner，但能力所属插件仍须
-通过 generated contribution 显式投影 runtime data 或行为。
+`plugins` 下，并使用生成的短 key；解析后的 Page 对象必须是 static JSON data。
+Core title/meta 会为当前 Page 物化；插件值会进入 Page analysis，但能力所属插件
+仍须通过 generated contribution 显式投影 runtime data 或行为。
 
 当 Page 持有静态 Document（MPA CSR/SSG 或 SPA SSG）时，可以把同一份
 transformed HTML 发布到额外的已校验路径：
@@ -368,6 +366,7 @@ manifest 输入。
 - `.turbo/`
 - `node_modules/`
 - `src/route-types.d.ts`
+- `src/plugin-types.d.ts`
 
 不要编辑或复制到模板。
 
@@ -381,7 +380,7 @@ manifest 输入。
 | --- | --- | --- |
 | `routing.mode` | 发现 canonical Page tree，并选择 SPA 或 MPA 物化。 | 只有 `src/pages/**/page.*` 发布 Page；包括 `index.*` 在内的其他文件都是私有源码。Page 设置放在相邻 `page.config.ts`。 |
 | `application.pageRoot` | 显式 SPA route tree 中 `page` 与 `component` 共用的 Page 源码根目录，默认值为 `./src/pages`。 | 只与 `application.routes` 配合使用，不会定制 canonical `src/pages` discovery；`@/pages/...` 指向该配置根目录。 |
-| `application.routes` | 接受 `routes` 嵌套（不接受 `children`）、`page` 或 `component`、layout/wrapper/redirect 结构及已注册的 namespaced `extensions`。`exact: true` 是 terminal-match 断言；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该输入不能与 `routing` 同时声明，也不能选择 MPA。 | `page` 必须解析到 `application.pageRoot` 下唯一的 `page.*` 锚点；`component` 的逻辑路径和 symlink 真实路径都必须留在同一根目录。`index.*` 或 `page.*` component 持有所在目录；其他 basename 只持有模块本身，且不会消费 `page.config.ts`。layout 与 wrapper 仍是项目源码 reference。 |
+| `application.routes` | 接受 `routes` 嵌套（不接受 `children`）、`page` 或 `component` 与 layout/wrapper/redirect 结构。插件配置由 Page 持有，不写在 Route declaration 上。`exact: true` 是 terminal-match 断言；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该输入不能与 `routing` 同时声明，也不能选择 MPA。 | `page` 必须解析到 `application.pageRoot` 下唯一的 `page.*` 锚点；`component` 的逻辑路径和 symlink 真实路径都必须留在同一根目录。`index.*` 或 `page.*` component 持有所在目录；其他 basename 只持有模块本身，且不会消费 `page.config.ts`。layout 与 wrapper 仍是项目源码 reference。 |
 
 ## 命名建议
 
@@ -391,6 +390,6 @@ manifest 输入。
 - Page 私有代码放入 Page 目录。
 - 多个 Page 共用的业务模块放到各 Page 目录之外。
 - 静态文档标题和 named meta 放在 core `title` 与 `meta` 字段中；业务或插件能力
-  数据放在 namespaced `page.config.ts` extension 中。
-- 静态 title、named meta、渲染设置与 namespaced extension 统一放在相邻的
+  数据放在 `page.config.ts#plugins` 下生成的短 key 中。
+- 静态 title、named meta、渲染设置与 Page 插件值统一放在相邻的
   `page.config.ts` 模块中。

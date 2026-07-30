@@ -65,7 +65,7 @@ test.describe("qiankun", () => {
     await expect(page.getByText("Revenue")).toBeVisible();
   });
 
-  test("loads the slave after navigating from the master home page", async ({
+  test("mounts the slave root Page at the master runtime route", async ({
     page,
   }) => {
     await page.goto(masterURL);
@@ -75,12 +75,13 @@ test.describe("qiankun", () => {
     ).toBeVisible({ timeout: 10_000 });
     await page.getByRole("link", { name: "Open catalog" }).click();
     await expect(page).toHaveURL(`${masterURL}/catalog`);
-    await expect(
-      page.getByRole("heading", { name: "Catalog workspace" }),
-    ).toBeVisible();
+    await expect(page.locator('[data-evjs-qiankun-app="catalog"]')).toBeVisible(
+      { timeout: 10_000 },
+    );
     await expect(page.getByText("qiankun slave", { exact: true })).toBeVisible({
       timeout: 10_000,
     });
+    await expect(page.getByRole("heading", { name: "Catalog" })).toBeVisible();
     await expect(page.getByText("Orders")).toBeVisible();
     await expect(page.getByText("Inventory")).toBeVisible();
     await expect(page.getByText("Revenue")).toBeVisible();

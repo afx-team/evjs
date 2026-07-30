@@ -12,6 +12,7 @@ esm
 .ev
 .evjs
 route-types.d.ts
+plugin-types.d.ts
 test-results
 playwright-report
 evjs-dev

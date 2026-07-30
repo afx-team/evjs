@@ -84,8 +84,8 @@ describe("page.config modules", () => {
           hydrate: "none",
           prerender: { revalidate: 60 },
           rsc: true,
-          extensions: {
-            "@company/feature": settings,
+          plugins: {
+            analytics: settings,
           },
         } satisfies PageFileConfig;
 
@@ -112,8 +112,8 @@ describe("page.config modules", () => {
           Robots: "noindex",
         },
       },
-      extensions: {
-        "@company/feature": {
+      plugins: {
+        analytics: {
           enabled: true,
           channel: "stable",
         },
@@ -143,11 +143,53 @@ describe("page.config modules", () => {
 
     const second = await resolvePageConfigModules(cwd, metadata);
 
-    expect(second.pages.report.extensions["@company/feature"]).toEqual({
+    expect(second.pages.report.plugins.analytics).toEqual({
       enabled: true,
       channel: "next",
     });
     expect(second.dependencies).toEqual(first.dependencies);
+  });
+
+  it("resolves false, true, and static object Page plugin settings", async () => {
+    const cwd = await createFixture({
+      "src/pages/checkout/page.tsx":
+        "export default function Checkout() { return null; }",
+      "src/pages/checkout/page.config.ts": `
+        export default {
+          plugins: {
+            analytics: false,
+            monitoring: true,
+            checkout: {
+              enabled: true,
+              nested: { channels: ["web", "app"] },
+            },
+          },
+        };
+      `,
+    });
+
+    const resolved = await resolvePageConfigModules(
+      cwd,
+      createPageMetadata("checkout", "./src/pages/checkout/page.config.ts"),
+    );
+
+    expect(resolved.pages.checkout.plugins).toEqual({
+      analytics: false,
+      monitoring: true,
+      checkout: {
+        enabled: true,
+        nested: { channels: ["web", "app"] },
+      },
+    });
+    expect(Object.isFrozen(resolved.pages.checkout.plugins)).toBe(true);
+    expect(Object.isFrozen(resolved.pages.checkout.plugins.checkout)).toBe(
+      true,
+    );
+    expect(
+      Object.isFrozen(
+        (resolved.pages.checkout.plugins.checkout as { nested: object }).nested,
+      ),
+    ).toBe(true);
   });
 
   it("supports ESM default imports in Page config dependencies", async () => {
@@ -189,9 +231,6 @@ describe("page.config modules", () => {
           render: "ssg",
           document: {
             aliases: ["report.html", "legacy/report.htm"],
-            extensions: {
-              "@company/document": { channel: "legacy" },
-            },
           },
         };
       `,
@@ -204,13 +243,10 @@ describe("page.config modules", () => {
 
     expect(resolved.pages.report.document).toEqual({
       aliases: ["report.html", "legacy/report.htm"],
-      extensions: {
-        "@company/document": { channel: "legacy" },
-      },
     });
   });
 
-  it("normalizes empty Document and Route configuration to no owner input", async () => {
+  it("normalizes empty Document and Page plugin configuration", async () => {
     const cwd = await createFixture({
       "src/pages/report/page.tsx":
         "export default function Report() { return null; }",
@@ -218,11 +254,8 @@ describe("page.config modules", () => {
         export default {
           document: {
             aliases: [],
-            extensions: {},
           },
-          route: {
-            extensions: {},
-          },
+          plugins: {},
         };
       `,
     });
@@ -234,7 +267,7 @@ describe("page.config modules", () => {
 
     expect(resolved.pages.report).toEqual({
       source: "./src/pages/report/page.config.ts",
-      extensions: {},
+      plugins: {},
     });
   });
 
@@ -288,7 +321,7 @@ describe("page.config modules", () => {
         import { channel } from "../../config/channel";
         throw new Error("broken config");
         export default {
-          extensions: { "@company/feature": { channel } },
+          plugins: { feature: { channel } },
         };
       `,
     });
@@ -311,7 +344,7 @@ describe("page.config modules", () => {
         `
           import { channel } from "../../config/channel";
           export default {
-            extensions: { "@company/feature": { channel } },
+            plugins: { feature: { channel } },
           };
         `,
         "utf-8",
@@ -320,7 +353,7 @@ describe("page.config modules", () => {
 
     const resolved = await resolvePageConfigModules(cwd, metadata);
 
-    expect(resolved.pages.report.extensions["@company/feature"]).toEqual({
+    expect(resolved.pages.report.plugins.feature).toEqual({
       channel: "fresh",
     });
   });
@@ -333,7 +366,7 @@ describe("page.config modules", () => {
       "src/pages/report/page.config.ts": `
         import { channel } from "../../config/channel";
         export default {
-          extensions: { "@company/feature": { channel } },
+          plugins: { feature: { channel } },
         };
       `,
     });
@@ -343,7 +376,7 @@ describe("page.config modules", () => {
     );
 
     const first = await resolvePageConfigModules(cwd, typescriptMetadata);
-    expect(first.pages.report.extensions["@company/feature"]).toEqual({
+    expect(first.pages.report.plugins.feature).toEqual({
       channel: "stale",
     });
 
@@ -364,7 +397,7 @@ describe("page.config modules", () => {
       createPageMetadata("report", "./src/pages/report/page.config.js"),
     );
 
-    expect(second.pages.report.extensions["@company/feature"]).toEqual({
+    expect(second.pages.report.plugins.feature).toEqual({
       channel: "fresh",
     });
   });
@@ -394,6 +427,31 @@ describe("page.config modules", () => {
       label: "an unknown top-level field",
       source: 'export default { head: "Home" };',
       message: /has unknown field "head"/,
+    },
+    {
+      label: "the removed Page extension bag",
+      source: "export default { extensions: {} };",
+      message: /has unknown field "extensions"/,
+    },
+    {
+      label: "the removed Route owner config",
+      source: "export default { route: {} };",
+      message: /has unknown field "route"/,
+    },
+    {
+      label: "the removed Document extension bag",
+      source: "export default { document: { extensions: {} } };",
+      message: /document has unknown field "extensions"/,
+    },
+    {
+      label: "a legacy namespaced plugin key",
+      source: 'export default { plugins: { "@company/feature": true } };',
+      message: /must be a lowercase plugin key/,
+    },
+    {
+      label: "an invalid Page plugin setting",
+      source: "export default { plugins: { feature: null } };",
+      message: /must be false, true, or a plain object/,
     },
     {
       label: "a non-string title",
@@ -427,38 +485,37 @@ describe("page.config modules", () => {
       message: /keys "Description" and "description" conflict/,
     },
     {
-      label: "a function in an extension",
+      label: "a function in a plugin config",
       source:
-        'export default { extensions: { "@company/feature": () => true } };',
+        "export default { plugins: { feature: { callback: () => true } } };",
       message: /must be JSON-serializable/,
     },
     {
-      label: "a non-finite number in an extension",
-      source:
-        'export default { extensions: { "@company/feature": Infinity } };',
+      label: "a non-finite number in a plugin config",
+      source: "export default { plugins: { feature: { value: Infinity } } };",
       message: /must contain finite numbers/,
     },
     {
-      label: "a class instance in an extension",
+      label: "a class instance in a plugin config",
       source:
-        'export default { extensions: { "@company/feature": new Date(0) } };',
+        "export default { plugins: { feature: { value: new Date(0) } } };",
       message: /must contain only arrays and plain objects/,
     },
     {
-      label: "a cyclic extension value",
+      label: "a cyclic plugin config",
       source: `
         const value = {};
         value.self = value;
-        export default { extensions: { "@company/feature": value } };
+        export default { plugins: { feature: value } };
       `,
       message: /must not contain cycles/,
     },
     {
-      label: "a sparse extension array",
+      label: "a sparse array in a plugin config",
       source: `
         const value = [];
         value.length = 1;
-        export default { extensions: { "@company/feature": value } };
+        export default { plugins: { feature: { value } } };
       `,
       message: /must not be a sparse array hole/,
     },
@@ -702,7 +759,7 @@ describe("page.config modules", () => {
     expect(analysis.graph.pages.home).not.toHaveProperty("hydrate");
     expect(analysis.graph.pages.home).not.toHaveProperty("prerender");
     expect(analysis.graph.pages.home).not.toHaveProperty("componentModel");
-    expect(analysis.graph.pages.home.extensions).toEqual({});
+    expect(analysis.graph.pages.home.plugins).toEqual({});
   });
 });
 

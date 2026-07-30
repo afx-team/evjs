@@ -210,7 +210,7 @@ export function createPageAnchorGraph(
         : {}),
       ...(ppr ? { ppr } : {}),
       ...(metadata ? { metadata } : {}),
-      extensions: {},
+      plugins: {},
       provenance: {
         producer: PAGE_ANCHOR_PRODUCER,
         source: route.module,
@@ -285,7 +285,6 @@ export function createPageAnchorGraph(
         ...(route.notFoundModule ? { notFound: route.notFoundModule } : {}),
         wrappers: [],
       },
-      extensions: {},
       provenance: {
         producer: PAGE_ANCHOR_PRODUCER,
         source: route.module,
@@ -320,7 +319,7 @@ export function createPageAnchorGraph(
     pages,
     routes,
     documents,
-    extensions: { namespaces: {} },
+    plugins: { entries: {} },
     serverFunctions: facts.serverFunctions,
     serverRoutes: facts.serverRoutes,
     ...(facts.clientReferences
@@ -356,7 +355,7 @@ function createPageAnchorApplication(
       pageIds: [],
       routeIds: [],
       documentIds: [],
-      extensions: {},
+      plugins: {},
       provenance: {
         producer: PAGE_ANCHOR_PRODUCER,
         source: CANONICAL_PAGE_ROUTE_ROOT,
@@ -373,7 +372,7 @@ function createPageAnchorApplication(
     pageIds: [],
     routeIds: [],
     documentIds: ["index"],
-    extensions: {},
+    plugins: {},
     provenance: {
       producer: PAGE_ANCHOR_PRODUCER,
       source: CANONICAL_PAGE_ROUTE_ROOT,
@@ -387,7 +386,6 @@ function createPageAnchorApplication(
     owner: { kind: "application" },
     mount: config.routing.mount,
     bootstrap: { kind: "application" },
-    extensions: {},
     provenance: {
       producer: PAGE_ANCHOR_PRODUCER,
       source: config.routing.html,
@@ -474,7 +472,6 @@ function materializePageAnchorMpaDocuments(
       owner: { kind: "page", pageId },
       mount: config.routing.mount,
       bootstrap: { kind: "page", pageId },
-      extensions: {},
       provenance: {
         producer: PAGE_ANCHOR_PRODUCER,
         source: pageFact.html ?? config.routing.html,
@@ -607,7 +604,6 @@ function materializeSpaPageDocumentsInPlace(options: {
         ? { mount: applicationDocument.mount }
         : {}),
       bootstrap: { kind: "page", pageId },
-      extensions: {},
       provenance: {
         producer: page.provenance.producer,
         source,

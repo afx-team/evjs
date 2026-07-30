@@ -259,8 +259,8 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/analytics": {
+  plugins: {
+    analytics: {
       channel: "orders",
     },
   },
@@ -271,12 +271,12 @@ export default definePageConfig({
 `title`、named `meta`、`render`、`hydrate`、`prerender` 与 `rsc`。`meta`
 接受字符串 key/value，并且只生成 `<meta name="key" content="value">`；
 `property`、`charset`、link、script、动态元信息和通用 head DSL 不属于该
-contract。插件值放在已注册 namespaced `extensions` key 下。
+contract。已安装的 Page-aware 插件使用 `plugins` 下生成的短 key。
 
 求值后的配置在 SPA 与 MPA 中附着到同一个 normalized Page identity。在 SPA
 mode 下，最深层 active Page 持有 title/meta，不继承父 Page metadata。route
 切换会恢复 HTML 模板 baseline，或清除下一个 Page 未声明的值，避免 Page 间
-元信息残留。需要 runtime extension data 的插件仍须显式生成并挂载最小
+元信息残留。需要 runtime Page data 的插件仍须显式生成并挂载最小
 projection。
 
 Page component 不读取 literal `render`、`hydrate`、`prerender` 或 `rsc`
@@ -288,7 +288,7 @@ export；这些 setting 统一写在 `page.config.ts`。参见[构建](./build)�
 `application.routes` 可以把显式 SPA route tree 归一化到 CoreGraph。它支持：
 
 - 嵌套 `routes`、`page` 或 `component`、layout、wrapper 与 redirect；
-- 每条 Route 的 namespaced `extensions`，以及 Application-owned Document 配置。
+- Application-owned Document 配置；插件配置仍由 Page 持有。
 
 `children`、`exact: false` 以及带嵌套路由的 `exact: true` 会被拒绝；
 `exact: true` 只作为 terminal-match 结构断言，不会复制到 graph。该配置自身表示

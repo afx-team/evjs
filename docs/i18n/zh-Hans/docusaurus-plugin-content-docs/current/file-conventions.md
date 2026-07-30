@@ -112,9 +112,9 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/feature": {
-      enabled: true,
+  plugins: {
+    analytics: {
+      channel: "home",
     },
   },
 });
@@ -122,13 +122,12 @@ export default definePageConfig({
 
 该 module 在构建期同步求值，default-export 只包含 static JSON data 的 plain
 object。Core 持有 `title`、named `meta`、`render`、`hydrate`、`prerender`
-与 `rsc`；插件注册并持有 `extensions` 下的 namespaced value。省略 `render`
-始终表示 CSR，且必须省略 `hydrate`；显式 SSR/SSG Page 可以选择 `"load"` 或
-`"none"`。`meta` 只把
+与 `rsc`；已安装且支持 Page 配置的插件使用 `plugins` 下生成的短 key。省略
+`render` 始终表示 CSR，且必须省略 `hydrate`；显式 SSR/SSG Page 可以选择
+`"load"` 或 `"none"`。`meta` 只把
 字符串 key/value 映射为 `<meta name="key" content="value">`，不提供
 `property`、`charset`、link、script、动态元信息或通用 head DSL。Core
-title/meta 会为 Page 物化；插件 extension value 在 runtime 使用前仍需插件显式
-投影。
+title/meta 会为 Page 物化；Page 插件值在 runtime 使用前仍需插件显式投影。
 
 ### Page HTML
 
@@ -293,6 +292,7 @@ Middleware file 不是 route，不能由 route module export middleware 代替�
 
 - `.ev/**` framework IR 和 entry facade；
 - canonical SPA 文件路由在支持时生成的 `src/route-types.d.ts`；
+- `src/plugin-types.d.ts`，用于稳定桥接项目的 `ev.config.ts` 类型；
 - `dist/**` 构建产物。
 
 不要编辑或 scaffold 任何生成文件，并保持 ignore。
@@ -310,9 +310,10 @@ canonical Page discovery 不要求用户选择 route reader 或 provider。应�
 嵌套 `routes`、`layout`、`wrappers` 与 `redirect` 字段。
 `application.pageRoot` 只控制该显式输入的 reference 解析，不会改变固定的
 `src/pages` 文件约定根目录；`children` 会被拒绝。`exact: true` 只作为
-terminal-match 断言；`exact: false` 与 exact Route 下的嵌套路由都会被拒绝。Route
-能力数据使用已注册的 namespaced `extensions`。共享 template 和 mount 值放在
-`application.document` 下。该配置只能物化 SPA。`page` reference
+terminal-match 断言；`exact: false` 与 exact Route 下的嵌套路由都会被拒绝。
+插件配置由 Page 持有；显式 Route 与 Document 对象不提供插件配置 bag。共享
+template 和 mount 值放在 `application.document` 下。该配置只能物化 SPA。`page`
+reference
 必须解析到唯一 canonical `page.*` 锚点。显式 component 以 `index.*` 或
 `page.*` 结尾时持有所在目录；其他 basename 只持有模块本身，不消费相邻
 `page.config.ts`。

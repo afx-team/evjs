@@ -2,7 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { shouldCopyTemplatePath } from "../src/index.js";
+import {
+  shouldCopyTemplatePath,
+  withGeneratedFrameworkIgnores,
+} from "../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(__dirname, "../templates");
@@ -98,16 +101,19 @@ describe("create-app scaffolding", () => {
         "utf-8",
       );
       const expectedMode = template === "mpa" ? "mpa" : "spa";
+      const rootConfigSource = configSource.slice(
+        configSource.indexOf("export default defineConfig("),
+      );
 
-      expect(configSource).toMatch(
+      expect(rootConfigSource).toMatch(
         new RegExp(`routing:\\s*{\\s*mode:\\s*["']${expectedMode}["']\\s*}`),
       );
-      expect(configSource).not.toMatch(/\bapplication\s*:/);
-      expect(configSource).not.toMatch(/\btopology\s*:/);
-      expect(configSource).not.toMatch(/\bpageRoot\s*:/);
-      expect(configSource).not.toMatch(/\bdocument\s*:/);
-      expect(configSource).not.toMatch(/\broutes\s*:/);
-      expect(configSource).not.toMatch(/\bconvention\s*:/);
+      expect(rootConfigSource).not.toMatch(/\bapplication\s*:/);
+      expect(rootConfigSource).not.toMatch(/\btopology\s*:/);
+      expect(rootConfigSource).not.toMatch(/\bpageRoot\s*:/);
+      expect(rootConfigSource).not.toMatch(/\bdocument\s*:/);
+      expect(rootConfigSource).not.toMatch(/\broutes\s*:/);
+      expect(rootConfigSource).not.toMatch(/\bconvention\s*:/);
     }
   });
 
@@ -168,19 +174,22 @@ describe("create-app scaffolding", () => {
     );
   });
 
-  it("each template ignores generated framework artifacts", () => {
+  it("each scaffolded template ignores generated framework artifacts", () => {
     const templates = listTemplateNames();
 
     for (const template of templates) {
-      const gitignore = fs.readFileSync(
-        path.join(templatesDir, template, ".gitignore"),
-        "utf-8",
+      const gitignore = withGeneratedFrameworkIgnores(
+        fs.readFileSync(
+          path.join(templatesDir, template, ".gitignore"),
+          "utf-8",
+        ),
       );
 
       const ignoredPaths = gitignore.split(/\r?\n/);
       expect(ignoredPaths).toContain(".ev");
       expect(ignoredPaths).toContain(".evjs");
       expect(ignoredPaths).toContain("route-types.d.ts");
+      expect(ignoredPaths).toContain("plugin-types.d.ts");
     }
   });
 
@@ -244,6 +253,9 @@ describe("create-app scaffolding", () => {
     expect(shouldCopyTemplatePath("/some/path/src/route-types.d.ts")).toBe(
       false,
     );
+    expect(shouldCopyTemplatePath("/some/path/src/plugin-types.d.ts")).toBe(
+      false,
+    );
     expect(shouldCopyTemplatePath("/some/path/src")).toBe(true);
     expect(shouldCopyTemplatePath("/some/path/package.json")).toBe(true);
     expect(shouldCopyTemplatePath("/some/path/index.html")).toBe(true);
@@ -253,9 +265,11 @@ describe("create-app scaffolding", () => {
     const derefScriptUrl = pathToFileURL(
       path.resolve(__dirname, "../scripts/deref-templates.js"),
     ).href;
-    const { shouldDerefTemplatePath } = (await import(derefScriptUrl)) as {
-      shouldDerefTemplatePath: (src: string) => boolean;
-    };
+    const { shouldDerefTemplatePath, withGeneratedFrameworkIgnores } =
+      (await import(derefScriptUrl)) as {
+        shouldDerefTemplatePath: (src: string) => boolean;
+        withGeneratedFrameworkIgnores: (source: string) => string;
+      };
 
     expect(shouldDerefTemplatePath("/some/path/.ev")).toBe(false);
     expect(shouldDerefTemplatePath("/some/path/.ev/manifest.json")).toBe(false);
@@ -263,7 +277,14 @@ describe("create-app scaffolding", () => {
     expect(shouldDerefTemplatePath("/some/path/src/route-types.d.ts")).toBe(
       false,
     );
+    expect(shouldDerefTemplatePath("/some/path/src/plugin-types.d.ts")).toBe(
+      false,
+    );
     expect(shouldDerefTemplatePath("/some/path/src/pages/page.tsx")).toBe(true);
+
+    expect(withGeneratedFrameworkIgnores("route-types.d.ts\n")).toBe(
+      "route-types.d.ts\nplugin-types.d.ts\n",
+    );
   });
 });
 

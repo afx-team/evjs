@@ -2,14 +2,11 @@
 
 `@evjs/plugin-qiankun` lets an evjs single-page application participate in a
 [qiankun](https://github.com/umijs/qiankun) master/slave micro-frontend
-topology. It is intentionally a protocol bridge: it wraps the configured app
-entry, wires qiankun lifecycles, and loads user-provided resolver/runtime
-modules. It does not own application routing, platform site metadata, deployment
-fields, or local development proxy conventions.
+topology. It wraps the framework-owned SPA entry, exposes qiankun lifecycles,
+and bridges an asynchronous master snapshot into evjs runtime routes.
 
-Use the plugin when an SPA application explicitly runs as a qiankun master or
-slave. The default path is the canonical Page-and-Route SPA model. Do not
-enable it for MPA applications.
+Use the plugin only when an SPA explicitly runs as a qiankun master or slave.
+It does not provide an MPA integration.
 
 ## Install
 
@@ -19,8 +16,7 @@ npm install @evjs/plugin-qiankun qiankun
 
 ## Master Applications
 
-A master application registers child applications and starts qiankun. Configure
-the plugin with `evPluginQiankunMaster()` and provide a resolver module:
+Configure the master with `evPluginQiankunMaster()` and a resolver module:
 
 ```ts
 // ev.config.ts
@@ -37,8 +33,8 @@ export default defineConfig({
 });
 ```
 
-The resolver returns the qiankun application list and framework options as a
-flat object:
+The resolver returns one authoritative, application-level `apps/routes`
+snapshot:
 
 ```ts
 // src/qiankun.master.ts
@@ -48,44 +44,78 @@ export default defineQiankunMasterResolver(async () => ({
   apps: [
     {
       name: "catalog",
-      entry: "//localhost:3001",
-      container: "#slave-container",
+      entry: "//localhost:3001/index.html",
+      props: {
+        locale: "en-US",
+      },
+    },
+    {
+      name: "reports",
+      entry: "//localhost:3002/index.html",
     },
   ],
-  sandbox: true,
-  prefetch: true,
+  routes: [
+    {
+      path: "/catalog",
+      microApp: "catalog",
+      microAppProps: {
+        section: "products",
+      },
+    },
+    {
+      path: "/reports",
+      microApp: "reports",
+      mode: "match",
+    },
+    {
+      path: "/legacy-catalog",
+      redirect: "/catalog",
+    },
+  ],
+  history: "browser",
+  settings: {
+    sandbox: true,
+  },
+  prefetch: ["catalog"],
 }));
 ```
 
-The canonical Route owns the micro-app association next to its `page.tsx`
-anchor:
+The master does not declare a fixed qiankun container or `activeRule`. Before
+the framework starts rendering, the plugin resolves the snapshot and installs
+an evjs runtime route overlay. Each micro-app route renders a generated React
+component that owns its container and calls qiankun `loadMicroApp()`.
 
-```ts
-// src/pages/catalog/page.config.ts
-import { definePageConfig } from "@evjs/ev";
+The route forms are:
 
-export default definePageConfig({
-  route: {
-    extensions: {
-      "@evjs/qiankun": {
-        microApp: "catalog",
-      },
-    },
-  },
-});
+- `{ path, microApp }` uses `"prepend"` mode by default. `/catalog` therefore
+  owns `/catalog` and its descendants, and the matched prefix becomes the
+  mounted slave's base.
+- `{ path, microApp, mode: "match" }` matches only that route path instead of
+  prepending the path to the slave base.
+- `{ path, redirect }` creates a runtime redirect. The target may be an
+  absolute application path or an `http(s)` URL.
+- `microAppProps` adds route-specific props. Ordinary fields override fields
+  from `app.props`; nested `settings` can refine qiankun load settings, and
+  nested `lifeCycles` run after the matching master lifecycle hooks for that
+  route.
+
+Resolver route paths accept ordinary `:param` and `*` syntax. The bridge
+normalizes them for the evjs runtime router and rejects duplicate, malformed,
+or unresolved routes before rendering the master.
+
+The master source tree only needs its own canonical shell Pages:
+
+```text
+src/
+├── pages/
+│   ├── layout.tsx
+│   └── page.tsx           # /
+└── qiankun.master.ts
 ```
 
-The master plugin registers this namespace with `routeExtension()`, validates
-that it targets a static Page Route, and generates the qiankun route mapping
-from the normalized CoreGraph. When an app does not already define
-`activeRule`, the plugin uses that mapping while calling
-`registerMicroApps`. The resolver-level `routes` array remains readable for
-existing plugin configurations, but new applications should not repeat
-canonical paths there.
-
-Keep the qiankun container mounted by the shell while the master is running;
-route-local containers should be handled by a higher-level plugin that turns
-routes into micro-app components.
+There is intentionally no `src/pages/catalog/page.tsx` and no static
+`#slave-container`. The runtime component supplied by the `/catalog` overlay
+owns both concerns:
 
 ```tsx
 // src/pages/layout.tsx
@@ -97,27 +127,36 @@ export default function RootLayout({ children }: { children?: ReactNode }) {
     <main>
       <nav>
         <Link to="/">Home</Link>
-        <Link to="/catalog">Catalog</Link>
+        <a href="/catalog">Catalog</a>
       </nav>
       {children}
-      <section id="slave-container" />
     </main>
   );
 }
 ```
 
-```tsx
-// src/pages/catalog/page.tsx
-export default function CatalogPage() {
-  return <h1>Catalog workspace</h1>;
-}
-```
+### Runtime overlay boundary
+
+Resolver routes are runtime state, not authoring input for the canonical
+CoreGraph:
+
+- they do not create canonical Pages, Routes, or Documents;
+- they do not modify `application.routes`, the BuildPlan, or deployment route
+  metadata;
+- they are not included in generated `src/route-types.d.ts` Page names,
+  `RoutePath`, or typed navigation targets;
+- they are installed through the generated application's runtime update API
+  before its first render.
+
+Keep canonical navigation type usage for canonical Pages. When a URL exists
+only in a runtime site snapshot, its availability and validation belong to the
+platform/runtime layer; the example above therefore uses an ordinary link for
+`/catalog`.
 
 ## Slave Applications
 
-A slave application exports qiankun lifecycles for the master while still
-rendering by itself outside qiankun. Configure the plugin with
-`evPluginQiankunSlave()`:
+A slave exports qiankun lifecycles while remaining independently renderable.
+Configure it with `evPluginQiankunSlave()`:
 
 ```ts
 // ev.config.ts
@@ -135,21 +174,33 @@ export default defineConfig({
 });
 ```
 
-The application remains an ordinary canonical Page application:
+The slave declares only its own root and internal Pages:
 
-```tsx
-// src/components/CatalogApp.tsx
-export function CatalogApp() {
-  return <h1>Catalog</h1>;
-}
+```text
+src/
+├── pages/
+│   ├── page.tsx             # local /
+│   └── details/
+│       └── page.tsx         # local /details
+└── qiankun.slave.ts
 ```
 
-Both `src/pages/page.tsx` and `src/pages/catalog/page.tsx` may default-export
-that shared UI. Their directories publish `/` for standalone rendering and
-`/catalog` for activation by the master without a second route declaration.
+It does not duplicate the master's `/catalog` path in its source tree. With a
+default `"prepend"` master route at `/catalog`, the master passes `/catalog` as
+the slave base. The slave's local `/` is then rendered at `/catalog`, and its
+local `/details` is rendered at `/catalog/details`.
 
-Use the runtime module only for lifecycle extensions. It can be empty when the
-application does not need extra lifecycle behavior:
+The slave lifecycle loads the original generated entry, projects the received
+`base` and `history` through `pagesApp.updateRuntime()`, and only then calls the
+entry's first `start()`. The router therefore observes the mounted base and
+history before the first application render. When run outside qiankun, the same
+Pages remain available under their standalone base.
+
+The generated route types remain local to the slave source tree: they describe
+`/` and `/details`, not the externally assigned `/catalog` prefix.
+
+The optional runtime module adds lifecycle behavior; it does not replace the
+framework entry:
 
 ```ts
 // src/qiankun.slave.ts
@@ -157,7 +208,11 @@ import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
 
 export default defineQiankunSlaveRuntime({
   mount(props, ctx) {
-    console.log(`${ctx.name} mounted`, props.container);
+    console.log(`${ctx.name} mounted`, {
+      container: props.container,
+      base: props.base,
+      history: props.history,
+    });
   },
   unmount() {
     console.log("slave unmounted");
@@ -165,15 +220,14 @@ export default defineQiankunSlaveRuntime({
 });
 ```
 
-In qiankun mode the plugin mounts into `props.container`; outside qiankun it
-automatically renders the canonical framework entry. The plugin does not
-support an alternate entry field or infer a magic `src/main.tsx`. Standalone
-`@evjs/client` applications own their qiankun/container integration directly.
+In qiankun mode the plugin mounts into `props.container`. Outside qiankun it
+automatically starts the same canonical SPA entry. It does not infer a magic
+`src/main.tsx` or expose a second application entry model.
 
 ## Module References
 
 `resolver` and `runtime` accept a string module specifier, a generated module
-ref, or an object with a named export:
+ref, or an object selecting a named export:
 
 ```ts
 import type { GeneratedModuleRef } from "@evjs/ev/plugin";
@@ -195,7 +249,7 @@ evPluginQiankunMaster({
 });
 ```
 
-Object references are useful for named exports:
+Object references select named exports:
 
 ```ts
 evPluginQiankunSlave({
@@ -206,35 +260,97 @@ evPluginQiankunSlave({
 });
 ```
 
-Path-like references are resolved from the project root before bundling, so the
-generated entry wrapper does not preserve unresolved `./src/...` specifiers.
-Package specifiers are resolved from the project as normal dependencies.
-Inside another plugin's `contributions()` hook, pass the `GeneratedModuleRef`
-returned by `ctx.emit.module()` directly to `contributeQiankunMaster()` or
+Path-like references are resolved from the project root before bundling.
+Package specifiers are resolved from project dependencies. From another
+plugin's `contributions()` hook, pass the opaque `GeneratedModuleRef` returned
+by `ctx.emit.module()` directly to `contributeQiankunMaster()` or
 `contributeQiankunSlave()`.
 
 ## Runtime Shape
 
-The master resolver returns:
+The public master shape is:
 
 ```ts
+type QiankunHistoryType = "browser" | "hash" | "memory";
+type QiankunRouteMode = "prepend" | "match";
+type QiankunLoadSettings = import("qiankun").AppConfiguration;
+type QiankunLifeCycles = import("qiankun").LifeCycles<
+  Record<string, unknown>
+>;
+
+interface QiankunApp {
+  name: string;
+  entry: string;
+  credentials?: boolean;
+  props?: Record<string, unknown> & {
+    settings?: QiankunLoadSettings;
+  };
+  [key: string]: unknown;
+}
+
+type QiankunRoute =
+  | {
+      path: string;
+      microApp: string;
+      mode?: QiankunRouteMode;
+      microAppProps?: Record<string, unknown> & {
+        settings?: QiankunLoadSettings;
+        lifeCycles?: QiankunLifeCycles;
+      };
+    }
+  | {
+      path: string;
+      redirect: string;
+    };
+
 interface QiankunMasterOptions {
   apps?: QiankunApp[];
-  routes?: Array<{ path: string; microApp: string }>;
+  routes?: QiankunRoute[];
   appNameKeyAlias?: string;
-  sandbox?: boolean | Record<string, unknown>;
-  prefetch?: boolean | string[] | ((apps: QiankunApp[]) => unknown);
-  singular?: boolean | ((app: QiankunApp) => Promise<boolean>);
-  fetch?: typeof globalThis.fetch;
+  base?: string;
+  history?: QiankunHistoryType;
+  settings?: QiankunLoadSettings;
+  lifeCycles?: QiankunLifeCycles;
+  prefetch?: boolean | "all" | string[];
+  prefetchThreshold?: number;
+}
+```
+
+`base` defaults to `/`, `history` defaults to `"browser"`, and a missing
+`mode` defaults to `"prepend"`. `settings` is shared by route-mounted
+applications. App and route settings layer over it, and route lifecycle hooks
+are composed after master lifecycle hooks. `credentials: true` applies CORS
+credentials when loading that app's entry.
+
+`prefetch: "all"` prefetches every app after the master starts, while a string
+array prefetches the selected app names. `prefetch: true` waits for the first
+mounted app and then prefetches up to `prefetchThreshold` other apps; the
+threshold defaults to `5`.
+
+By default, `route.microApp` matches `app.name`. `appNameKeyAlias` can select
+another app identity field for a low-level adapter, but mapping organization
+DTOs into stable app identities remains the platform plugin's responsibility.
+
+The master passes the route-derived values through the slave lifecycle props:
+
+```ts
+interface QiankunLifecycleProps {
+  container?: Element | string | null;
+  base?: string;
+  history?:
+    | QiankunHistoryType
+    | { type: "browser" }
+    | { type: "hash" }
+    | {
+        type: "memory";
+        initialEntries?: string[];
+        initialIndex?: number;
+      };
   [key: string]: unknown;
 }
 ```
 
-`apps`, `routes`, and qiankun options live at the same level. There is no
-`framework` nesting. Any fields other than `apps`, `routes`, and
-`appNameKeyAlias` are passed to `qiankun.start()`.
-
-The slave runtime can extend these lifecycles:
+The optional slave runtime supports:
 
 ```ts
 interface QiankunSlaveRuntime {
@@ -245,13 +361,10 @@ interface QiankunSlaveRuntime {
 }
 ```
 
-`ctx.loadEntry()` loads the original app entry. The built-in slave lifecycle
-calls it during `mount()` after the optional runtime `mount()` hook. The
-generated original entry is inert until the lifecycle calls its exported
-`start(container)`, so loading it early from `bootstrap()` cannot mount into the
-master document. The first `mount()` uses `start()` to preserve hydration-marker
-semantics; the module is cached, and later remounts call `app.render()` exactly
-once inside the current qiankun container.
+`ctx.loadEntry()` loads the original generated entry without starting it.
+Calling it during `bootstrap()` is safe. The first `mount()` configures runtime
+base/history before `start()`; subsequent remounts reuse the loaded module and
+call its render path inside the current container.
 
 ## Bundling Qiankun
 
@@ -264,8 +377,8 @@ evPluginQiankunMaster({
 });
 ```
 
-Set `externalQiankun: true` when a deployment environment provides qiankun as an
-external:
+Set `externalQiankun: true` only when the runtime environment provides the
+module:
 
 ```ts
 evPluginQiankunSlave({
@@ -276,12 +389,11 @@ evPluginQiankunSlave({
 
 ## Local Development
 
-The plugin does not implement a local development proxy. If a master needs to
-load a slave dev server through the same origin, configure the master app dev
-server with `dev.proxy`:
+The plugin does not create a development proxy. Configure `dev.proxy` when a
+master needs to load a slave dev server through the same origin:
 
 ```ts
-// ev.config.ts in the master app
+// master ev.config.ts
 import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunMaster } from "@evjs/plugin-qiankun";
 
@@ -309,11 +421,7 @@ export default defineConfig({
 });
 ```
 
-Then point the resolver at the proxied HTML entry. qiankun 3 consumes an HTML
-entry URL, not a `{ scripts, styles, html }` object. `evPluginQiankunSlave()`
-marks the emitted entry script for qiankun 3 and rewrites generated root-relative
-JS/CSS asset URLs to relative URLs, so the same slave HTML can be consumed under
-a path prefix such as `/__qiankun_slave`.
+Point the resolver app entry at the proxied HTML:
 
 ```ts
 const slaveBase = "/__qiankun_slave";
@@ -324,233 +432,179 @@ export default async function resolveQiankunMaster() {
       {
         name: "catalog",
         entry: new URL(`${slaveBase}/index.html`, window.location.href).href,
-        container: "#slave-container",
       },
     ],
-    sandbox: true,
+    routes: [{ path: "/catalog", microApp: "catalog" }],
+    settings: { sandbox: true },
     prefetch: true,
   };
 }
 ```
 
-The `/catalog` association still comes from
-`src/pages/catalog/page.config.ts#route.extensions`; the resolver does not
-repeat the path.
+`evPluginQiankunSlave()` marks the emitted entry script and rewrites generated
+root-relative JS/CSS URLs to relative URLs, so the same slave HTML can be
+consumed below a proxy prefix. Keep asset proxies in `dev.proxy`, not in
+`src/apis`; application request Routes should not proxy micro-frontend assets.
 
-Keep this proxy in `dev.proxy`, not in `src/apis`; application API routes should
-not be used as micro-frontend asset proxies.
+## Composing A Tern Platform Plugin
 
-## Extending For A Platform
+An internal Tern plugin sits above the public bridge. The ownership boundary
+is:
 
-Large organizations often have a micro-frontend platform above qiankun: a site
-configuration service, deployment-specific app identifiers, default sandbox
-rules, route mapping conventions, or platform-specific mount props. Keep that
-platform logic outside `@evjs/plugin-qiankun`.
+- `@evjs/plugin-qiankun` owns entry wrapping, lifecycle integration, runtime
+  route components, base/history projection, and qiankun loading behavior.
+- The Tern plugin owns backend site DTOs, app-id adaptation, menus,
+  authorization, deployment metadata, environment conventions, and any
+  Tern-specific development services.
+- Business applications install the Tern factory. They do not also install the
+  standalone qiankun master/slave factory or repeat platform fields in Pages.
 
-The recommended layering is composition:
-
-- `@evjs/plugin-qiankun` owns the qiankun protocol bridge.
-- A platform plugin owns platform metadata, generated resolver/runtime modules,
-  default dev proxy rules, and deployment conventions.
-- Business applications consume the platform plugin and usually do not create
-  `src/qiankun.master.ts` or `src/qiankun.slave.ts` manually.
-
-For a platform master plugin, emit a resolver module into the same `.ev` IR and
-pass the returned opaque ref to the qiankun helper:
+The Tern plugin can reuse the public helpers from its own `definePlugin()`
+descriptor. A composed master uses both the contribution and hook helper:
 
 ```ts
-// packages/plugin-platform/src/master.ts
-import { merge } from "@evjs/ev/config";
-import type { Plugin } from "@evjs/ev/plugin";
+import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
 import {
   contributeQiankunMaster,
-  QIANKUN_ROUTE_EXTENSION_NAMESPACE,
+  createQiankunMasterHooks,
 } from "@evjs/plugin-qiankun";
 
-export function evPluginPlatformMicroFrontendMaster(): Plugin {
-  return {
-    name: "@acme/evjs-platform-mf:master",
-    describe(api) {
-      api.routeExtension({
-        namespace: QIANKUN_ROUTE_EXTENSION_NAMESPACE,
-      });
-    },
-    config(config) {
-      merge(config, {
-        dev: {
-          proxy: [
-            ...(config.dev?.proxy ?? []),
-            {
-              context: ["/__platform_slave"],
-              target: "http://localhost:3001",
-              pathRewrite: { "^/__platform_slave": "" },
-              changeOrigin: true,
-              secure: false,
-            },
-          ],
-        },
-      });
-      return config;
-    },
-    async contributions(ctx) {
-      const site = ctx.emit.data({
-        id: "platform-site",
-        scope: { kind: "application" },
-        value: await loadPlatformSiteConfig(ctx),
-      });
-      const resolver = ctx.emit.module({
-        id: "master-resolver",
-        scope: { kind: "application" },
-        source: ({ importOf }) => `
-          import { defineQiankunMasterResolver } from "@evjs/plugin-qiankun/runtime";
-          import site from ${JSON.stringify(importOf(site))};
+type TernMasterConfig = {
+  siteId: string;
+  externalQiankun?: boolean;
+};
 
-          export default defineQiankunMasterResolver(async () => ({
-            apps: site.children,
-            sandbox: site.sandbox ?? true,
-            prefetch: site.prefetch ?? true,
-          }));
-        `,
-      });
+export const ternMaster = definePlugin({
+  id: "@company/evjs-plugin-tern:master",
+  application: pluginConfig<TernMasterConfig>(),
 
-      await contributeQiankunMaster(ctx, {
-        resolver,
-        externalQiankun: true,
-      });
-    },
-  };
-}
-```
+  setup() {
+    return createQiankunMasterHooks();
+  },
 
-`merge()` replaces arrays, so a platform plugin that appends a proxy must copy
-the existing `config.dev.proxy` entries as shown above. This preserves
-application-owned and earlier plugin-owned proxy rules.
+  async contributions(ctx) {
+    const resolver = ctx.emit.module({
+      id: "tern-master-resolver",
+      scope: { kind: "application" },
+      // Private Tern code builds this source from its backend DTO contract.
+      source: buildTernResolverSource(ctx.options.siteId),
+    });
 
-The generated resolver adapts platform application metadata to the open
-qiankun resolver shape. Canonical route associations remain in Page-local
-`route.extensions`; registering the shared namespace lets
-`contributeQiankunMaster()` project them. The resolver remains a generated
-artifact with manifest provenance, not an unmanaged temporary file:
-
-```ts
-import { defineQiankunMasterResolver } from "@evjs/plugin-qiankun/runtime";
-
-export default defineQiankunMasterResolver(async () => {
-  const site = await loadPlatformSiteConfig();
-
-  return {
-    apps: site.children.map((child) => ({
-      name: child.name,
-      entry: child.entry,
-      container: child.container,
-      props: child.props,
-    })),
-    sandbox: site.sandbox ?? true,
-    prefetch: site.prefetch ?? true,
-  };
+    await contributeQiankunMaster(ctx, {
+      resolver,
+      ...(ctx.options.externalQiankun === undefined
+        ? {}
+        : { externalQiankun: ctx.options.externalQiankun }),
+    });
+  },
 });
 ```
 
-For a platform slave plugin, emit the runtime module, pass it to the qiankun
-contribution helper, and reuse the qiankun bundler and HTML helpers:
+`buildTernResolverSource()` in this outline is private Tern implementation, not
+an evjs API. Its generated module must default-export a
+`defineQiankunMasterResolver()` result and adapt the backend DTO into the public
+snapshot. For example, the adapter can map a backend application id to a stable
+`app.name`, then use that name in `route.microApp`:
 
 ```ts
-// packages/plugin-platform/src/slave.ts
-import type { Plugin } from "@evjs/ev/plugin";
+const appNameByYuyanId = new Map(
+  site.apps.map((app) => [app.yuyanId, app.name] as const),
+);
+
+function requireAppName(yuyanId: string | undefined): string {
+  const name = appNameByYuyanId.get(yuyanId);
+  if (!name) throw new Error(`Unknown Tern application "${yuyanId}".`);
+  return name;
+}
+
+function adaptRoute(route: TernRoute) {
+  if (route.redirect) {
+    return { path: route.path, redirect: route.redirect };
+  }
+  return {
+    path: route.path,
+    microApp: requireAppName(route.microApp),
+    ...(route.mode ? { mode: route.mode } : {}),
+    microAppProps: normalizeTernMicroAppProps(route.microAppProps),
+  };
+}
+
+return {
+  apps: site.apps.map((app) => ({
+    name: app.name,
+    entry: app.entry,
+    props: app.props,
+  })),
+  routes: site.routes.map(adaptRoute),
+};
+```
+
+`normalizeTernMicroAppProps()` is likewise private adapter code: it removes or
+translates Tern-only settings before returning the public route shape. The
+adapter must validate missing identities before returning the snapshot.
+Menu hierarchy, permission filtering, deployment records, and similar fields
+remain Tern data; they are not fields of the open qiankun route contract.
+
+A composed slave reuses the matching hook and contribution helpers:
+
+```ts
+import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
 import {
-  applyQiankunSlaveBundlerConfig,
-  applyQiankunSlaveHtmlTransform,
   contributeQiankunSlave,
-  type QiankunContributionState,
+  createQiankunSlaveHooks,
 } from "@evjs/plugin-qiankun";
 
-export function evPluginPlatformMicroFrontendSlave(): Plugin {
-  let qiankunState: QiankunContributionState | undefined;
+type TernSlaveConfig = {
+  name?: string;
+  externalQiankun?: boolean;
+};
 
-  return {
-    name: "@acme/evjs-platform-mf:slave",
-    async contributions(ctx) {
-      const runtime = ctx.emit.module({
-        id: "slave-runtime",
-        scope: { kind: "application" },
-        source: `
-          import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
+export const ternSlave = definePlugin({
+  id: "@company/evjs-plugin-tern:slave",
+  application: pluginConfig<TernSlaveConfig>({ defaults: {} }),
 
-          export default defineQiankunSlaveRuntime({
-            mount(props) {
-              const platformProps = normalizePlatformProps(props);
-              Reflect.set(globalThis, "__PLATFORM_MICRO_FRONTEND_PROPS__", platformProps);
-            },
-            unmount() {
-              Reflect.deleteProperty(globalThis, "__PLATFORM_MICRO_FRONTEND_PROPS__");
-            },
-          });
-        `,
-      });
-
-      qiankunState = await contributeQiankunSlave(ctx, {
-        name: inferPlatformAppName(ctx),
-        runtime,
-        externalQiankun: true,
-      });
-    },
-    setup() {
-      return {
-        bundlerConfig(config, ctx) {
-          applyQiankunSlaveBundlerConfig(config, ctx.bundlerName, qiankunState);
-        },
-        transformHtml(doc) {
-          applyQiankunSlaveHtmlTransform(doc, qiankunState);
-        },
-      };
-    },
-  };
-}
-```
-
-The state returned by `contributeQiankunSlave()` keeps the generated entry,
-bundler output, and lifecycle proxy on the same inferred application name.
-`applyQiankunSlaveHtmlTransform()` also accepts no state when the default
-`evjs-qiankun-slave` name is intentional.
-
-The generated slave runtime can normalize platform-specific mount props before
-business code observes them:
-
-```ts
-// generated-slave-runtime.ts
-import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
-
-export default defineQiankunSlaveRuntime({
-  mount(props) {
-    const platformProps = normalizePlatformProps(props);
-    Reflect.set(globalThis, "__PLATFORM_MICRO_FRONTEND_PROPS__", platformProps);
+  setup(ctx) {
+    return createQiankunSlaveHooks(
+      ctx,
+      ctx.options.name === undefined ? {} : { name: ctx.options.name },
+    );
   },
-  unmount() {
-    Reflect.deleteProperty(globalThis, "__PLATFORM_MICRO_FRONTEND_PROPS__");
+
+  async contributions(ctx) {
+    await contributeQiankunSlave(ctx, {
+      ...(ctx.options.name === undefined ? {} : { name: ctx.options.name }),
+      ...(ctx.options.externalQiankun === undefined
+        ? {}
+        : { externalQiankun: ctx.options.externalQiankun }),
+    });
   },
 });
 ```
 
-This keeps the open plugin stable and reusable while allowing platform plugins
-to map internal site configuration, app identity, aliases, route conventions,
-and deployment defaults into the qiankun protocol at the edge.
+If Tern also has lifecycle hooks with the same names, its implementation must
+invoke the returned qiankun hooks as part of its own composed hook rather than
+overwriting them.
 
 ## Boundaries
 
 `@evjs/plugin-qiankun` includes:
 
-- master and slave app-entry wrapping;
+- master and slave framework-entry wrapping;
 - resolver/runtime module loading;
-- qiankun lifecycle exports;
-- standalone slave rendering;
-- `externalQiankun` bundler external support;
-- TypeScript helper functions for resolver/runtime modules.
+- application-level `apps/routes` validation;
+- runtime prepend, match, redirect, and micro-app route components;
+- generated micro-app containers and qiankun loading;
+- slave base/history projection before first render;
+- slave lifecycle exports and standalone rendering;
+- `externalQiankun` support;
+- contribution and hook helpers for platform composition.
 
 It does not include:
 
-- platform-specific site configuration protocols;
-- organization-specific app identity fields;
-- deployment metadata or release platform fields;
-- local development HTML rewrite services;
-- automatic master proxy generation;
-- additional router semantics beyond route-to-`activeRule` mapping.
+- backend site DTO protocols;
+- menus or authorization;
+- organization-specific deployment or release metadata;
+- automatic local development proxies;
+- Page-level qiankun settings;
+- canonical CoreGraph Pages, Routes, or Documents derived from resolver data;
+- generated `RoutePath` entries for runtime resolver routes.

@@ -1,14 +1,18 @@
+import { createPagesApp } from "@evjs/ev/_internal/client";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createQiankunMasterRoutes,
   createQiankunSlaveLifecycles,
   defineQiankunMasterResolver,
   defineQiankunSlaveRuntime,
+  resolveQiankunSlaveBase,
   startQiankunMaster,
+  unmountQiankunMicroAppAfterUpdates,
 } from "../src/runtime.js";
 
 const qiankun = vi.hoisted(() => ({
-  registerMicroApps: vi.fn(),
-  start: vi.fn(),
+  loadMicroApp: vi.fn(),
+  prefetchApps: vi.fn(),
 }));
 
 vi.mock("qiankun", () => qiankun);
@@ -22,136 +26,222 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(defineQiankunSlaveRuntime(runtime)).toBe(runtime);
   });
 
-  it("starts qiankun master with route-derived active rules", async () => {
-    qiankun.registerMicroApps.mockClear();
-    qiankun.start.mockClear();
-    const container = createElement();
-
-    await startQiankunMaster(async () => ({
-      appNameKeyAlias: "yuyanId",
+  it("installs runtime routes before starting the master Application", async () => {
+    const calls: string[] = [];
+    const updateRuntime = vi.fn(async () => calls.push("routes"));
+    const resolver = vi.fn(async () => ({
       apps: [
         {
           name: "console",
           entry: "https://example.com/console/",
-          container,
-          yuyanId: "yyy",
+          platformId: "platform-console",
         },
       ],
-      routes: [
-        {
-          path: "/console",
-          microApp: "yyy",
-        },
-      ],
-      sandbox: true,
-      prefetch: true,
+      routes: [{ path: "/console", microApp: "platform-console" }],
+      appNameKeyAlias: "platformId",
+      prefetch: "all" as const,
     }));
+    qiankun.prefetchApps.mockClear();
 
-    expect(qiankun.registerMicroApps).toHaveBeenCalledWith([
-      {
-        name: "console",
-        entry: "https://example.com/console/",
-        container,
-        yuyanId: "yyy",
-        activeRule: "/console",
-      },
-    ]);
-    expect(qiankun.start).toHaveBeenCalledWith({
-      sandbox: true,
-      prefetch: true,
-    });
-  });
-
-  it("merges CoreGraph route mappings with resolver-declared routes", async () => {
-    qiankun.registerMicroApps.mockClear();
-    qiankun.start.mockClear();
-    const container = createElement();
-
-    const options = await startQiankunMaster(
-      async () => ({
-        apps: [
-          {
-            name: "catalog",
-            entry: "https://example.com/catalog/",
-            container,
+    await startQiankunMaster({
+      resolver,
+      mount: "#app",
+      async loadEntry() {
+        calls.push("entry");
+        return {
+          pagesApp: { updateRuntime },
+          start(container: string) {
+            expect(container).toBe("#app");
+            calls.push("start");
           },
-        ],
-        routes: [{ path: "/resolver-catalog", microApp: "catalog" }],
-      }),
-      [{ path: "/catalog", microApp: "catalog" }],
-    );
-
-    expect(qiankun.registerMicroApps).toHaveBeenCalledWith([
-      {
-        name: "catalog",
-        entry: "https://example.com/catalog/",
-        container,
-        activeRule: ["/catalog", "/resolver-catalog"],
+        };
       },
-    ]);
-    expect(options.routes).toEqual([
-      { path: "/catalog", microApp: "catalog" },
-      { path: "/resolver-catalog", microApp: "catalog" },
-    ]);
+    });
 
-    await expect(
-      startQiankunMaster(
-        async () => ({
-          apps: [],
-          routes: [{ path: "/catalog", microApp: "other" }],
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["entry", "routes", "start"]);
+    expect(updateRuntime).toHaveBeenCalledWith({
+      routes: [
+        expect.objectContaining({
+          id: "__evjs_qiankun_app_0_console",
+          path: "/console/$",
+          module: { default: expect.any(Function) },
         }),
-        [{ path: "/catalog", microApp: "catalog" }],
-      ),
-    ).rejects.toThrow(
-      'Route "/catalog" maps to both micro-app "catalog" and "other"',
+      ],
+    });
+    expect(qiankun.prefetchApps).toHaveBeenCalledWith(
+      [{ name: "console", entry: "https://example.com/console/" }],
+      undefined,
     );
   });
 
-  it("resolves master app selector containers before registering apps", async () => {
-    const originalDocument = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "document",
-    );
-    const container = createElement();
-
-    qiankun.registerMicroApps.mockClear();
-    qiankun.start.mockClear();
-    Object.defineProperty(globalThis, "document", {
-      value: {
-        querySelector: vi.fn((selector: string) =>
-          selector === "#slave-container" ? container : null,
-        ),
-      },
-      configurable: true,
-    });
-
-    try {
-      await startQiankunMaster(async () => ({
-        apps: [
-          {
-            name: "catalog",
-            entry: "https://example.com/catalog/",
-            container: "#slave-container",
-            activeRule: "/catalog",
-          },
-        ],
-      }));
-
-      expect(qiankun.registerMicroApps).toHaveBeenCalledWith([
+  it("projects prepend, match, alias, and redirect routes", () => {
+    const routes = createQiankunMasterRoutes({
+      apps: [
         {
           name: "catalog",
           entry: "https://example.com/catalog/",
-          container,
-          activeRule: "/catalog",
+          platformId: "catalog-id",
         },
-      ]);
-    } finally {
-      if (originalDocument) {
-        Object.defineProperty(globalThis, "document", originalDocument);
-      } else {
-        delete (globalThis as { document?: unknown }).document;
-      }
+      ],
+      appNameKeyAlias: "platformId",
+      routes: [
+        { path: "/catalog", microApp: "catalog-id" },
+        {
+          path: "/catalog-exact",
+          microApp: "catalog",
+          mode: "match",
+        },
+        { path: "/legacy", redirect: "/catalog" },
+      ],
+    });
+
+    expect(routes).toEqual([
+      expect.objectContaining({ path: "/catalog/$" }),
+      expect.objectContaining({ path: "/catalog-exact" }),
+      {
+        id: "__evjs_qiankun_redirect_2",
+        path: "/legacy",
+        kind: "redirect",
+        redirect: { kind: "path", path: "/catalog" },
+      },
+    ]);
+  });
+
+  it("derives dynamic slave bases from the active Router pathname", () => {
+    const route = {
+      path: "/tenant/:tenantId",
+      microApp: "catalog",
+    };
+
+    expect(
+      resolveQiankunSlaveBase(
+        "/workspace",
+        route,
+        "/workspace/tenant/acme/orders",
+      ),
+    ).toBe("/workspace/tenant/acme");
+    expect(
+      resolveQiankunSlaveBase("/workspace", route, "/tenant/acme/orders"),
+    ).toBe("/workspace/tenant/acme");
+    expect(
+      resolveQiankunSlaveBase(
+        "/workspace",
+        { ...route, mode: "match" },
+        "/tenant/acme",
+      ),
+    ).toBe("/workspace");
+  });
+
+  it("waits for a deferred route update before unmounting its micro-app", async () => {
+    const calls: string[] = [];
+    let finishUpdate: (() => void) | undefined;
+    const updateQueue = new Promise<void>((resolve) => {
+      finishUpdate = () => {
+        calls.push("update");
+        resolve();
+      };
+    });
+    const microApp = {
+      mountPromise: Promise.resolve(),
+      unmount: vi.fn(() => {
+        calls.push("unmount");
+      }),
+    };
+
+    const cleanup = unmountQiankunMicroAppAfterUpdates(microApp, updateQueue);
+    await Promise.resolve();
+
+    expect(microApp.unmount).not.toHaveBeenCalled();
+    finishUpdate?.();
+    await cleanup;
+
+    expect(calls).toEqual(["update", "unmount"]);
+  });
+
+  it("installs master routes into the real Pages app without removing canonical routes", async () => {
+    function Home() {
+      return null;
     }
+
+    const pagesApp = createPagesApp({
+      routes: [{ id: "home", path: "/", module: { default: Home } }],
+      history: { type: "memory", initialEntries: ["/catalog"] },
+    });
+    const runtimeRoutes = createQiankunMasterRoutes({
+      apps: [{ name: "catalog", entry: "https://example.com/catalog/" }],
+      routes: [{ path: "/catalog", microApp: "catalog" }],
+    });
+
+    await pagesApp.updateRuntime({ routes: runtimeRoutes });
+
+    const router = pagesApp.app.router as {
+      matchRoutes(pathname: string): Array<{ routeId: string }>;
+    };
+    expect(router.matchRoutes("/").length).toBeGreaterThan(1);
+    expect(router.matchRoutes("/catalog").length).toBeGreaterThan(1);
+  });
+
+  it("does not render the master when the runtime overlay update fails", async () => {
+    const start = vi.fn();
+    await expect(
+      startQiankunMaster({
+        resolver: async () => ({ apps: [], routes: [] }),
+        mount: "#app",
+        async loadEntry() {
+          return {
+            pagesApp: {
+              updateRuntime: vi.fn(async () => {
+                throw new Error("runtime route update failed");
+              }),
+            },
+            start,
+          };
+        },
+      }),
+    ).rejects.toThrow("runtime route update failed");
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed, conflicting, and unresolved runtime routes", () => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [],
+        routes: [{ path: "catalog", microApp: "catalog" }],
+      }),
+    ).toThrow('routes[0].path must start with "/"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com" }],
+        routes: [
+          { path: "/catalog", microApp: "catalog" },
+          { path: "/catalog", redirect: "/" },
+        ],
+      }),
+    ).toThrow('duplicate route path "/catalog"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [],
+        routes: [{ path: "/catalog", microApp: "missing" }],
+      }),
+    ).toThrow('references unknown micro-app "missing"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com" }],
+        routes: [
+          {
+            path: "/catalog",
+            microApp: "catalog",
+            microAppProps: {
+              lifeCycles: "invalid" as unknown as never,
+            },
+          },
+        ],
+      }),
+    ).toThrow("routes[0].microAppProps.lifeCycles must be an object");
   });
 
   it("loads the slave entry once and remounts its app after unmount", async () => {
@@ -271,6 +361,101 @@ describe("@evjs/plugin-qiankun runtime", () => {
         delete (globalThis as { document?: unknown }).document;
       }
     }
+  });
+
+  it("projects slave base and history before the first render", async () => {
+    const calls: string[] = [];
+    const container = createElement();
+    const updateRuntime = vi.fn(async () => calls.push("configure"));
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      async loadEntry() {
+        calls.push("entry");
+        return {
+          pagesApp: { updateRuntime },
+          start(target: Element) {
+            expect(target).toBe(container);
+            calls.push("start");
+          },
+        };
+      },
+    });
+
+    await slave.mount({
+      container,
+      base: "/catalog",
+      history: "hash",
+    });
+
+    expect(calls).toEqual(["entry", "configure", "start"]);
+    expect(updateRuntime).toHaveBeenCalledWith({
+      basepath: "/catalog",
+      history: { type: "hash" },
+    });
+  });
+
+  it("reuses an equivalent slave runtime projection across remounts", async () => {
+    const container = createElement();
+    const updateRuntime = vi.fn();
+    const render = vi.fn();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start: vi.fn(),
+          app: { render, unmount: vi.fn() },
+        };
+      },
+    });
+
+    const props = { container, base: "/catalog", history: "hash" as const };
+    await slave.mount(props);
+    await slave.unmount(props);
+    await slave.mount(props);
+
+    expect(updateRuntime).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("projects incremental slave base and history updates", async () => {
+    const container = createElement();
+    const updateRuntime = vi.fn();
+    const runtimeUpdate = vi.fn();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { update: runtimeUpdate },
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start: vi.fn(),
+          app: { render: vi.fn(), unmount: vi.fn() },
+        };
+      },
+    });
+
+    await slave.mount({
+      container,
+      base: "/tenant/acme",
+      history: "hash",
+    });
+    await slave.update({ base: "/tenant/beta" });
+    await slave.update({ history: "memory" });
+
+    expect(runtimeUpdate).toHaveBeenCalledTimes(2);
+    expect(updateRuntime).toHaveBeenNthCalledWith(1, {
+      basepath: "/tenant/acme",
+      history: { type: "hash" },
+    });
+    expect(updateRuntime).toHaveBeenNthCalledWith(2, {
+      basepath: "/tenant/beta",
+    });
+    expect(updateRuntime).toHaveBeenNthCalledWith(3, {
+      history: { type: "memory" },
+    });
   });
 
   it("renders an entry that was preloaded before the first mount", async () => {

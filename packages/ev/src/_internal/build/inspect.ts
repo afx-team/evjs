@@ -33,7 +33,6 @@ import { createCoreGraph } from "./graph/index.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "./page-route-conventions.js";
 import { createPageRouteNodesFromCoreGraph } from "./page-route-types.js";
 import type { PageRouteDiscovery } from "./page-routes.js";
-import { resolvePluginExtensionState } from "./plugin-extensions.js";
 import {
   collectPluginHooks,
   orderPluginsByDependencies,
@@ -41,6 +40,7 @@ import {
   runConfigHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
+import { resolvePluginSettingsState } from "./plugin-settings.js";
 import { toProjectPath } from "./utils.js";
 
 const logger = getLogger(["evjs", "ev"]);
@@ -242,10 +242,12 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     ? withActiveBundler(resolvedConfig, bundler)
     : resolvedConfig;
   const {
-    registry: pluginExtensions,
-    applicationExtensions,
-    config,
-  } = resolvePluginExtensionState(baseConfig);
+    registry: pluginSettings,
+    applicationSettings: applicationPluginSettings,
+  } = resolvePluginSettingsState(baseConfig, undefined, {
+    reusePreparedApplicationSettings: true,
+  });
+  const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginContext<TBundlerCfg> = {
     mode,
@@ -290,8 +292,8 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
         command,
         config,
         pluginContext,
-        pluginExtensions,
-        applicationExtensions,
+        pluginSettings,
+        applicationPluginSettings,
         write: false,
         onAnalysis(currentAnalysis) {
           latestAnalysis = currentAnalysis;
@@ -303,8 +305,8 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       analysis =
         latestAnalysis ??
         (await createCoreGraph(config, cwd, {
-          pluginExtensions,
-          applicationExtensions,
+          pluginSettings,
+          applicationPluginSettings,
         }));
       diagnostics.push({
         level: "error",

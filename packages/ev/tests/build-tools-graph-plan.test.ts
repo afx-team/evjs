@@ -361,7 +361,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
     const config = await createCanonicalConfig(cwd, "spa");
     const analysis = await createCoreGraph(config, cwd);
-    const graphWithExtensionDocument: CoreGraph = {
+    const graphWithPluginDocument: CoreGraph = {
       ...analysis.graph,
       applications: {
         ...analysis.graph.applications,
@@ -377,8 +377,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           template: "./plugin.html",
           output: "plugin.html",
           applicationId: "default",
-          owner: { kind: "extension", extensionId: "@test/plugin" },
-          extensions: {},
+          owner: { kind: "plugin", pluginId: "@test/plugin" },
           provenance: {
             producer: { kind: "plugin", id: "@test/plugin" },
           },
@@ -386,7 +385,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       },
     };
 
-    const plan = createBuildPlan(config, graphWithExtensionDocument);
+    const plan = createBuildPlan(config, graphWithPluginDocument);
     expect(plan.html).toContainEqual({
       id: "index",
       template: "./index.html",
@@ -395,23 +394,22 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
 
     const graphWithDuplicateApplicationDocument: CoreGraph = {
-      ...graphWithExtensionDocument,
+      ...graphWithPluginDocument,
       applications: {
-        ...graphWithExtensionDocument.applications,
+        ...graphWithPluginDocument.applications,
         default: {
-          ...graphWithExtensionDocument.applications.default,
+          ...graphWithPluginDocument.applications.default,
           documentIds: ["index", "alternate", "plugin-overlay"],
         },
       },
       documents: {
-        ...graphWithExtensionDocument.documents,
+        ...graphWithPluginDocument.documents,
         alternate: {
           id: "alternate",
           template: "./alternate.html",
           output: "alternate.html",
           applicationId: "default",
           owner: { kind: "application" },
-          extensions: {},
           provenance: {
             producer: { kind: "provider", id: PAGE_ANCHOR_PROVIDER_ID },
           },

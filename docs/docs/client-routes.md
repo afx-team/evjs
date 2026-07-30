@@ -267,8 +267,8 @@ export default definePageConfig({
     "theme-color": "#ffffff",
   },
   render: "csr",
-  extensions: {
-    "@company/analytics": {
+  plugins: {
+    analytics: {
       channel: "orders",
     },
   },
@@ -279,14 +279,14 @@ The module is synchronously evaluated at build time and must default-export
 static JSON data. Core owns `title`, named `meta`, `render`, `hydrate`,
 `prerender`, and `rsc`. `meta` accepts string key/value pairs and creates only
 `<meta name="key" content="value">`; `property`, `charset`, links, scripts,
-dynamic metadata, and a general head DSL are outside this contract. Plugin
-values belong under a registered namespaced `extensions` key.
+dynamic metadata, and a general head DSL are outside this contract. Installed
+Page-aware plugins use generated short keys under `plugins`.
 
 The resolved config is attached to the same normalized Page identity in SPA
 and MPA. In SPA mode, the deepest active Page owns title/meta with no parent
 Page inheritance. Route transitions restore the HTML template baseline or
 remove values that the next Page does not declare, so metadata cannot leak
-between Pages. A plugin that needs extension data at runtime must explicitly
+between Pages. A plugin that needs Page data at runtime must explicitly
 generate and attach the minimal projection.
 
 Page components do not export literal `render`, `hydrate`, `prerender`, or
@@ -297,10 +297,11 @@ Page components do not export literal `render`, `hydrate`, `prerender`, or
 
 `application.routes` can normalize an explicit SPA route tree into the same
 Core graph. It accepts nested `routes`, `page` or `component`, layouts,
-wrappers, redirects, and registered namespaced extensions. `children`,
+wrappers, and redirects. `children`,
 `exact: false`, and nested routes below `exact: true` are rejected;
 `exact: true` is a terminal-match structural assertion and is not copied into
-the graph. Each declared Route keeps its own semantic identity.
+the graph. Each declared Route keeps its own semantic identity; plugin
+configuration remains Page-owned.
 
 This configuration is SPA-only, cannot be combined with `routing`, and rejects
 MPA materialization. It is an alternate input into the normalized graph, not a

@@ -9,6 +9,7 @@ import {
 } from "@evjs/shared";
 import type {
   ClientReferenceNode,
+  CoreApplicationPluginSettings,
   CoreGraph,
   PageRouteNode,
   PprConfig,
@@ -37,10 +38,11 @@ import {
   routePathShapeFromPath,
 } from "../page-route-conventions.js";
 import {
-  applyPluginExtensions,
-  type PluginExtensionRegistry,
-  type PluginExtensionResolutionSession,
-} from "../plugin-extensions.js";
+  applyPluginSettings,
+  collectPluginSettingsRegistry,
+  type PluginSettingsRegistry,
+  type PluginSettingsResolutionSession,
+} from "../plugin-settings.js";
 import {
   extractPprRegionModuleConfig,
   extractPprRegions,
@@ -65,7 +67,6 @@ import {
 } from "../utils.js";
 import {
   collectConfigRouteCoreSourceModules,
-  collectConfigRoutePluginExtensionInputs,
   createConfigRouteGraph,
 } from "./config-route.js";
 import { applyResolvedPageConfigs, createPageAnchorGraph } from "./core.js";
@@ -80,13 +81,13 @@ export interface CreateCoreGraphOptions {
   resolve?: {
     alias?: Record<string, string>;
   };
-  pluginExtensions?: PluginExtensionRegistry;
-  /** Application extension values resolved before plugin setup. */
-  applicationExtensions?: Readonly<Record<string, unknown>>;
+  pluginSettings?: PluginSettingsRegistry;
+  /** Application plugin settings resolved before plugin setup. */
+  applicationPluginSettings?: CoreApplicationPluginSettings;
   /** Canonical Page configs pre-evaluated once for alias convergence. */
   pageConfigs?: ResolvedPageFileConfigs;
-  /** Page extension snapshots reused during one alias-convergence analysis. */
-  extensionResolutionSession?: PluginExtensionResolutionSession;
+  /** Page plugin setting snapshots reused during one alias-convergence analysis. */
+  pluginSettingsSession?: PluginSettingsResolutionSession;
 }
 
 interface FrameworkAnalysisFacts {
@@ -107,7 +108,6 @@ export interface Diagnostic {
 
 export interface GraphConfig {
   application?: ResolvedConfigRouteApplication;
-  extensions?: Readonly<Record<string, unknown>>;
   routing?: {
     mode: "spa" | "mpa";
     html: string;
@@ -332,34 +332,12 @@ export async function createCoreGraph(
     sourceCache,
     diagnostics,
   );
-  const pluginExtensions = options.pluginExtensions ?? {
-    applicationExtensions: [],
-    pageExtensions: [],
-    routeExtensions: [],
-    documentExtensions: [],
-    namespaces: [],
-  };
-  const requiresApplicationExtensionSnapshot =
-    (Object.hasOwn(graph.applications, "default") &&
-      pluginExtensions.applicationExtensions.length > 0) ||
-    Object.keys(config.extensions ?? {}).length > 0;
-  if (
-    requiresApplicationExtensionSnapshot &&
-    options.applicationExtensions === undefined
-  ) {
-    throw new Error(
-      "[evjs] createCoreGraph() requires Application extensions resolved before plugin setup. Pass options.applicationExtensions from framework orchestration.",
-    );
-  }
-  const configRoutePluginExtensions = config.application
-    ? collectConfigRoutePluginExtensionInputs(config.application)
-    : undefined;
-  graph = applyPluginExtensions(graph, pluginExtensions, {
-    applicationExtensions: options.applicationExtensions,
+  const pluginSettings =
+    options.pluginSettings ?? collectPluginSettingsRegistry([]);
+  graph = applyPluginSettings(graph, pluginSettings, {
+    applicationSettings: options.applicationPluginSettings,
     canonicalPages: pageConfigs.pages,
-    routeExtensions: configRoutePluginExtensions?.routes,
-    documentExtensions: configRoutePluginExtensions?.documents,
-    extensionResolutionSession: options.extensionResolutionSession,
+    session: options.pluginSettingsSession,
   });
   assertCoreGraph(graph, "resolved CoreGraph");
 
@@ -402,7 +380,7 @@ function createEmptyCoreGraph(facts: FrameworkAnalysisFacts): CoreGraph {
     pages: {},
     routes: [],
     documents: {},
-    extensions: { namespaces: {} },
+    plugins: { entries: {} },
     serverFunctions: facts.serverFunctions,
     serverRoutes: facts.serverRoutes,
     ...(facts.clientReferences

@@ -18,6 +18,7 @@ import {
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
+import { createDefinedPluginApplicationSettingSnapshot } from "../../plugin/defined.js";
 import type {
   CliFlags,
   PluginContext,
@@ -76,12 +77,9 @@ import {
 import {
   collectGeneratedPageRouteTypeFiles,
   getPageRouteTypesPath,
+  isGeneratedPageRouteTypesFile,
 } from "./page-route-types.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
-import {
-  collectPluginExtensionRegistry,
-  resolvePluginExtensionState,
-} from "./plugin-extensions.js";
 import {
   collectPluginHooks,
   hasSamePluginIdentity,
@@ -93,7 +91,23 @@ import {
   runConfigHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
+import {
+  collectPluginSettingsRegistry,
+  resolvePluginSettingsState,
+} from "./plugin-settings.js";
+import {
+  collectGeneratedPluginTypeFiles,
+  getPluginTypesPath,
+  isGeneratedPluginTypesFile,
+} from "./plugin-types.js";
 import { isInsideCwd } from "./utils.js";
+
+type MutablePluginContext<TBundlerCfg> = Omit<
+  PluginContext<TBundlerCfg>,
+  "config"
+> & {
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
+};
 
 const logger = getLogger(["evjs", "ev"]);
 
@@ -259,7 +273,7 @@ async function createGeneratedDevStateSnapshot(
   );
   const generatedIrPath = path.resolve(cwd, GENERATED_IR_DIR);
   const generatedIrSnapshot = path.join(snapshotRoot, "generated-ir");
-  const routeTypeFiles = new Map<string, Buffer | undefined>();
+  const generatedTypeFiles = new Map<string, Buffer | undefined>();
 
   try {
     const hadGeneratedIr = await pathExists(generatedIrPath);
@@ -269,8 +283,16 @@ async function createGeneratedDevStateSnapshot(
       });
     }
 
-    const routeTypesFile = getPageRouteTypesPath(cwd).file;
-    routeTypeFiles.set(routeTypesFile, await readFileIfExists(routeTypesFile));
+    await captureGeneratedTypeFile(
+      generatedTypeFiles,
+      getPageRouteTypesPath(cwd).file,
+      await collectGeneratedPageRouteTypeFiles(cwd),
+    );
+    await captureGeneratedTypeFile(
+      generatedTypeFiles,
+      getPluginTypesPath(cwd).file,
+      await collectGeneratedPluginTypeFiles(cwd),
+    );
 
     let settled = false;
     return {
@@ -281,18 +303,21 @@ async function createGeneratedDevStateSnapshot(
       },
       async restore() {
         if (settled) return;
-        await runCleanupTasks([
-          () =>
-            restoreGeneratedIr(
-              cwd,
-              generatedIrPath,
-              generatedIrSnapshot,
-              hadGeneratedIr,
-            ),
-          () => restorePageRouteTypes(cwd, routeTypeFiles),
-        ]);
         settled = true;
-        await removeDevStateSnapshot(snapshotRoot);
+        try {
+          await runCleanupTasks([
+            () =>
+              restoreGeneratedIr(
+                cwd,
+                generatedIrPath,
+                generatedIrSnapshot,
+                hadGeneratedIr,
+              ),
+            () => restoreGeneratedTypes(cwd, generatedTypeFiles),
+          ]);
+        } finally {
+          await removeDevStateSnapshot(snapshotRoot);
+        }
       },
     };
   } catch (error) {
@@ -301,6 +326,25 @@ async function createGeneratedDevStateSnapshot(
       () => fs.promises.rm(snapshotRoot, { force: true, recursive: true }),
       "[evjs] Failed to capture generated dev state and remove its incomplete snapshot.",
     );
+  }
+}
+
+async function captureGeneratedTypeFile(
+  snapshot: Map<string, Buffer | undefined>,
+  canonicalFile: string,
+  generatedFiles: readonly string[],
+): Promise<void> {
+  if (!(await pathExists(canonicalFile))) {
+    snapshot.set(canonicalFile, undefined);
+    return;
+  }
+  const absoluteCanonicalFile = path.resolve(canonicalFile);
+  if (
+    generatedFiles.some(
+      (generatedFile) => path.resolve(generatedFile) === absoluteCanonicalFile,
+    )
+  ) {
+    snapshot.set(canonicalFile, await fs.promises.readFile(canonicalFile));
   }
 }
 
@@ -330,28 +374,57 @@ async function restoreGeneratedIr(
   }
 }
 
-async function restorePageRouteTypes(
+async function restoreGeneratedTypes(
   cwd: string,
-  routeTypeFiles: ReadonlyMap<string, Buffer | undefined>,
+  generatedTypeFiles: ReadonlyMap<string, Buffer | undefined>,
 ): Promise<void> {
   const currentGeneratedFiles = await collectGeneratedPageRouteTypeFiles(cwd);
-  const filesToRemove = new Set([
+  currentGeneratedFiles.push(...(await collectGeneratedPluginTypeFiles(cwd)));
+  const filesToRestore = new Set([
     ...currentGeneratedFiles,
-    ...routeTypeFiles.keys(),
+    ...generatedTypeFiles.keys(),
   ]);
-  await Promise.all(
-    [...filesToRemove].map((file) =>
-      removeOwnedOutputFile(cwd, file, "Page route types rollback"),
+  await runCleanupTasks(
+    [...filesToRestore].map(
+      (file) => () =>
+        restoreGeneratedTypeFile(cwd, file, generatedTypeFiles.get(file)),
     ),
   );
-  await Promise.all(
-    [...routeTypeFiles].flatMap(([file, source]) => {
-      if (!source) return [];
-      return [
-        writeOwnedOutputFile(cwd, file, source, "Page route types rollback"),
-      ];
-    }),
-  );
+}
+
+async function restoreGeneratedTypeFile(
+  cwd: string,
+  file: string,
+  source: Buffer | undefined,
+): Promise<void> {
+  if (await pathExists(file)) {
+    if (!(await isGeneratedFrameworkTypeFile(cwd, file))) {
+      logger.warn`Generated types rollback preserved a user-owned or symbolic-link file at ${file}; the previous framework declaration was not restored.`;
+      return;
+    }
+    await removeOwnedOutputFile(cwd, file, "Generated types rollback");
+  }
+
+  if (source === undefined) return;
+  if (await pathExists(file)) {
+    logger.warn`Generated types rollback preserved a file created concurrently at ${file}; the previous framework declaration was not restored.`;
+    return;
+  }
+  await writeOwnedOutputFile(cwd, file, source, "Generated types rollback");
+}
+
+async function isGeneratedFrameworkTypeFile(
+  cwd: string,
+  file: string,
+): Promise<boolean> {
+  const absoluteFile = path.resolve(file);
+  if (absoluteFile === path.resolve(getPageRouteTypesPath(cwd).file)) {
+    return isGeneratedPageRouteTypesFile(file);
+  }
+  if (absoluteFile === path.resolve(getPluginTypesPath(cwd).file)) {
+    return isGeneratedPluginTypesFile(file);
+  }
+  return false;
 }
 
 async function pathExists(file: string): Promise<boolean> {
@@ -360,15 +433,6 @@ async function pathExists(file: string): Promise<boolean> {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-async function readFileIfExists(file: string): Promise<Buffer | undefined> {
-  try {
-    return await fs.promises.readFile(file);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
 }
@@ -484,12 +548,14 @@ async function prepareInternalFrameworkBuild<
     ? withActiveBundler(resolvedConfig, bundler)
     : resolvedConfig;
   const {
-    registry: pluginExtensions,
-    applicationExtensions,
-    config,
-  } = resolvePluginExtensionState(baseConfig);
+    registry: pluginSettings,
+    applicationSettings: applicationPluginSettings,
+  } = resolvePluginSettingsState(baseConfig, undefined, {
+    reusePreparedApplicationSettings: true,
+  });
+  const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
-  const pluginContext: PluginContext<TBundlerCfg> = {
+  const pluginContext: MutablePluginContext<TBundlerCfg> = {
     mode,
     command,
     cwd,
@@ -519,8 +585,8 @@ async function prepareInternalFrameworkBuild<
       command,
       config,
       pluginContext,
-      pluginExtensions,
-      applicationExtensions,
+      pluginSettings,
+      applicationPluginSettings,
       plan: options.plan,
       onAnalysis: reportGraphDiagnostics,
     });
@@ -742,6 +808,7 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
   try {
     await runDevSession(
       userConfig,
+      configuredConfig,
       options,
       cwd,
       flags,
@@ -760,6 +827,7 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
 
 async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   userConfig: Config<TBundlerCfg> | undefined,
+  configuredConfig: Config<TBundlerCfg> | undefined,
   options: DevOptions<TBundlerCfg> | undefined,
   cwd: string,
   flags: CliFlags | undefined,
@@ -771,12 +839,16 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
   const baseActiveConfig = withActiveBundler(resolvedConfig, bundler);
-  const initialPluginExtensionState =
-    resolvePluginExtensionState(baseActiveConfig);
-  let activePluginExtensions = initialPluginExtensionState.registry;
-  let activeApplicationExtensions =
-    initialPluginExtensionState.applicationExtensions;
-  let activeConfig = initialPluginExtensionState.config;
+  const initialPluginSettingsState = resolvePluginSettingsState(
+    baseActiveConfig,
+    undefined,
+    { reusePreparedApplicationSettings: true },
+  );
+  let activePluginSettings = initialPluginSettingsState.registry;
+  let activeApplicationPluginSettings =
+    initialPluginSettingsState.applicationSettings;
+  let activeConfiguredConfig = configuredConfig;
+  let activeConfig = baseActiveConfig;
   let activeServerRouteWatchState = initialServerRouteWatchState;
 
   const pluginWatchFiles = new Set<string>();
@@ -787,7 +859,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   const addBundlerConfigWatchFile = (file: string) => {
     bundlerConfigWatchFiles.add(path.resolve(cwd, file));
   };
-  const pluginCtx: PluginContext<TBundlerCfg> = {
+  const pluginCtx: MutablePluginContext<TBundlerCfg> = {
     mode: "development",
     command: "dev",
     cwd,
@@ -808,8 +880,8 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       command: "dev",
       config: activeConfig,
       pluginContext: pluginCtx,
-      pluginExtensions: activePluginExtensions,
-      applicationExtensions: activeApplicationExtensions,
+      pluginSettings: activePluginSettings,
+      applicationPluginSettings: activeApplicationPluginSettings,
       plan: { distDir: DEV_DIST_DIR },
       onAnalysis: reportGraphDiagnostics,
     });
@@ -829,8 +901,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let releaseDevDistLock: DevRuntimeRelease | undefined;
   let unregisterDevDistExitCleanup = () => {};
   let stopWatchingDevDependencies = () => {};
+  let stopWatchingFailedConfigDependencies = () => {};
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const pendingDevChanges = new Set<string>();
+  let pendingForcedConfigReload = false;
   let activeFrameworkRuntime:
     | ReturnType<typeof createFrameworkRuntime>
     | undefined;
@@ -942,23 +1016,26 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   const loadCurrentConfig = async (
-    onServerRouteWatchState: (state: ServerRouteWatchState) => void,
+    reloadConfiguredConfig: boolean,
+    onServerRouteWatchState?: (state: ServerRouteWatchState) => void,
   ) => {
-    const nextUserConfig = options?.loadConfig
-      ? await options.loadConfig(cwd)
-      : userConfig;
-    const nextConfiguredConfig = await runConfigHooks(nextUserConfig, {
-      mode: "development",
-      command: "dev",
-      cwd,
-      flags,
-    });
+    const nextConfiguredConfig = reloadConfiguredConfig
+      ? await runConfigHooks(
+          options?.loadConfig ? await options.loadConfig(cwd) : userConfig,
+          {
+            mode: "development",
+            command: "dev",
+            cwd,
+            flags,
+          },
+        )
+      : activeConfiguredConfig;
     const nextBaseResolvedConfig = resolveConfig(nextConfiguredConfig);
     const serverRouteWatchState = await collectServerRouteWatchState(
       cwd,
       nextBaseResolvedConfig,
     );
-    onServerRouteWatchState(serverRouteWatchState);
+    onServerRouteWatchState?.(serverRouteWatchState);
     const nextPageResolvedConfig = await withPageRoutingDefaults(
       nextBaseResolvedConfig,
       nextConfiguredConfig,
@@ -986,10 +1063,14 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       );
     }
 
-    return withActiveBundler(
-      withReservedDevPorts(nextResolvedConfig, devPorts),
-      bundler,
-    );
+    return {
+      configuredConfig: nextConfiguredConfig,
+      config: withActiveBundler(
+        withReservedDevPorts(nextResolvedConfig, devPorts),
+        bundler,
+      ),
+      serverRouteWatchState,
+    };
   };
 
   const stagePluginHooks = async (nextConfig: typeof activeConfig) => {
@@ -1078,6 +1159,24 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     );
   };
 
+  const clearFailedConfigDependencyWatchers = () => {
+    stopWatchingFailedConfigDependencies();
+    stopWatchingFailedConfigDependencies = () => {};
+  };
+
+  const watchFailedConfigDependencies = (
+    state: ServerRouteWatchState | undefined,
+  ) => {
+    clearFailedConfigDependencyWatchers();
+    if (!state || state.dependencies.length === 0) return;
+
+    stopWatchingFailedConfigDependencies = watchFiles(
+      state.dependencies,
+      (file) => scheduleDevUpdate(file, true),
+      new Set(state.dependencies),
+    );
+  };
+
   const commitStagedPluginHooks = async (
     stagedPluginHooks: Awaited<ReturnType<typeof stagePluginHooks>> | undefined,
   ) => {
@@ -1090,7 +1189,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     }
   };
 
-  const handleDevDependencyChange = async (changedFiles: readonly string[]) => {
+  const handleDevDependencyChange = async (
+    changedFiles: readonly string[],
+    forceConfigReload = false,
+  ) => {
     const configDependencyFiles = new Set(listConfigDependencyFiles(cwd));
     const isFrameworkConfigChange = changedFiles.some((file) =>
       configDependencyFiles.has(file),
@@ -1099,53 +1201,71 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       bundlerConfigWatchFiles.has(file),
     );
     const requiresBundlerConfigReload =
-      isFrameworkConfigChange || isBundlerConfigChange;
+      forceConfigReload || isFrameworkConfigChange || isBundlerConfigChange;
+    if (requiresBundlerConfigReload) {
+      clearFailedConfigDependencyWatchers();
+    }
     const reason: BuildPlanUpdate["reason"] = requiresBundlerConfigReload
       ? "config"
       : "route-declaration";
-
-    const baseNextConfig = await loadCurrentConfig((state) => {
-      activeServerRouteWatchState = state;
-      refreshDevDependencyWatchers();
-    });
-    if (!hasSamePluginIdentity(activeConfig.plugins, baseNextConfig.plugins)) {
-      logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
-      return;
-    }
-
-    const nextPluginExtensions = isFrameworkConfigChange
-      ? collectPluginExtensionRegistry(baseNextConfig.plugins)
-      : activePluginExtensions;
-    let nextApplicationExtensions = activeApplicationExtensions;
-    let nextConfig: ResolvedFrameworkConfig<TBundlerCfg> = {
-      ...baseNextConfig,
-      extensions: activeApplicationExtensions,
-    };
-    if (isFrameworkConfigChange) {
-      const nextPluginExtensionState = resolvePluginExtensionState(
-        baseNextConfig,
-        nextPluginExtensions,
-      );
-      nextApplicationExtensions =
-        nextPluginExtensionState.applicationExtensions;
-      nextConfig = nextPluginExtensionState.config;
-    }
-
-    validateHtmlTemplates(cwd, nextConfig);
+    const applicationSettingSnapshot = requiresBundlerConfigReload
+      ? createDefinedPluginApplicationSettingSnapshot(activeConfig.plugins)
+      : undefined;
     let stagedPluginHooks:
       | Awaited<ReturnType<typeof stagePluginHooks>>
       | undefined;
-    if (isFrameworkConfigChange) {
-      stagedPluginHooks = await stagePluginHooks(nextConfig);
-    }
     let generatedStateSnapshot: GeneratedDevStateSnapshot | undefined;
+    let candidateServerRouteWatchState: ServerRouteWatchState | undefined;
     const rollbackCandidateState = () =>
       runCleanupTasks([
         () => stagedPluginHooks?.rollback(),
         () => generatedStateSnapshot?.restore(),
+        () => applicationSettingSnapshot?.restore(),
       ]);
 
     try {
+      const {
+        configuredConfig: nextConfiguredConfig,
+        config: baseNextConfig,
+        serverRouteWatchState: nextServerRouteWatchState,
+      } = await loadCurrentConfig(
+        requiresBundlerConfigReload,
+        requiresBundlerConfigReload
+          ? (state) => {
+              candidateServerRouteWatchState = state;
+            }
+          : (state) => {
+              activeServerRouteWatchState = state;
+              refreshDevDependencyWatchers();
+            },
+      );
+      if (
+        !hasSamePluginIdentity(activeConfig.plugins, baseNextConfig.plugins)
+      ) {
+        await rollbackCandidateState();
+        logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
+        return;
+      }
+
+      const nextPluginSettings = requiresBundlerConfigReload
+        ? collectPluginSettingsRegistry(baseNextConfig.plugins)
+        : activePluginSettings;
+      let nextApplicationPluginSettings = activeApplicationPluginSettings;
+      const nextConfig: ResolvedFrameworkConfig<TBundlerCfg> = baseNextConfig;
+      if (requiresBundlerConfigReload) {
+        const nextPluginSettingsState = resolvePluginSettingsState(
+          baseNextConfig,
+          nextPluginSettings,
+          { reusePreparedApplicationSettings: true },
+        );
+        nextApplicationPluginSettings =
+          nextPluginSettingsState.applicationSettings;
+      }
+
+      validateHtmlTemplates(cwd, nextConfig);
+      if (requiresBundlerConfigReload) {
+        stagedPluginHooks = await stagePluginHooks(nextConfig);
+      }
       generatedStateSnapshot = await createGeneratedDevStateSnapshot(cwd);
       const { analysis: nextAnalysis, plan: nextPlan } =
         await analyzeAndMaterializeFrameworkIR({
@@ -1157,21 +1277,24 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             ...pluginCtx,
             config: nextConfig,
           },
-          pluginExtensions: nextPluginExtensions,
-          applicationExtensions: nextApplicationExtensions,
+          pluginSettings: nextPluginSettings,
+          applicationPluginSettings: nextApplicationPluginSettings,
           plan: { distDir: DEV_DIST_DIR },
           onAnalysis: reportGraphDiagnostics,
         });
       const update = diffBuildPlan(activePlan, nextPlan, reason);
       if (isEmptyBuildPlanUpdate(update) && !requiresBundlerConfigReload) {
+        activeConfiguredConfig = nextConfiguredConfig;
         activeConfig = nextConfig;
-        activePluginExtensions = nextPluginExtensions;
-        activeApplicationExtensions = nextApplicationExtensions;
+        activePluginSettings = nextPluginSettings;
+        activeApplicationPluginSettings = nextApplicationPluginSettings;
         activeAnalysis = nextAnalysis;
         activePlan = nextPlan;
+        activeServerRouteWatchState = nextServerRouteWatchState;
         pluginCtx.config = nextConfig;
         await commitStagedPluginHooks(stagedPluginHooks);
         await generatedStateSnapshot.commit();
+        applicationSettingSnapshot?.commit();
         return;
       }
 
@@ -1182,8 +1305,9 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       }
 
       const previousConfig = activeConfig;
-      const previousPluginExtensions = activePluginExtensions;
-      const previousApplicationExtensions = activeApplicationExtensions;
+      const previousConfiguredConfig = activeConfiguredConfig;
+      const previousPluginSettings = activePluginSettings;
+      const previousApplicationPluginSettings = activeApplicationPluginSettings;
       const previousAnalysis = activeAnalysis;
       const previousPlan = activePlan;
       const previousFrameworkRuntime = activeFrameworkRuntime;
@@ -1199,9 +1323,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       preflightBundlerBuild(bundler, nextPlan);
       preflightBundlerDevUpdate(bundler, update);
 
+      activeConfiguredConfig = nextConfiguredConfig;
       activeConfig = nextConfig;
-      activePluginExtensions = nextPluginExtensions;
-      activeApplicationExtensions = nextApplicationExtensions;
+      activePluginSettings = nextPluginSettings;
+      activeApplicationPluginSettings = nextApplicationPluginSettings;
       activeAnalysis = nextAnalysis;
       activePlan = nextPlan;
       pluginCtx.config = nextConfig;
@@ -1212,9 +1337,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
           configChanged: requiresBundlerConfigReload,
         });
       } catch (err) {
+        activeConfiguredConfig = previousConfiguredConfig;
         activeConfig = previousConfig;
-        activePluginExtensions = previousPluginExtensions;
-        activeApplicationExtensions = previousApplicationExtensions;
+        activePluginSettings = previousPluginSettings;
+        activeApplicationPluginSettings = previousApplicationPluginSettings;
         activeAnalysis = previousAnalysis;
         activePlan = previousPlan;
         activeFrameworkRuntime = previousFrameworkRuntime;
@@ -1236,36 +1362,57 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
               }),
           ]);
         } catch (rollbackError) {
+          if (requiresBundlerConfigReload) {
+            watchFailedConfigDependencies(candidateServerRouteWatchState);
+          }
           throw new AggregateError(
             [err, rollbackError],
             "[evjs] Framework plan update failed and dev state rollback also failed.",
             { cause: err },
           );
         }
+        if (requiresBundlerConfigReload) {
+          watchFailedConfigDependencies(candidateServerRouteWatchState);
+        }
         logger.warn`Unable to apply framework plan update without restart: ${err}`;
         return;
       }
+      activeServerRouteWatchState = nextServerRouteWatchState;
       await commitStagedPluginHooks(stagedPluginHooks);
       await generatedStateSnapshot.commit();
+      applicationSettingSnapshot?.commit();
     } catch (err) {
       return rethrowAfterCleanup(
         err,
-        rollbackCandidateState,
+        async () => {
+          try {
+            await rollbackCandidateState();
+          } finally {
+            if (requiresBundlerConfigReload) {
+              watchFailedConfigDependencies(candidateServerRouteWatchState);
+            }
+          }
+        },
         "[evjs] Framework dev state update failed and rollback also failed.",
       );
     }
   };
 
-  function scheduleDevUpdate(changedFile: string) {
+  function scheduleDevUpdate(changedFile: string, forceConfigReload = false) {
     pendingDevChanges.add(changedFile);
+    pendingForcedConfigReload ||= forceConfigReload;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
       const changedFiles = [...pendingDevChanges];
+      const shouldForceConfigReload = pendingForcedConfigReload;
       pendingDevChanges.clear();
+      pendingForcedConfigReload = false;
       devUpdateQueue = devUpdateQueue
         .catch(() => {})
-        .then(() => handleDevDependencyChange(changedFiles))
+        .then(() =>
+          handleDevDependencyChange(changedFiles, shouldForceConfigReload),
+        )
         .catch((err) => {
           logger.warn`Failed to update framework dev state: ${err}`;
         });
@@ -1275,9 +1422,12 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   const cleanupDev = async () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     pendingDevChanges.clear();
+    pendingForcedConfigReload = false;
     await runCleanupTasks([
       () => stopWatchingDevDependencies(),
+      () => clearFailedConfigDependencyWatchers(),
       () => devUpdateQueue.catch(() => {}),
+      () => clearFailedConfigDependencyWatchers(),
       () => restartQueue.catch(() => {}),
       () => apiProcessController.stop(),
       () => devController?.close?.(),

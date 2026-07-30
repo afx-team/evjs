@@ -200,24 +200,26 @@ CMD ["node", "dist/server.mjs"]
 schema 字段时，可以在写文件前包装这份 metadata：
 
 ```ts
-export function deployAdapter() {
-  return {
-    name: "deploy-adapter",
-    setup() {
-      return {
-        buildEnd({ deploymentMetadata }) {
-          const artifact = {
-            ...deploymentMetadata,
-            platform: "custom",
-          };
+import { definePlugin } from "@evjs/ev/plugin";
 
-          emitPlatformFiles(artifact);
-        },
-      };
-    },
-  };
-}
+export const deployAdapter = definePlugin({
+  id: "@example/deploy-adapter",
+  setup() {
+    return {
+      buildEnd({ deploymentMetadata }) {
+        const artifact = {
+          ...deploymentMetadata,
+          platform: "custom",
+        };
+
+        emitPlatformFiles(artifact);
+      },
+    };
+  },
+});
 ```
+
+应用通过 `plugins: [deployAdapter()]` 安装该工厂返回的插件实例。
 
 自定义 adapter 应聚焦平台路由、资源服务、进程或 worker 启动逻辑。应用代码应继续使用 evjs
 文件约定，而不是直接读取部署元信息。

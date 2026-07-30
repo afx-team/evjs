@@ -4,6 +4,9 @@
 Page-and-Route graph、框架生成 entry、插件新增产物，以及这些产物如何挂到
 framework slot。
 
+本文是声明式插件输出的 canonical reference。插件标识与类型安全 setting 请先阅读
+[插件开发](./plugin-authoring)；lifecycle side effect 则使用[插件 Hooks](./plugin-hooks)。
+
 ## 概念
 
 Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
@@ -86,6 +89,19 @@ flowchart TB
 `@evjs/ev/plugin`。`ctx.framework` 对象是 immutable 的，插件可以 inspect IR，但不能修改
 framework state。
 
+Application 与 Page view 会暴露解析后的 `plugins` setting bag。Application bag 只包含
+enablement；私有 factory 配置绝不会进入 CoreGraph。Page bag 可以包含经过校验的 static
+Page value。defined plugin 通常使用类型更窄的 `ctx.options` 与 `ctx.pages`；每个已启用
+Page 项都是 `{ page, options }`。逐 Page 的 `contributePage()` 使用
+`ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。内部 provenance 与
+解析结果会在 `contributions()` 物化 generated code 前可用。
+
+Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
+id。因此 MPA 表现为一个拥有多个 Page/Document 的逻辑 Application，而不是互不关联的
+一组 entry。Client Route view 来自 CoreGraph，包含 normalized pattern、semantic target、
+wrapper/layout facet 与 provenance。即使 pathless group 或 redirect 没有 component
+module，也仍然可见。
+
 ## Authoring API
 
 使用 `ctx.emit.module()` 声明生成代码，使用 `ctx.emit.data()` 声明生成 JSON 数据。
@@ -95,6 +111,74 @@ framework state。
 使用 `ctx.emit.importOf(ref)` 或 `helpers.importOf(ref)` 链接 generated artifacts。
 返回的 specifier 只应在生成源码中使用。应用源码不应 import `.ev` 路径或
 `evjs:generated/*` specifier。
+
+插件生成模块使用 opaque ref，不暴露文件系统路径：
+
+```ts
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const analytics = definePlugin({
+  id: "@company/analytics",
+  contributions(ctx) {
+    const runtime = ctx.emit.module({
+      id: "runtime",
+      scope: { kind: "application" },
+      source: "export function install() { console.log('analytics'); }",
+    });
+
+    const entry = ctx.emit.module({
+      id: "entry",
+      scope: { kind: "application" },
+      source: ({ importOf }) =>
+        `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
+    });
+
+    ctx.slot("client.entry").add({
+      id: "entry",
+      module: entry,
+      position: "after-main",
+    });
+  },
+});
+```
+
+插件替换 entry、但仍要保留原始 framework facade 时，使用
+`ctx.emit.entryFacade()`，不要重建 framework internal：
+
+```ts
+contributions(ctx) {
+  const entry = ctx.framework.getApplicationEntry();
+  if (!entry) return;
+
+  const original = ctx.emit.entryFacade({
+    id: "original-entry",
+    entry,
+  });
+
+  const wrapper = ctx.emit.module({
+    id: "entry-wrapper",
+    scope: { kind: "application" },
+    source: ({ importOf }) =>
+      `export const load = () => import(${JSON.stringify(importOf(original))});`,
+  });
+
+  ctx.slot("client.entry").add({
+    id: "entry-wrapper-slot",
+    module: wrapper,
+    position: "before-main",
+    mode: "replace",
+  });
+}
+```
+
+对于生成的 SPA Application entry，`autoStart: false` 会创建并导出 framework
+`app`，但不会挂载；同时会导出 `start(container)`，为首次挂载保留 framework
+hydration marker 语义。Replacement entry 负责首次 `start()` 调用以及之后的
+`app.render()` remount。其他 entry 类型不能关闭 framework startup。
+
+插件生成路径稳定且可读。例如 id 为 `@evjs/plugin-qiankun:slave` 的插件会写入
+`.ev/plugins/qiankun/slave/*`，并暴露类似
+`evjs:generated/qiankun/slave/entry-wrapper` 的 specifier。
 
 使用 `ctx.slot(name).add(...)` 把 generated artifacts 挂到 framework 上。支持的
 slots 如下：
@@ -122,9 +206,35 @@ client entry，以及 SSR/SSG/PPR shell/RSC server Page entry。filter 没有匹
 projection 时会失败。后声明的 contribution 包在先声明的 contribution 外层；
 route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
+```ts
+contributions(ctx) {
+  ctx.slot("page.wrapper").add({
+    id: "auth-boundary",
+    module: "./src/plugin/AuthBoundary.tsx",
+    runtime: "all",
+    target: { kind: "application", applicationId: "default" },
+  });
+}
+```
+
+Application target 会展开到其 Pages；Page target 只选择一个 semantic Page。Client
+projection 对应 SPA route composition 或 MPA Page client entry；server projection
+对应每个 SSR、SSG、PPR shell 或 RSC Page renderer。runtime filter 没有匹配
+projection 时会失败，不会静默失效。
+
+Wrapper contributions 按 plugin/contribution 顺序运行，并遵循 component wrapping
+语义：后声明的 contribution 会包在先声明的 contribution 外层。Route-declared layout
+与 wrapper 仍位于 contributed Page wrapper 外层。Normalized `layers` metadata 会以
+outer-to-inner 顺序记录 MPA client entry 与 server Page entry 的最终结构。
+
 显式 Application/Page target 必须为 `client.entry` 匹配实际 client entry，或为
 `html.tag` 匹配 HTML Document。SPA 的 semantic Page 通常与 Application 共享二者，
 因此 page-targeted entry、HTML contribution 会给出诊断，而不是静默 no-op。
+
+CSR SPA Page 与 Application 共享 Document，因此会拒绝 page-targeted HTML
+contribution。SSR/PPR/RSC SPA Page 具有构建期编译的 Page-specific request-time
+document shell，因此 page-targeted `html.tag` contribution 与 `transformHtml()`
+处理会应用到该 shell。
 
 canonical MPA 会暴露一个逻辑 `default` Application，即使它最终为每个 Page 分别
 物化 page-client entry 与 Document。因此 Application target 会把 `client.entry` 展开到
@@ -132,6 +242,11 @@ canonical MPA 会暴露一个逻辑 `default` Application，即使它最终为�
 匹配单页。`page.wrapper` 则按语义 Page ownership 展开，因此同一个
 Application/Page target 可以同时用于 SPA 与 MPA。展开结果记录在 generated plan。显式
 route-tree 输入必须先 normalize 到相同 Application/Page/Document ownership。
+
+`resolve.external` 支持 `runtime: "client" | "server" | "all"`。Webpack adapter
+会按 target 应用 filter。当前 Utoopack adapter 只暴露 top-level externals config，
+因此会映射 client/all external；当存在 client entries 时，server-only external 会
+快速失败。
 
 ## 边界
 
