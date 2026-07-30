@@ -14,6 +14,7 @@ import type {
 import {
   assertPortableRelativeArtifactPath,
   assertSafeBuildOutputPaths,
+  hasServerGeneratedRuntimeChange,
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   portableArtifactPathsConflict,
@@ -56,10 +57,32 @@ interface WebpackWatching {
   close(callback: (error: Error | null) => void): void;
 }
 
+interface PromiseBarrier<T = void> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+}
+
+interface ServerWatchState {
+  active: boolean;
+  readonly generation: number;
+  readonly sessionGeneration: number;
+  readonly firstBuild?: PromiseBarrier<WebpackDevStatsSnapshot>;
+  readonly pendingTasks: Set<Promise<void>>;
+  readonly bufferedSnapshots: WebpackDevStatsSnapshot[];
+  firstBuildCaptured: boolean;
+  committed: boolean;
+  lastPublishedHash?: string;
+  pendingHash?: string;
+  taskQueue: Promise<void>;
+  watching?: WebpackWatching;
+}
+
 interface WebpackDevStatsSnapshot {
   clientStats?: WebpackStatsLike;
   serverStats?: WebpackStatsLike;
   memoryFiles?: Map<string, Buffer>;
+  hash?: string;
   error?: string;
 }
 
@@ -96,7 +119,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
       html: true,
       entries: false,
       routes: false,
-      server: false,
+      server: true,
       resolution: false,
     },
   },
@@ -118,11 +141,20 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
     const configs = await createWebpackConfigs(config, plan, cwd, hooks, {
       addWatchFile,
     });
+    const clientCompilationExpected = configs.some(
+      (webpackConfig) => webpackConfig.name === "client",
+    );
     const stats = await runWebpack(configs);
     const hasRuntimeServerEntries = plan.entries.some(
       (entry) => entry.environment === "server" && entry.phase !== "build",
     );
 
+    assertServerGeneratedModulesStayOutOfClient(
+      cwd,
+      plan,
+      stats.clientStats,
+      clientCompilationExpected,
+    );
     await emitStats(cwd, outputPaths.clientDir, stats.clientStats);
     if (hasRuntimeServerEntries) {
       await emitStats(cwd, outputPaths.serverDir, stats.serverStats);
@@ -186,16 +218,22 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
 class WebpackDevSession implements BundlerDevController<WebpackConfig> {
   private config: ResolvedConfig<WebpackConfig>;
   private plan: BuildPlan;
+  private planGeneration: number;
   private devWorkQueue: Promise<void> = Promise.resolve();
+  private planUpdateQueue: Promise<void> = Promise.resolve();
   private clientServer: WebpackDevServerInstance | undefined;
-  private serverWatching: WebpackWatching | undefined;
+  private serverWatchState: ServerWatchState | undefined;
   private latestClientStats: WebpackStatsLike | undefined;
   private latestServerStats: WebpackStatsLike | undefined;
   private latestServerMemoryFiles = new Map<string, Buffer>();
   private latestServerPublicFiles: string[] = [];
   private serverPublicAssetOwnership = new Map<string, Buffer>();
-  private serverReadyPending = false;
+  private pendingServerReadyState: ServerWatchState | undefined;
+  private artifactPublicationBlocked = false;
+  private artifactPublicationEpoch = 0;
+  private artifactPublicationQueue: Promise<void> = Promise.resolve();
   private startGeneration = 0;
+  private serverWatchGeneration = 0;
   private hasEmittedDevArtifacts = false;
   private initialDone:
     | {
@@ -209,6 +247,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
   constructor(private ctx: BundlerDevContext<WebpackConfig>) {
     this.config = ctx.config;
     this.plan = ctx.plan;
+    this.planGeneration = ctx.planGeneration;
   }
 
   async start(): Promise<void> {
@@ -228,7 +267,8 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     this.latestServerMemoryFiles = new Map();
     this.latestServerPublicFiles = [];
     this.serverPublicAssetOwnership = new Map();
-    this.serverReadyPending = false;
+    this.pendingServerReadyState = undefined;
+    this.artifactPublicationBlocked = false;
 
     const configs = await createWebpackConfigs(
       this.config,
@@ -238,12 +278,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
       { clean: false, addWatchFile: this.ctx.addWatchFile },
     );
     const clientConfigs = configs.filter((config) => config.name === "client");
-    const serverConfigs = configs.filter(
-      (config) =>
-        config.name === "server" ||
-        config.name === "server-rsc" ||
-        config.name === BUILD_ONLY_SERVER_CONFIG_NAME,
-    );
+    const serverConfigs = configs.filter(isServerWebpackConfig);
     const needsClient = clientConfigs.length > 0;
     const needsServer = serverConfigs.length > 0;
     this.initialDone = createInitialBuildBarrier({ needsClient, needsServer });
@@ -261,19 +296,11 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     }
 
     if (needsServer) {
-      const compiler = createWebpackCompiler(serverConfigs);
-      const memoryOutput = configureBuildOnlyMemoryOutputs(compiler);
-      compiler.hooks.done.tap("EvjsWebpackDevServer", (stats) => {
-        this.enqueueStats(
-          "server",
-          generation,
-          stats,
-          collectMemoryFiles(memoryOutput.volume, memoryOutput.outputPaths),
-        );
-      });
-      this.serverWatching = compiler.watch({}, (error) => {
-        if (error) this.failInitialBuild(error);
-      });
+      this.startServerWatching(
+        serverConfigs,
+        generation,
+        ++this.serverWatchGeneration,
+      );
     }
 
     if (!needsClient) {
@@ -310,57 +337,299 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     update: BuildPlanUpdate,
     options?: BundlerDevUpdateOptions<WebpackConfig>,
   ): Promise<void> {
-    return this.enqueueDevWork(() => this.applyPlanUpdate(update, options));
+    return this.enqueuePlanUpdate(async () => {
+      const updateOptions = this.requirePlanUpdateOptions(options);
+      this.assertPlanUpdateConfigSupported(updateOptions);
+
+      if (
+        hasServerGeneratedRuntimeChange(update.previous, update.next) &&
+        isFreshServerCompilerUpdate(update)
+      ) {
+        await this.updatePlanWithFreshServerCompiler(update, updateOptions);
+        return;
+      }
+
+      await this.enqueueDevWork(() =>
+        this.applyPlanUpdate(update, updateOptions),
+      );
+    });
   }
 
-  private async applyPlanUpdate(
-    update: BuildPlanUpdate,
+  private requirePlanUpdateOptions(
     options?: BundlerDevUpdateOptions<WebpackConfig>,
-  ): Promise<void> {
-    if (options?.configChanged) {
+  ): BundlerDevUpdateOptions<WebpackConfig> {
+    if (!options) {
+      throw new Error(
+        "[evjs] Webpack dev plan updates require lifecycle options with a plan generation and staged framework state callbacks.",
+      );
+    }
+    return options;
+  }
+
+  private assertPlanUpdateConfigSupported(
+    options: BundlerDevUpdateOptions<WebpackConfig>,
+  ): void {
+    if (options.configChanged) {
       throw new Error(
         "[evjs] Webpack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
       );
     }
-    if (isEmptyBuildPlanUpdate(update)) return;
-    if (!isArtifactOnlyBuildPlanUpdate(update)) {
+  }
+
+  private async applyPlanUpdate(
+    update: BuildPlanUpdate,
+    options: BundlerDevUpdateOptions<WebpackConfig>,
+  ): Promise<void> {
+    if (
+      !isEmptyBuildPlanUpdate(update) &&
+      !isArtifactOnlyBuildPlanUpdate(update)
+    ) {
       throw new Error(
         "[evjs] Webpack dev cannot safely replace persistent compiler entries, routes, server topology, or module resolution in place. Restart ev dev to apply this framework plan change.",
       );
     }
 
     const previousPlan = this.plan;
-    this.plan = update.next;
+    const previousConfig = this.config;
+    const previousPlanGeneration = this.planGeneration;
+    let frameworkStateCommitted = false;
+    this.blockArtifactPublication();
 
     try {
+      await this.drainArtifactPublication();
+      await options.commitFrameworkState();
+      frameworkStateCommitted = true;
+      this.config = options.config;
+      this.plan = update.next;
+      this.planGeneration = options.planGeneration;
       await assertSafeBuildOutputPaths(
         this.ctx.cwd,
         resolveBuildOutputPaths(this.ctx.cwd, this.plan),
       );
+      this.allowArtifactPublication();
       const emitted = await this.generateDevArtifacts();
       if (emitted && hasRuntimeServerEntry(this.plan)) {
-        await this.ctx.callbacks.onServerBundleReady();
+        await this.ctx.callbacks.onServerBundleReady({
+          planGeneration: this.planGeneration,
+        });
       }
     } catch (error) {
-      this.plan = previousPlan;
+      this.blockArtifactPublication();
+      await this.drainArtifactPublication();
+      let recoveryError: unknown;
+      try {
+        if (frameworkStateCommitted) {
+          await options.rollbackFrameworkState();
+        }
+        this.config = previousConfig;
+        this.plan = previousPlan;
+        this.planGeneration = previousPlanGeneration;
+        this.allowArtifactPublication();
+        const recovered = await this.generateDevArtifacts();
+        if (recovered && hasRuntimeServerEntry(this.plan)) {
+          await this.ctx.callbacks.onServerBundleReady({
+            planGeneration: this.planGeneration,
+          });
+        }
+      } catch (recoveryFailure) {
+        recoveryError = recoveryFailure;
+      }
+      if (recoveryError) {
+        throw new AggregateError(
+          [error, recoveryError],
+          "[evjs] Webpack artifact refresh failed and the previous framework state could not be fully republished.",
+          { cause: error },
+        );
+      }
       throw error;
     }
   }
 
+  private async updatePlanWithFreshServerCompiler(
+    update: BuildPlanUpdate,
+    options: BundlerDevUpdateOptions<WebpackConfig>,
+  ): Promise<void> {
+    const previousPlan = this.plan;
+    const previousConfig = this.config;
+    const previousPlanGeneration = this.planGeneration;
+    const previousServerPublicAssetOwnership = new Map(
+      this.serverPublicAssetOwnership,
+    );
+    this.blockArtifactPublication();
+
+    let frameworkStateCommitted = false;
+    let cleanupError: unknown;
+    try {
+      const previousState = this.invalidateCurrentServerWatch();
+      if (previousState) {
+        await this.quarantineServerWatch(previousState);
+      }
+      await this.drainArtifactPublication();
+
+      await assertSafeBuildOutputPaths(
+        this.ctx.cwd,
+        resolveBuildOutputPaths(this.ctx.cwd, update.next),
+      );
+      await options.commitFrameworkState();
+      frameworkStateCommitted = true;
+      const configs = await createWebpackConfigs(
+        options.config,
+        update.next,
+        this.ctx.cwd,
+        this.ctx.hooks,
+        { clean: false, addWatchFile: this.ctx.addWatchFile },
+      );
+      const serverConfigs = configs.filter(isServerWebpackConfig);
+
+      if (serverConfigs.length === 0) {
+        this.config = options.config;
+        this.plan = update.next;
+        this.planGeneration = options.planGeneration;
+        this.latestServerStats = undefined;
+        this.latestServerMemoryFiles = new Map();
+        this.latestServerPublicFiles = [];
+        this.allowArtifactPublication();
+        const emitted = await this.generateDevArtifacts();
+        if (!emitted) {
+          throw new Error(
+            "[evjs] Webpack could not publish framework artifacts after removing the active server compiler.",
+          );
+        }
+        if (hasRuntimeServerEntry(this.plan)) {
+          await this.ctx.callbacks.onServerBundleReady({
+            planGeneration: this.planGeneration,
+          });
+        }
+        return;
+      }
+
+      const firstBuild = createPromiseBarrier<WebpackDevStatsSnapshot>();
+      const candidateState = this.startServerWatching(
+        serverConfigs,
+        this.startGeneration,
+        this.serverWatchGeneration,
+        firstBuild,
+      );
+      const firstSnapshot = await firstBuild.promise;
+
+      this.config = options.config;
+      this.plan = update.next;
+      this.planGeneration = options.planGeneration;
+      this.latestServerStats = undefined;
+      this.latestServerMemoryFiles = new Map();
+      this.latestServerPublicFiles = [];
+      this.allowArtifactPublication();
+      await this.handleServerStats(candidateState, firstSnapshot);
+      await this.flushBufferedServerSnapshots(candidateState);
+    } catch (error) {
+      this.blockArtifactPublication();
+      const failedState = this.invalidateCurrentServerWatch();
+      if (failedState) {
+        try {
+          await this.quarantineServerWatch(failedState);
+        } catch (quarantineError) {
+          cleanupError = quarantineError;
+        }
+      }
+      await this.drainArtifactPublication();
+
+      this.pendingServerReadyState = undefined;
+      this.serverPublicAssetOwnership = previousServerPublicAssetOwnership;
+      let recoveryError: unknown;
+      try {
+        if (frameworkStateCommitted) {
+          await options.rollbackFrameworkState();
+        }
+        await this.recoverPreviousServerCompiler({
+          config: previousConfig,
+          plan: previousPlan,
+          planGeneration: previousPlanGeneration,
+        });
+      } catch (recoveryFailure) {
+        recoveryError = recoveryFailure;
+      }
+
+      if (cleanupError || recoveryError) {
+        throw new AggregateError(
+          [error, cleanupError, recoveryError].filter(
+            (failure) => failure !== undefined,
+          ),
+          "[evjs] Webpack server compiler refresh failed and the previous compiler could not be fully recovered.",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async recoverPreviousServerCompiler(options: {
+    config: ResolvedConfig<WebpackConfig>;
+    plan: BuildPlan;
+    planGeneration: number;
+  }): Promise<void> {
+    this.config = options.config;
+    this.plan = options.plan;
+    this.planGeneration = options.planGeneration;
+    this.latestServerStats = undefined;
+    this.latestServerMemoryFiles = new Map();
+    this.latestServerPublicFiles = [];
+    this.pendingServerReadyState = undefined;
+
+    await assertSafeBuildOutputPaths(
+      this.ctx.cwd,
+      resolveBuildOutputPaths(this.ctx.cwd, this.plan),
+    );
+    const configs = await createWebpackConfigs(
+      this.config,
+      this.plan,
+      this.ctx.cwd,
+      this.ctx.hooks,
+      { clean: false, addWatchFile: this.ctx.addWatchFile },
+    );
+    const serverConfigs = configs.filter(isServerWebpackConfig);
+    if (serverConfigs.length === 0) {
+      this.allowArtifactPublication();
+      const emitted = await this.generateDevArtifacts();
+      if (!emitted) {
+        throw new Error(
+          "[evjs] Webpack could not republish the previous framework artifacts after server compiler recovery.",
+        );
+      }
+      if (hasRuntimeServerEntry(this.plan)) {
+        await this.ctx.callbacks.onServerBundleReady({
+          planGeneration: this.planGeneration,
+        });
+      }
+      return;
+    }
+
+    const firstBuild = createPromiseBarrier<WebpackDevStatsSnapshot>();
+    const recoveredState = this.startServerWatching(
+      serverConfigs,
+      this.startGeneration,
+      this.serverWatchGeneration,
+      firstBuild,
+    );
+    const firstSnapshot = await firstBuild.promise;
+    this.allowArtifactPublication();
+    await this.handleServerStats(recoveredState, firstSnapshot);
+    await this.flushBufferedServerSnapshots(recoveredState);
+  }
+
   private async stop(): Promise<void> {
+    this.blockArtifactPublication();
     this.startGeneration++;
+    const serverState = this.invalidateCurrentServerWatch();
     const errors: unknown[] = [];
 
-    if (this.serverWatching) {
-      const watching = this.serverWatching;
-      this.serverWatching = undefined;
-      await new Promise<void>((resolve) => {
-        watching.close((error) => {
-          if (error) errors.push(error);
-          resolve();
-        });
-      });
+    if (serverState) {
+      try {
+        await this.quarantineServerWatch(serverState);
+      } catch (error) {
+        errors.push(error);
+      }
     }
+    await this.drainArtifactPublication();
 
     if (this.clientServer) {
       const server = this.clientServer;
@@ -379,17 +648,25 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     }
   }
 
+  private enqueuePlanUpdate<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.planUpdateQueue.then(work);
+    this.planUpdateQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   private enqueueStats(
-    kind: "client" | "server",
+    kind: "client",
     generation: number,
     stats: Stats | MultiStats,
-    memoryFiles?: Map<string, Buffer>,
   ): void {
     if (generation !== this.startGeneration) return;
 
     let snapshot: WebpackDevStatsSnapshot;
     try {
-      snapshot = createWebpackDevStatsSnapshot(stats, memoryFiles);
+      snapshot = createWebpackDevStatsSnapshot(stats);
     } catch (error) {
       this.failInitialBuild(error);
       logger.error`Failed to snapshot webpack ${kind} dev build: ${error}`;
@@ -397,7 +674,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     }
 
     void this.enqueueDevWork(() =>
-      this.handleStats(kind, generation, snapshot),
+      this.handleClientStats(generation, snapshot),
     ).catch((error) => {
       this.failInitialBuild(error);
       logger.error`Failed to process webpack ${kind} dev build: ${error}`;
@@ -413,8 +690,160 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     return result;
   }
 
-  private async handleStats(
-    kind: "client" | "server",
+  private startServerWatching(
+    configs: Configuration[],
+    sessionGeneration: number,
+    serverWatchGeneration: number,
+    firstBuild?: PromiseBarrier<WebpackDevStatsSnapshot>,
+  ): ServerWatchState {
+    const compiler = createWebpackCompiler(
+      configs.map((config) => ({
+        ...config,
+        optimization: {
+          ...config.optimization,
+          // A failed replacement must leave the last known-good server
+          // bundle available for orchestrator rollback and the next refresh.
+          emitOnErrors: false,
+        },
+      })),
+    );
+    const memoryOutput = configureBuildOnlyMemoryOutputs(compiler);
+    const state: ServerWatchState = {
+      active: true,
+      generation: serverWatchGeneration,
+      sessionGeneration,
+      firstBuild,
+      pendingTasks: new Set(),
+      bufferedSnapshots: [],
+      firstBuildCaptured: false,
+      committed: firstBuild === undefined,
+      taskQueue: Promise.resolve(),
+    };
+    const handleError = (error: unknown) => {
+      if (!this.isActiveServerWatch(state)) return;
+      this.failInitialBuild(error);
+      state.firstBuild?.reject(error);
+      logger.error`${error}`;
+    };
+    compiler.hooks.done.tap("EvjsWebpackDevServer", (stats) => {
+      if (!this.isActiveServerWatch(state)) return;
+
+      let snapshot: WebpackDevStatsSnapshot;
+      try {
+        snapshot = createWebpackDevStatsSnapshot(
+          stats,
+          collectMemoryFiles(memoryOutput.volume, memoryOutput.outputPaths),
+        );
+      } catch (error) {
+        handleError(error);
+        return;
+      }
+
+      if (state.firstBuild && !state.firstBuildCaptured) {
+        state.firstBuildCaptured = true;
+        if (snapshot.error) {
+          state.firstBuild.reject(new Error(snapshot.error));
+        } else {
+          state.firstBuild.resolve(snapshot);
+        }
+        return;
+      }
+      if (!state.committed) {
+        state.bufferedSnapshots.push(snapshot);
+        return;
+      }
+      void this.enqueueServerStats(state, snapshot).catch(handleError);
+    });
+    this.serverWatchState = state;
+    try {
+      state.watching = compiler.watch({}, (error) => {
+        if (error) handleError(error);
+      });
+    } catch (error) {
+      state.active = false;
+      if (this.serverWatchState === state) {
+        this.serverWatchState = undefined;
+      }
+      throw error;
+    }
+    return state;
+  }
+
+  private invalidateCurrentServerWatch(): ServerWatchState | undefined {
+    const state = this.serverWatchState;
+    this.serverWatchGeneration++;
+    if (state) {
+      state.active = false;
+      if (state.firstBuild && !state.firstBuildCaptured) {
+        state.firstBuild.reject(
+          new Error(
+            "[evjs] Webpack candidate server compiler was stopped before its first build completed.",
+          ),
+        );
+      }
+    }
+    this.serverWatchState = undefined;
+    if (this.pendingServerReadyState === state) {
+      this.pendingServerReadyState = undefined;
+    }
+    return state;
+  }
+
+  private async quarantineServerWatch(state: ServerWatchState): Promise<void> {
+    state.active = false;
+    let closeError: unknown;
+    if (state.watching) {
+      try {
+        await closeWebpackWatching(state.watching);
+      } catch (error) {
+        closeError = error;
+      }
+    }
+    while (state.pendingTasks.size > 0) {
+      await Promise.allSettled([...state.pendingTasks]);
+    }
+    state.bufferedSnapshots.length = 0;
+    if (closeError) throw closeError;
+  }
+
+  private isActiveServerWatch(state: ServerWatchState): boolean {
+    return (
+      state.active &&
+      state.sessionGeneration === this.startGeneration &&
+      state.generation === this.serverWatchGeneration &&
+      this.serverWatchState === state
+    );
+  }
+
+  private enqueueServerStats(
+    state: ServerWatchState,
+    snapshot: WebpackDevStatsSnapshot,
+  ): Promise<void> {
+    const task = state.taskQueue
+      .catch(() => {})
+      .then(() => this.handleServerStats(state, snapshot));
+    state.taskQueue = task;
+    state.pendingTasks.add(task);
+    void task.then(
+      () => state.pendingTasks.delete(task),
+      () => state.pendingTasks.delete(task),
+    );
+    return task;
+  }
+
+  private async flushBufferedServerSnapshots(
+    state: ServerWatchState,
+  ): Promise<void> {
+    while (state.bufferedSnapshots.length > 0) {
+      const snapshots = state.bufferedSnapshots.splice(0);
+      for (const snapshot of snapshots) {
+        await this.enqueueServerStats(state, snapshot);
+      }
+    }
+    state.committed = true;
+  }
+
+  private async handleClientStats(
     generation: number,
     snapshot: WebpackDevStatsSnapshot,
   ): Promise<void> {
@@ -428,46 +857,109 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     }
 
     const outputPaths = resolveBuildOutputPaths(this.ctx.cwd, this.plan);
-
-    if (kind === "client") {
-      this.latestClientStats = snapshot.clientStats;
-      await emitStats(
-        this.ctx.cwd,
-        outputPaths.clientDir,
-        this.latestClientStats,
-      );
-    } else {
-      this.latestServerStats = snapshot.serverStats;
-      this.latestServerMemoryFiles = snapshot.memoryFiles ?? new Map();
-      await emitStats(
-        this.ctx.cwd,
-        outputPaths.serverDir,
-        this.latestServerStats,
-      );
-      this.latestServerPublicFiles = await copyServerPublicAssetsToClient(
-        this.ctx.cwd,
-        outputPaths.serverDir,
-        outputPaths.clientDir,
-        this.latestServerStats,
-        this.latestServerMemoryFiles,
-        this.serverPublicAssetOwnership,
-        this.readClientOwnedFiles(),
-        this.plan.runtime.publicPath,
-      );
-      this.serverReadyPending = true;
-    }
+    assertServerGeneratedModulesStayOutOfClient(
+      this.ctx.cwd,
+      this.plan,
+      snapshot.clientStats,
+      true,
+    );
+    this.latestClientStats = snapshot.clientStats;
+    await emitStats(
+      this.ctx.cwd,
+      outputPaths.clientDir,
+      this.latestClientStats,
+    );
 
     const emitted = await this.generateDevArtifacts();
     if (emitted) {
       this.completeInitialBuild();
     }
-    if (emitted && this.serverReadyPending) {
-      this.serverReadyPending = false;
-      await this.ctx.callbacks.onServerBundleReady();
+    const pendingState = this.pendingServerReadyState;
+    if (emitted && pendingState && this.isActiveServerWatch(pendingState)) {
+      this.pendingServerReadyState = undefined;
+      await this.publishServerReady(pendingState, pendingState.pendingHash);
     }
   }
 
   private async generateDevArtifacts(): Promise<boolean> {
+    if (this.artifactPublicationBlocked) return false;
+    const epoch = this.artifactPublicationEpoch;
+    const publication = this.artifactPublicationQueue.then(async () => {
+      if (
+        this.artifactPublicationBlocked ||
+        epoch !== this.artifactPublicationEpoch
+      ) {
+        return false;
+      }
+      return this.publishDevArtifacts();
+    });
+    this.artifactPublicationQueue = publication.then(
+      () => undefined,
+      () => undefined,
+    );
+    return publication;
+  }
+
+  private async handleServerStats(
+    state: ServerWatchState,
+    snapshot: WebpackDevStatsSnapshot,
+  ): Promise<void> {
+    if (!this.isActiveServerWatch(state)) return;
+    if (snapshot.error) {
+      throw new Error(snapshot.error);
+    }
+    if (snapshot.hash && snapshot.hash === state.lastPublishedHash) {
+      return;
+    }
+
+    const outputPaths = resolveBuildOutputPaths(this.ctx.cwd, this.plan);
+    const nextServerStats = snapshot.serverStats;
+    const nextMemoryFiles = snapshot.memoryFiles ?? new Map();
+    await emitStats(this.ctx.cwd, outputPaths.serverDir, nextServerStats);
+    const nextPublicFiles = await copyServerPublicAssetsToClient(
+      this.ctx.cwd,
+      outputPaths.serverDir,
+      outputPaths.clientDir,
+      nextServerStats,
+      nextMemoryFiles,
+      this.serverPublicAssetOwnership,
+      this.readClientOwnedFiles(),
+      this.plan.runtime.publicPath,
+    );
+    if (!this.isActiveServerWatch(state)) return;
+
+    this.latestServerStats = nextServerStats;
+    this.latestServerMemoryFiles = nextMemoryFiles;
+    this.latestServerPublicFiles = nextPublicFiles;
+    const emitted = await this.generateDevArtifacts();
+    if (!this.isActiveServerWatch(state)) return;
+    if (!emitted) {
+      state.pendingHash = snapshot.hash;
+      this.pendingServerReadyState = state;
+      return;
+    }
+
+    this.completeInitialBuild();
+    if (this.pendingServerReadyState === state) {
+      this.pendingServerReadyState = undefined;
+    }
+    await this.publishServerReady(state, snapshot.hash);
+  }
+
+  private async publishServerReady(
+    state: ServerWatchState,
+    compilationHash: string | undefined,
+  ): Promise<void> {
+    if (!this.isActiveServerWatch(state)) return;
+    await this.ctx.callbacks.onServerBundleReady({
+      planGeneration: this.planGeneration,
+    });
+    if (!this.isActiveServerWatch(state)) return;
+    state.lastPublishedHash = compilationHash;
+    state.pendingHash = undefined;
+  }
+
+  private async publishDevArtifacts(): Promise<boolean> {
     const hasClientEntries = this.plan.entries.some(
       (entry) => entry.environment === "client",
     );
@@ -508,9 +1000,25 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
         this.latestServerMemoryFiles,
       );
     }
-    await this.ctx.callbacks.onBuildFacts(facts, { isRebuild });
+    await this.ctx.callbacks.onBuildFacts(facts, {
+      isRebuild,
+      planGeneration: this.planGeneration,
+    });
     this.hasEmittedDevArtifacts = true;
     return true;
+  }
+
+  private blockArtifactPublication(): void {
+    this.artifactPublicationBlocked = true;
+    this.artifactPublicationEpoch++;
+  }
+
+  private allowArtifactPublication(): void {
+    this.artifactPublicationBlocked = false;
+  }
+
+  private async drainArtifactPublication(): Promise<void> {
+    await this.artifactPublicationQueue;
   }
 
   private readClientOwnedFiles(): ReadonlySet<string> {
@@ -535,6 +1043,41 @@ function hasRuntimeServerEntry(plan: BuildPlan): boolean {
   );
 }
 
+function isFreshServerCompilerUpdate(update: BuildPlanUpdate): boolean {
+  return (
+    !update.serverCompilationChanged &&
+    !update.devRoutingChanged &&
+    !update.runtimeChanged &&
+    !update.resolveChanged &&
+    update.previous.distDir === update.next.distDir &&
+    update.previous.output.clientDir === update.next.output.clientDir &&
+    update.previous.output.serverDir === update.next.output.serverDir &&
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0
+  );
+}
+
+function isServerWebpackConfig(config: Configuration): boolean {
+  return (
+    config.name === "server" ||
+    config.name === "server-rsc" ||
+    config.name === BUILD_ONLY_SERVER_CONFIG_NAME
+  );
+}
+
+function closeWebpackWatching(watching: WebpackWatching): Promise<void> {
+  return new Promise((resolve, reject) => {
+    watching.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 function createInitialBuildBarrier(options: {
   needsClient: boolean;
   needsServer: boolean;
@@ -556,6 +1099,16 @@ function createInitialBuildBarrier(options: {
   });
 
   return { required, resolve, reject, promise };
+}
+
+function createPromiseBarrier<T>(): PromiseBarrier<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function createWebpackCompiler(
@@ -1004,6 +1557,7 @@ function createWebpackDevStatsSnapshot(
   const json = readWebpackStatsJson(stats);
   return {
     ...splitStatsJsonByName(json),
+    ...(stats.hash ? { hash: stats.hash } : {}),
     ...(memoryFiles ? { memoryFiles } : {}),
     ...(hasErrors ? { error: formatWebpackJsonErrors(json) } : {}),
   };
@@ -1015,10 +1569,23 @@ function readWebpackStatsJson(
   return stats.toJson({
     all: false,
     assets: true,
+    cachedModules: true,
     chunks: true,
+    dependentModules: true,
     entrypoints: true,
     errors: true,
+    groupModulesByAttributes: false,
+    groupModulesByCacheStatus: false,
+    groupModulesByExtension: false,
+    groupModulesByLayer: false,
+    groupModulesByPath: false,
+    groupModulesByType: false,
     modules: true,
+    modulesSpace: Number.POSITIVE_INFINITY,
+    nestedModules: true,
+    nestedModulesSpace: Number.POSITIVE_INFINITY,
+    orphanModules: true,
+    runtimeModules: true,
     warnings: true,
   }) as WebpackMultiStatsJson | WebpackStatsJson;
 }
@@ -1308,7 +1875,212 @@ function moduleIdentity(mod: NonNullable<WebpackStatsLike["modules"]>[number]) {
   return undefined;
 }
 
+function assertServerGeneratedModulesStayOutOfClient(
+  cwd: string,
+  plan: BuildPlan,
+  clientStats: WebpackStatsLike | undefined,
+  clientCompilationExpected: boolean,
+): void {
+  const serverModules =
+    plan.generated?.modules.filter(
+      (generatedModule) => generatedModule.scope.kind === "server",
+    ) ?? [];
+  if (serverModules.length === 0) return;
+  if (!clientStats) {
+    if (!clientCompilationExpected) return;
+    throw new Error(
+      "[evjs] Cannot verify server-scoped generated module isolation because Webpack client stats are missing.",
+    );
+  }
+  if (!Array.isArray(clientStats.modules)) {
+    throw new Error(
+      "[evjs] Cannot verify server-scoped generated module isolation because Webpack client stats.modules must be an array.",
+    );
+  }
+  assertWebpackStatsAreComplete(
+    clientStats.filteredModules,
+    "Webpack client stats",
+  );
+
+  const projectRoots = createProjectRoots(cwd);
+  const generatedModules = new Map<string, (typeof serverModules)[number]>();
+  for (const generatedModule of serverModules) {
+    const generatedPath = toGeneratedProjectRelativePath(
+      projectRoots,
+      generatedModule.file,
+    );
+    if (!generatedPath) {
+      throw new Error(
+        `[evjs] Server-scoped generated module "${generatedModule.key}" has a path outside the project: ${generatedModule.file}.`,
+      );
+    }
+    const existingModule = generatedModules.get(generatedPath);
+    if (existingModule) {
+      throw new Error(
+        `[evjs] Cannot verify server-scoped generated module isolation because "${existingModule.key}" and "${generatedModule.key}" resolve to the same project path: ${generatedPath}.`,
+      );
+    }
+    generatedModules.set(generatedPath, generatedModule);
+  }
+
+  const leakedModuleKeys = new Set<string>();
+  collectLeakedWebpackModules(
+    clientStats.modules,
+    projectRoots,
+    generatedModules,
+    leakedModuleKeys,
+  );
+  if (leakedModuleKeys.size === 0) return;
+
+  const leakedModules = serverModules.filter((generatedModule) =>
+    leakedModuleKeys.has(generatedModule.key),
+  );
+  throw new Error(
+    `[evjs] Server-scoped generated modules reached the client bundle: ${leakedModules
+      .map(
+        (generatedModule) => `${generatedModule.key} (${generatedModule.file})`,
+      )
+      .join(
+        ", ",
+      )}. Import these modules only from server routes, server functions, or other server-only entry graphs.`,
+  );
+}
+
+function collectLeakedWebpackModules(
+  modules: unknown,
+  projectRoots: readonly string[],
+  generatedModules: ReadonlyMap<
+    string,
+    NonNullable<BuildPlan["generated"]>["modules"][number]
+  >,
+  leakedModuleKeys: Set<string>,
+): void {
+  if (!Array.isArray(modules)) {
+    throw new Error(
+      "[evjs] Cannot verify server-scoped generated module isolation because a nested Webpack stats modules value is not an array.",
+    );
+  }
+
+  for (const module of modules) {
+    if (!module || typeof module !== "object" || Array.isArray(module)) {
+      throw new Error(
+        "[evjs] Cannot verify server-scoped generated module isolation because Webpack client stats.modules contains a non-object entry.",
+      );
+    }
+    const record = module as Record<string, unknown>;
+    assertWebpackStatsAreComplete(
+      record.filteredModules,
+      "a Webpack client stats module",
+    );
+    assertWebpackStatsAreComplete(
+      record.filteredChildren,
+      "a Webpack client stats module group",
+    );
+
+    const modulePath = record.nameForCondition;
+    if (modulePath !== undefined && modulePath !== null) {
+      if (typeof modulePath !== "string" || modulePath.length === 0) {
+        throw new Error(
+          "[evjs] Cannot verify server-scoped generated module isolation because Webpack client stats.modules[].nameForCondition must be a non-empty string.",
+        );
+      }
+      const projectRelativePath = toWebpackProjectRelativePath(
+        projectRoots,
+        modulePath,
+      );
+      const generatedModule = projectRelativePath
+        ? generatedModules.get(projectRelativePath)
+        : undefined;
+      if (generatedModule) leakedModuleKeys.add(generatedModule.key);
+    }
+
+    for (const field of ["modules", "children"] as const) {
+      if (record[field] !== undefined) {
+        collectLeakedWebpackModules(
+          record[field],
+          projectRoots,
+          generatedModules,
+          leakedModuleKeys,
+        );
+      }
+    }
+  }
+}
+
+function assertWebpackStatsAreComplete(
+  filteredCount: unknown,
+  source: string,
+): void {
+  if (filteredCount === undefined || filteredCount === 0) return;
+  if (
+    typeof filteredCount !== "number" ||
+    !Number.isSafeInteger(filteredCount) ||
+    filteredCount < 0
+  ) {
+    throw new Error(
+      `[evjs] Cannot verify server-scoped generated module isolation because ${source} reported an invalid filtered module count.`,
+    );
+  }
+  throw new Error(
+    `[evjs] Cannot verify server-scoped generated module isolation because ${source} omitted ${filteredCount} module${filteredCount === 1 ? "" : "s"}.`,
+  );
+}
+
+function createProjectRoots(cwd: string): readonly string[] {
+  const absoluteCwd = path.resolve(cwd);
+  const realCwd = fs.realpathSync.native(absoluteCwd);
+  return realCwd === absoluteCwd ? [absoluteCwd] : [absoluteCwd, realCwd];
+}
+
+function toGeneratedProjectRelativePath(
+  projectRoots: readonly string[],
+  modulePath: string,
+): string | undefined {
+  const projectRoot = projectRoots[0];
+  if (!projectRoot) return undefined;
+  return toProjectRelativePath(
+    projectRoots,
+    path.resolve(projectRoot, modulePath),
+  );
+}
+
+function toWebpackProjectRelativePath(
+  projectRoots: readonly string[],
+  modulePath: string,
+): string | undefined {
+  const projectRoot = projectRoots[0];
+  if (!projectRoot) return undefined;
+  return toProjectRelativePath(
+    projectRoots,
+    path.isAbsolute(modulePath)
+      ? path.normalize(modulePath)
+      : path.resolve(projectRoot, modulePath),
+  );
+}
+
+function toProjectRelativePath(
+  projectRoots: readonly string[],
+  absolutePath: string,
+): string | undefined {
+  for (const projectRoot of projectRoots) {
+    const relativePath = path
+      .relative(projectRoot, absolutePath)
+      .replaceAll("\\", "/");
+    if (
+      relativePath === "" ||
+      relativePath === ".." ||
+      relativePath.startsWith("../") ||
+      path.isAbsolute(relativePath)
+    ) {
+      continue;
+    }
+    return relativePath;
+  }
+  return undefined;
+}
+
 export const __testing = {
+  assertServerGeneratedModulesStayOutOfClient,
   classifyFrameworkRequestPath,
   collectMemoryFiles,
   copyServerPublicAssetsToClient,

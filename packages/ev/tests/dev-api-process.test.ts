@@ -132,6 +132,43 @@ describe("DevApiProcessController", () => {
     ]);
   });
 
+  it("restores a checkpoint after the active API is suspended for a bundle replacement", async () => {
+    const events: string[] = [];
+    const controller = createProcessController(events);
+    const previous = { id: "previous" };
+    const restored = { id: "restored" };
+
+    await controller.replace(
+      () => previous,
+      async () => {
+        events.push("ready:previous");
+      },
+    );
+    const checkpoint = controller.checkpoint();
+    await controller.stopForReplacement();
+
+    expect(controller.process).toBeNull();
+    await controller.rollback(checkpoint, async () => {
+      events.push("restore:previous");
+      await controller.replace(
+        () => restored,
+        async () => {
+          events.push("ready:restored");
+        },
+      );
+    });
+
+    expect(controller.process).toBe(restored);
+    expect(events).toEqual([
+      "ready:previous",
+      "expect-exit:previous",
+      "stop:start:previous",
+      "stop:end:previous",
+      "restore:previous",
+      "ready:restored",
+    ]);
+  });
+
   it("does not start an API during rollback when none was running", async () => {
     const events: string[] = [];
     const controller = createProcessController(events);

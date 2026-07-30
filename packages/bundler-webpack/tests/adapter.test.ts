@@ -3,7 +3,10 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
+import type {
+  BundlerBuildFacts,
+  BundlerDevUpdateOptions,
+} from "@evjs/ev/_internal/build";
 import {
   buildHtml,
   createBuildPlan,
@@ -14,7 +17,7 @@ import {
 } from "@evjs/ev/_internal/build";
 import type { Config, ResolvedConfig } from "@evjs/ev/config";
 import { resolveConfig } from "@evjs/ev/config";
-import type { PluginHooks } from "@evjs/ev/plugin";
+import type { Plugin, PluginHooks } from "@evjs/ev/plugin";
 import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
   createDeploymentMetadata,
@@ -24,7 +27,10 @@ import {
 import { Volume } from "memfs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Compiler } from "webpack";
-import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
+import {
+  withPageRoutingDefaults,
+  withServerRouteDiscovery,
+} from "../../ev/esm/_internal/build/convention-config.js";
 import { createPageClientBuildEntryName } from "../../ev/src/_internal/build/build-entry-conventions.js";
 import { linkAndEmitBuildOutput } from "../../ev/src/_internal/build/framework-output.js";
 import {
@@ -57,6 +63,7 @@ const WEBPACK_DEV_TEST_NAMES = {
     "rejects page additions that require persistent compiler replacement",
 } as const;
 const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
+const INITIAL_PLAN_GENERATION = 1;
 const allocatedDevPorts = new Set<number>();
 
 type ServerRuntimeGlobals = typeof globalThis & {
@@ -170,8 +177,17 @@ function createFrameworkCallbacks(options: {
   plan: BuildPlan;
   hooks?: PluginHooks<WebpackConfig>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+  onBuildFacts?: (
+    facts: BundlerBuildFacts,
+    callbackOptions?: {
+      isRebuild?: boolean;
+      planGeneration?: number;
+    },
+  ) => void | Promise<void>;
   onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
-  onServerBundleReady?: () => void | Promise<void>;
+  onServerBundleReady?: (options?: {
+    planGeneration?: number;
+  }) => void | Promise<void>;
 }) {
   let graph = options.graph;
   let plan = options.plan;
@@ -185,8 +201,12 @@ function createFrameworkCallbacks(options: {
     callbacks: {
       async onBuildFacts(
         facts: BundlerBuildFacts,
-        callbackOptions?: { isRebuild?: boolean },
+        callbackOptions?: {
+          isRebuild?: boolean;
+          planGeneration?: number;
+        },
       ) {
+        await options.onBuildFacts?.(facts, callbackOptions);
         await emitFrameworkArtifacts({
           config: options.config,
           cwd: options.cwd,
@@ -205,6 +225,35 @@ function createFrameworkCallbacks(options: {
           // no-op
         }),
     },
+  };
+}
+
+function createDevUpdateOptions(
+  config: ResolvedConfig<WebpackConfig>,
+  options: Partial<
+    Pick<
+      BundlerDevUpdateOptions<WebpackConfig>,
+      | "configChanged"
+      | "planGeneration"
+      | "commitFrameworkState"
+      | "rollbackFrameworkState"
+    >
+  > = {},
+): BundlerDevUpdateOptions<WebpackConfig> {
+  return {
+    config,
+    configChanged: options.configChanged ?? false,
+    planGeneration: options.planGeneration ?? INITIAL_PLAN_GENERATION + 1,
+    commitFrameworkState:
+      options.commitFrameworkState ??
+      (async () => {
+        // no-op
+      }),
+    rollbackFrameworkState:
+      options.rollbackFrameworkState ??
+      (async () => {
+        // no-op
+      }),
   };
 }
 
@@ -321,6 +370,91 @@ function embedClientRuntime(
 }
 
 describe("webpack stats ownership", () => {
+  it("advertises transactional server compiler refresh support in dev", () => {
+    expect(webpackAdapter.capabilities.dev.server).toBe(true);
+  });
+
+  it("rejects a server-scoped generated module nested in client module stats", () => {
+    const cwd = process.cwd();
+    const plan = createServerGeneratedGuardPlan();
+    const generatedPath = path.join(
+      cwd,
+      ".ev/plugins/schema-lifecycle/database.ts",
+    );
+
+    expect(() =>
+      webpackAdapterTesting.assertServerGeneratedModulesStayOutOfClient(
+        cwd,
+        plan,
+        {
+          modules: [
+            {
+              name: "./.ev/entries/main.ts + 1 modules",
+              modules: [
+                {
+                  identifier: `/loaders/swc-loader.js!${generatedPath}`,
+                  name: "./.ev/plugins/schema-lifecycle/database.ts",
+                  nameForCondition: generatedPath,
+                },
+              ],
+            },
+          ],
+        },
+        true,
+      ),
+    ).toThrow(
+      "Server-scoped generated modules reached the client bundle: schema-lifecycle:database",
+    );
+  });
+
+  it("fails closed when client module stats are missing or filtered", () => {
+    const plan = createServerGeneratedGuardPlan();
+
+    expect(() =>
+      webpackAdapterTesting.assertServerGeneratedModulesStayOutOfClient(
+        process.cwd(),
+        plan,
+        undefined,
+        true,
+      ),
+    ).toThrow("Webpack client stats are missing");
+    expect(() =>
+      webpackAdapterTesting.assertServerGeneratedModulesStayOutOfClient(
+        process.cwd(),
+        plan,
+        {},
+        true,
+      ),
+    ).toThrow("Webpack client stats.modules must be an array");
+    expect(() =>
+      webpackAdapterTesting.assertServerGeneratedModulesStayOutOfClient(
+        process.cwd(),
+        plan,
+        { modules: [], filteredModules: 2 },
+        true,
+      ),
+    ).toThrow("omitted 2 modules");
+    expect(() =>
+      webpackAdapterTesting.assertServerGeneratedModulesStayOutOfClient(
+        process.cwd(),
+        plan,
+        { modules: [{ filteredChildren: 1 }] },
+        true,
+      ),
+    ).toThrow("omitted 1 module");
+  });
+
+  it("does not require client stats when no client compilation exists", () => {
+    expect(() =>
+      webpackAdapterTesting.assertServerGeneratedModulesStayOutOfClient(
+        process.cwd(),
+        createServerGeneratedGuardPlan(),
+        undefined,
+        false,
+      ),
+    ).not.toThrow();
+  });
+
   it("bypasses only BuildPlan-owned routes and runtime endpoints", () => {
     const config = resolveConfig<WebpackConfig>({
       server: {
@@ -1625,6 +1759,198 @@ describe("webpack build-only memory modules", () => {
 
 describe("webpackAdapter build", () => {
   buildIt(
+    "fails a production build when a server-scoped generated module reaches the client graph",
+    async () => {
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        "src/pages/page.tsx": `
+          import { databaseVersion } from "evdb:database";
+
+          export default function Home() {
+            return String(databaseVersion);
+          }
+        `,
+      });
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa", html: "./index.html", mount: "#app" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const basePlan = createBuildPlan(config, analysis.graph, {
+        mode: "production",
+      });
+      const plugin = createMutableServerGeneratedAliasPlugin(
+        "evdb:database",
+        () => 1,
+      );
+      const plan = await materializeFrameworkIR({
+        cwd,
+        mode: "production",
+        command: "build",
+        config,
+        graph: analysis.graph,
+        plan: basePlan,
+        plugins: [plugin],
+        pluginContext: {
+          mode: "production",
+          command: "build",
+          cwd,
+          config,
+          logger: console as never,
+          addWatchFile() {},
+        },
+      });
+
+      await expect(
+        webpackAdapter.build({
+          config,
+          cwd,
+          plan,
+          hooks: [],
+        }),
+      ).rejects.toThrow(
+        "Server-scoped generated modules reached the client bundle: schema-lifecycle:database",
+      );
+    },
+  );
+
+  buildIt(
+    "resolves an exact custom-scheme BuildPlan alias to a normal server file module",
+    async () => {
+      const cwd = await createFixture({
+        "src/server.ts": `
+          import { databaseMarker } from "evdb:database";
+          export default databaseMarker;
+        `,
+        "src/database.ts":
+          'export const databaseMarker = "EVJS_CUSTOM_SCHEME_ALIAS";',
+      });
+      const config = resolveConfig<WebpackConfig>({});
+      const plan = createSingleEntryProductionPlan("server", {
+        "evdb:database": "./src/database.ts",
+      });
+
+      const facts = await webpackAdapter.build({
+        config,
+        cwd,
+        plan,
+        hooks: [],
+      });
+      if (!facts.serverEntry) {
+        throw new Error("Expected a server bundle entry.");
+      }
+      const serverBundle = await fs.readFile(
+        path.join(cwd, "dist/server", facts.serverEntry),
+        "utf-8",
+      );
+
+      expect(serverBundle).toContain("EVJS_CUSTOM_SCHEME_ALIAS");
+    },
+  );
+
+  buildIt(
+    "keeps an unknown request in a registered custom scheme fail-closed",
+    async () => {
+      const cwd = await createFixture({
+        "src/server.ts": 'import "evdb:unknown"; export default null;',
+        "src/database.ts": "export const databaseMarker = true;",
+      });
+      const config = resolveConfig<WebpackConfig>({});
+      const plan = createSingleEntryProductionPlan("server", {
+        "evdb:database": "./src/database.ts",
+      });
+
+      await expect(
+        webpackAdapter.build({
+          config,
+          cwd,
+          plan,
+          hooks: [],
+        }),
+      ).rejects.toThrow('Reading from "evdb:unknown" is not handled');
+    },
+  );
+
+  buildIt(
+    "automatically applies a project PostCSS config to emitted CSS",
+    async () => {
+      const cwd = await createFixture({
+        "package.json": '{"private":true}',
+        "postcss.config.mjs": `
+          export default {
+            plugins: [
+              {
+                postcssPlugin: "evjs-postcss-test",
+                Declaration(declaration) {
+                  if (declaration.value === "evjs-postcss-marker") {
+                    declaration.value = "rebeccapurple";
+                  }
+                },
+              },
+            ],
+          };
+        `,
+        "src/main.ts": `
+          import "./styles.css";
+          console.log("client");
+        `,
+        "src/styles.css": `
+          .postcss-probe {
+            color: evjs-postcss-marker;
+          }
+        `,
+      });
+      const config = resolveConfig<WebpackConfig>({});
+      const plan = createSingleEntryProductionPlan("client");
+
+      const facts = await webpackAdapter.build({
+        config,
+        cwd,
+        plan,
+        hooks: [],
+      });
+      const cssAsset = facts.clientEntryAssets?.main?.css[0];
+      if (!cssAsset) throw new Error("Expected a client CSS asset.");
+      const css = await fs.readFile(
+        path.join(cwd, "dist/client", cssAsset),
+        "utf-8",
+      );
+
+      expect(css).toContain("rebeccapurple");
+      expect(css).not.toContain("evjs-postcss-marker");
+    },
+  );
+
+  buildIt(
+    "fails clearly when a project PostCSS config has no resolvable loader",
+    async () => {
+      const cwd = await createFixture(
+        {
+          "package.json": '{"private":true}',
+          "postcss.config.cjs": "module.exports = { plugins: [] };",
+          "src/main.ts": 'import "./styles.css";',
+          "src/styles.css": ".probe { color: red; }",
+        },
+        { linkNodeModules: false },
+      );
+      const config = resolveConfig<WebpackConfig>({});
+      const plan = createSingleEntryProductionPlan("client");
+
+      await expect(
+        webpackAdapter.build({
+          config,
+          cwd,
+          plan,
+          hooks: [],
+        }),
+      ).rejects.toThrow(
+        'Found PostCSS config "postcss.config.cjs", but "postcss-loader" cannot be resolved from the project',
+      );
+    },
+  );
+
+  buildIt(
     "preserves external files when the build root traverses a symlink",
     async () => {
       const cwd = await createFixture({
@@ -2337,6 +2663,606 @@ describe("webpackAdapter build", () => {
 
 describe("webpackAdapter dev", () => {
   devIt(
+    "fails dev startup when a server-scoped generated module reaches the client graph",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        "src/pages/page.tsx": `
+          import { databaseVersion } from "evdb:database";
+
+          export default function Home() {
+            return String(databaseVersion);
+          }
+        `,
+      });
+      const config = await resolveProjectConfig(cwd, {
+        dev: { port },
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa", html: "./index.html", mount: "#app" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const basePlan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
+      const plugin = createMutableServerGeneratedAliasPlugin(
+        "evdb:database",
+        () => 1,
+      );
+      const plan = await materializeFrameworkIR({
+        cwd,
+        mode: "development",
+        command: "dev",
+        config,
+        graph: analysis.graph,
+        plan: basePlan,
+        plugins: [plugin],
+        pluginContext: {
+          mode: "development",
+          command: "dev",
+          cwd,
+          config,
+          logger: console as never,
+          addWatchFile() {},
+        },
+      });
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+      });
+
+      await expect(
+        webpackAdapter.dev({
+          config,
+          cwd,
+          plan,
+          planGeneration: INITIAL_PLAN_GENERATION,
+          hooks: [],
+          callbacks: framework.callbacks,
+        }),
+      ).rejects.toThrow(
+        "Server-scoped generated modules reached the client bundle: schema-lifecycle:database",
+      );
+      await expectPortCanListen(port);
+    },
+  );
+
+  devIt(
+    "replaces the server compiler with fresh generated runtime bytes without restarting the client dev server",
+    async () => {
+      const harness = await createServerGeneratedDevHarness();
+      const events: string[] = [];
+      const serverReadyVersions: Array<number | undefined> = [];
+      const factsGenerations: Array<number | undefined> = [];
+      const readyGenerations: Array<number | undefined> = [];
+      const framework = createFrameworkCallbacks({
+        config: harness.config,
+        cwd: harness.cwd,
+        graph: harness.graph,
+        plan: harness.initialPlan,
+        async onBuildFacts(_facts, options) {
+          events.push("facts");
+          factsGenerations.push(options?.planGeneration);
+        },
+        async onServerBundleReady(options) {
+          events.push("ready");
+          readyGenerations.push(options?.planGeneration);
+          const bundle = await fs.readFile(
+            path.join(harness.cwd, "dist/server/server.cjs"),
+            "utf-8",
+          );
+          const match = /EVJS_SCHEMA_LIFECYCLE_V(\d+)/u.exec(bundle);
+          serverReadyVersions.push(match ? Number(match[1]) : undefined);
+        },
+      });
+      const controller = await webpackAdapter.dev({
+        config: harness.config,
+        cwd: harness.cwd,
+        plan: harness.initialPlan,
+        planGeneration: INITIAL_PLAN_GENERATION,
+        hooks: [],
+        callbacks: framework.callbacks,
+      });
+      if (!controller) throw new Error("Expected webpack dev controller.");
+
+      try {
+        const session = controller as unknown as {
+          clientServer: unknown;
+          plan: BuildPlan;
+          serverWatchState: {
+            watching: { close(callback: () => void): void };
+          };
+        };
+        const clientServerBefore = session.clientServer;
+        const closeSpy = vi.spyOn(session.serverWatchState.watching, "close");
+        events.length = 0;
+        serverReadyVersions.length = 0;
+        factsGenerations.length = 0;
+        readyGenerations.length = 0;
+
+        harness.setGeneratedVersion(2);
+        const staged = await stageServerGeneratedPlan({
+          cwd: harness.cwd,
+          previousPlan: harness.initialPlan,
+          materialize: harness.materialize,
+        });
+        const nextPlan = staged.nextPlan;
+        nextPlan.html = nextPlan.html.map((html) => ({
+          ...html,
+          template: "./next.html",
+        }));
+        const update = diffBuildPlan(harness.initialPlan, nextPlan, "plugin");
+
+        expect(update.generatedChanged).toBe(true);
+        expect(update.entries).toEqual({
+          added: [],
+          removed: [],
+          changed: [],
+        });
+        expect(update.serverCompilationChanged).toBe(false);
+        expect(update.resolveChanged).toBe(false);
+
+        const clientEntry = nextPlan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        if (!clientEntry) throw new Error("Expected a client entry.");
+        const unsupportedPlan: BuildPlan = {
+          ...nextPlan,
+          entries: [
+            ...nextPlan.entries,
+            { ...clientEntry, name: `${clientEntry.name}-unsupported` },
+          ],
+        };
+        const unsupportedUpdate = diffBuildPlan(
+          harness.initialPlan,
+          unsupportedPlan,
+          "plugin",
+        );
+        await expect(
+          controller.updatePlan(
+            unsupportedUpdate,
+            createDevUpdateOptions(harness.config),
+          ),
+        ).rejects.toThrow("cannot safely replace persistent compiler entries");
+        expect(closeSpy).not.toHaveBeenCalled();
+        expect(session.plan).toBe(harness.initialPlan);
+        events.length = 0;
+        serverReadyVersions.length = 0;
+        factsGenerations.length = 0;
+        readyGenerations.length = 0;
+
+        await controller.updatePlan(
+          update,
+          createDevUpdateOptions(harness.config, {
+            planGeneration: 2,
+            async commitFrameworkState() {
+              expect(closeSpy).toHaveBeenCalledOnce();
+              framework.update(harness.graph, nextPlan);
+              await staged.commitFrameworkState();
+            },
+            async rollbackFrameworkState() {
+              framework.update(harness.graph, harness.initialPlan);
+              await staged.rollbackFrameworkState();
+            },
+          }),
+        );
+
+        const serverBundle = await fs.readFile(
+          path.join(harness.cwd, "dist/server/server.cjs"),
+          "utf-8",
+        );
+        const html = await fs.readFile(
+          path.join(harness.cwd, "dist/client/index.html"),
+          "utf-8",
+        );
+        expect(closeSpy).toHaveBeenCalledOnce();
+        expect(serverBundle).toContain("EVJS_SCHEMA_LIFECYCLE_V2");
+        expect(html).toContain("next-shell");
+        expect(serverReadyVersions.at(-1)).toBe(2);
+        expect(events.slice(-2)).toEqual(["facts", "ready"]);
+        expect(factsGenerations.at(-1)).toBe(2);
+        expect(readyGenerations.at(-1)).toBe(2);
+        expect(staged.commitFrameworkState).toHaveBeenCalledOnce();
+        expect(staged.rollbackFrameworkState).not.toHaveBeenCalled();
+        expect(session.plan).toBe(nextPlan);
+        expect(session.clientServer).toBe(clientServerBefore);
+      } finally {
+        await controller.close?.();
+      }
+    },
+  );
+
+  devIt(
+    "drains an in-flight artifact publication before replacing the server compiler",
+    async () => {
+      const harness = await createServerGeneratedDevHarness();
+      let blockArtifactPublication = false;
+      let replacementStarted = false;
+      let resolveArtifactPublicationEntered: (() => void) | undefined;
+      let releaseArtifactPublication: (() => void) | undefined;
+      const artifactPublicationEntered = new Promise<void>((resolve) => {
+        resolveArtifactPublicationEntered = resolve;
+      });
+      const artifactPublicationReleased = new Promise<void>((resolve) => {
+        releaseArtifactPublication = resolve;
+      });
+      const plansPublishedAfterReplacementStarted: BuildPlan[] = [];
+      let serverReadyCount = 0;
+      let controller: Awaited<ReturnType<typeof webpackAdapter.dev>>;
+      let updatePromise: Promise<void> | undefined;
+      const framework = createFrameworkCallbacks({
+        config: harness.config,
+        cwd: harness.cwd,
+        graph: harness.graph,
+        plan: harness.initialPlan,
+        async onBuildOutput() {
+          if (replacementStarted && controller) {
+            plansPublishedAfterReplacementStarted.push(
+              (controller as unknown as { plan: BuildPlan }).plan,
+            );
+          }
+          if (!blockArtifactPublication) return;
+          blockArtifactPublication = false;
+          resolveArtifactPublicationEntered?.();
+          await artifactPublicationReleased;
+        },
+        onServerBundleReady() {
+          serverReadyCount++;
+        },
+      });
+      controller = await webpackAdapter.dev({
+        config: harness.config,
+        cwd: harness.cwd,
+        plan: harness.initialPlan,
+        planGeneration: INITIAL_PLAN_GENERATION,
+        hooks: [],
+        callbacks: framework.callbacks,
+      });
+      if (!controller) throw new Error("Expected webpack dev controller.");
+      const activeController = controller;
+
+      try {
+        const session = activeController as unknown as {
+          clientServer: unknown;
+          plan: BuildPlan;
+          serverWatchState: {
+            watching: { close(callback: () => void): void };
+          };
+          generateDevArtifacts(): Promise<boolean>;
+        };
+        const clientServerBefore = session.clientServer;
+        const closeSpy = vi.spyOn(session.serverWatchState.watching, "close");
+        const initialServerReadyCount = serverReadyCount;
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        blockArtifactPublication = true;
+        const oldPublication = session.generateDevArtifacts();
+        let publicationTimeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            artifactPublicationEntered,
+            new Promise<never>((_, reject) => {
+              publicationTimeout = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      "Timed out waiting for the old artifact publication.",
+                    ),
+                  ),
+                5_000,
+              );
+            }),
+          ]);
+        } finally {
+          if (publicationTimeout) clearTimeout(publicationTimeout);
+        }
+
+        harness.setGeneratedVersion(2);
+        const staged = await stageServerGeneratedPlan({
+          cwd: harness.cwd,
+          previousPlan: harness.initialPlan,
+          materialize: harness.materialize,
+        });
+        const nextPlan = staged.nextPlan;
+        nextPlan.html = nextPlan.html.map((html) => ({
+          ...html,
+          template: "./next.html",
+        }));
+        const update = diffBuildPlan(harness.initialPlan, nextPlan, "plugin");
+        replacementStarted = true;
+        let updateSettled = false;
+        updatePromise = Promise.resolve(
+          activeController.updatePlan(
+            update,
+            createDevUpdateOptions(harness.config, {
+              planGeneration: 2,
+              async commitFrameworkState() {
+                framework.update(harness.graph, nextPlan);
+                await staged.commitFrameworkState();
+              },
+              async rollbackFrameworkState() {
+                framework.update(harness.graph, harness.initialPlan);
+                await staged.rollbackFrameworkState();
+              },
+            }),
+          ),
+        ).finally(() => {
+          updateSettled = true;
+        });
+
+        await vi.waitFor(() => {
+          expect(closeSpy).toHaveBeenCalledOnce();
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(updateSettled).toBe(false);
+        expect(session.plan).toBe(harness.initialPlan);
+
+        releaseArtifactPublication?.();
+        await Promise.all([oldPublication, updatePromise]);
+
+        const serverBundle = await fs.readFile(
+          path.join(harness.cwd, "dist/server/server.cjs"),
+          "utf-8",
+        );
+        expect(serverBundle).toContain("EVJS_SCHEMA_LIFECYCLE_V2");
+        expect(session.plan).toBe(nextPlan);
+        expect(serverReadyCount).toBeGreaterThan(initialServerReadyCount);
+        expect(plansPublishedAfterReplacementStarted.length).toBeGreaterThan(0);
+        expect(
+          plansPublishedAfterReplacementStarted.every(
+            (publishedPlan) => publishedPlan === nextPlan,
+          ),
+        ).toBe(true);
+        expect(session.clientServer).toBe(clientServerBefore);
+      } finally {
+        releaseArtifactPublication?.();
+        await updatePromise?.catch(() => {});
+        await activeController.close?.();
+      }
+    },
+  );
+
+  devIt(
+    "quarantines a failed candidate server compiler and recovers on the next generated runtime update",
+    async () => {
+      const harness = await createServerGeneratedDevHarness({
+        getSource(version) {
+          return version === 2
+            ? "export const databaseVersion = ;"
+            : [
+                `export const databaseVersion = ${version};`,
+                `export const marker = "EVJS_SCHEMA_LIFECYCLE_V${version}";`,
+              ].join("\n");
+        },
+      });
+      const serverReadyVersions: Array<number | undefined> = [];
+      const factsGenerations: Array<number | undefined> = [];
+      const readyGenerations: Array<number | undefined> = [];
+      const framework = createFrameworkCallbacks({
+        config: harness.config,
+        cwd: harness.cwd,
+        graph: harness.graph,
+        plan: harness.initialPlan,
+        onBuildFacts(_facts, options) {
+          factsGenerations.push(options?.planGeneration);
+        },
+        async onServerBundleReady(options) {
+          readyGenerations.push(options?.planGeneration);
+          const bundle = await fs
+            .readFile(path.join(harness.cwd, "dist/server/server.cjs"), "utf-8")
+            .catch(() => "");
+          const match = /EVJS_SCHEMA_LIFECYCLE_V(\d+)/u.exec(bundle);
+          serverReadyVersions.push(match ? Number(match[1]) : undefined);
+        },
+      });
+      const controller = await webpackAdapter.dev({
+        config: harness.config,
+        cwd: harness.cwd,
+        plan: harness.initialPlan,
+        planGeneration: INITIAL_PLAN_GENERATION,
+        hooks: [],
+        callbacks: framework.callbacks,
+      });
+      if (!controller) throw new Error("Expected webpack dev controller.");
+
+      try {
+        const session = controller as unknown as {
+          clientServer: unknown;
+          plan: BuildPlan;
+          serverWatchState: unknown;
+        };
+        const clientServerBefore = session.clientServer;
+        const serverBundlePath = path.join(
+          harness.cwd,
+          "dist/server/server.cjs",
+        );
+        expect(await fs.readFile(serverBundlePath, "utf-8")).toContain(
+          "EVJS_SCHEMA_LIFECYCLE_V1",
+        );
+
+        harness.setGeneratedVersion(2);
+        const stagedFailure = await stageServerGeneratedPlan({
+          cwd: harness.cwd,
+          previousPlan: harness.initialPlan,
+          materialize: harness.materialize,
+        });
+        const failedPlan = stagedFailure.nextPlan;
+        const failedUpdate = diffBuildPlan(
+          harness.initialPlan,
+          failedPlan,
+          "plugin",
+        );
+        await expect(
+          controller.updatePlan(
+            failedUpdate,
+            createDevUpdateOptions(harness.config, {
+              planGeneration: 2,
+              async commitFrameworkState() {
+                framework.update(harness.graph, failedPlan);
+                await stagedFailure.commitFrameworkState();
+              },
+              async rollbackFrameworkState() {
+                framework.update(harness.graph, harness.initialPlan);
+                await stagedFailure.rollbackFrameworkState();
+              },
+            }),
+          ),
+        ).rejects.toThrow("Webpack build failed");
+
+        expect(session.plan).toBe(harness.initialPlan);
+        expect(session.serverWatchState).toBeDefined();
+        expect(session.clientServer).toBe(clientServerBefore);
+        expect(await fs.readFile(serverBundlePath, "utf-8")).toContain(
+          "EVJS_SCHEMA_LIFECYCLE_V1",
+        );
+        expect(stagedFailure.commitFrameworkState).toHaveBeenCalledOnce();
+        expect(stagedFailure.rollbackFrameworkState).toHaveBeenCalledOnce();
+        expect(factsGenerations.at(-1)).toBe(1);
+        expect(readyGenerations.at(-1)).toBe(1);
+
+        harness.setGeneratedVersion(3);
+        const stagedRecovery = await stageServerGeneratedPlan({
+          cwd: harness.cwd,
+          previousPlan: harness.initialPlan,
+          materialize: harness.materialize,
+        });
+        const recoveryPlan = stagedRecovery.nextPlan;
+        const recoveryUpdate = diffBuildPlan(
+          harness.initialPlan,
+          recoveryPlan,
+          "plugin",
+        );
+        await controller.updatePlan(
+          recoveryUpdate,
+          createDevUpdateOptions(harness.config, {
+            planGeneration: 3,
+            async commitFrameworkState() {
+              framework.update(harness.graph, recoveryPlan);
+              await stagedRecovery.commitFrameworkState();
+            },
+            async rollbackFrameworkState() {
+              framework.update(harness.graph, harness.initialPlan);
+              await stagedRecovery.rollbackFrameworkState();
+            },
+          }),
+        );
+
+        expect(await fs.readFile(serverBundlePath, "utf-8")).toContain(
+          "EVJS_SCHEMA_LIFECYCLE_V3",
+        );
+        expect(serverReadyVersions.at(-1)).toBe(3);
+        expect(factsGenerations.at(-1)).toBe(3);
+        expect(readyGenerations.at(-1)).toBe(3);
+        expect(session.plan).toBe(recoveryPlan);
+        expect(session.serverWatchState).toBeDefined();
+        expect(session.clientServer).toBe(clientServerBefore);
+      } finally {
+        await controller.close?.();
+      }
+    },
+  );
+
+  for (const failingCallback of [
+    "onBuildFacts",
+    "onServerBundleReady",
+  ] as const) {
+    devIt(
+      `rolls back a compiled candidate when ${failingCallback} rejects and republishes a fresh previous generation`,
+      async () => {
+        const harness = await createServerGeneratedDevHarness();
+        const factsGenerations: Array<number | undefined> = [];
+        const readyGenerations: Array<number | undefined> = [];
+        const failure = new Error(`forced ${failingCallback} failure`);
+        const framework = createFrameworkCallbacks({
+          config: harness.config,
+          cwd: harness.cwd,
+          graph: harness.graph,
+          plan: harness.initialPlan,
+          onBuildFacts(_facts, options) {
+            factsGenerations.push(options?.planGeneration);
+            if (
+              failingCallback === "onBuildFacts" &&
+              options?.planGeneration === 2
+            ) {
+              throw failure;
+            }
+          },
+          onServerBundleReady(options) {
+            readyGenerations.push(options?.planGeneration);
+            if (
+              failingCallback === "onServerBundleReady" &&
+              options?.planGeneration === 2
+            ) {
+              throw failure;
+            }
+          },
+        });
+        const controller = await webpackAdapter.dev({
+          config: harness.config,
+          cwd: harness.cwd,
+          plan: harness.initialPlan,
+          planGeneration: INITIAL_PLAN_GENERATION,
+          hooks: [],
+          callbacks: framework.callbacks,
+        });
+        if (!controller) throw new Error("Expected webpack dev controller.");
+
+        try {
+          factsGenerations.length = 0;
+          readyGenerations.length = 0;
+          harness.setGeneratedVersion(2);
+          const staged = await stageServerGeneratedPlan({
+            cwd: harness.cwd,
+            previousPlan: harness.initialPlan,
+            materialize: harness.materialize,
+          });
+          const nextPlan = staged.nextPlan;
+          const update = diffBuildPlan(harness.initialPlan, nextPlan, "plugin");
+
+          await expect(
+            controller.updatePlan(
+              update,
+              createDevUpdateOptions(harness.config, {
+                planGeneration: 2,
+                async commitFrameworkState() {
+                  framework.update(harness.graph, nextPlan);
+                  await staged.commitFrameworkState();
+                },
+                async rollbackFrameworkState() {
+                  framework.update(harness.graph, harness.initialPlan);
+                  await staged.rollbackFrameworkState();
+                },
+              }),
+            ),
+          ).rejects.toBe(failure);
+
+          const session = controller as unknown as {
+            plan: BuildPlan;
+            serverWatchState: unknown;
+          };
+          expect(staged.commitFrameworkState).toHaveBeenCalledOnce();
+          expect(staged.rollbackFrameworkState).toHaveBeenCalledOnce();
+          expect(session.plan).toBe(harness.initialPlan);
+          expect(session.serverWatchState).toBeDefined();
+          expect(factsGenerations.at(-1)).toBe(INITIAL_PLAN_GENERATION);
+          expect(readyGenerations.at(-1)).toBe(INITIAL_PLAN_GENERATION);
+          expect(
+            await fs.readFile(
+              path.join(harness.cwd, "dist/server/server.cjs"),
+              "utf-8",
+            ),
+          ).toContain("EVJS_SCHEMA_LIFECYCLE_V1");
+        } finally {
+          await controller.close?.();
+        }
+      },
+    );
+  }
+
+  devIt(
     "cleans up a listening dev server when initial artifact linking fails",
     async () => {
       const port = await getAvailablePort();
@@ -2363,6 +3289,7 @@ describe("webpackAdapter dev", () => {
           config,
           cwd,
           plan,
+          planGeneration: INITIAL_PLAN_GENERATION,
           hooks: [],
           callbacks: {
             async onBuildFacts() {
@@ -2413,6 +3340,7 @@ describe("webpackAdapter dev", () => {
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks: [],
       callbacks: {
         async onBuildFacts(facts, options) {
@@ -2494,6 +3422,7 @@ describe("webpackAdapter dev", () => {
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks: [],
       callbacks: framework.callbacks,
     });
@@ -2532,10 +3461,10 @@ describe("webpackAdapter dev", () => {
         fs.access(path.join(cwd, "dist/runtime.json")),
       ).rejects.toThrow();
       await expect(
-        controller.updatePlan(diffBuildPlan(plan, plan, "config"), {
-          config,
-          configChanged: true,
-        }),
+        controller.updatePlan(
+          diffBuildPlan(plan, plan, "config"),
+          createDevUpdateOptions(config, { configChanged: true }),
+        ),
       ).rejects.toThrow("Restart ev dev to apply the updated config");
     } finally {
       await controller.close?.();
@@ -2641,7 +3570,7 @@ describe("webpackAdapter dev", () => {
       ...framework.callbacks,
       async onBuildFacts(
         facts: BundlerBuildFacts,
-        options?: { isRebuild?: boolean },
+        options?: { isRebuild?: boolean; planGeneration?: number },
       ) {
         activeBuildFacts += 1;
         maxActiveBuildFacts = Math.max(maxActiveBuildFacts, activeBuildFacts);
@@ -2659,6 +3588,7 @@ describe("webpackAdapter dev", () => {
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks,
       callbacks,
     });
@@ -2712,6 +3642,7 @@ describe("webpackAdapter dev", () => {
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks: [],
       callbacks: framework.callbacks,
     });
@@ -2756,6 +3687,8 @@ describe("webpackAdapter dev", () => {
         '<!doctype html><html><head></head><body><div id="root">initial</div></body></html>',
       "next.html":
         '<!doctype html><html><head></head><body><div id="root">next-shell</div></body></html>',
+      "third.html":
+        '<!doctype html><html><head></head><body><div id="root">third-shell</div></body></html>',
       "src/pages/home/page.tsx": `
         import { createElement } from "react";
 
@@ -2788,18 +3721,27 @@ describe("webpackAdapter dev", () => {
         },
       },
     ];
+    const factsGenerations: Array<number | undefined> = [];
+    let failingFactsGeneration: number | undefined;
     const framework = createFrameworkCallbacks({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       hooks,
+      onBuildFacts(_facts, options) {
+        factsGenerations.push(options?.planGeneration);
+        if (options?.planGeneration === failingFactsGeneration) {
+          throw new Error("forced artifact-only publication failure");
+        }
+      },
     });
 
     const controller = await webpackAdapter.dev({
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks,
       callbacks: framework.callbacks,
     });
@@ -2821,8 +3763,20 @@ describe("webpackAdapter dev", () => {
       const update = diffBuildPlan(plan, nextPlan, "config");
 
       failBundlerConfig = true;
-      framework.update(nextAnalysis.graph, nextPlan);
-      await controller?.updatePlan(update);
+      const commitFrameworkState = vi.fn(async () => {
+        framework.update(nextAnalysis.graph, nextPlan);
+      });
+      const rollbackFrameworkState = vi.fn(async () => {
+        framework.update(analysis.graph, plan);
+      });
+      await controller?.updatePlan(
+        update,
+        createDevUpdateOptions(nextConfig, {
+          planGeneration: 2,
+          commitFrameworkState,
+          rollbackFrameworkState,
+        }),
+      );
 
       const html = await fetchDevText(
         `http://127.0.0.1:${port}/home/index.html`,
@@ -2833,6 +3787,58 @@ describe("webpackAdapter dev", () => {
       expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
       expect(html).toContain("next-shell");
       expect(html).toContain('src="/page-client-home.js"');
+      expect(commitFrameworkState).toHaveBeenCalledOnce();
+      expect(rollbackFrameworkState).not.toHaveBeenCalled();
+      expect(factsGenerations.at(-1)).toBe(2);
+
+      const thirdConfig = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        dev: { port },
+        routing: { mode: "mpa", html: "./third.html", mount: "#root" },
+      });
+      const thirdAnalysis = await createCoreGraph(thirdConfig, cwd);
+      const thirdPlan = await materializeTestPlan({
+        config: thirdConfig,
+        cwd,
+        graph: thirdAnalysis.graph,
+        plan: createBuildPlan(thirdConfig, thirdAnalysis.graph, {
+          mode: "development",
+        }),
+      });
+      const failedUpdate = diffBuildPlan(nextPlan, thirdPlan, "config");
+      const failedCommitFrameworkState = vi.fn(async () => {
+        framework.update(thirdAnalysis.graph, thirdPlan);
+      });
+      const failedRollbackFrameworkState = vi.fn(async () => {
+        framework.update(nextAnalysis.graph, nextPlan);
+      });
+      failingFactsGeneration = 3;
+
+      await expect(
+        controller?.updatePlan(
+          failedUpdate,
+          createDevUpdateOptions(thirdConfig, {
+            planGeneration: 3,
+            commitFrameworkState: failedCommitFrameworkState,
+            rollbackFrameworkState: failedRollbackFrameworkState,
+          }),
+        ),
+      ).rejects.toThrow("forced artifact-only publication failure");
+
+      const recoveredHtml = await fetchDevText(
+        `http://127.0.0.1:${port}/home/index.html`,
+      );
+      const session = controller as unknown as {
+        plan: BuildPlan;
+        planGeneration: number;
+      };
+      expect(failedCommitFrameworkState).toHaveBeenCalledOnce();
+      expect(failedRollbackFrameworkState).toHaveBeenCalledOnce();
+      expect(session.plan).toBe(nextPlan);
+      expect(session.planGeneration).toBe(2);
+      expect(factsGenerations.at(-1)).toBe(2);
+      expect(recoveredHtml).toContain("next-shell");
+      expect(recoveredHtml).not.toContain("third-shell");
     } finally {
       await controller?.close?.();
     }
@@ -2881,6 +3887,7 @@ describe("webpackAdapter dev", () => {
         config,
         cwd,
         plan,
+        planGeneration: INITIAL_PLAN_GENERATION,
         hooks: [],
         callbacks: framework.callbacks,
       });
@@ -2904,7 +3911,7 @@ describe("webpackAdapter dev", () => {
         const update = diffBuildPlan(plan, nextPlan, "config");
 
         framework.update(nextGraph, nextPlan);
-        await controller?.updatePlan(update);
+        await controller?.updatePlan(update, createDevUpdateOptions(config));
 
         expect(update.entries.added).toHaveLength(0);
         expect(update.entries.removed).toHaveLength(0);
@@ -2970,6 +3977,7 @@ describe("webpackAdapter dev", () => {
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks,
       callbacks: framework.callbacks,
     });
@@ -3003,9 +4011,9 @@ describe("webpackAdapter dev", () => {
       const update = diffBuildPlan(plan, nextPlan, "config");
 
       failBundlerConfig = true;
-      await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "cannot safely replace persistent compiler entries",
-      );
+      await expect(
+        controller?.updatePlan(update, createDevUpdateOptions(nextConfig)),
+      ).rejects.toThrow("cannot safely replace persistent compiler entries");
 
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
@@ -3058,6 +4066,7 @@ describe("webpackAdapter dev", () => {
       config,
       cwd,
       plan,
+      planGeneration: INITIAL_PLAN_GENERATION,
       hooks: [],
       callbacks: framework.callbacks,
     });
@@ -3093,9 +4102,9 @@ describe("webpackAdapter dev", () => {
       const buildOutputCallsBeforeUpdate = onBuildOutput.mock.calls.length;
 
       framework.update(nextAnalysis.graph, nextPlan);
-      await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "cannot safely replace persistent compiler entries",
-      );
+      await expect(
+        controller?.updatePlan(update, createDevUpdateOptions(nextConfig)),
+      ).rejects.toThrow("cannot safely replace persistent compiler entries");
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         createPageClientBuildEntryName("about"),
@@ -3113,7 +4122,212 @@ describe("webpackAdapter dev", () => {
   });
 });
 
-async function createFixture(files: Record<string, string>) {
+function createServerGeneratedGuardPlan(): BuildPlan {
+  return {
+    ...createSingleEntryProductionPlan("client"),
+    generated: {
+      version: 1,
+      rootDir: "./.ev",
+      entriesDir: "./.ev/entries",
+      frameworkDir: "./.ev/framework",
+      pluginsDir: "./.ev/plugins",
+      frameworkFiles: [],
+      modules: [
+        {
+          key: "schema-lifecycle:database",
+          id: "database",
+          pluginName: "schema-lifecycle",
+          scope: { kind: "server" },
+          file: "./.ev/plugins/schema-lifecycle/database.ts",
+          specifier: "evjs:generated/schema-lifecycle/database",
+          extension: ".ts",
+          sourceHash: "0".repeat(64),
+        },
+      ],
+      slots: [],
+      importEdges: [],
+      entries: [],
+    },
+  };
+}
+
+function createSingleEntryProductionPlan(
+  environment: "client" | "server",
+  alias?: Record<string, string>,
+): BuildPlan {
+  const isServer = environment === "server";
+  const entryImport = isServer ? "./src/server.ts" : "./src/main.ts";
+  return {
+    version: 1,
+    buildId: `webpack-${environment}-fixture`,
+    mode: "production",
+    distDir: "dist",
+    output: {
+      clientDir: "dist/client",
+      serverDir: "dist/server",
+    },
+    entries: [
+      {
+        name: isServer ? "server" : "main",
+        import: entryImport,
+        environment,
+        runtime: isServer ? "node" : "browser",
+        kind: isServer ? "server-runtime" : "app-client",
+      },
+    ],
+    html: [],
+    server: isServer ? { entry: entryImport } : {},
+    runtime: {
+      publicPath: "/",
+      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+    },
+    dev: {
+      clientRoutes: [],
+      serverRequestRoutePaths: [],
+      serverRenderedPagePaths: [],
+      hasPpr: false,
+    },
+    ...(alias ? { resolve: { alias } } : {}),
+  };
+}
+
+async function createServerGeneratedDevHarness(options?: {
+  getSource?: (version: number) => string;
+}) {
+  const port = await getAvailablePort();
+  const cwd = await createFixture({
+    "index.html":
+      '<!doctype html><html><head></head><body><main>old-shell</main><div id="app"></div></body></html>',
+    "next.html":
+      '<!doctype html><html><head></head><body><main>next-shell</main><div id="app"></div></body></html>',
+    "src/pages/page.tsx": "export default function Home() { return null; }",
+    "src/apis/database/api.ts": `
+      import { databaseVersion } from "evdb:database";
+
+      export const GET = async () =>
+        Response.json({ version: databaseVersion });
+    `,
+  });
+  const baseConfig = await resolveProjectConfig(cwd, {
+    output: { client: "dist/client", server: "dist/server" },
+    dev: { port },
+    routing: { mode: "spa", html: "./index.html", mount: "#app" },
+  });
+  const config = await withServerRouteDiscovery(baseConfig, cwd);
+  const analysis = await createCoreGraph(config, cwd);
+  const basePlan = createBuildPlan(config, analysis.graph, {
+    mode: "development",
+  });
+  let generatedVersion = 1;
+  const plugin = createMutableServerGeneratedAliasPlugin(
+    "evdb:database",
+    () => generatedVersion,
+    options?.getSource,
+  );
+  const materialize = () =>
+    materializeFrameworkIR({
+      cwd,
+      mode: "development",
+      command: "dev",
+      config,
+      graph: analysis.graph,
+      plan: basePlan,
+      plugins: [plugin],
+      pluginContext: {
+        mode: "development",
+        command: "dev",
+        cwd,
+        config,
+        logger: console as never,
+        addWatchFile() {},
+      },
+    });
+
+  return {
+    port,
+    cwd,
+    config,
+    graph: analysis.graph,
+    initialPlan: await materialize(),
+    materialize,
+    setGeneratedVersion(version: number) {
+      generatedVersion = version;
+    },
+  };
+}
+
+async function stageServerGeneratedPlan(options: {
+  cwd: string;
+  previousPlan: BuildPlan;
+  materialize(): Promise<BuildPlan>;
+}) {
+  const previousModule = options.previousPlan.generated?.modules.find(
+    (generatedModule) => generatedModule.key === "schema-lifecycle:database",
+  );
+  if (!previousModule) {
+    throw new Error("Expected the previous generated database module.");
+  }
+  const previousFile = path.resolve(options.cwd, previousModule.file);
+  const previousSource = await fs.readFile(previousFile);
+  const nextPlan = await options.materialize();
+  const nextModule = nextPlan.generated?.modules.find(
+    (generatedModule) => generatedModule.key === "schema-lifecycle:database",
+  );
+  if (!nextModule) {
+    throw new Error("Expected the candidate generated database module.");
+  }
+  const nextFile = path.resolve(options.cwd, nextModule.file);
+  if (nextFile !== previousFile) {
+    throw new Error(
+      "Expected the generated database module path to be stable.",
+    );
+  }
+  const nextSource = await fs.readFile(nextFile);
+  await fs.writeFile(previousFile, previousSource);
+
+  return {
+    nextPlan,
+    commitFrameworkState: vi.fn(async () => {
+      await fs.writeFile(nextFile, nextSource);
+    }),
+    rollbackFrameworkState: vi.fn(async () => {
+      await fs.writeFile(previousFile, previousSource);
+    }),
+  };
+}
+
+function createMutableServerGeneratedAliasPlugin(
+  specifier: string,
+  getVersion: () => number,
+  getSource?: (version: number) => string,
+): Plugin<WebpackConfig> {
+  return {
+    name: "schema-lifecycle",
+    contributions(ctx) {
+      const version = getVersion();
+      const databaseModule = ctx.emit.module({
+        id: "database",
+        scope: { kind: "server" },
+        source:
+          getSource?.(version) ??
+          [
+            `export const databaseVersion = ${version};`,
+            `export const marker = "EVJS_SCHEMA_LIFECYCLE_V${version}";`,
+          ].join("\n"),
+      });
+      ctx.slot("resolve.alias").add({
+        id: "database-alias",
+        specifier,
+        replacement: databaseModule,
+      });
+    },
+  };
+}
+
+async function createFixture(
+  files: Record<string, string>,
+  options: { linkNodeModules?: boolean } = {},
+) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-webpack-"));
   tempDirs.push(dir);
 
@@ -3123,11 +4337,13 @@ async function createFixture(files: Record<string, string>) {
     await fs.writeFile(absolute, content, "utf-8");
   }
 
-  await fs.symlink(
-    path.resolve(import.meta.dirname, "../../..", "node_modules"),
-    path.join(dir, "node_modules"),
-    "dir",
-  );
+  if (options.linkNodeModules !== false) {
+    await fs.symlink(
+      path.resolve(import.meta.dirname, "../../..", "node_modules"),
+      path.join(dir, "node_modules"),
+      "dir",
+    );
+  }
 
   return dir;
 }

@@ -54,6 +54,17 @@ export class DevApiProcessController<TProcess extends object> {
     await this.#terminate(process);
   }
 
+  /**
+   * Stop the active process as the first step of a transactional replacement.
+   *
+   * Unlike ordinary shutdown, this advances the replacement generation so a
+   * failed framework update can restore the checkpointed process.
+   */
+  async stopForReplacement(): Promise<void> {
+    this.#replacementGeneration++;
+    await this.stop();
+  }
+
   async replace(
     start: () => TProcess,
     waitUntilReady: (process: TProcess) => Promise<void>,

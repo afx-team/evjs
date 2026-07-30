@@ -28,9 +28,14 @@ export interface WebpackStatsEntrypoint {
 
 export interface WebpackStatsModule {
   name?: string;
+  nameForCondition?: string | null;
   identifier?: string;
   id?: string | number;
   chunks?: Array<string | number>;
+  modules?: WebpackStatsModule[];
+  children?: WebpackStatsModule[];
+  filteredModules?: number;
+  filteredChildren?: number;
 }
 
 export interface WebpackStatsChunk {
@@ -46,6 +51,7 @@ export interface WebpackStatsLike {
   entrypoints?: Record<string, WebpackStatsEntrypoint>;
   chunks?: WebpackStatsChunk[];
   modules?: WebpackStatsModule[];
+  filteredModules?: number;
 }
 
 export class WebpackManifestGenerator {

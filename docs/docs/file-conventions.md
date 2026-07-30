@@ -312,6 +312,8 @@ The framework may generate:
 
 - `.ev/**` framework IR and entry facades;
 - `src/route-types.d.ts` from canonical SPA file routes when supported;
+- `src/evjs-env.d.ts` and `src/.ev/types/**` when a plugin contributes exact
+  generated-alias declarations;
 - `dist/**` build output.
 
 Do not edit or scaffold these files. Keep them ignored.

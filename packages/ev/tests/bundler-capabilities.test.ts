@@ -4,6 +4,8 @@ import {
   type BundlerCapabilities,
   getBundlerBuildCapabilityGaps,
   getBundlerDevCapabilityGaps,
+  hasServerGeneratedRuntimeChange,
+  isArtifactOnlyBuildPlanUpdate,
   preflightBundlerBuild,
   preflightBundlerDevUpdate,
 } from "../src/_internal/build/bundler.js";
@@ -183,6 +185,59 @@ describe("bundler capability preflight", () => {
     ).toEqual(["dev.html"]);
   });
 
+  it("requires a fresh server compiler only when generated server runtime bytes change", () => {
+    const previous = createGeneratedServerPlan("a".repeat(64));
+    const nextRuntime = createGeneratedServerPlan("b".repeat(64));
+    const nextDeclarationOnly = createGeneratedServerPlan("a".repeat(64), {
+      declarationFile: "./src/.ev/types/database.d.ts",
+    });
+
+    expect(hasServerGeneratedRuntimeChange(previous, nextRuntime)).toBe(true);
+    expect(hasServerGeneratedRuntimeChange(previous, nextDeclarationOnly)).toBe(
+      false,
+    );
+
+    const runtimeUpdate = createGeneratedPlanUpdate(previous, nextRuntime);
+    expect(isArtifactOnlyBuildPlanUpdate(runtimeUpdate)).toBe(false);
+    expect(
+      getBundlerDevCapabilityGaps(
+        { capabilities: noCapabilities },
+        runtimeUpdate,
+      ).map((gap) => gap.capability),
+    ).toContain("dev.server");
+
+    const declarationUpdate = createGeneratedPlanUpdate(
+      previous,
+      nextDeclarationOnly,
+    );
+    expect(isArtifactOnlyBuildPlanUpdate(declarationUpdate)).toBe(true);
+    expect(
+      getBundlerDevCapabilityGaps(
+        { capabilities: noCapabilities },
+        declarationUpdate,
+      ).map((gap) => gap.capability),
+    ).not.toContain("dev.server");
+  });
+
+  it("fails closed when generated server runtime digest metadata is invalid", () => {
+    expect(
+      hasServerGeneratedRuntimeChange(
+        createGeneratedServerPlan("a".repeat(64)),
+        createGeneratedServerPlan("invalid"),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires a fresh server compiler when a generated runtime path changes", () => {
+    const previous = createGeneratedServerPlan("a".repeat(64));
+    const next = createGeneratedServerPlan("a".repeat(64), {
+      file: "./.ev/plugins/schema/database-collision.ts",
+      specifier: "evjs:generated/schema/database-collision",
+    });
+
+    expect(hasServerGeneratedRuntimeChange(previous, next)).toBe(true);
+  });
+
   it("keeps runtime and development routing changes fail-closed", () => {
     const plan = {
       distDir: "dist",
@@ -210,3 +265,50 @@ describe("bundler capability preflight", () => {
     ).toEqual(["dev.routes", "dev.server"]);
   });
 });
+
+function createGeneratedServerPlan(
+  sourceHash: string,
+  extra: {
+    declarationFile?: string;
+    file?: string;
+    specifier?: string;
+  } = {},
+): BuildPlan {
+  return {
+    distDir: "dist",
+    output: { clientDir: "client", serverDir: "server" },
+    generated: {
+      modules: [
+        {
+          key: "schema:database",
+          scope: { kind: "server" },
+          sourceHash,
+          file: "./.ev/plugins/schema/database.ts",
+          specifier: "evjs:generated/schema/database",
+          extension: ".ts",
+          ...extra,
+        },
+      ],
+    },
+  } as unknown as BuildPlan;
+}
+
+function createGeneratedPlanUpdate(
+  previous: BuildPlan,
+  next: BuildPlan,
+): BuildPlanUpdate {
+  return {
+    reason: "plugin",
+    previous,
+    next,
+    entries: { added: [], removed: [], changed: [] },
+    html: { added: [], removed: [], changed: [] },
+    generatedChanged: true,
+    resolveChanged: false,
+    runtimeChanged: false,
+    deliveryChanged: false,
+    serverCompilationChanged: false,
+    serverDocumentsChanged: false,
+    devRoutingChanged: false,
+  };
+}

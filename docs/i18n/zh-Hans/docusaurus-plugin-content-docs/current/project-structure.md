@@ -113,6 +113,7 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `<Page 目录>/index.html` | Page Document 模板 | MPA Page 输出 | 覆盖该 MPA Page 的共享模板，不是客户端 Page entry。 |
 | `index.html` / `routing.html` | Document template | Application 输出 | `index.html` 是默认模板，与 Page entry 文件名无关。 |
 | `src/route-types.d.ts` | SPA 文件路由导航类型（生成时） | 生成产物 | 忽略且不要复制到 scaffold 或从应用源码 import。 |
+| `src/evjs-env.d.ts`、`src/.ev/types/**` | 精确 generated-alias 类型发现与 declaration companion | 生成产物 | 保持 ignore；内容与 stale companion 由 evjs 管理。 |
 | 带 `"use server";` 的 reachable 源码 module | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录或文件后缀；推荐用 `.server.*` 提高可读性。 |
 | `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | Server route root 固定；每个 route 目录只允许一个源码扩展名变体；只导出 callable 的大写 HTTP method handler。注册顺序按 segment 逐段比较 specificity，在首个不同位置优先 static segment。 |
 | Server route 目录下其他文件 | Route 私有源码 | 最近的 server Route | Helper、schema、store、测试与 `index.*` 都不会创建 route。 |
@@ -368,6 +369,8 @@ manifest 输入。
 - `.turbo/`
 - `node_modules/`
 - `src/route-types.d.ts`
+- `src/evjs-env.d.ts`
+- `src/.ev/types/`
 
 不要编辑或复制到模板。
 

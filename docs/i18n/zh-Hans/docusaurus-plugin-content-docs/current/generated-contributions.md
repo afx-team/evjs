@@ -108,6 +108,57 @@ slots 如下：
 | `resolve.alias` | 指向用户模块、package、绝对路径或 generated artifacts 的语义化 alias |
 | `resolve.external` | Externalized module resolution，通常和 `html.tag` CDN 资源配合 |
 
+### Generated alias 的精确类型
+
+Generated TypeScript module 可以为面向应用的 alias 提供精确 ambient
+declaration。Runtime source 与 declaration source 分开声明：
+
+```ts
+const database = ctx.emit.module({
+  id: "database",
+  scope: { kind: "server" },
+  source: "export const database = {}; export type Database = {};",
+  declarationSource:
+    "export declare const database: {}; export type Database = {};",
+});
+
+ctx.slot("resolve.alias").add({
+  id: "database-alias",
+  specifier: "evdb:database",
+  replacement: database,
+  declaration: {
+    exports: [
+      { kind: "value", name: "database" },
+      { kind: "type", name: "Database", typeParameters: "none" },
+    ],
+  },
+});
+```
+
+`declarationSource` 是 opaque 的完整 declaration module，只能用于生成的
+`.ts` 或 `.tsx` module；evjs 不会解析 runtime source 来推断 declaration。
+Declaration 支持保持原名的 named value，以及由插件通过
+`typeParameters: "none"` 显式审计为非泛型的 named type。相对或 wildcard
+specifier、重命名 export、泛型 type、重复名称，以及指向字符串路径 replacement
+的 declaration metadata 都会被拒绝。
+
+evjs 把 companion 写到 `src/.ev/types`，把 ambient `declare module` wrapper
+写到 `.ev/types.d.ts`，并维护 `src/evjs-env.d.ts`，让常见的
+`include: ["src"]` project 无需手写 TypeScript `paths` 就能发现类型。
+Declaration-source callback 可以通过 `importFile(file)` 引用 `src` 下已有的应用
+source file，但不能引用生成的 runtime tree。`ev prepare`、`ev dev` 和
+`ev build` 会更新这些文件；`ev inspect` 仍然只读。
+
+Companion、export metadata 与 runtime module 是插件声明的 contract。evjs
+不会解析任意 declaration 或 re-export graph，因此插件测试必须保证三者同步。
+精确 declaration 也不会改变 runtime scope：server-scoped generated module
+仍不得进入 client bundle。
+
+在 `ev dev` 中，server-scoped generated module 的内容变化要求 bundler 提供
+`dev.server` capability。webpack adapter 会在新 bundle 成功后，以事务方式替换
+server compiler 和 API process。当前 Utoopack adapter 会安全拒绝这类更新并提示
+重启 `ev dev`；如果插件需要实时重新生成服务端 schema，应选择 webpack。
+
 需要 import side-effect module 或执行安装逻辑时，使用 `client.entry` 显式调用
 installer。IR 不携带 inert runtime-plugin registry。
 

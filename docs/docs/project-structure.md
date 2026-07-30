@@ -120,6 +120,7 @@ project root unless stated otherwise.
 | `<Page directory>/index.html` | Page Document template | MPA Page output | Overrides the shared template for that MPA Page. It is not a client Page entry. |
 | `index.html` / `routing.html` | Document template | Application output | `index.html` is the default template; it is unrelated to the Page entry filename. |
 | `src/route-types.d.ts` | SPA file-route navigation types, when emitted | Generated output | Ignore it; do not copy it into scaffolds or import it from app code. |
+| `src/evjs-env.d.ts`, `src/.ev/types/**` | Exact generated-alias type discovery and declaration companions | Generated output | Ignore them; evjs owns their contents and removes stale companions. |
 | Reachable source module with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory or filename suffix; `.server.*` is recommended for clarity. |
 | `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route anchor | Entire containing directory | The server route root is fixed. Exactly one source-extension variant is allowed per route directory. Export callable uppercase HTTP method handlers only. Registration uses segment-wise specificity: static segments precede dynamic segments at the first differing position. |
 | Other files below a server route directory | Route-private source | Nearest server Route | Helpers, schemas, stores, tests, and `index.*` do not create routes. |
@@ -396,6 +397,8 @@ Treat these as generated:
 - `.turbo/`
 - `node_modules/`
 - `src/route-types.d.ts`
+- `src/evjs-env.d.ts`
+- `src/.ev/types/`
 
 Do not edit them or copy them into templates.
 

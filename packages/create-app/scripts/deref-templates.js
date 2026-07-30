@@ -17,6 +17,7 @@ const templateCopyExcludedBasenames = new Set([
   ".ev",
   ".evjs",
   "route-types.d.ts",
+  "evjs-env.d.ts",
 ]);
 
 export function shouldDerefTemplatePath(src) {

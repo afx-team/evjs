@@ -18,6 +18,7 @@ import type {
   DeploymentMetadata,
   EntryContributionPosition,
   FrameworkSlotName,
+  GeneratedModuleDeclaration,
   GeneratedScope,
   HtmlTagName,
   HtmlTagPlacement,
@@ -46,6 +47,8 @@ export type {
   CorePageScope,
   EntryContributionPosition,
   FrameworkSlotName,
+  GeneratedModuleDeclaration,
+  GeneratedModuleDeclarationExport,
   GeneratedScope,
   HtmlTagName,
   HtmlTagPlacement,
@@ -660,6 +663,23 @@ export interface EmitApi {
           importFile(file: string): string;
         }) => string);
     extension?: ".ts" | ".tsx" | ".js" | ".jsx" | ".css" | ".less" | ".json";
+    /**
+     * Complete declaration-module source for exact alias declarations.
+     *
+     * evjs treats this as opaque `.d.ts` source and never derives it by parsing
+     * `source`. The framework materializes it below `src` so strict projects
+     * do not type-import a generated `.ev/*.ts` runtime module outside
+     * `rootDir`.
+     */
+    declarationSource?:
+      | string
+      | ((helpers: {
+          /**
+           * Returns an import specifier from the final companion to an
+           * existing application source file below `src`.
+           */
+          importFile(file: string): string;
+        }) => string);
   }): GeneratedModuleRef;
 
   data(input: {
@@ -753,6 +773,16 @@ export interface ResolveAliasContribution {
   id: string;
   specifier: string;
   replacement: GeneratedModuleRef | string;
+  /**
+   * Generates an exact ambient declaration from unchanged named values and
+   * audited non-generic named types.
+   *
+   * Runtime validation requires `replacement` to be a generated TypeScript
+   * module with a declaration-only companion when this metadata is present.
+   * The plugin must test that its runtime and declaration sources match this
+   * contract; evjs does not parse either source or infer type parameters.
+   */
+  declaration?: GeneratedModuleDeclaration;
 }
 
 export interface ResolveExternalContribution {

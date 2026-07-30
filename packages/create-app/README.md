@@ -46,8 +46,9 @@ npx @evjs/create-app my-new-app
 
 Follow the interactive prompts to select your features and get started in seconds.
 
-Generated framework files such as `src/route-types.d.ts` are never copied from
-templates and should remain ignored by source control.
+Generated framework files such as `src/route-types.d.ts`,
+`src/evjs-env.d.ts`, and `src/.ev/**` are never copied from templates and
+should remain ignored by source control.
 
 `page.config.ts` is evaluated by evjs during graph construction. It is not a
 browser entry: plugins must explicitly project any configured extension data

@@ -6,6 +6,7 @@ import type {
   BuildPlan,
   ComponentModel,
   CoreGraph,
+  GeneratedModulePlan,
   HydrationMode,
   PageMetadata,
   PageRouteKind,
@@ -53,6 +54,31 @@ function createMinimalBuildOutput(): BuildOutput {
     },
   };
 }
+
+describe("GeneratedModulePlan", () => {
+  it("keeps sourceHash required while declaration companions stay additive", () => {
+    const runtimeOnly: GeneratedModulePlan = {
+      key: "database:runtime",
+      id: "database",
+      pluginName: "database",
+      scope: { kind: "server" },
+      file: "./.ev/plugins/database/runtime.ts",
+      specifier: "evjs:generated/database/runtime",
+      extension: ".ts",
+      sourceHash: "a".repeat(64),
+    };
+    const typedModule: GeneratedModulePlan = {
+      ...runtimeOnly,
+      declarationFile: "./src/.ev/types/database/runtime.d.ts",
+    };
+
+    expect(runtimeOnly.declarationFile).toBeUndefined();
+    expect(typedModule.declarationFile).toBe(
+      "./src/.ev/types/database/runtime.d.ts",
+    );
+    expect(typedModule.sourceHash).toMatch(/^[0-9a-f]{64}$/u);
+  });
+});
 
 function createServerRuntimeEntry(): BuildPlan["entries"][number] {
   return {

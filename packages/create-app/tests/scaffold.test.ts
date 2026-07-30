@@ -181,6 +181,7 @@ describe("create-app scaffolding", () => {
       expect(ignoredPaths).toContain(".ev");
       expect(ignoredPaths).toContain(".evjs");
       expect(ignoredPaths).toContain("route-types.d.ts");
+      expect(ignoredPaths).toContain("evjs-env.d.ts");
     }
   });
 
@@ -244,6 +245,10 @@ describe("create-app scaffolding", () => {
     expect(shouldCopyTemplatePath("/some/path/src/route-types.d.ts")).toBe(
       false,
     );
+    expect(shouldCopyTemplatePath("/some/path/src/evjs-env.d.ts")).toBe(false);
+    expect(
+      shouldCopyTemplatePath("/some/path/src/.ev/types/database.d.ts"),
+    ).toBe(false);
     expect(shouldCopyTemplatePath("/some/path/src")).toBe(true);
     expect(shouldCopyTemplatePath("/some/path/package.json")).toBe(true);
     expect(shouldCopyTemplatePath("/some/path/index.html")).toBe(true);
@@ -263,6 +268,10 @@ describe("create-app scaffolding", () => {
     expect(shouldDerefTemplatePath("/some/path/src/route-types.d.ts")).toBe(
       false,
     );
+    expect(shouldDerefTemplatePath("/some/path/src/evjs-env.d.ts")).toBe(false);
+    expect(
+      shouldDerefTemplatePath("/some/path/src/.ev/types/database.d.ts"),
+    ).toBe(false);
     expect(shouldDerefTemplatePath("/some/path/src/pages/page.tsx")).toBe(true);
   });
 });

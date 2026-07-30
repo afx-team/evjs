@@ -293,6 +293,8 @@ Middleware file 不是 route，不能由 route module export middleware 代替�
 
 - `.ev/**` framework IR 和 entry facade；
 - canonical SPA 文件路由在支持时生成的 `src/route-types.d.ts`；
+- 插件贡献精确 generated-alias declaration 时生成的 `src/evjs-env.d.ts` 与
+  `src/.ev/types/**`；
 - `dist/**` 构建产物。
 
 不要编辑或 scaffold 任何生成文件，并保持 ignore。
