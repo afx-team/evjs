@@ -142,7 +142,9 @@ export async function createUtoopackConfig(
     ...(isProduction
       ? {
           optimization: {
-            concatenateModules: true,
+            // Utoopack applies this option to both client and server outputs.
+            // Scope hoisting can drop the server entry export in mixed builds.
+            concatenateModules: finalServerEntry === undefined,
             removeUnusedExports: true,
             removeUnusedImports: true,
           },

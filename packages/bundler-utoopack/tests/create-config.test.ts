@@ -146,7 +146,7 @@ describe("createUtoopackConfig", () => {
     ).resolves.toMatchObject({ mode: "production" });
   });
 
-  it("enables production optimizations by default", async () => {
+  it("enables production optimizations for client-only builds", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config, { mode: "production" });
 
@@ -159,6 +159,35 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.optimization).toMatchObject({
       concatenateModules: true,
+      removeUnusedExports: true,
+      removeUnusedImports: true,
+    });
+  });
+
+  it("disables module concatenation for mixed production builds", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      mode: "production",
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.server?.entry).toBeDefined();
+    expect(utoopackConfig.optimization).toMatchObject({
+      concatenateModules: false,
       removeUnusedExports: true,
       removeUnusedImports: true,
     });
