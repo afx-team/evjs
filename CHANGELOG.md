@@ -28,6 +28,11 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   snapshot and installs prepend, match, redirect, and micro-app route
   components before the first render. Resolver routes no longer require fixed
   containers, `activeRule`, or physical Pages at the mounted master paths.
+- **Plugin ordering follows dependencies, not global tiers** — The public
+  `enforce` field is removed. Plugins keep their authored array order unless
+  `dependencies` or a present `optionalDependencies` edge requires a stable
+  topological reorder. Framework-private phases are no longer projected as one
+  ordering tier onto every plugin lifecycle method.
 
 ### ✨ Improvements
 
@@ -53,6 +58,19 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   an omitted Page, a normal installation uses declared Page defaults when
   available, while `withPageOptIn()` always requires `true` or an options
   object.
+- **Type-stable conditional execution** — Defined plugin instances expose
+  `.when(condition, reason?)`. A false condition keeps the plugin contract and
+  generated Page key installed while skipping configuration, setup, and IR
+  emission, so editor types no longer vary with an environment condition.
+  Falsy `plugins` entries remain the explicit way to omit a plugin completely.
+- **Typed plugin presets** — `definePluginPreset()` lets plugin packages expose
+  parameterized, tuple-preserving plugin groups. evjs expands only branded
+  presets, keeps each contained plugin's identity and dependency semantics, and
+  rejects ambiguous raw nested arrays.
+- **Non-activating analysis and narrower contexts** — `prepare` and `inspect`
+  can analyze deterministic IR without running plugin `setup()`. Lifecycle
+  contexts now project plugin and bundler metadata instead of exposing callable
+  plugin hooks or adapter build/dev methods.
 - **Composable plugin defaults** — Application and Page contracts remain
   independent, while authored fields deep-merge over defaults within each
   contract before validation.

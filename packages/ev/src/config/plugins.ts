@@ -14,6 +14,104 @@ import type { StaticConfigCompatible, StaticConfigValue } from "./static.js";
 const UNSAFE_PLUGIN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 declare const installedPluginRegistry: unique symbol;
+declare const pluginPresetType: unique symbol;
+const PLUGIN_PRESET_REGISTRY = Symbol.for("@evjs/ev/plugin-preset-registry/v1");
+const pluginPresetEntries = getPluginPresetRegistry();
+
+type InactivePluginEntry = false | null | undefined;
+
+/**
+ * An entry accepted from a plugin preset factory.
+ *
+ * The complete bundler-specific Plugin constraint is enforced when the preset
+ * is installed in `Config.plugins`.
+ */
+export type PluginPresetEntry =
+  | Readonly<{ name: string }>
+  | PluginPreset<readonly PluginPresetEntry[]>
+  | InactivePluginEntry;
+
+/** A branded tuple of plugin entries. */
+export interface PluginPreset<
+  out TEntries extends readonly unknown[] = readonly unknown[],
+> {
+  readonly [pluginPresetType]: TEntries;
+}
+
+/** A plugin preset factory preserving its original arguments and exact tuple. */
+export type PluginPresetFactory<
+  TArguments extends readonly unknown[],
+  TEntries extends readonly PluginPresetEntry[],
+> = (...args: TArguments) => PluginPreset<TEntries>;
+
+/**
+ * Define a reusable, typed plugin composition.
+ *
+ * The returned factory keeps the input factory's arguments while branding its
+ * exact output tuple so config resolution can distinguish presets from arrays.
+ */
+export function definePluginPreset<
+  const TArguments extends readonly unknown[],
+  const TEntries extends readonly PluginPresetEntry[],
+>(
+  factory: (...args: TArguments) => TEntries,
+): PluginPresetFactory<TArguments, TEntries> {
+  if (typeof factory !== "function") {
+    throw new Error("[evjs] definePluginPreset() requires a factory function.");
+  }
+  return function createPluginPreset(...args): PluginPreset<TEntries> {
+    const preset = Object.freeze({});
+    pluginPresetEntries.set(preset, factory(...args));
+    return preset as PluginPreset<TEntries>;
+  };
+}
+
+/** @internal */
+export function isPluginPreset(value: unknown): value is PluginPreset {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    pluginPresetEntries.has(value)
+  );
+}
+
+/** @internal */
+export function getPluginPresetEntries(preset: PluginPreset): unknown {
+  return pluginPresetEntries.get(preset);
+}
+
+/** @internal Clone an opaque preset while projecting its hidden entries. */
+export function clonePluginPreset(
+  preset: PluginPreset,
+  cloneEntries: (entries: unknown, clone: PluginPreset) => unknown,
+): PluginPreset {
+  const clone = Object.freeze({}) as PluginPreset;
+  pluginPresetEntries.set(clone, undefined);
+  pluginPresetEntries.set(
+    clone,
+    cloneEntries(getPluginPresetEntries(preset), clone),
+  );
+  return clone;
+}
+
+function getPluginPresetRegistry(): WeakMap<object, unknown> {
+  const existing = Reflect.get(globalThis, PLUGIN_PRESET_REGISTRY);
+  if (existing !== undefined) {
+    if (existing instanceof WeakMap) {
+      return existing as WeakMap<object, unknown>;
+    }
+    throw new Error("[evjs] The global plugin preset registry is invalid.");
+  }
+
+  const registry = new WeakMap<object, unknown>();
+  Object.defineProperty(globalThis, PLUGIN_PRESET_REGISTRY, {
+    configurable: false,
+    enumerable: false,
+    value: registry,
+    writable: false,
+  });
+  return registry;
+}
 
 /**
  * Project configuration generated from `ev.config.ts`.
@@ -30,8 +128,6 @@ type GeneratedInstalledPluginConfig =
     ? TConfig
     : never;
 
-type InactivePluginEntry = false | null | undefined;
-
 type IsUnion<TValue, TCandidate = TValue> = TValue extends TCandidate
   ? [TCandidate] extends [TValue]
     ? false
@@ -43,17 +139,23 @@ type TupleIndex<TTuple extends readonly unknown[]> = Exclude<
   keyof unknown[]
 >;
 
+type DefinitelyInstalledPluginEntry<TEntry> = [
+  Extract<TEntry, InactivePluginEntry>,
+] extends [never]
+  ? IsUnion<TEntry> extends true
+    ? never
+    : TEntry extends PluginPreset<infer TEntries>
+      ? DefinitelyInstalledPluginEntries<TEntries>
+      : Exclude<TEntry, InactivePluginEntry>
+  : never;
+
 type DefinitelyInstalledPluginEntries<TPlugins extends readonly unknown[]> =
   IsUnion<TPlugins> extends true
     ? never
     : {
-        [TIndex in TupleIndex<TPlugins>]: [
-          Extract<TPlugins[TIndex], InactivePluginEntry>,
-        ] extends [never]
-          ? IsUnion<TPlugins[TIndex]> extends true
-            ? never
-            : Exclude<TPlugins[TIndex], InactivePluginEntry>
-          : never;
+        [TIndex in TupleIndex<TPlugins>]: DefinitelyInstalledPluginEntry<
+          TPlugins[TIndex]
+        >;
       }[TupleIndex<TPlugins>];
 
 type ConfiguredPlugin<TConfig> = [TConfig] extends [

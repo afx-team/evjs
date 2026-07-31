@@ -166,6 +166,33 @@ describe("loadConfigFile", () => {
     }
   });
 
+  it("preserves plugin presets across the config loader boundary", async () => {
+    const cwd = await createFixture({
+      "ev.config.ts": `
+        import { defineConfig } from "@evjs/ev";
+        import {
+          definePlugin,
+          definePluginPreset,
+        } from "@evjs/ev/plugin";
+
+        const analytics = definePlugin({ name: "@company/analytics" });
+        const observability = definePluginPreset(
+          () => [analytics().when(true), false] as const,
+        );
+
+        export default defineConfig({ plugins: [observability()] });
+      `,
+    });
+
+    const loaded = await loadConfigFile(path.join(cwd, "ev.config.ts"));
+    const resolved = resolveConfig(loaded);
+
+    expect(resolved.plugins.map((plugin) => plugin.name)).toEqual([
+      "@company/analytics",
+    ]);
+    expect(resolved.plugins[0]?.active).toBe(true);
+  });
+
   it("does not expose unpublished framework source paths through aliases", async () => {
     const cwd = await createFixture({
       "ev.config.ts": `

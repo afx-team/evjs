@@ -82,8 +82,9 @@ linked and stabilized. A failed output cycle does not call `afterBuild()`.
 Because that output is already published, an `afterBuild()` failure in dev is
 reported as a warning while the published snapshot stays active and server
 activation continues; the same failure still fails a production build.
-`ev prepare` and `ev inspect` do not produce bundler facts, so neither command
-calls `beforeBuild()` or `afterBuild()`.
+`ev prepare` and `ev inspect` are non-activating analysis commands: they run
+`configure()` and deterministic IR emission, but do not run `setup()`,
+`beforeBuild()`, `afterBuild()`, or `dispose()`.
 
 The `setup()` and IR-emission contexts expose `addWatchFile()` for analysis
 dependencies. Build-cycle, output, HTML, and disposal contexts do not. Changing
@@ -103,11 +104,11 @@ cannot prove it produced fresh facts for them.
 
 ## Disposal
 
-`dispose()` tears down resources allocated by `setup()`. It runs when a
-prepared plugin snapshot is no longer active: after a one-shot command such as
-`build` or `prepare`, when a dev session stops, or after a successful config
-reload replaces the previous snapshot. It does not run after every dev
-rebuild.
+`dispose()` tears down resources allocated by `setup()`. It runs when an
+activated plugin snapshot is no longer active: after a one-shot `build`, when a
+dev session stops, or after a successful config reload replaces the previous
+snapshot. It does not run after every dev rebuild. Non-activating `prepare` and
+`inspect` commands have no setup resources to dispose.
 
 Use it for resources whose lifetime extends beyond one hook call, such as file
 watchers, timers, worker processes, sockets, or temporary service handles.

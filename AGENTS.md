@@ -85,6 +85,14 @@ server routes, examples, or scaffolds change.
    object according to the plugin's declared defaults and `withPageOptIn()`
    activation mode. Route and Document contributions derive from the normalized
    Page graph instead of exposing separate plugin configuration surfaces.
+   `definePluginPreset()` is the only nested composition boundary; raw nested
+   arrays and async entries are invalid. `.when(condition, reason?)` keeps
+   contracts and generated Page keys installed while disabling execution,
+   whereas falsy array entries omit the plugin and its Page keys. Ordering uses
+   stable authored order plus required/present-optional dependency edges; do
+   not reintroduce a global `enforce` tier. Public context config projects
+   plugin/bundler metadata only. `prepare` and `inspect` analyze deterministic
+   IR without activating `setup()` or `dispose()`.
 9. Treat `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
    `.turbo`, and `node_modules` as generated output. Scaffolds and templates
    must not copy generated route or plugin types. Keep declarations under

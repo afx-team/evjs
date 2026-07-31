@@ -48,9 +48,9 @@ export default defineConfig({
 });
 ```
 
-对于其他条件相同的插件，`plugins` 数组保留安装顺序；声明的 dependencies 与
-`enforce` 层级可以重排 hooks。工厂参数承载 Application 配置，不再维护并行的顶层
-配置 bag。
+对于其他条件相同的插件，`plugins` 数组保留安装顺序；required dependency 与当前存在的
+optional dependency 会进行稳定拓扑排序。框架不再把一个全局 pre/post 层级投影到彼此
+无关的插件阶段。工厂参数承载 Application 配置，不再维护并行的顶层配置 bag。
 
 ## 声明 Application 与 Page 合同
 
@@ -164,8 +164,9 @@ symbol、bigint、非有限数值、class instance、稀疏数组与循环引用
 标识两份合同及其 CoreGraph setting；纯 hooks 插件可以省略。一个 Application 中的
 plugin name 与 plugin key 都必须分别唯一。
 
-`dependencies`、`optionalDependencies` 与 `enforce` 控制 hook 顺序。未知 descriptor
-字段与拼错的 hook 会被拒绝。
+`dependencies` 指定必须先安装且保持 active 的插件。`optionalDependencies` 只在目标
+插件存在且 active 时增加同样的顺序边；其他情况保留 authored array 顺序。未知
+descriptor 字段与拼错的 hook 会被拒绝。
 
 插件配置只存在于 Application 与 Page scope。在 graph analysis 阶段根据已启用 Page
 派生 Route/Document 效果，再通过 [generated contributions](./generated-contributions)
@@ -212,10 +213,11 @@ export default defineConfig({
 不要用 `configureBundler()` 修改框架协议路径。Server function、PPR 和 RSC endpoint
 都从 `server.basePath` 派生。
 
-`configure()` 完成后，后续阶段的 `ctx.config` 在类型上都是 resolved framework config 的
-深度只读视图；运行时也会收到隔离且冻结的快照，因此 JavaScript 插件无法通过该视图修改
-当前生效的 framework 配置。`configureBundler()` 只能修改其显式传入的 bundler config
-参数。插件作者应把 framework 配置变更都放在这个经过校验的阶段。
+`configure()` 完成后，后续阶段的 `ctx.config` 是 resolved framework config 的隔离、
+冻结 metadata 视图。已安装插件只暴露 identity、key 与 activation state；选中的 bundler
+只暴露 name 与 capabilities。其他插件的 callable hooks 和 adapter build/dev 方法不会
+通过 context 泄露。`configureBundler()` 只能修改其显式传入的 bundler config 参数。
+插件作者应把 framework 配置变更都放在这个经过校验的阶段。
 
 ## 在 `setup()` 中初始化共享状态
 
@@ -254,15 +256,20 @@ settle 前完成注册。
 
 ## 安装与执行模式
 
-工厂只控制 Page 省略语义，不改变插件执行和类型安全的 Application options：
+普通工厂与 `withPageOptIn()` 控制 Page 省略语义，不改变类型安全的 Application
+options；`.when()` 单独控制已安装插件本次是否执行：
 
 - `plugin(options)` 安装并执行插件；Page 有 defaults 时，省略 key 会启用该 Page；
 - Page 合同有 defaults 时，`plugin.withPageOptIn(options)` 使用相同 Application options
   安装并执行同一个插件，但每个 Page 都必须通过 `true` 或 object 显式启用；
+- `plugin(options).when(condition, reason?)` 保持合同与生成的 Page 类型已安装；条件为
+  false 时关闭 owner settings，并跳过 `configure()`、`setup()` 与 IR emission；
 - `config.plugins` 中的 `false`、`null` 或 `undefined` 会省略整个插件，不执行任何插件
   hook。
 
 无论使用哪种可用工厂写法，必填 Application 参数都保持必填。
+可复用的类型安全组合应使用 `definePluginPreset(factory)`；裸嵌套数组和异步 preset
+结果会被拒绝。
 
 ## 选择合适的扩展点
 

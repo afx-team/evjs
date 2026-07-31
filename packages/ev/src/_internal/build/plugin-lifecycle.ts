@@ -4,11 +4,15 @@ import {
   resolveConfig,
   resolvePluginsConfig,
 } from "../../config/index.js";
+import { clonePluginPreset, isPluginPreset } from "../../config/plugins.js";
 import {
-  copyDefinedPluginRuntime,
+  copyDefinedPluginSnapshot,
   createPluginApplicationSettingContext,
-  hasSameDefinedPluginRuntime,
-  isDefinedPluginRuntimePropertyKey,
+  forkDefinedPluginPipeline,
+  getDefinedPluginDeclaration,
+  hasSameDefinedPluginPipeline,
+  isDefinedPluginOwnedPropertyKey,
+  isPluginActive,
   prepareDefinedPluginApplicationSetting,
 } from "../../plugin/defined.js";
 import { runPluginHook } from "../../plugin/errors.js";
@@ -17,6 +21,9 @@ import type {
   BeforeBuildContext,
   BuildResult,
   ConfigureBundlerContext,
+  FrameworkBundlerView,
+  FrameworkConfigView,
+  FrameworkPluginView,
   Plugin,
   PluginConfigureContext,
   PluginContext,
@@ -45,7 +52,6 @@ interface PluginOrderDeclaration {
   name: string;
   dependencies?: string[];
   optionalDependencies?: string[];
-  enforce?: "pre" | "normal" | "post";
 }
 
 export function orderPluginsByDependencies<
@@ -54,8 +60,9 @@ export function orderPluginsByDependencies<
   const pluginByName = new Map<string, TPlugin>();
   const dependentsByName = new Map<string, string[]>();
   const dependencyCountByName = new Map<string, number>();
+  const authoredIndexByName = new Map<string, number>();
 
-  for (const plugin of plugins) {
+  for (const [index, plugin] of plugins.entries()) {
     if (pluginByName.has(plugin.name)) {
       throw new Error(
         `[evjs] Duplicate plugin name "${plugin.name}". Plugin names must be unique.`,
@@ -64,6 +71,7 @@ export function orderPluginsByDependencies<
     pluginByName.set(plugin.name, plugin);
     dependentsByName.set(plugin.name, []);
     dependencyCountByName.set(plugin.name, 0);
+    authoredIndexByName.set(plugin.name, index);
   }
 
   function addDependency(
@@ -78,6 +86,15 @@ export function orderPluginsByDependencies<
         `[evjs] Plugin "${plugin.name}" depends on missing plugin "${dependencyName}".`,
       );
     }
+    if (!isPluginActive(dependency)) {
+      if (optional) return;
+      const reason =
+        getDefinedPluginDeclaration(dependency)?.inactiveReason ??
+        "its activation condition evaluated to false";
+      throw new Error(
+        `[evjs] Plugin "${plugin.name}" depends on inactive plugin "${dependencyName}": ${reason}.`,
+      );
+    }
     dependentsByName.get(dependencyName)?.push(plugin.name);
     dependencyCountByName.set(
       plugin.name,
@@ -86,6 +103,7 @@ export function orderPluginsByDependencies<
   }
 
   for (const plugin of plugins) {
+    if (!isPluginActive(plugin)) continue;
     for (const dependencyName of plugin.dependencies ?? []) {
       addDependency(plugin, dependencyName, false);
     }
@@ -94,9 +112,16 @@ export function orderPluginsByDependencies<
     }
   }
 
+  function compareAuthoredPluginOrder(left: TPlugin, right: TPlugin): number {
+    return (
+      (authoredIndexByName.get(left.name) ?? 0) -
+      (authoredIndexByName.get(right.name) ?? 0)
+    );
+  }
+
   const ready = plugins
     .filter((plugin) => dependencyCountByName.get(plugin.name) === 0)
-    .sort(comparePluginEnforce);
+    .sort(compareAuthoredPluginOrder);
   const ordered: TPlugin[] = [];
 
   while (ready.length > 0) {
@@ -112,7 +137,7 @@ export function orderPluginsByDependencies<
       const dependent = pluginByName.get(dependentName);
       if (dependent) {
         ready.push(dependent);
-        ready.sort(comparePluginEnforce);
+        ready.sort(compareAuthoredPluginOrder);
       }
     }
   }
@@ -147,10 +172,16 @@ function throwPluginDependencyCycle<TPlugin extends PluginOrderDeclaration>(
       seen.add(currentName);
       dependencyPath.push(currentName);
       const current = pluginByName.get(currentName);
+      if (!current || !isPluginActive(current)) break;
       const nextName = [
-        ...(current?.dependencies ?? []),
-        ...(current?.optionalDependencies ?? []),
-      ].find((name) => remaining.has(name));
+        ...(current.dependencies ?? []),
+        ...(current.optionalDependencies ?? []),
+      ].find((name) => {
+        const dependency = pluginByName.get(name);
+        return Boolean(
+          remaining.has(name) && dependency && isPluginActive(dependency),
+        );
+      });
       if (!nextName) break;
       currentName = nextName;
     }
@@ -167,19 +198,6 @@ function throwPluginDependencyCycle<TPlugin extends PluginOrderDeclaration>(
   throw new Error(
     `[evjs] Circular plugin dependency detected among: ${remainingNames.join(", ")}.`,
   );
-}
-
-function comparePluginEnforce(
-  left: PluginOrderDeclaration,
-  right: PluginOrderDeclaration,
-): number {
-  return pluginEnforceRank(left) - pluginEnforceRank(right);
-}
-
-function pluginEnforceRank(plugin: PluginOrderDeclaration): number {
-  if (plugin.enforce === "pre") return 0;
-  if (plugin.enforce === "post") return 2;
-  return 1;
 }
 
 export async function collectPluginHooks<TBundlerCfg>(
@@ -482,7 +500,7 @@ export async function runConfigureHooks<TBundlerCfg>(
   userConfig: Config<TBundlerCfg> | undefined,
   ctx: PluginConfigureContext,
 ): Promise<Config<TBundlerCfg> | undefined> {
-  let config = cloneConfigureHookInput(userConfig);
+  let config = cloneConfigureHookInput(userConfig, true);
   // Reject invalid author config before any plugin can be blamed for it.
   resolveConfig(config);
   const configuredPlugins = resolvePluginsConfig<TBundlerCfg>(config?.plugins);
@@ -506,9 +524,10 @@ export async function runConfigureHooks<TBundlerCfg>(
           ),
         );
       }
+      const nextPlugins = resolvePluginsConfig<TBundlerCfg>(config?.plugins);
       assertConfigurePluginListUnchanged(
         configuredPlugins,
-        resolvePluginsConfig<TBundlerCfg>(config?.plugins),
+        nextPlugins,
         plugin.name,
       );
       resolveConfig(config);
@@ -543,7 +562,6 @@ function hasSameConfiguredPlugin<TBundlerCfg>(
   return (
     left.name === right.name &&
     (left as { key?: string }).key === (right as { key?: string }).key &&
-    left.enforce === right.enforce &&
     haveSameStringArray(left.dependencies, right.dependencies) &&
     haveSameStringArray(
       left.optionalDependencies,
@@ -552,7 +570,7 @@ function hasSameConfiguredPlugin<TBundlerCfg>(
     left.configure === right.configure &&
     left.setup === right.setup &&
     left.emitIR === right.emitIR &&
-    hasSameDefinedPluginRuntime(left, right)
+    hasSameDefinedPluginPipeline(left, right)
   );
 }
 
@@ -571,21 +589,30 @@ function haveSameStringArray(
 
 function cloneConfigureHookInput<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
+  forkPluginPipelineState = false,
 ): Config<TBundlerCfg> | undefined {
-  return cloneConfigureHookValue(config, new WeakMap()) as
-    | Config<TBundlerCfg>
-    | undefined;
+  return cloneConfigureHookValue(
+    config,
+    new WeakMap(),
+    forkPluginPipelineState,
+  ) as Config<TBundlerCfg> | undefined;
 }
 
 function cloneConfigureHookValue(
   value: unknown,
   seen: WeakMap<object, object>,
+  forkPluginPipelineState: boolean,
 ): unknown {
   if (!value || typeof value !== "object") return value;
-  if (!Array.isArray(value) && !isPlainObject(value)) return value;
-
   const existing = seen.get(value);
   if (existing) return existing;
+  if (isPluginPreset(value)) {
+    return clonePluginPreset(value, (entries, clone) => {
+      seen.set(value, clone);
+      return cloneConfigureHookValue(entries, seen, forkPluginPipelineState);
+    });
+  }
+  if (!Array.isArray(value) && !isPlainObject(value)) return value;
   let clone: object;
   if (Array.isArray(value)) {
     const arrayClone: unknown[] = [];
@@ -599,7 +626,7 @@ function cloneConfigureHookValue(
   for (const key of Reflect.ownKeys(value)) {
     if (
       (Array.isArray(value) && key === "length") ||
-      isDefinedPluginRuntimePropertyKey(key)
+      isDefinedPluginOwnedPropertyKey(value, key)
     ) {
       continue;
     }
@@ -612,37 +639,116 @@ function cloneConfigureHookValue(
         ? {
             configurable: true,
             enumerable: descriptor.enumerable,
-            value: cloneConfigureHookValue(descriptor.value, seen),
+            value: cloneConfigureHookValue(
+              descriptor.value,
+              seen,
+              forkPluginPipelineState,
+            ),
             writable: true,
           }
         : descriptor,
     );
   }
-  copyDefinedPluginRuntime(value, clone);
+  if (forkPluginPipelineState) {
+    forkDefinedPluginPipeline(value, clone);
+  } else {
+    copyDefinedPluginSnapshot(value, clone);
+  }
   return clone;
 }
 
 /**
- * Give plugin hooks a detached, deeply frozen view of resolved framework
- * config. The hidden defined-plugin runtime is intentionally omitted so a
- * JavaScript plugin cannot mutate framework-owned Application setting state.
+ * Give plugin hooks a detached, deeply frozen metadata view of resolved
+ * framework config. Plugin and bundler implementation capabilities are
+ * intentionally omitted.
  */
 export function createPluginConfigSnapshot<TBundlerCfg>(
   config: PluginContext<TBundlerCfg>["config"],
-): PluginContext<TBundlerCfg>["config"] {
+): FrameworkConfigView<TBundlerCfg> {
   if (!config || typeof config !== "object") return config;
   const cached = pluginConfigSnapshots.get(config);
   if (cached) {
-    return cached as PluginContext<TBundlerCfg>["config"];
+    return cached as FrameworkConfigView<TBundlerCfg>;
   }
-  const snapshot = clonePluginConfigSnapshotValue(
-    config,
-    new WeakMap(),
-  ) as PluginContext<TBundlerCfg>["config"];
+  const snapshot = projectPluginConfigSnapshot(config, new WeakMap());
   freezePluginConfigSnapshotValue(snapshot, new WeakSet());
   pluginConfigSnapshots.set(config, snapshot);
   pluginConfigSnapshots.set(snapshot, snapshot);
   return snapshot;
+}
+
+function projectPluginConfigSnapshot<TBundlerCfg>(
+  config: PluginContext<TBundlerCfg>["config"],
+  seen: WeakMap<object, object>,
+): FrameworkConfigView<TBundlerCfg> {
+  const snapshot = Object.create(
+    Object.getPrototypeOf(config),
+  ) as FrameworkConfigView<TBundlerCfg>;
+  seen.set(config, snapshot);
+
+  for (const key of Reflect.ownKeys(config)) {
+    const descriptor = Object.getOwnPropertyDescriptor(config, key);
+    if (!descriptor) continue;
+
+    let propertyValue: unknown;
+    if (key === "plugins") {
+      propertyValue = config.plugins.map(projectFrameworkPluginView);
+    } else if (key === "bundler") {
+      propertyValue = config.bundler
+        ? projectFrameworkBundlerView(config.bundler)
+        : undefined;
+    } else {
+      propertyValue =
+        "value" in descriptor ? descriptor.value : Reflect.get(config, key);
+      propertyValue = clonePluginConfigSnapshotValue(propertyValue, seen);
+    }
+
+    Object.defineProperty(snapshot, key, {
+      configurable: true,
+      enumerable: descriptor.enumerable,
+      value: propertyValue,
+      writable: true,
+    });
+  }
+  return snapshot;
+}
+
+function projectFrameworkPluginView(
+  plugin: FrameworkPluginView,
+): FrameworkPluginView {
+  const declaration = getDefinedPluginDeclaration(plugin);
+  const key = declaration?.key ?? plugin.key;
+  return {
+    name: plugin.name,
+    ...(key === undefined ? {} : { key }),
+    active: declaration?.active ?? plugin.active,
+    ...(declaration?.inactiveReason
+      ? { inactiveReason: declaration.inactiveReason }
+      : {}),
+  };
+}
+
+function projectFrameworkBundlerView(
+  bundler: FrameworkBundlerView,
+): FrameworkBundlerView {
+  return {
+    name: bundler.name,
+    capabilities: {
+      build: {
+        server: bundler.capabilities.build.server,
+        rsc: bundler.capabilities.build.rsc,
+        ppr: bundler.capabilities.build.ppr,
+      },
+      dev: {
+        configuration: bundler.capabilities.dev.configuration,
+        html: bundler.capabilities.dev.html,
+        entries: bundler.capabilities.dev.entries,
+        routes: bundler.capabilities.dev.routes,
+        server: bundler.capabilities.dev.server,
+        resolution: bundler.capabilities.dev.resolution,
+      },
+    },
+  };
 }
 
 function clonePluginConfigSnapshotValue(
@@ -662,7 +768,7 @@ function clonePluginConfigSnapshotValue(
   for (const key of Reflect.ownKeys(value)) {
     if (
       (Array.isArray(value) && key === "length") ||
-      isDefinedPluginRuntimePropertyKey(key)
+      isDefinedPluginOwnedPropertyKey(value, key)
     ) {
       continue;
     }

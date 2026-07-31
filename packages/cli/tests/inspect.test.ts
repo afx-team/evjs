@@ -437,9 +437,24 @@ describe("inspect", () => {
       "index.html": '<div id="app"></div>',
       "src/main.tsx": "console.log('app');",
     });
+    const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       name: "inspect-contribution",
+      configure(config) {
+        events.push("configure");
+        return config;
+      },
+      setup() {
+        events.push("setup");
+        return {
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
       emitIR(ctx) {
+        events.push("emitIR");
+        ctx.addWatchFile("./inspect-input.json");
         const module = ctx.emit.module({
           id: "entry",
           scope: { kind: "application" },
@@ -477,6 +492,23 @@ describe("inspect", () => {
         }),
       ]),
     );
+    expect(result.pluginWatchFiles).toEqual([
+      path.join(cwd, "inspect-input.json"),
+    ]);
+    expect(result.plugins).toEqual([
+      {
+        order: 0,
+        name: "inspect-contribution",
+        active: true,
+        dependencies: [],
+        optionalDependencies: [],
+        declaredStages: ["configure", "setup", "emitIR"],
+      },
+    ]);
+    expect(formatInspectText(result)).toContain(
+      "inspect-contribution: order=0, active, declares=configure,setup,emitIR",
+    );
+    expect(events).toEqual(["configure", "emitIR"]);
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 

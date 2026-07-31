@@ -176,9 +176,13 @@ sync. A plugin with Application or Page options declares one short `key`.
 CoreGraph uses that same key for its Application and Page setting entries.
 Conditional entries may use `false`, `null`, or `undefined`; inactive entries
 are omitted at runtime. Because they are not guaranteed to install, entries
-with a possible falsy branch do not expose keys to Page config. When the Page
-contract has defaults, use `plugin.withPageOptIn(config)` to keep the plugin
-and its Application options active while every Page opts in explicitly.
+with a possible falsy branch do not expose keys to Page config. Use
+`plugin(config).when(condition, reason?)` instead when the contract and
+generated Page key must remain installed while execution is disabled. Reusable
+typed groups use `definePluginPreset(factory)`; raw nested plugin arrays are
+invalid. When the Page contract has defaults, use
+`plugin.withPageOptIn(config)` to keep the plugin and its Application options
+active while every Page opts in explicitly.
 
 Application configuration may contain typed executable options or explicit
 module references when the plugin contract allows them. Do not put secrets in
@@ -243,6 +247,9 @@ config does not widen the Page registry to `any`; use `ev.config.ts` when Page
 plugin completion is required. Framework commands create the bridge before
 Page graph analysis, and it stays under `src` because ordinary application
 tsconfigs include `src` while excluding generated `.ev` IR.
+Statically known `definePluginPreset()` tuples and `.when()` instances keep
+their keys; conditional falsy entries, conditional preset branches, and
+widened arrays do not claim keys they cannot guarantee.
 
 Application and Page configuration are independent plugin contracts. evjs
 does not merge the object passed to the Application factory into a Page value.

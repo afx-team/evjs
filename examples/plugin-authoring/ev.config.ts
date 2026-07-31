@@ -1,6 +1,10 @@
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { defineConfig } from "@evjs/ev";
-import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
+import {
+  definePlugin,
+  definePluginPreset,
+  pluginOptions,
+} from "@evjs/ev/plugin";
 
 type ApplicationMetadata = {
   channel: string;
@@ -84,6 +88,14 @@ const txtPlugin = definePlugin({
   },
 });
 
+const examplePlugins = definePluginPreset((metadata: ApplicationMetadata) => [
+  metadataPlugin(metadata).when(
+    process.env.EXAMPLE_METADATA !== "off",
+    "EXAMPLE_METADATA is set to off",
+  ),
+  txtPlugin(),
+]);
+
 /**
  * Example: evjs plugin system.
  *
@@ -96,5 +108,5 @@ const txtPlugin = definePlugin({
  */
 export default defineConfig({
   routing: { mode: "spa" },
-  plugins: [metadataPlugin({ channel: "web" }), txtPlugin()],
+  plugins: [examplePlugins({ channel: "web" })],
 });

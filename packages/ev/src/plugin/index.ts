@@ -37,6 +37,12 @@ import type {
   DefaultBundlerConfig,
   ResolvedFrameworkConfig,
 } from "../config/index.js";
+import {
+  type PluginPreset as ConfigPluginPreset,
+  type PluginPresetEntry as ConfigPluginPresetEntry,
+  type PluginPresetFactory as ConfigPluginPresetFactory,
+  definePluginPreset as defineConfigPluginPreset,
+} from "../config/plugins.js";
 
 export type { StaticJsonValue } from "@evjs/shared/_internal/static-json";
 export type {
@@ -73,6 +79,30 @@ export {
   PluginHookError,
   type PluginHookName,
 } from "./errors.js";
+
+/** An entry accepted from a plugin preset factory. */
+export type PluginPresetEntry = ConfigPluginPresetEntry;
+
+/** An opaque tuple of plugin entries created by definePluginPreset(). */
+export type PluginPreset<
+  TEntries extends readonly unknown[] = readonly unknown[],
+> = ConfigPluginPreset<TEntries>;
+
+/** A preset factory preserving its original arguments and exact plugin tuple. */
+export type PluginPresetFactory<
+  TArguments extends readonly unknown[],
+  TEntries extends readonly PluginPresetEntry[],
+> = ConfigPluginPresetFactory<TArguments, TEntries>;
+
+/** Define a reusable synchronous plugin composition with exact tuple types. */
+export function definePluginPreset<
+  const TArguments extends readonly unknown[],
+  const TEntries extends readonly PluginPresetEntry[],
+>(
+  factory: (...args: TArguments) => TEntries,
+): PluginPresetFactory<TArguments, TEntries> {
+  return defineConfigPluginPreset(factory);
+}
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -168,7 +198,7 @@ export interface ConfigureBundlerContext<TBundlerCfg = DefaultBundlerConfig> {
   /** The current working directory. */
   readonly cwd: string;
   /** The fully resolved, read-only framework config. */
-  readonly config: ReadonlyFrameworkConfig<TBundlerCfg>;
+  readonly config: FrameworkConfigView<TBundlerCfg>;
   /** The current command. */
   readonly command: "dev" | "build";
   /** Selected bundler adapter name. */
@@ -223,18 +253,42 @@ type DeepReadonly<T> = T extends AnyFunction
       ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
       : T;
 
-type ReadonlyPlugin<TBundlerCfg> = Readonly<
-  Omit<Plugin<TBundlerCfg>, "dependencies" | "optionalDependencies">
-> & {
-  readonly dependencies?: readonly string[];
-  readonly optionalDependencies?: readonly string[];
-};
+/** Installed-plugin metadata visible to public plugin contexts. */
+export interface FrameworkPluginView {
+  /** Stable plugin identity. */
+  readonly name: string;
+  /** Short Application/Page options key when the plugin declares one. */
+  readonly key?: string;
+  /** Whether this installed plugin participates in the current snapshot. */
+  readonly active: boolean;
+  /** Why a defined plugin was kept installed but made inactive. */
+  readonly inactiveReason?: string;
+}
 
-type ReadonlyFrameworkConfig<TBundlerCfg> = DeepReadonly<
-  Omit<ResolvedFrameworkConfig<TBundlerCfg>, "plugins">
-> & {
-  readonly plugins: readonly ReadonlyPlugin<TBundlerCfg>[];
-};
+/** Selected-bundler metadata visible to public plugin contexts. */
+export interface FrameworkBundlerView {
+  /** Human-readable adapter name. */
+  readonly name: string;
+  /** Stable framework capabilities advertised by the adapter. */
+  readonly capabilities: DeepReadonly<
+    NonNullable<ResolvedFrameworkConfig["bundler"]>["capabilities"]
+  >;
+}
+
+/**
+ * Framework metadata exposed through public plugin contexts.
+ *
+ * Executable plugin and bundler implementation methods are intentionally
+ * projected out. Hooks receive supported operations from phase-specific
+ * context fields instead.
+ */
+export type FrameworkConfigView<TBundlerCfg = DefaultBundlerConfig> =
+  DeepReadonly<
+    Omit<ResolvedFrameworkConfig<TBundlerCfg>, "bundler" | "plugins">
+  > & {
+    readonly bundler?: FrameworkBundlerView;
+    readonly plugins: readonly FrameworkPluginView[];
+  };
 
 type PluginConfigureHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
@@ -306,13 +360,6 @@ export interface Plugin<TBundlerCfg = unknown> {
    * hook deterministic and free of external side effects.
    */
   emitIR?: PluginEmitIRHook<TBundlerCfg>;
-
-  /**
-   * Relative ordering tier for plugins without an explicit dependency edge.
-   *
-   * Dependencies still win over enforce ordering.
-   */
-  enforce?: "pre" | "normal" | "post";
 }
 
 interface PluginBaseContext<TBundlerCfg = DefaultBundlerConfig> {
@@ -321,7 +368,7 @@ interface PluginBaseContext<TBundlerCfg = DefaultBundlerConfig> {
   /** The current working directory. */
   readonly cwd: string;
   /** The fully resolved, read-only framework config. */
-  readonly config: ReadonlyFrameworkConfig<TBundlerCfg>;
+  readonly config: FrameworkConfigView<TBundlerCfg>;
   /** Extra CLI flags made available to plugins. */
   readonly flags?: DeepReadonly<CliFlags>;
   /** Current command. */
@@ -796,9 +843,10 @@ export interface PluginHooks<TBundlerCfg = unknown> {
   afterBuild?: (result: BuildResult) => void | Promise<void>;
 
   /**
-   * Tear down this plugin snapshot after a one-shot build or prepare completes,
+   * Tear down this activated plugin snapshot after a one-shot build completes,
    * when dev stops, or when config reload replaces or rolls back the snapshot.
-   * This hook does not run after each development rebuild.
+   * Non-activating prepare/inspect commands and ordinary dev rebuilds do not
+   * call this hook.
    */
   dispose?: DisposeHook<TBundlerCfg>;
 }

@@ -542,6 +542,227 @@ describe("plugin type output", () => {
     ).resolves.toMatchObject({ stderr: "" });
   });
 
+  it("type-checks recursive presets without leaking conditional or widened keys", async () => {
+    const cwd = await createTempDir();
+    const packageRoot = path.resolve(import.meta.dirname, "..");
+    await writeFixtureFiles(cwd, {
+      "ev.config.ts": `
+        import { defineConfig } from "@evjs/ev";
+        import {
+          definePlugin,
+          definePluginPreset,
+          pluginOptions,
+        } from "@evjs/ev/plugin";
+
+        declare const dynamic: boolean;
+        const analytics = definePlugin({
+          name: "@test/analytics",
+          key: "analytics",
+          page: pluginOptions({ defaults: {} }),
+        });
+        const access = definePlugin({
+          name: "@test/access",
+          key: "access",
+          page: pluginOptions({ defaults: {} }),
+        });
+        const whenEnabled = definePlugin({
+          name: "@test/when-enabled",
+          key: "when-enabled",
+          page: pluginOptions({ defaults: {} }),
+        });
+        const dynamicAnd = definePlugin({
+          name: "@test/dynamic-and",
+          key: "dynamic-and",
+          page: pluginOptions({ defaults: {} }),
+        });
+        const branchA = definePlugin({
+          name: "@test/branch-a",
+          key: "branch-a",
+          page: pluginOptions({ defaults: {} }),
+        });
+        const branchB = definePlugin({
+          name: "@test/branch-b",
+          key: "branch-b",
+          page: pluginOptions({ defaults: {} }),
+        });
+        const widenedEntry = definePlugin({
+          name: "@test/widened-entry",
+          key: "widened-entry",
+          page: pluginOptions({ defaults: {} }),
+        });
+
+        const accessPreset = definePluginPreset(
+          () => [access()] as const,
+        );
+        const applicationPreset = definePluginPreset((channel: string) => {
+          void channel;
+          return [analytics(), accessPreset(), false] as const;
+        });
+        const branchAPreset = definePluginPreset(
+          () => [branchA()] as const,
+        );
+        const branchBPreset = definePluginPreset(
+          () => [branchB()] as const,
+        );
+        const conditionalPreset = definePluginPreset(
+          () => [dynamic ? branchAPreset() : branchBPreset()] as const,
+        );
+        const widenedPreset = definePluginPreset(
+          (): readonly ReturnType<typeof widenedEntry>[] => [widenedEntry()],
+        );
+
+        const assertPresetArguments = () => {
+          // @ts-expect-error The preset keeps its factory parameter types.
+          applicationPreset(123);
+        };
+        void assertPresetArguments;
+
+        export default defineConfig({
+          plugins: [
+            applicationPreset("checkout"),
+            whenEnabled().when(dynamic),
+            dynamic && dynamicAnd(),
+            conditionalPreset(),
+            widenedPreset(),
+          ],
+        });
+      `,
+      "src/page.config.ts": `
+        import { definePageConfig } from "@evjs/ev";
+
+        definePageConfig({
+          plugins: {
+            analytics: true,
+            access: true,
+            "when-enabled": true,
+          },
+        });
+        definePageConfig({
+          plugins: {
+            // @ts-expect-error A conditionally omitted plugin is not guaranteed.
+            "dynamic-and": true,
+          },
+        });
+        definePageConfig({
+          plugins: {
+            // @ts-expect-error Neither conditional preset branch is guaranteed.
+            "branch-a": true,
+          },
+        });
+        definePageConfig({
+          plugins: {
+            // @ts-expect-error Neither conditional preset branch is guaranteed.
+            "branch-b": true,
+          },
+        });
+        definePageConfig({
+          plugins: {
+            // @ts-expect-error A widened preset tuple may be empty.
+            "widened-entry": true,
+          },
+        });
+      `,
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          ignoreDeprecations: "6.0",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          noEmit: true,
+          paths: {
+            "@evjs/ev": [path.join(packageRoot, "src/index.ts")],
+            "@evjs/ev/config": [path.join(packageRoot, "src/config/index.ts")],
+            "@evjs/ev/plugin": [path.join(packageRoot, "src/plugin/index.ts")],
+          },
+          skipLibCheck: true,
+          strict: true,
+          target: "ESNext",
+          typeRoots: [path.resolve(packageRoot, "../../node_modules/@types")],
+          types: ["node"],
+        },
+        include: ["ev.config.ts", "src"],
+      }),
+    });
+    await syncPluginTypes({ cwd });
+
+    const tsc = require.resolve("typescript/bin/tsc");
+    await expect(
+      execFileAsync(process.execPath, [tsc, "--project", "tsconfig.json"], {
+        cwd,
+      }),
+    ).resolves.toMatchObject({ stderr: "" });
+  });
+
+  it("emits declarations for exported plugin preset factories", async () => {
+    const cwd = await createTempDir();
+    const packageRoot = path.resolve(import.meta.dirname, "..");
+    await writeFixtureFiles(cwd, {
+      "preset.ts": `
+        import {
+          definePlugin,
+          definePluginPreset,
+          pluginOptions,
+        } from "@evjs/ev/plugin";
+
+        export interface PresetOptions {
+          endpoint: string;
+        }
+
+        const analytics = definePlugin({
+          name: "@test/analytics",
+          key: "analytics",
+          application: pluginOptions<PresetOptions>(),
+        });
+
+        export const observability = definePluginPreset(
+          (options: PresetOptions) => [analytics(options)] as const,
+        );
+      `,
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          declaration: true,
+          emitDeclarationOnly: true,
+          ignoreDeprecations: "6.0",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          outDir: "dist",
+          paths: {
+            "@evjs/ev/config": [path.join(packageRoot, "src/config/index.ts")],
+            "@evjs/ev/plugin": [path.join(packageRoot, "src/plugin/index.ts")],
+          },
+          rootDir: path.parse(packageRoot).root,
+          skipLibCheck: true,
+          strict: true,
+          target: "ESNext",
+          typeRoots: [path.resolve(packageRoot, "../../node_modules/@types")],
+          types: ["node"],
+        },
+        include: ["preset.ts"],
+      }),
+    });
+
+    const tsc = require.resolve("typescript/bin/tsc");
+    await expect(
+      execFileAsync(process.execPath, [tsc, "--project", "tsconfig.json"], {
+        cwd,
+      }),
+    ).resolves.toMatchObject({ stderr: "" });
+
+    const realCwd = await fs.realpath(cwd);
+    const declarationPath = path.join(
+      cwd,
+      "dist",
+      path.relative(path.parse(realCwd).root, realCwd),
+      "preset.d.ts",
+    );
+    const declaration = await fs.readFile(declarationPath, "utf-8");
+    expect(declaration).toContain("@evjs/ev/plugin");
+    expect(declaration).not.toContain(packageRoot);
+    expect(declaration).not.toContain("config/plugins");
+    expect(declaration).not.toContain("plugin/defined");
+  });
+
   it("keeps JavaScript configs from widening the Page registry to any", async () => {
     const cwd = await createTempDir();
     await writeFixtureFiles(cwd, {

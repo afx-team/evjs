@@ -455,7 +455,6 @@ export type DefinedPluginDescriptor<
   readonly name: TName;
   readonly dependencies?: readonly string[];
   readonly optionalDependencies?: readonly string[];
-  readonly enforce?: "pre" | "normal" | "post";
   readonly configure?: DefinedPluginConfigureHook<TApplication, TBundlerCfg>;
   readonly setup?: DefinedPluginSetupHook<TApplication, TBundlerCfg>;
   /** Emit IR records shared by every enabled owner. */
@@ -489,6 +488,23 @@ export type DefinedPluginInstance<
   TBundlerCfg = unknown,
 > = Plugin<TBundlerCfg> & {
   readonly name: TName;
+  /**
+   * Keep the plugin installed for contracts and Page types while conditionally
+   * skipping its configuration, setup, and IR emission.
+   */
+  when(
+    active: boolean,
+    reason?: string,
+  ): DefinedPluginInstance<
+    TName,
+    TKey,
+    TApplicationInput,
+    TApplicationOutput,
+    TPageInput,
+    TPageOutput,
+    TPageDefaultable,
+    TBundlerCfg
+  >;
   readonly [definedPluginContract]: DefinedPluginTypeContract<
     TApplicationInput,
     TApplicationOutput,
@@ -540,23 +556,6 @@ type FactoryArgs<TContract> = TContract extends AnyPluginOptionsContract
     : [options: ContractInput<TContract> & object]
   : [];
 
-type DefinedPluginFactoryInstance<
-  TName extends string,
-  TKey extends string | undefined,
-  TApplication extends AnyPluginOptionsContract | undefined,
-  TPage extends AnyPluginOptionsContract | undefined,
-  TBundlerCfg = unknown,
-> = DefinedPluginInstance<
-  TName,
-  TKey,
-  ContractInput<TApplication>,
-  ContractOutput<TApplication>,
-  ContractInput<TPage>,
-  ContractOutput<TPage>,
-  ContractDefaultable<TPage>,
-  TBundlerCfg
->;
-
 export type DefinedPluginFactory<
   TName extends string,
   TKey extends string | undefined,
@@ -565,11 +564,14 @@ export type DefinedPluginFactory<
   TBundlerCfg = unknown,
 > = ((
   ...args: FactoryArgs<TApplication>
-) => DefinedPluginFactoryInstance<
+) => DefinedPluginInstance<
   TName,
   TKey,
-  TApplication,
-  TPage,
+  ContractInput<TApplication>,
+  ContractOutput<TApplication>,
+  ContractInput<TPage>,
+  ContractOutput<TPage>,
+  ContractDefaultable<TPage>,
   TBundlerCfg
 >) &
   (TPage extends AnyPluginOptionsContract
@@ -578,11 +580,14 @@ export type DefinedPluginFactory<
           /** Install the plugin while requiring Pages to opt in explicitly. */
           withPageOptIn(
             ...args: FactoryArgs<TApplication>
-          ): DefinedPluginFactoryInstance<
+          ): DefinedPluginInstance<
             TName,
             TKey,
-            TApplication,
-            TPage,
+            ContractInput<TApplication>,
+            ContractOutput<TApplication>,
+            ContractInput<TPage>,
+            ContractOutput<TPage>,
+            ContractDefaultable<TPage>,
             TBundlerCfg
           >;
         }
@@ -601,15 +606,24 @@ interface DefinedPluginRuntime {
   readonly page?: AnyPluginOptionsContract;
   readonly applicationConfigured: unknown;
   readonly pagesByDefault: boolean;
-  applicationSetting?: RuntimePluginSetting;
-  applicationSettingPrepared: boolean;
+  readonly active: boolean;
+  readonly inactiveReason?: string;
+  readonly stages: readonly ("configure" | "setup" | "emitIR")[];
 }
 
-const DEFINED_PLUGIN_RUNTIME = Symbol.for("@evjs/ev/defined-plugin-runtime");
+/** One-assignment cell shared by every copy in one config pipeline. */
+interface DefinedPluginPipelineState {
+  applicationSetting?: RuntimePluginSetting;
+}
 
-type DefinedPluginRuntimeCarrier = object & {
-  readonly [DEFINED_PLUGIN_RUNTIME]?: DefinedPluginRuntime;
-};
+const DEFINED_PLUGIN_RUNTIME_REGISTRY = Symbol.for(
+  "@evjs/ev/defined-plugin-runtime-registry/v1",
+);
+const DEFINED_PLUGIN_PIPELINE_STATE_REGISTRY = Symbol.for(
+  "@evjs/ev/defined-plugin-pipeline-state-registry/v1",
+);
+const definedPluginRuntimes = getDefinedPluginRuntimeRegistry();
+const definedPluginPipelineStates = getDefinedPluginPipelineStateRegistry();
 
 /**
  * Define a bundler-agnostic typed plugin factory from one owner-aware
@@ -662,11 +676,18 @@ export function definePlugin<
   const create = (
     installMode: "all" | "pages",
     args: readonly unknown[],
-  ): DefinedPluginFactoryInstance<
+    activation: {
+      readonly active: boolean;
+      readonly reason?: string;
+    } = { active: true },
+  ): DefinedPluginInstance<
     TName,
     TKey,
-    TApplication,
-    TPage,
+    ContractInput<TApplication>,
+    ContractOutput<TApplication>,
+    ContractInput<TPage>,
+    ContractOutput<TPage>,
+    ContractDefaultable<TPage>,
     TBundlerCfg
   > => {
     const application = descriptor.application;
@@ -686,15 +707,30 @@ export function definePlugin<
       );
     }
 
-    const runtime: DefinedPluginRuntime = {
+    const runtime: DefinedPluginRuntime = Object.freeze({
       name: descriptor.name,
       ...(descriptor.key ? { key: descriptor.key } : {}),
       ...(application ? { application } : {}),
       ...(descriptor.page ? { page: descriptor.page } : {}),
       applicationConfigured: args[0],
       pagesByDefault: installMode === "all",
-      applicationSettingPrepared: false,
-    };
+      active: activation.active,
+      ...(!activation.active && activation.reason
+        ? { inactiveReason: activation.reason }
+        : {}),
+      stages: Object.freeze(
+        [
+          descriptor.configure ? ("configure" as const) : undefined,
+          descriptor.setup ? ("setup" as const) : undefined,
+          descriptor.emitIR || descriptor.emitPageIR
+            ? ("emitIR" as const)
+            : undefined,
+        ].filter(
+          (stage): stage is "configure" | "setup" | "emitIR" =>
+            stage !== undefined,
+        ),
+      ),
+    });
     const emitPageIR = descriptor.emitPageIR as
       | DefinedPluginEmitPageIRHook<TApplication, TPage, TBundlerCfg>
       | undefined;
@@ -707,33 +743,35 @@ export function definePlugin<
       ...(descriptor.optionalDependencies
         ? { optionalDependencies: [...descriptor.optionalDependencies] }
         : {}),
-      ...(descriptor.enforce ? { enforce: descriptor.enforce } : {}),
-      ...(descriptor.configure
+      ...(activation.active && descriptor.configure
         ? {
-            configure: (config, context) =>
-              descriptor.configure?.(config, {
+            configure: function (this: Plugin<TBundlerCfg>, config, context) {
+              return descriptor.configure?.(config, {
                 ...context,
                 options: resolveConfigureHookApplicationSetting(
-                  runtime,
+                  this,
                   createPluginApplicationSettingContext(config),
                 ).config as ResolvedContractOptions<TApplication>,
-              }),
+              });
+            },
           }
         : {}),
-      ...(descriptor.setup
+      ...(activation.active && descriptor.setup
         ? {
-            setup: (context) =>
-              descriptor.setup?.({
+            setup: function (this: Plugin<TBundlerCfg>, context) {
+              return descriptor.setup?.({
                 ...context,
-                options: getRuntimeApplicationSetting(runtime)
+                options: getRuntimeApplicationSetting(this)
                   .config as ResolvedContractOptions<TApplication>,
-              }),
+              });
+            },
           }
         : {}),
-      ...(descriptor.emitIR || emitPageIR
+      ...(activation.active && (descriptor.emitIR || emitPageIR)
         ? {
-            emitIR: async (context) => {
-              const options = getRuntimeApplicationSetting(runtime)
+            emitIR: async function (this: Plugin<TBundlerCfg>, context) {
+              const runtime = requireDefinedPluginRuntime(this);
+              const options = getRuntimeApplicationSetting(this)
                 .config as ResolvedContractOptions<TApplication>;
               const pages = readPageOptions(
                 context,
@@ -765,11 +803,40 @@ export function definePlugin<
         : {}),
     };
     attachDefinedPluginRuntime(plugin, runtime);
-    return plugin as DefinedPluginFactoryInstance<
+    Object.defineProperty(plugin, "when", {
+      configurable: false,
+      enumerable: false,
+      value: (active: boolean, reason?: string) => {
+        if (typeof active !== "boolean") {
+          throw new Error(
+            `[evjs] Plugin "${descriptor.name}" when() expects a boolean condition.`,
+          );
+        }
+        if (
+          reason !== undefined &&
+          (typeof reason !== "string" ||
+            reason.length === 0 ||
+            reason !== reason.trim())
+        ) {
+          throw new Error(
+            `[evjs] Plugin "${descriptor.name}" when() reason must be a non-empty string without surrounding whitespace.`,
+          );
+        }
+        return create(installMode, args, {
+          active,
+          ...(!active && reason ? { reason } : {}),
+        });
+      },
+      writable: false,
+    });
+    return plugin as DefinedPluginInstance<
       TName,
       TKey,
-      TApplication,
-      TPage,
+      ContractInput<TApplication>,
+      ContractOutput<TApplication>,
+      ContractInput<TPage>,
+      ContractOutput<TPage>,
+      ContractDefaultable<TPage>,
       TBundlerCfg
     >;
   };
@@ -796,6 +863,9 @@ export function definePlugin<
 export interface DefinedPluginDeclaration {
   readonly name: string;
   readonly key?: string;
+  readonly active: boolean;
+  readonly inactiveReason?: string;
+  readonly stages: readonly ("configure" | "setup" | "emitIR")[];
   readonly application?: {
     readonly schemaVersion?: string;
     readonly defaultable: boolean;
@@ -814,6 +884,11 @@ export function getDefinedPluginDeclaration(
   return {
     name: runtime.name,
     ...(runtime.key ? { key: runtime.key } : {}),
+    active: runtime.active,
+    ...(runtime.inactiveReason
+      ? { inactiveReason: runtime.inactiveReason }
+      : {}),
+    stages: runtime.stages,
     ...(runtime.application
       ? {
           application: {
@@ -837,93 +912,150 @@ export function getDefinedPluginDeclaration(
   };
 }
 
-export function copyDefinedPluginRuntime(source: object, target: object): void {
+/** @internal Preserve one defined-plugin pipeline across an object clone. */
+export function copyDefinedPluginSnapshot(
+  source: object,
+  target: object,
+): void {
   const runtime = getDefinedPluginRuntime(source);
   if (runtime) attachDefinedPluginRuntime(target, runtime);
+  const pipelineState = definedPluginPipelineStates.get(source);
+  if (pipelineState) {
+    definedPluginPipelineStates.set(target, pipelineState);
+  }
 }
 
-/** @internal Compare the hidden factory contract carried by resolved copies. */
-export function hasSameDefinedPluginRuntime(
+/**
+ * Copy one factory declaration into a fresh config pipeline without carrying
+ * a previously resolved Application snapshot across the pipeline boundary.
+ */
+export function forkDefinedPluginPipeline(
+  source: object,
+  target: object,
+): void {
+  const runtime = getDefinedPluginRuntime(source);
+  if (!runtime) return;
+  attachDefinedPluginRuntime(target, runtime);
+  definedPluginPipelineStates.set(target, {});
+}
+
+/** Whether an installed plugin participates in this configuration snapshot. */
+export function isPluginActive(plugin: object): boolean {
+  return getDefinedPluginRuntime(plugin)?.active ?? true;
+}
+
+/** @internal Compare declaration and pipeline identity across resolved copies. */
+export function hasSameDefinedPluginPipeline(
   left: object,
   right: object,
 ): boolean {
-  return getDefinedPluginRuntime(left) === getDefinedPluginRuntime(right);
+  const runtime = getDefinedPluginRuntime(left);
+  return (
+    runtime === getDefinedPluginRuntime(right) &&
+    (runtime === undefined ||
+      definedPluginPipelineStates.get(left) ===
+        definedPluginPipelineStates.get(right))
+  );
 }
 
-/** @internal Snapshot the mutable Application cache shared by resolved plugin copies. */
-export function createDefinedPluginApplicationSettingSnapshot(
-  plugins: readonly object[],
-): { commit(): void; restore(): void } {
-  const snapshots = new Map<
-    DefinedPluginRuntime,
-    {
-      readonly setting: RuntimePluginSetting | undefined;
-      readonly prepared: boolean;
-    }
-  >();
-  for (const plugin of plugins) {
-    const runtime = getDefinedPluginRuntime(plugin);
-    if (!runtime || snapshots.has(runtime)) continue;
-    snapshots.set(runtime, {
-      setting: runtime.applicationSetting,
-      prepared: runtime.applicationSettingPrepared,
-    });
-  }
-
-  let settled = false;
-  return Object.freeze({
-    commit() {
-      settled = true;
-    },
-    restore() {
-      if (settled) return;
-      settled = true;
-      for (const [runtime, snapshot] of snapshots) {
-        runtime.applicationSetting = snapshot.setting;
-        runtime.applicationSettingPrepared = snapshot.prepared;
-      }
-    },
-  });
-}
-
-/** @internal Allow config isolation to preserve only the framework runtime marker. */
-export function isDefinedPluginRuntimePropertyKey(key: PropertyKey): boolean {
-  return key === DEFINED_PLUGIN_RUNTIME;
+/** @internal Identify factory-owned fields omitted from resolved config copies. */
+export function isDefinedPluginOwnedPropertyKey(
+  plugin: object,
+  key: PropertyKey,
+): boolean {
+  return getDefinedPluginRuntime(plugin) !== undefined && key === "when";
 }
 
 function getDefinedPluginRuntime(
   plugin: object,
 ): DefinedPluginRuntime | undefined {
-  return (plugin as DefinedPluginRuntimeCarrier)[DEFINED_PLUGIN_RUNTIME];
+  return definedPluginRuntimes.get(plugin);
+}
+
+function requireDefinedPluginRuntime(plugin: object): DefinedPluginRuntime {
+  const runtime = getDefinedPluginRuntime(plugin);
+  if (!runtime) {
+    throw new Error(
+      "[evjs] A definePlugin() lifecycle hook must be invoked with its plugin instance as the receiver.",
+    );
+  }
+  return runtime;
+}
+
+function getOrCreateDefinedPluginPipelineState(
+  plugin: object,
+): DefinedPluginPipelineState {
+  const existing = definedPluginPipelineStates.get(plugin);
+  if (existing) return existing;
+  const state: DefinedPluginPipelineState = {};
+  definedPluginPipelineStates.set(plugin, state);
+  return state;
 }
 
 function attachDefinedPluginRuntime(
   plugin: object,
   runtime: DefinedPluginRuntime,
 ): void {
-  Object.defineProperty(plugin, DEFINED_PLUGIN_RUNTIME, {
+  definedPluginRuntimes.set(plugin, runtime);
+}
+
+function getDefinedPluginRuntimeRegistry(): WeakMap<
+  object,
+  DefinedPluginRuntime
+> {
+  const existing = Reflect.get(globalThis, DEFINED_PLUGIN_RUNTIME_REGISTRY);
+  if (existing !== undefined) {
+    if (existing instanceof WeakMap) {
+      return existing as WeakMap<object, DefinedPluginRuntime>;
+    }
+    throw new Error("[evjs] The global defined-plugin registry is invalid.");
+  }
+
+  const registry = new WeakMap<object, DefinedPluginRuntime>();
+  Object.defineProperty(globalThis, DEFINED_PLUGIN_RUNTIME_REGISTRY, {
     configurable: false,
     enumerable: false,
-    value: runtime,
+    value: registry,
     writable: false,
   });
+  return registry;
+}
+
+function getDefinedPluginPipelineStateRegistry(): WeakMap<
+  object,
+  DefinedPluginPipelineState
+> {
+  const existing = Reflect.get(
+    globalThis,
+    DEFINED_PLUGIN_PIPELINE_STATE_REGISTRY,
+  );
+  if (existing !== undefined) {
+    if (existing instanceof WeakMap) {
+      return existing as WeakMap<object, DefinedPluginPipelineState>;
+    }
+    throw new Error(
+      "[evjs] The global defined-plugin pipeline state registry is invalid.",
+    );
+  }
+
+  const registry = new WeakMap<object, DefinedPluginPipelineState>();
+  Object.defineProperty(globalThis, DEFINED_PLUGIN_PIPELINE_STATE_REGISTRY, {
+    configurable: false,
+    enumerable: false,
+    value: registry,
+    writable: false,
+  });
+  return registry;
 }
 
 export function resolveDefinedPluginApplicationSetting(
   plugin: object,
   context: PluginOptionsContext,
-  options: { readonly reusePrepared?: boolean } = {},
 ): RuntimePluginSetting | undefined {
   const runtime = getDefinedPluginRuntime(plugin);
   if (!runtime) return undefined;
-  if (
-    options.reusePrepared === true &&
-    runtime.applicationSettingPrepared === true &&
-    runtime.applicationSetting
-  ) {
-    return runtime.applicationSetting;
-  }
-  return resolveRuntimeApplicationSetting(runtime, context);
+  const pipelineState = getOrCreateDefinedPluginPipelineState(plugin);
+  return resolveRuntimeApplicationSetting(runtime, pipelineState, context);
 }
 
 /** @internal Resolve one build-scoped Application snapshot before configure hooks. */
@@ -933,28 +1065,33 @@ export function prepareDefinedPluginApplicationSetting(
 ): void {
   const runtime = getDefinedPluginRuntime(plugin);
   if (!runtime) return;
-  resolveRuntimeApplicationSetting(runtime, context);
-  runtime.applicationSettingPrepared = true;
+  const pipelineState = getOrCreateDefinedPluginPipelineState(plugin);
+  resolveRuntimeApplicationSetting(runtime, pipelineState, context);
 }
 
 function resolveConfigureHookApplicationSetting(
-  runtime: DefinedPluginRuntime,
+  plugin: object,
   context: PluginOptionsContext,
 ): RuntimePluginSetting {
-  if (
-    runtime.applicationSettingPrepared === true &&
-    runtime.applicationSetting
-  ) {
-    return runtime.applicationSetting;
-  }
-  return resolveRuntimeApplicationSetting(runtime, context);
+  const runtime = requireDefinedPluginRuntime(plugin);
+  const pipelineState = getOrCreateDefinedPluginPipelineState(plugin);
+  return resolveRuntimeApplicationSetting(runtime, pipelineState, context);
 }
 
 function resolveRuntimeApplicationSetting(
   runtime: DefinedPluginRuntime,
+  pipelineState: DefinedPluginPipelineState,
   context: PluginOptionsContext,
 ): RuntimePluginSetting {
-  runtime.applicationSettingPrepared = false;
+  if (pipelineState.applicationSetting) {
+    return pipelineState.applicationSetting;
+  }
+  if (!runtime.active) {
+    return storeRuntimeApplicationSetting(
+      pipelineState,
+      Object.freeze({ enabled: false }),
+    );
+  }
   let config: object | undefined;
   if (runtime.application) {
     if (
@@ -978,7 +1115,15 @@ function resolveRuntimeApplicationSetting(
     enabled: true,
     ...(config ? { config } : {}),
   });
-  runtime.applicationSetting = setting;
+  return storeRuntimeApplicationSetting(pipelineState, setting);
+}
+
+function storeRuntimeApplicationSetting(
+  pipelineState: DefinedPluginPipelineState,
+  setting: RuntimePluginSetting,
+): RuntimePluginSetting {
+  pipelineState.applicationSetting = setting;
+  Object.freeze(pipelineState);
   return setting;
 }
 
@@ -989,6 +1134,7 @@ export function resolveDefinedPluginPageSetting(
 ): RuntimePluginSetting | undefined {
   const runtime = getDefinedPluginRuntime(plugin);
   if (!runtime) return undefined;
+  if (!runtime.active) return Object.freeze({ enabled: false });
   if (!runtime.page) {
     if (configured !== undefined) {
       throw new Error(
@@ -1104,15 +1250,15 @@ function resolvePluginContract(
   return resolved;
 }
 
-function getRuntimeApplicationSetting(
-  runtime: DefinedPluginRuntime,
-): RuntimePluginSetting {
-  if (!runtime.applicationSetting) {
+function getRuntimeApplicationSetting(plugin: object): RuntimePluginSetting {
+  const runtime = requireDefinedPluginRuntime(plugin);
+  const setting = definedPluginPipelineStates.get(plugin)?.applicationSetting;
+  if (!setting) {
     throw new Error(
       `[evjs] Plugin "${runtime.name}" Application options were not resolved before setup().`,
     );
   }
-  return runtime.applicationSetting;
+  return setting;
 }
 
 function readPageOptions<TBundlerCfg>(
@@ -1143,7 +1289,6 @@ interface RuntimeDefinedPluginDescriptor {
   readonly page?: AnyPluginOptionsContract;
   readonly dependencies?: unknown;
   readonly optionalDependencies?: unknown;
-  readonly enforce?: unknown;
   readonly configure?: unknown;
   readonly setup?: unknown;
   readonly emitIR?: unknown;
@@ -1165,7 +1310,6 @@ function assertDefinedPluginDescriptor(
       "page",
       "dependencies",
       "optionalDependencies",
-      "enforce",
       "configure",
       "setup",
       "emitIR",
@@ -1211,16 +1355,6 @@ function assertDefinedPluginDescriptor(
   if (overlappingDependency !== undefined) {
     throw new Error(
       `[evjs] definePlugin() optionalDependencies must not repeat required dependency "${overlappingDependency}".`,
-    );
-  }
-  if (
-    descriptor.enforce !== undefined &&
-    descriptor.enforce !== "pre" &&
-    descriptor.enforce !== "normal" &&
-    descriptor.enforce !== "post"
-  ) {
-    throw new Error(
-      '[evjs] definePlugin() enforce must be "pre", "normal", or "post".',
     );
   }
   for (const field of ["configure", "setup", "emitIR", "emitPageIR"] as const) {

@@ -579,7 +579,7 @@ describe("prepareFrameworkBuild", () => {
     ).rejects.toThrow("[evjs] options.bundler.dev must be a function.");
   });
 
-  it("prepares framework inputs without exposing graph and plan internals", async () => {
+  it("prepares framework inputs without activating plugin setup", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
@@ -588,9 +588,12 @@ describe("prepareFrameworkBuild", () => {
         events.push(`config:${ctx.command}`);
         return config;
       },
+      emitIR(ctx) {
+        ctx.addWatchFile("./framework-extra.json");
+        events.push(`emitIR:${ctx.command}`);
+      },
       setup(ctx) {
         expect(ctx.config.bundler).toBeUndefined();
-        ctx.addWatchFile("./framework-extra.json");
         events.push(`setup:${ctx.command}`);
         return {
           beforeBuild() {
@@ -619,12 +622,12 @@ describe("prepareFrameworkBuild", () => {
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
-    expect(events).toEqual(["config:build", "setup:build"]);
+    expect(events).toEqual(["config:build", "emitIR:build"]);
 
     await prepared.dispose();
     await prepared.dispose();
 
-    expect(events).toEqual(["config:build", "setup:build", "dispose"]);
+    expect(events).toEqual(["config:build", "emitIR:build"]);
   });
 
   it("syncs one stable static-config bridge regardless of active plugins", async () => {
@@ -747,7 +750,7 @@ describe("prepareFrameworkBuild", () => {
     const events: string[] = [];
 
     await expect(
-      prepareFrameworkBuild(
+      build(
         {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
@@ -771,7 +774,7 @@ describe("prepareFrameworkBuild", () => {
             },
           ],
         },
-        { cwd },
+        { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow("setup blocked");
 
@@ -867,7 +870,7 @@ describe("prepareFrameworkBuild", () => {
     const events: string[] = [];
 
     await expect(
-      prepareFrameworkBuild(
+      build(
         {
           plugins: [
             {
@@ -885,7 +888,7 @@ describe("prepareFrameworkBuild", () => {
             },
           ],
         },
-        { cwd },
+        { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow("setup aborted");
 
@@ -897,7 +900,7 @@ describe("prepareFrameworkBuild", () => {
     const events: string[] = [];
 
     await expect(
-      prepareFrameworkBuild(
+      build(
         {
           plugins: [
             {
@@ -919,7 +922,7 @@ describe("prepareFrameworkBuild", () => {
             },
           ],
         },
-        { cwd },
+        { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow(
       'Plugin "invalid-hooks-rollback" setup hook returned beforeBuild must be a function',
@@ -972,7 +975,7 @@ describe("prepareFrameworkBuild", () => {
   ])("rejects setup results with $label", async ({ create }) => {
     const cwd = await createProject();
     let getterReads = 0;
-    const preparing = prepareFrameworkBuild(
+    const preparing = build(
       {
         plugins: [
           {
@@ -985,7 +988,7 @@ describe("prepareFrameworkBuild", () => {
           },
         ],
       },
-      { cwd },
+      { cwd, bundler: createMockBundler([]) },
     );
 
     await expect(preparing).rejects.toMatchObject({
@@ -1011,7 +1014,7 @@ describe("prepareFrameworkBuild", () => {
         throw new Error("own getter must not run");
       },
     });
-    const preparing = prepareFrameworkBuild(
+    const preparing = build(
       {
         plugins: [
           {
@@ -1022,7 +1025,7 @@ describe("prepareFrameworkBuild", () => {
           },
         ],
       },
-      { cwd },
+      { cwd, bundler: createMockBundler([]) },
     );
 
     await expect(preparing).rejects.toMatchObject({
@@ -1044,7 +1047,7 @@ describe("prepareFrameworkBuild", () => {
     returnedHooks.dispose = function () {
       events.push(this === returnedHooks ? "dispose:bound" : "dispose:unbound");
     };
-    const prepared = await prepareFrameworkBuild(
+    await build(
       {
         plugins: [
           {
@@ -1055,10 +1058,9 @@ describe("prepareFrameworkBuild", () => {
           },
         ],
       },
-      { cwd },
+      { cwd, bundler: createMockBundler([]) },
     );
 
-    await prepared.dispose();
     expect(events).toEqual(["dispose:bound"]);
   });
 
@@ -1174,7 +1176,7 @@ describe("prepareFrameworkBuild", () => {
   it("disposes plugins in reverse order and continues after failures", async () => {
     const cwd = await createProject();
     const events: string[] = [];
-    const prepared = await prepareFrameworkBuild(
+    const building = build(
       {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
@@ -1201,10 +1203,10 @@ describe("prepareFrameworkBuild", () => {
           },
         ],
       },
-      { cwd },
+      { cwd, bundler: createMockBundler([]) },
     );
 
-    await expect(prepared.dispose()).rejects.toThrow("dispose blocked");
+    await expect(building).rejects.toThrow("dispose blocked");
     expect(events).toEqual(["dispose:second", "dispose:first"]);
   });
 
@@ -8084,52 +8086,6 @@ describe("build", () => {
       "setup:plugin-b",
       "setup:plugin-c",
       "setup:plugin-a",
-      "bundler.build",
-      "bundler.entries:",
-    ]);
-  });
-
-  it("orders unrelated plugins by enforce tier", async () => {
-    const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await build(
-      {
-        output: { client: "dist/client", server: "dist/server" },
-        plugins: [
-          {
-            name: "post",
-            enforce: "post",
-            setup() {
-              events.push("setup:post");
-            },
-          },
-          {
-            name: "normal",
-            setup() {
-              events.push("setup:normal");
-            },
-          },
-          {
-            name: "pre",
-            enforce: "pre",
-            setup() {
-              events.push("setup:pre");
-            },
-          },
-        ],
-      },
-      {
-        cwd,
-        bundler,
-      },
-    );
-
-    expect(events).toEqual([
-      "setup:pre",
-      "setup:normal",
-      "setup:post",
       "bundler.build",
       "bundler.entries:",
     ]);

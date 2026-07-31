@@ -180,7 +180,7 @@ route, server-topology, resolution, and bundler-config changes report that
 ## Programmatic Preparation
 
 `prepareFrameworkBuild()` is the supported pre-bundler API for tooling. It
-loads and resolves config, runs plugin preflight hooks, analyzes the graph,
-reports diagnostics, and returns resolved config, file dependencies, plugin
-watch files, and `dispose()`. It does not run a bundler or emit deployment
-artifacts.
+loads and resolves config, runs `configure` and deterministic plugin IR
+emission, analyzes the graph, reports diagnostics, and returns resolved config,
+file dependencies, plugin watch files, and a no-op `dispose()`. It does not
+activate plugin `setup`, run a bundler, or emit deployment artifacts.

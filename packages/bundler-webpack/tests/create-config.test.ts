@@ -7,7 +7,6 @@ import {
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
-import type { Plugin } from "@evjs/ev/plugin";
 import type {
   CoreGraph,
   CoreRoutePattern,
@@ -580,8 +579,9 @@ describe("createWebpackConfigs", () => {
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
-    const plugin: Plugin<WebpackConfig> = {
+    const plugin: ResolvedConfig<WebpackConfig>["plugins"][number] = {
       name: "generated-alias",
+      active: true,
       emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",

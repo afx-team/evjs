@@ -4,8 +4,10 @@ Demonstrates the typed evjs plugin factory together with ordinary build-time
 lifecycle hooks.
 
 - **`definePlugin()`** — declare a stable `name`, plus one short `key` whenever Application or Page options exist, and return an installable factory
+- **`definePluginPreset()`** — expose a parameterized, tuple-preserving group of plugins as one application entry
 - **`pluginOptions()`** — declare independent, type-safe Application and Page option contracts
-- **`plugins: [metadataPlugin(config)]`** — install and configure the Application in one expression
+- **`.when(condition, reason)`** — retain the plugin contract and Page key while conditionally skipping execution
+- **`plugins: [examplePlugins(config)]`** — install and configure the typed preset in one expression
 - **`page.config.ts#plugins.metadata`** — configure a Page with the short plugin key and no plugin import
 - **`src/plugin-types.d.ts`** — generated under the tsconfig-included `src` directory as a stable bridge to the static `ev.config.ts` type for Page editor types
 - **`setup`** — read the resolved Application setting before graph analysis

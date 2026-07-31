@@ -89,6 +89,29 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
       `${document.id}: application=${document.applicationId}, owner=${document.owner.kind}, output=${document.output}`,
   );
 
+  appendList(lines, "Plugin Plan", result.plugins, (plugin) => {
+    const status = plugin.active
+      ? "active"
+      : `inactive${plugin.inactiveReason ? ` (${plugin.inactiveReason})` : ""}`;
+    const metadata = [
+      `order=${plugin.order}`,
+      status,
+      plugin.key ? `key=${plugin.key}` : undefined,
+      plugin.dependencies.length > 0
+        ? `dependencies=${plugin.dependencies.join(",")}`
+        : undefined,
+      plugin.optionalDependencies.length > 0
+        ? `optionalDependencies=${plugin.optionalDependencies.join(",")}`
+        : undefined,
+      plugin.declaredStages.length > 0
+        ? `declares=${plugin.declaredStages.join(",")}`
+        : "declares=none",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return `${formatCoreIdentifier(plugin.name)}: ${metadata}`;
+  });
+
   appendList(
     lines,
     "Plugins",

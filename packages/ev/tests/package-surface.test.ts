@@ -538,6 +538,7 @@ describe("workspace package surface", () => {
       "PLUGIN_HOOK_ERROR_CODE",
       "PluginHookError",
       "definePlugin",
+      "definePluginPreset",
       "pluginOptions",
     ]);
 

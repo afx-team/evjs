@@ -166,7 +166,6 @@ export const evPluginQiankunMaster = definePlugin({
   name: masterPluginName,
   key: "qiankun-master",
   application: pluginOptions<QiankunMasterPluginOptions>(),
-  enforce: "pre",
   async emitIR(ctx) {
     await emitQiankunMasterIR(ctx, ctx.options);
   },
@@ -179,7 +178,6 @@ export const evPluginQiankunSlave = definePlugin({
   name: slavePluginName,
   key: "qiankun-slave",
   application: pluginOptions<QiankunSlavePluginOptions>({ defaults: {} }),
-  enforce: "pre",
   async emitIR(ctx) {
     await emitQiankunSlaveIR(ctx, ctx.options);
   },

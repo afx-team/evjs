@@ -5,7 +5,6 @@ import {
   createBuildPlan,
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
-import type { Plugin } from "@evjs/ev/plugin";
 import type {
   BuildPlan,
   CoreGraph,
@@ -148,8 +147,11 @@ describe("createUtoopackConfig", () => {
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
-    const plugin: Plugin<ConfigComplete> = {
+    const plugin: Parameters<
+      typeof createUtoopackConfig
+    >[0]["plugins"][number] = {
       name: "generated-alias",
+      active: true,
       emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",

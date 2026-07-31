@@ -164,8 +164,11 @@ export default defineConfig({
 options，就要提供一个短 `key`；CoreGraph 中的 Application 与 Page setting entry
 都使用这个 key。条件项可以使用 `false`、`null` 或 `undefined`；运行时会忽略这些
 非活跃项。可能进入 falsy 分支的条目不保证安装，因此不会向 Page config 暴露 key。
-Page 合同有 defaults，且插件与 Application options 需要保持启用、但每个 Page
-必须显式 opt in 时，使用 `plugin.withPageOptIn(config)`。
+合同与生成的 Page key 需要保持安装、但本次不执行插件时，改用
+`plugin(config).when(condition, reason?)`。可复用的类型安全组合使用
+`definePluginPreset(factory)`；裸嵌套插件数组无效。Page 合同有 defaults，且插件与
+Application options 需要保持启用、但每个 Page 必须显式 opt in 时，使用
+`plugin.withPageOptIn(config)`。
 
 插件合同允许时，Application 配置可以包含类型安全的可执行选项或显式模块引用。
 不要把 secret 放进插件会投影到 generated file 或浏览器 runtime 的值中。
@@ -227,6 +230,8 @@ evjs 构建 graph 时同步求值该 module。它必须 default-export plain obj
 插件补全时请使用 `ev.config.ts`。Framework 命令会在 Page graph analysis 前生成该
 桥接；它保留在 `src` 下，因为普通应用 tsconfig 会包含 `src`，同时排除生成的 `.ev`
 IR。
+静态确定的 `definePluginPreset()` tuple 与 `.when()` instance 会保留 key；条件 falsy
+条目、条件 preset 分支与 widened array 不会声明无法保证存在的 key。
 
 Application 与 Page 配置是两个独立的插件合同。evjs 不会把 Application 工厂的
 对象合并到 Page value。在任一合同内部，authoring 字段会先深度合并到该合同的

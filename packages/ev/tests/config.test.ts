@@ -23,6 +23,7 @@ import {
 } from "../src/deployment/index.js";
 import {
   definePlugin,
+  definePluginPreset,
   type Plugin,
   pluginOptions,
 } from "../src/plugin/index.js";
@@ -116,6 +117,21 @@ const emptyPagePlugin = definePlugin({
 });
 const installedEmptyPagePlugin = emptyPagePlugin();
 
+const accessPreset = definePluginPreset(() => [installedAccessPlugin] as const);
+const pagePluginsPreset = definePluginPreset((channel: string) => {
+  void channel;
+  return [installedAnalyticsPlugin, false, accessPreset(), null] as const;
+});
+const installedPagePluginsPreset = pagePluginsPreset("checkout");
+const analyticsPreset = definePluginPreset(
+  () => [installedAnalyticsPlugin] as const,
+);
+const widenedPreset = definePluginPreset(
+  (): readonly (typeof installedAnalyticsPlugin)[] => [
+    installedAnalyticsPlugin,
+  ],
+);
+
 const ambientOnlyPlugin = definePlugin({
   name: "@test/ambient-only",
   key: "ambient-only",
@@ -152,6 +168,26 @@ type ConditionalTuplePlugin = ExtractInstalledPlugin<
 >;
 type WidenedArrayPlugin = ExtractInstalledPlugin<
   { readonly plugins: readonly (typeof installedAnalyticsPlugin)[] },
+  "analytics"
+>;
+type NestedPresetAnalyticsPlugin = ExtractInstalledPlugin<
+  { readonly plugins: readonly [typeof installedPagePluginsPreset] },
+  "analytics"
+>;
+type NestedPresetAccessPlugin = ExtractInstalledPlugin<
+  { readonly plugins: readonly [typeof installedPagePluginsPreset] },
+  "access"
+>;
+type ConditionalPresetPlugin = ExtractInstalledPlugin<
+  {
+    readonly plugins: readonly [
+      ReturnType<typeof analyticsPreset> | ReturnType<typeof accessPreset>,
+    ];
+  },
+  "analytics"
+>;
+type WidenedPresetPlugin = ExtractInstalledPlugin<
+  { readonly plugins: readonly [ReturnType<typeof widenedPreset>] },
   "analytics"
 >;
 
@@ -282,9 +318,17 @@ describe("config authoring", () => {
     expectTypeOf<DeterministicTuplePlugin>().toEqualTypeOf<
       typeof installedAnalyticsPlugin
     >();
+    expectTypeOf<NestedPresetAnalyticsPlugin>().toEqualTypeOf<
+      typeof installedAnalyticsPlugin
+    >();
+    expectTypeOf<NestedPresetAccessPlugin>().toEqualTypeOf<
+      typeof installedAccessPlugin
+    >();
     expectTypeOf<ConditionalConfigPlugin>().toEqualTypeOf<never>();
     expectTypeOf<ConditionalTuplePlugin>().toEqualTypeOf<never>();
     expectTypeOf<WidenedArrayPlugin>().toEqualTypeOf<never>();
+    expectTypeOf<ConditionalPresetPlugin>().toEqualTypeOf<never>();
+    expectTypeOf<WidenedPresetPlugin>().toEqualTypeOf<never>();
   });
 
   it("accepts Page plugin settings widened to the public config type", () => {
@@ -1139,7 +1183,6 @@ describe("resolveConfig", () => {
       name: "@test/plugin",
       dependencies: ["required"],
       optionalDependencies: ["optional"],
-      enforce: "pre" as const,
       setup,
     };
     const resolved = resolveConfig({
@@ -1150,6 +1193,7 @@ describe("resolveConfig", () => {
     expect(resolved.plugins[0]).toMatchObject({
       name: "@test/plugin",
     });
+    expect(resolved.plugins[0]?.active).toBe(true);
     expect(() =>
       resolveConfig({
         plugins: [{ name: "@test/plugin", key: "test-plugin" } as never],
@@ -1190,6 +1234,26 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
+            name: "removed-ordering-tier",
+            enforce: "pre",
+          } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].enforce is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "raw-conditional-plugin",
+            when() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].when is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
             name: "test-plugin",
             beforeBuild() {},
           } as never,
@@ -1206,6 +1270,115 @@ describe("resolveConfig", () => {
         ],
       }),
     ).toThrow("Return the hook from plugins[0].setup() instead");
+  });
+
+  it("expands branded plugin presets recursively in declaration order", () => {
+    const first = { name: "first" };
+    const second = { name: "second" };
+    const nested = definePluginPreset(
+      (plugin: Plugin) => [false, plugin, null] as const,
+    );
+    const composed = definePluginPreset(
+      (plugin: Plugin) => [first, nested(plugin), undefined, second] as const,
+    );
+
+    expect(
+      resolveConfig({
+        plugins: [composed({ name: "nested" })],
+      }).plugins.map((plugin) => plugin.name),
+    ).toEqual(["first", "nested", "second"]);
+  });
+
+  it("rejects unbranded arrays and Promises in plugin compositions", () => {
+    const plugin = { name: "@test/plugin" };
+    const nestedArrayPreset = definePluginPreset(
+      () => [[plugin] as unknown as Plugin] as const,
+    );
+    const promisedEntryPreset = definePluginPreset(
+      () => [Promise.resolve(plugin) as unknown as Plugin] as const,
+    );
+    const asyncPreset = definePluginPreset((() =>
+      Promise.resolve([plugin] as const)) as unknown as () => readonly [
+      Plugin,
+    ]);
+    const circularEntries: Plugin[] = [];
+    const circularPreset = definePluginPreset(() => circularEntries)();
+    circularEntries.push(circularPreset as unknown as Plugin);
+
+    expect(() => resolveConfig({ plugins: [[plugin]] as never })).toThrow(
+      "plugins[0] must not be a bare plugin array",
+    );
+    expect(() =>
+      resolveConfig({ plugins: [Promise.resolve(plugin)] as never }),
+    ).toThrow("plugins[0] must not be a Promise");
+    expect(() => resolveConfig({ plugins: [nestedArrayPreset()] })).toThrow(
+      "plugins[0].preset[0] must not be a bare plugin array",
+    );
+    expect(() => resolveConfig({ plugins: [promisedEntryPreset()] })).toThrow(
+      "plugins[0].preset[0] must not be a Promise",
+    );
+    expect(() => resolveConfig({ plugins: [asyncPreset()] })).toThrow(
+      "must return an array synchronously, not a Promise",
+    );
+    expect(() => resolveConfig({ plugins: [circularPreset] })).toThrow(
+      "plugins[0].preset[0] contains a circular plugin preset",
+    );
+  });
+
+  it("does not trust forged plugin preset brands", () => {
+    let getterCalls = 0;
+    const forgedPreset = {};
+    Object.defineProperty(forgedPreset, Symbol.for("@evjs/ev/plugin-preset"), {
+      get() {
+        getterCalls++;
+        return [{ name: "forged" }];
+      },
+    });
+
+    expect(() => resolveConfig({ plugins: [forgedPreset as never] })).toThrow(
+      "plugins[0] must not contain symbol fields",
+    );
+    expect(getterCalls).toBe(0);
+  });
+
+  it("does not trust forged defined-plugin runtime brands", () => {
+    let getterCalls = 0;
+    const forgedPlugin = { name: "forged" };
+    Object.defineProperty(
+      forgedPlugin,
+      Symbol.for("@evjs/ev/defined-plugin-runtime"),
+      {
+        get() {
+          getterCalls++;
+          return { key: "forged" };
+        },
+      },
+    );
+
+    expect(() => resolveConfig({ plugins: [forgedPlugin as never] })).toThrow(
+      "plugins[0] must not contain symbol fields",
+    );
+    expect(getterCalls).toBe(0);
+  });
+
+  it("rejects invalid plugin preset entries at compile time", () => {
+    const plugin = { name: "@test/plugin" };
+    const assertInvalidPresets = () => {
+      // @ts-expect-error Bare arrays are not plugin entries.
+      defineConfig({
+        plugins: [[plugin]],
+      });
+      // @ts-expect-error Promises are not plugin entries.
+      defineConfig({
+        plugins: [Promise.resolve(plugin)],
+      });
+      // @ts-expect-error Presets may nest only branded presets, not arrays.
+      definePluginPreset(() => [[plugin] as const] as const);
+      // @ts-expect-error Preset factories must return their tuple synchronously.
+      definePluginPreset(async () => [plugin] as const);
+    };
+
+    expect(assertInvalidPresets).toBeTypeOf("function");
   });
 
   it("does not share resolved mutable state between calls", () => {

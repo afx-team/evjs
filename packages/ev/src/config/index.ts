@@ -25,16 +25,19 @@ import {
 } from "../_internal/build/output-path-conventions.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
 import {
-  copyDefinedPluginRuntime,
+  copyDefinedPluginSnapshot,
   getDefinedPluginDeclaration,
-  isDefinedPluginRuntimePropertyKey,
+  isDefinedPluginOwnedPropertyKey,
 } from "../plugin/defined.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
 import {
   assertPluginKey,
+  getPluginPresetEntries,
+  isPluginPreset,
   type PagePluginConfigValues,
   type PagePluginConfigValuesCheck,
+  type PluginPreset,
 } from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
@@ -134,8 +137,13 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   transport: ResolvedTransportConfig;
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
-  /** Active plugins. */
-  plugins: Plugin<TBundlerCfg>[];
+  /** Installed plugins in stable dependency order. */
+  plugins: ResolvedPlugin<TBundlerCfg>[];
+}
+
+interface ResolvedPlugin<TBundlerCfg> extends Plugin<TBundlerCfg> {
+  /** Whether this installed plugin participates in the current snapshot. */
+  readonly active: boolean;
 }
 
 /**
@@ -205,8 +213,15 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   /**
    * Framework plugins to extend behavior or modify the bundler config.
    */
-  plugins?: readonly (Plugin<TBundlerCfg> | false | null | undefined)[];
+  plugins?: readonly ConfigPluginEntry<TBundlerCfg>[];
 }
+
+type ConfigPluginEntry<TBundlerCfg> =
+  | Plugin<TBundlerCfg>
+  | PluginPreset<readonly ConfigPluginEntry<TBundlerCfg>[]>
+  | false
+  | null
+  | undefined;
 
 /** Client dev server options. */
 export interface DevConfig {
@@ -544,7 +559,6 @@ const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
   "key",
   "dependencies",
   "optionalDependencies",
-  "enforce",
   "configure",
   "setup",
   "emitIR",
@@ -711,37 +725,95 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
 
 export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   plugins: unknown,
-): Plugin<TBundlerCfg>[] {
+): ResolvedPlugin<TBundlerCfg>[] {
   if (plugins === undefined) return [];
   if (!Array.isArray(plugins)) {
     throw new Error("[evjs] plugins must be an array of plugin objects.");
   }
-  assertConfigArray(plugins, "plugins");
-  const resolved: Plugin<TBundlerCfg>[] = [];
-  for (let index = 0; index < plugins.length; index++) {
-    const plugin = plugins[index];
-    if (plugin === false || plugin === null || plugin === undefined) continue;
-    resolved.push(resolvePluginConfig<TBundlerCfg>(plugin, index));
-  }
+  const resolved: ResolvedPlugin<TBundlerCfg>[] = [];
+  resolvePluginConfigEntries(
+    plugins,
+    "plugins",
+    resolved,
+    new Set<PluginPreset>(),
+  );
   return resolved;
+}
+
+function resolvePluginConfigEntries<TBundlerCfg>(
+  entries: unknown[],
+  path: string,
+  resolved: ResolvedPlugin<TBundlerCfg>[],
+  activePresets: Set<PluginPreset>,
+): void {
+  assertConfigArray(entries, path);
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    const entryPath = `${path}[${index}]`;
+    if (entry === false || entry === null || entry === undefined) continue;
+
+    if (isPluginPreset(entry)) {
+      if (activePresets.has(entry)) {
+        throw new Error(
+          `[evjs] ${entryPath} contains a circular plugin preset.`,
+        );
+      }
+      const presetEntries = getPluginPresetEntries(entry);
+      if (!Array.isArray(presetEntries)) {
+        const detail =
+          presetEntries instanceof Promise
+            ? "must return an array synchronously, not a Promise"
+            : "must return an array";
+        throw new Error(
+          `[evjs] The definePluginPreset() factory used at ${entryPath} ${detail}.`,
+        );
+      }
+      activePresets.add(entry);
+      try {
+        resolvePluginConfigEntries(
+          presetEntries,
+          `${entryPath}.preset`,
+          resolved,
+          activePresets,
+        );
+      } finally {
+        activePresets.delete(entry);
+      }
+      continue;
+    }
+
+    if (Array.isArray(entry)) {
+      throw new Error(
+        `[evjs] ${entryPath} must not be a bare plugin array. Wrap reusable plugin tuples with definePluginPreset().`,
+      );
+    }
+    if (entry instanceof Promise) {
+      throw new Error(
+        `[evjs] ${entryPath} must not be a Promise. Plugin entries and presets must be created synchronously.`,
+      );
+    }
+    resolved.push(resolvePluginConfig<TBundlerCfg>(entry, entryPath));
+  }
 }
 
 function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   plugin: unknown,
-  index: number,
-): Plugin<TBundlerCfg> {
-  const path = `plugins[${index}]`;
+  path: string,
+): ResolvedPlugin<TBundlerCfg> {
   const pluginRecord = assertPlainConfigRecord(
     plugin,
     path,
     "a plugin object",
-    isDefinedPluginRuntimePropertyKey,
+    (key) =>
+      typeof plugin === "object" &&
+      plugin !== null &&
+      isDefinedPluginOwnedPropertyKey(plugin, key),
   );
   assertKnownConfigKeys(
     pluginRecord,
     PUBLIC_PLUGIN_CONFIG_KEYS,
     path,
-    "name, key, dependencies, optionalDependencies, enforce, configure, setup, or emitIR",
+    "name, key, dependencies, optionalDependencies, configure, setup, or emitIR",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -752,7 +824,6 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     key: rawKey,
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
-    enforce: rawEnforce,
     configure: rawConfigure,
     setup: rawSetup,
     emitIR: rawEmitIR,
@@ -808,17 +879,18 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     ...(key !== undefined ? { key } : {}),
     ...(dependencies !== undefined ? { dependencies } : {}),
     ...(optionalDependencies !== undefined ? { optionalDependencies } : {}),
-    ...(rawEnforce !== undefined
-      ? {
-          enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
-        }
-      : {}),
     ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
     ...(rawEmitIR !== undefined ? { emitIR: rawEmitIR } : {}),
   };
-  copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
-  return resolved;
+  Object.defineProperty(resolved, "active", {
+    configurable: false,
+    enumerable: false,
+    value: getDefinedPluginDeclaration(plugin as object)?.active ?? true,
+    writable: false,
+  });
+  copyDefinedPluginSnapshot(plugin as Plugin<TBundlerCfg>, resolved);
+  return resolved as ResolvedPlugin<TBundlerCfg>;
 }
 
 function assertDisjointPluginDependencies(
@@ -1853,13 +1925,6 @@ function assertFunction<
 >(value: unknown, path: string): asserts value is TFunction {
   if (typeof value === "function") return;
   throw new Error(`[evjs] ${path} must be a function.`);
-}
-
-function assertPluginEnforce(value: unknown, path: string): Plugin["enforce"] {
-  if (value === "pre" || value === "normal" || value === "post") {
-    return value;
-  }
-  throw new Error(`[evjs] ${path} must be "pre", "normal", or "post".`);
 }
 
 function cloneStringArray(value: unknown, path: string): string[] {

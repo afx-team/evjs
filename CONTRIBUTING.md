@@ -129,22 +129,23 @@ Release automation replaces them with the release version before publishing.
 
 ## Build Pipeline
 
-`ev prepare`, `ev build`, and `ev dev` share the same semantic preparation:
+`ev prepare`, `ev build`, and `ev dev` share the same deterministic analysis:
 
 ```txt
 load config
 run configure methods and resolve Application plugin settings
-run setup hooks
 create CoreGraph while resolving Page plugin settings
 derive BuildPlan
 collect generated contributions
 materialize .ev
 ```
 
-`ev build` then asks the selected bundler for build facts, runs `beforeBuild`,
-links `BuildOutput`, runs output and HTML hooks, writes deployment metadata and
-Documents, and runs `afterBuild`. `ev prepare` and `ev inspect` do not receive
-bundler facts and therefore call neither build-cycle hook.
+`ev build` and `ev dev` additionally activate plugin `setup` hooks before graph
+analysis. `ev build` then asks the selected bundler for build facts, runs
+`beforeBuild`, links `BuildOutput`, runs output and HTML hooks, writes
+deployment metadata and Documents, and runs `afterBuild`. `ev prepare` and
+`ev inspect` do not activate `setup`, allocate plugin resources, or run
+build-cycle hooks.
 
 `ev dev` keeps normal source edits on the bundler watch/HMR path. Framework
 input changes recreate and diff the graph/plan, then call the adapter's

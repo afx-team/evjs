@@ -2,8 +2,13 @@ import type { CoreGraph, CorePagePluginSetting } from "@evjs/shared/manifest";
 import { PAGE_ANCHOR_PROVIDER_ID } from "@evjs/shared/manifest";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, it } from "vitest";
+import type { BundlerAdapter } from "../src/_internal/build/bundler.js";
+import { inspectFrameworkBuild } from "../src/_internal/build/inspect.js";
 import type { ResolvedPageFileConfig } from "../src/_internal/build/page-config-module.js";
-import { runConfigureHooks } from "../src/_internal/build/plugin-lifecycle.js";
+import {
+  createPluginConfigSnapshot,
+  runConfigureHooks,
+} from "../src/_internal/build/plugin-lifecycle.js";
 import {
   applyPluginSettings,
   collectPluginSettingsRegistry,
@@ -17,6 +22,7 @@ import {
 } from "../src/config/plugins.js";
 import {
   definePlugin,
+  definePluginPreset,
   PLUGIN_HOOK_ERROR_CODE,
   type Plugin,
   PluginHookError,
@@ -160,8 +166,12 @@ describe("definePlugin and pluginOptions", () => {
         ctx.config.dev.port = 4000;
         // @ts-expect-error The installed plugin list is read-only after configure().
         ctx.config.plugins.push({ name: "late-plugin" });
-        // @ts-expect-error Plugin dependency lists are read-only after configure().
-        ctx.config.plugins[0]?.dependencies?.push("late-dependency");
+        // @ts-expect-error Plugin implementation hooks are not context metadata.
+        ctx.config.plugins[0]?.setup;
+        // @ts-expect-error Bundler execution methods are not context metadata.
+        ctx.config.bundler?.build;
+        // @ts-expect-error Bundler dev methods are not context metadata.
+        ctx.config.bundler?.dev;
         return {
           configureBundler(_config, bundlerCtx) {
             // @ts-expect-error The framework config view stays read-only here.
@@ -207,6 +217,114 @@ describe("definePlugin and pluginOptions", () => {
     expect(crossBundlerPlugin.name).toBe("@company/agnostic");
     expect(fixedPlugin.name).toBe("@company/fixed");
     expect(assertFixedBundlerContract).toBeTypeOf("function");
+  });
+
+  it("projects context config to framework metadata without mutating it", () => {
+    const analytics = definePlugin({
+      name: "@company/analytics",
+      key: "analytics",
+      application: pluginOptions({ defaults: {} }),
+      configure() {},
+      setup() {},
+      emitIR() {},
+    });
+    const monitoring = definePlugin({
+      name: "@company/monitoring",
+      setup() {},
+    });
+    const rawPlugin: Plugin = {
+      name: "raw-plugin",
+      setup() {},
+      emitIR() {},
+    };
+    const build = async () => ({});
+    const dev = async () => undefined;
+    const bundler = {
+      name: "test-bundler",
+      capabilities: {
+        build: { server: true, rsc: false, ppr: false },
+        dev: {
+          configuration: false,
+          html: true,
+          entries: false,
+          routes: false,
+          server: false,
+          resolution: false,
+        },
+      },
+      build,
+      dev,
+    } satisfies BundlerAdapter<Record<string, never>>;
+    const config = {
+      ...resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "http://localhost:8080",
+              pathRewrite: { when: "/preserved" },
+            },
+          ],
+        },
+        plugins: [
+          analytics(),
+          monitoring().when(false, "disabled in this environment"),
+          rawPlugin,
+        ],
+      }),
+      bundler,
+    };
+
+    const snapshot = createPluginConfigSnapshot(config);
+
+    expect(snapshot.plugins).toEqual([
+      {
+        name: "@company/analytics",
+        key: "analytics",
+        active: true,
+      },
+      {
+        name: "@company/monitoring",
+        active: false,
+        inactiveReason: "disabled in this environment",
+      },
+      { name: "raw-plugin", active: true },
+    ]);
+    for (const plugin of snapshot.plugins) {
+      expect(plugin).not.toHaveProperty("configure");
+      expect(plugin).not.toHaveProperty("setup");
+      expect(plugin).not.toHaveProperty("emitIR");
+    }
+    expect(snapshot.bundler).toEqual({
+      name: "test-bundler",
+      capabilities: bundler.capabilities,
+    });
+    expect(snapshot.bundler).not.toHaveProperty("build");
+    expect(snapshot.bundler).not.toHaveProperty("dev");
+    expect(snapshot.dev.proxy[0]?.pathRewrite).toEqual({
+      when: "/preserved",
+    });
+    expect(snapshot.plugins[0]).not.toBe(config.plugins[0]);
+    expect(snapshot.bundler).not.toBe(config.bundler);
+    expect(snapshot.bundler?.capabilities).not.toBe(
+      config.bundler.capabilities,
+    );
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.plugins)).toBe(true);
+    expect(Object.isFrozen(snapshot.plugins[0])).toBe(true);
+    expect(Object.isFrozen(snapshot.bundler)).toBe(true);
+    expect(Object.isFrozen(snapshot.bundler?.capabilities)).toBe(true);
+
+    expect(config.plugins[0]?.configure).toBeTypeOf("function");
+    expect(config.plugins[0]?.setup).toBeTypeOf("function");
+    expect(config.plugins[0]?.emitIR).toBeTypeOf("function");
+    expect(config.plugins[2]?.setup).toBeTypeOf("function");
+    expect(config.plugins[2]?.emitIR).toBeTypeOf("function");
+    expect(config.bundler.build).toBe(build);
+    expect(config.bundler.dev).toBe(dev);
+    expect(Object.isFrozen(config.plugins[0])).toBe(false);
+    expect(Object.isFrozen(config.bundler)).toBe(false);
+    expect(Object.isFrozen(config.bundler.capabilities)).toBe(false);
   });
 
   it("validates descriptor identity and owner contracts", () => {
@@ -276,7 +394,7 @@ describe("definePlugin and pluginOptions", () => {
     expect(assertStaticKey).toBeTypeOf("function");
   });
 
-  it("validates descriptor ordering and hook fields at definition time", () => {
+  it("validates descriptor dependencies and hook fields at definition time", () => {
     expect(() =>
       definePlugin({
         name: "@company/invalid-dependencies",
@@ -300,12 +418,15 @@ describe("definePlugin and pluginOptions", () => {
     ).toThrow(
       'definePlugin() optionalDependencies must not repeat required dependency "@company/base"',
     );
-    expect(() =>
+    const assertRemovedEnforceField = () =>
       definePlugin({
-        name: "@company/invalid-enforce",
-        enforce: "first",
-      } as never),
-    ).toThrow('definePlugin() enforce must be "pre", "normal", or "post"');
+        name: "@company/removed-enforce",
+        // @ts-expect-error Global ordering tiers are not part of the plugin API.
+        enforce: "pre",
+      });
+    expect(assertRemovedEnforceField).toThrow(
+      "definePlugin() descriptor contains unsupported field enforce",
+    );
     expect(() =>
       definePlugin({
         name: "@company/invalid-setup",
@@ -408,7 +529,7 @@ describe("definePlugin and pluginOptions", () => {
     });
     const plugin = analytics({ retry: { count: 3 } });
     const state = resolveInstalled(plugin);
-    plugin.setup?.({} as never);
+    state.plugin.setup?.({} as never);
     const graph = applyPluginSettings(createSpaGraph(), state.registry, {
       applicationSettings: state.applicationSettings,
       canonicalPages: {
@@ -456,8 +577,8 @@ describe("definePlugin and pluginOptions", () => {
       retry: { count: 3, backoff: undefined },
     });
 
-    resolveInstalled(plugin);
-    plugin.setup?.({} as never);
+    const state = resolveInstalled(plugin);
+    state.plugin.setup?.({} as never);
 
     expect(setupSettings).toEqual([
       {
@@ -638,10 +759,9 @@ describe("definePlugin and pluginOptions", () => {
         mode: "production",
       },
     );
-    resolvePluginSettingsState(resolveConfig(configured), undefined, {
-      reusePreparedApplicationSettings: true,
-    });
-    plugin.setup?.({} as never);
+    const resolved = resolveConfig(configured);
+    resolvePluginSettingsState(resolved);
+    resolved.plugins[0]?.setup?.({} as never);
 
     expect(defaultsCalls).toBe(1);
     expect(validationCalls).toBe(1);
@@ -650,6 +770,312 @@ describe("definePlugin and pluginOptions", () => {
       { sequence: 1, routingMode: "mpa" },
     ]);
     expect(seen[0]).toBe(seen[1]);
+  });
+
+  it.each([
+    "direct",
+    "preset",
+  ] as const)("isolates Application snapshots across concurrent %s config pipelines", async (installation) => {
+    type Snapshot = Readonly<{
+      routingMode: "spa" | "mpa";
+      sequence: number;
+    }>;
+    type Stage = "configure" | "setup" | "emitIR";
+
+    let defaultsCalls = 0;
+    const seen: { stage: Stage; options: Snapshot }[] = [];
+    let releaseFirstPipeline: (() => void) | undefined;
+    const firstPipelinePaused = new Promise<void>((resolve) => {
+      releaseFirstPipeline = resolve;
+    });
+    let markFirstPipelinePaused: (() => void) | undefined;
+    const waitForFirstPipeline = new Promise<void>((resolve) => {
+      markFirstPipelinePaused = resolve;
+    });
+    const gate: Plugin = {
+      name: "pipeline-gate",
+      async configure(_config, context) {
+        if (context.cwd !== "/pipeline-a") return;
+        markFirstPipelinePaused?.();
+        await firstPipelinePaused;
+      },
+    };
+    const contextual = definePlugin({
+      name: "@company/concurrent-contextual",
+      key: "concurrent-contextual",
+      application: pluginOptions<Snapshot>({
+        defaults(context) {
+          return {
+            routingMode: context.routingMode,
+            sequence: ++defaultsCalls,
+          };
+        },
+      }),
+      configure(config, context) {
+        seen.push({ stage: "configure", options: context.options });
+        return { ...config };
+      },
+      setup(context) {
+        seen.push({ stage: "setup", options: context.options });
+      },
+      emitIR(context) {
+        seen.push({ stage: "emitIR", options: context.options });
+      },
+    });
+    const sharedPlugin = contextual();
+    const installedPreset = definePluginPreset(() => [sharedPlugin] as const)();
+    const installed =
+      installation === "preset" ? installedPreset : sharedPlugin;
+    const firstConfiguring = runConfigureHooks(
+      {
+        routing: { mode: "spa" },
+        plugins: [gate, installed],
+      },
+      {
+        command: "build",
+        cwd: "/pipeline-a",
+        mode: "production",
+      },
+    );
+
+    await Promise.race([
+      waitForFirstPipeline,
+      firstConfiguring.then(() => {
+        throw new Error(
+          "First config pipeline completed before reaching the configure gate.",
+        );
+      }),
+    ]);
+    let secondConfigured: Awaited<ReturnType<typeof runConfigureHooks>>;
+    try {
+      secondConfigured = await runConfigureHooks(
+        {
+          routing: { mode: "mpa" },
+          plugins: [gate, installed],
+        },
+        {
+          command: "build",
+          cwd: "/pipeline-b",
+          mode: "production",
+        },
+      );
+    } finally {
+      releaseFirstPipeline?.();
+      await firstConfiguring;
+    }
+    const firstConfigured = await firstConfiguring;
+    const firstResolved = resolveConfig(firstConfigured);
+    const secondResolved = resolveConfig(secondConfigured);
+
+    resolvePluginSettingsState(firstResolved);
+    resolvePluginSettingsState(secondResolved);
+    const firstPlugin = firstResolved.plugins.find(
+      (plugin) => plugin.name === "@company/concurrent-contextual",
+    );
+    const secondPlugin = secondResolved.plugins.find(
+      (plugin) => plugin.name === "@company/concurrent-contextual",
+    );
+    if (!firstPlugin || !secondPlugin) {
+      throw new Error(
+        "Expected the contextual plugin in both config pipelines.",
+      );
+    }
+
+    await firstPlugin.setup?.({} as never);
+    await secondPlugin.setup?.({} as never);
+    await firstPlugin.emitIR?.({
+      framework: { pages: [] },
+    } as never);
+    await secondPlugin.emitIR?.({
+      framework: { pages: [] },
+    } as never);
+
+    expect(defaultsCalls).toBe(2);
+    expect(seen.map(({ stage, options }) => ({ stage, ...options }))).toEqual([
+      { stage: "configure", routingMode: "mpa", sequence: 2 },
+      { stage: "configure", routingMode: "spa", sequence: 1 },
+      { stage: "setup", routingMode: "spa", sequence: 1 },
+      { stage: "setup", routingMode: "mpa", sequence: 2 },
+      { stage: "emitIR", routingMode: "spa", sequence: 1 },
+      { stage: "emitIR", routingMode: "mpa", sequence: 2 },
+    ]);
+    expect(seen[1]?.options).toBe(seen[2]?.options);
+    expect(seen[1]?.options).toBe(seen[4]?.options);
+    expect(seen[0]?.options).toBe(seen[3]?.options);
+    expect(seen[0]?.options).toBe(seen[5]?.options);
+  });
+
+  it.each([
+    "direct",
+    "preset",
+  ] as const)("preserves %s Application snapshots through concurrent inspect pipelines", async (installation) => {
+    type Snapshot = Readonly<{
+      routingMode: "spa" | "mpa";
+      sequence: number;
+    }>;
+    type Stage = "configure" | "emitIR";
+
+    let defaultsCalls = 0;
+    const seen: { stage: Stage; options: Snapshot }[] = [];
+    let releaseDevelopmentInspect: (() => void) | undefined;
+    const developmentInspectPaused = new Promise<void>((resolve) => {
+      releaseDevelopmentInspect = resolve;
+    });
+    let markDevelopmentInspectPaused: (() => void) | undefined;
+    const waitForDevelopmentInspect = new Promise<void>((resolve) => {
+      markDevelopmentInspectPaused = resolve;
+    });
+    const gate: Plugin = {
+      name: "inspect-pipeline-gate",
+      async configure(_config, context) {
+        if (context.mode !== "development") return;
+        markDevelopmentInspectPaused?.();
+        await developmentInspectPaused;
+      },
+    };
+    const contextual = definePlugin({
+      name: "@company/inspect-contextual",
+      key: "inspect-contextual",
+      application: pluginOptions<Snapshot>({
+        defaults(context) {
+          return {
+            routingMode: context.routingMode,
+            sequence: ++defaultsCalls,
+          };
+        },
+      }),
+      configure(config, context) {
+        seen.push({ stage: "configure", options: context.options });
+        return { ...config };
+      },
+      emitIR(context) {
+        seen.push({ stage: "emitIR", options: context.options });
+      },
+    });
+    const sharedPlugin = contextual();
+    const installedPreset = definePluginPreset(() => [sharedPlugin] as const)();
+    const installed =
+      installation === "preset" ? installedPreset : sharedPlugin;
+    const developmentInspect = inspectFrameworkBuild(
+      {
+        plugins: [gate, installed],
+        routing: { mode: "spa" },
+      },
+      {
+        command: "dev",
+        cwd: process.cwd(),
+        mode: "development",
+      },
+    );
+
+    await Promise.race([
+      waitForDevelopmentInspect,
+      developmentInspect.then(() => {
+        throw new Error(
+          "Development inspect completed before reaching the configure gate.",
+        );
+      }),
+    ]);
+    try {
+      await inspectFrameworkBuild(
+        {
+          plugins: [gate, installed],
+          routing: { mode: "mpa" },
+        },
+        {
+          command: "build",
+          cwd: process.cwd(),
+          mode: "production",
+        },
+      );
+    } finally {
+      releaseDevelopmentInspect?.();
+      await developmentInspect;
+    }
+
+    expect(defaultsCalls).toBe(2);
+    expect(seen.map(({ stage, options }) => ({ stage, ...options }))).toEqual([
+      { stage: "configure", routingMode: "mpa", sequence: 2 },
+      { stage: "emitIR", routingMode: "mpa", sequence: 2 },
+      { stage: "configure", routingMode: "spa", sequence: 1 },
+      { stage: "emitIR", routingMode: "spa", sequence: 1 },
+    ]);
+    expect(seen[0]?.options).toBe(seen[1]?.options);
+    expect(seen[2]?.options).toBe(seen[3]?.options);
+    expect(seen[0]?.options).not.toBe(seen[2]?.options);
+  });
+
+  it.each([
+    "direct",
+    "preset",
+  ] as const)("forks a fresh Application snapshot when a configured %s pipeline is reused", async (installation) => {
+    type Snapshot = Readonly<{
+      routingMode: "spa" | "mpa";
+      sequence: number;
+    }>;
+    const configuredOptions: Snapshot[] = [];
+    const setupOptions: Snapshot[] = [];
+    let defaultsCalls = 0;
+    const contextual = definePlugin({
+      name: "@company/reentered-contextual",
+      key: "reentered-contextual",
+      application: pluginOptions<Snapshot>({
+        defaults(context) {
+          return {
+            routingMode: context.routingMode,
+            sequence: ++defaultsCalls,
+          };
+        },
+      }),
+      configure(_config, context) {
+        configuredOptions.push(context.options);
+      },
+      setup(context) {
+        setupOptions.push(context.options);
+      },
+    });
+    const sharedPlugin = contextual();
+    const installedPreset = definePluginPreset(() => [sharedPlugin] as const)();
+    const installed =
+      installation === "preset" ? installedPreset : sharedPlugin;
+    const firstConfigured = await runConfigureHooks(
+      {
+        routing: { mode: "spa" },
+        plugins: [installed],
+      },
+      {
+        command: "build",
+        cwd: "/pipeline-first",
+        mode: "production",
+      },
+    );
+    const secondConfigured = await runConfigureHooks(
+      {
+        ...firstConfigured,
+        routing: { mode: "mpa" },
+      },
+      {
+        command: "build",
+        cwd: "/pipeline-second",
+        mode: "production",
+      },
+    );
+    const firstResolved = resolveConfig(firstConfigured);
+    const secondResolved = resolveConfig(secondConfigured);
+    resolvePluginSettingsState(firstResolved);
+    resolvePluginSettingsState(secondResolved);
+    await firstResolved.plugins[0]?.setup?.({} as never);
+    await secondResolved.plugins[0]?.setup?.({} as never);
+
+    expect(defaultsCalls).toBe(2);
+    expect(configuredOptions).toEqual([
+      { routingMode: "spa", sequence: 1 },
+      { routingMode: "mpa", sequence: 2 },
+    ]);
+    expect(setupOptions).toEqual(configuredOptions);
+    expect(setupOptions[0]).toBe(configuredOptions[0]);
+    expect(setupOptions[1]).toBe(configuredOptions[1]);
+    expect(setupOptions[0]).not.toBe(setupOptions[1]);
   });
 
   it("isolates in-place configure hook mutations from the caller", async () => {
@@ -797,7 +1223,7 @@ describe("definePlugin and pluginOptions", () => {
     );
   });
 
-  it("preserves length fields on ordinary config objects", async () => {
+  it("preserves internal-looking keys on ordinary config objects", async () => {
     const plugin: Plugin = {
       name: "observes-length-field",
       configure(config) {
@@ -810,7 +1236,10 @@ describe("definePlugin and pluginOptions", () => {
           {
             context: ["/api"],
             target: "http://localhost:8080",
-            pathRewrite: { length: "/preserved" },
+            pathRewrite: {
+              length: "/preserved-length",
+              when: "/preserved-when",
+            },
           },
         ],
       },
@@ -824,8 +1253,31 @@ describe("definePlugin and pluginOptions", () => {
     });
 
     expect(configured?.dev?.proxy?.[0]?.pathRewrite).toEqual({
-      length: "/preserved",
+      length: "/preserved-length",
+      when: "/preserved-when",
     });
+  });
+
+  it("clones opaque plugin presets into the config pipeline snapshot", async () => {
+    const preset = definePluginPreset(
+      () => [{ name: "preset-plugin" }] as const,
+    );
+    const installedPreset = preset();
+
+    const configured = await runConfigureHooks(
+      { plugins: [installedPreset] },
+      {
+        command: "build",
+        cwd: process.cwd(),
+        mode: "production",
+      },
+    );
+
+    expect(configured?.plugins?.[0]).not.toBe(installedPreset);
+    expect(configured?.plugins?.[0]).toEqual({});
+    expect(
+      resolveConfig(configured).plugins.map((plugin) => plugin.name),
+    ).toEqual(["preset-plugin"]);
   });
 
   it("isolates and freezes resolved Application options", () => {
@@ -854,10 +1306,10 @@ describe("definePlugin and pluginOptions", () => {
     });
     const plugin = analytics(authored);
 
-    resolveInstalled(plugin);
+    const state = resolveInstalled(plugin);
     authored.endpoint = "/mutated";
     authored.headers.regions.push("caller");
-    plugin.setup?.({} as never);
+    state.plugin.setup?.({} as never);
 
     expect(observed).toEqual({
       endpoint: "/events",
@@ -1336,7 +1788,7 @@ describe("static plugin settings", () => {
       createdAt: new Date(0),
     });
     const configuredState = resolveInstalled(configured);
-    configured.setup?.({} as never);
+    configuredState.plugin.setup?.({} as never);
     expect(Object.values(configuredState.applicationSettings)).toEqual([
       { enabled: true },
     ]);
@@ -1395,9 +1847,10 @@ describe("plugin setting lifecycle", () => {
     });
     const plugin = analytics.withPageOptIn();
     const state = resolveInstalled(plugin);
+    const resolvedPlugin = state.plugin;
 
-    await plugin.setup?.({} as never);
-    await plugin.emitIR?.({
+    await resolvedPlugin.setup?.({} as never);
+    await resolvedPlugin.emitIR?.({
       framework: {
         pages: [{ id: "home", plugins: { analytics: { enabled: false } } }],
       },
@@ -1410,7 +1863,7 @@ describe("plugin setting lifecycle", () => {
         home: createPageConfig({ analytics: true }),
       },
     });
-    await plugin.emitIR?.({
+    await resolvedPlugin.emitIR?.({
       framework: { pages: Object.values(graph.pages) },
     } as never);
 
@@ -1447,7 +1900,7 @@ describe("plugin setting lifecycle", () => {
     );
 
     const state = resolvePluginSettingsState(config, registry);
-    plugin.setup?.({} as never);
+    config.plugins[0]?.setup?.({} as never);
     expect(state.applicationSettings.analytics).toEqual({ enabled: true });
     expect(setupSettings).toEqual([{ endpoint: "/events" }]);
 
@@ -1527,7 +1980,14 @@ describe("plugin setting lifecycle", () => {
 function resolveInstalled(plugin: Plugin) {
   const config = resolveConfig({ plugins: [plugin] });
   const registry = collectPluginSettingsRegistry(config.plugins);
-  return resolvePluginSettingsState(config, registry);
+  const resolvedPlugin = config.plugins[0];
+  if (!resolvedPlugin) {
+    throw new Error("Expected resolveConfig() to retain the installed plugin.");
+  }
+  return {
+    ...resolvePluginSettingsState(config, registry),
+    plugin: resolvedPlugin,
+  };
 }
 
 function createPageConfig(plugins: unknown = {}): ResolvedPageFileConfig {

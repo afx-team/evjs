@@ -33,6 +33,7 @@ export {
   type InspectFrameworkBuildResult,
   type InspectHtmlDocument,
   type InspectPageRoute,
+  type InspectPlugin,
   type InspectRouteFile,
   inspectFrameworkBuild,
   type PreparedFrameworkBuild,

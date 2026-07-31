@@ -18,7 +18,6 @@ import {
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
-import { createDefinedPluginApplicationSettingSnapshot } from "../../plugin/defined.js";
 import type {
   CliFlags,
   PluginContext,
@@ -239,6 +238,7 @@ export {
   type InspectFrameworkBuildResult,
   type InspectHtmlDocument,
   type InspectPageRoute,
+  type InspectPlugin,
   type InspectRouteFile,
   inspectFrameworkBuild,
 } from "./inspect.js";
@@ -246,6 +246,7 @@ export {
 interface InternalPrepareFrameworkBuildOptions<
   TBundlerCfg = DefaultBundlerConfig,
 > extends PrepareFrameworkBuildOptions<TBundlerCfg> {
+  activatePluginSetup: boolean;
   plan?: CreateBuildPlanOptions;
 }
 
@@ -557,8 +558,8 @@ function formatGraphDiagnostic(diagnostic: {
 async function prepareInternalFrameworkBuild<
   TBundlerCfg = DefaultBundlerConfig,
 >(
-  userConfig?: Config<TBundlerCfg>,
-  options: InternalPrepareFrameworkBuildOptions<TBundlerCfg> = {},
+  userConfig: Config<TBundlerCfg> | undefined,
+  options: InternalPrepareFrameworkBuildOptions<TBundlerCfg>,
 ): Promise<InternalPreparedFrameworkBuild<TBundlerCfg>> {
   const cwd = options.cwd ?? process.cwd();
   const command =
@@ -613,9 +614,7 @@ async function prepareInternalFrameworkBuild<
   const {
     registry: pluginSettings,
     applicationSettings: applicationPluginSettings,
-  } = resolvePluginSettingsState(baseConfig, undefined, {
-    reusePreparedApplicationSettings: true,
-  });
+  } = resolvePluginSettingsState(baseConfig);
   const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
   const pluginContext: MutablePluginSetupContext<TBundlerCfg> = {
@@ -629,7 +628,9 @@ async function prepareInternalFrameworkBuild<
       pluginWatchFiles.add(path.resolve(cwd, file));
     },
   };
-  const hooks = await collectPluginHooks(config.plugins, pluginContext);
+  const hooks = options.activatePluginSetup
+    ? await collectPluginHooks(config.plugins, pluginContext)
+    : [];
   let disposed = false;
   const dispose = async () => {
     if (disposed) return;
@@ -679,7 +680,10 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
 ): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
   const cwd = options.cwd ?? process.cwd();
   return withProjectOperationLock(cwd, "prepare", async () => {
-    const prepared = await prepareInternalFrameworkBuild(userConfig, options);
+    const prepared = await prepareInternalFrameworkBuild(userConfig, {
+      ...options,
+      activatePluginSetup: false,
+    });
     return {
       cwd: prepared.cwd,
       mode: prepared.mode,
@@ -900,11 +904,8 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
   const baseActiveConfig = withActiveBundler(resolvedConfig, bundler);
-  const initialPluginSettingsState = resolvePluginSettingsState(
-    baseActiveConfig,
-    undefined,
-    { reusePreparedApplicationSettings: true },
-  );
+  const initialPluginSettingsState =
+    resolvePluginSettingsState(baseActiveConfig);
   let activePluginSettings = initialPluginSettingsState.registry;
   let activeApplicationPluginSettings =
     initialPluginSettingsState.applicationSettings;
@@ -1377,9 +1378,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     const reason: BuildPlanUpdate["reason"] = requiresBundlerConfigReload
       ? "config"
       : "route-declaration";
-    const applicationSettingSnapshot = requiresBundlerConfigReload
-      ? createDefinedPluginApplicationSettingSnapshot(activeConfig.plugins)
-      : undefined;
     let stagedPluginHooks:
       | Awaited<ReturnType<typeof stagePluginHooks>>
       | undefined;
@@ -1398,7 +1396,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       runCleanupTasks([
         () => stagedPluginHooks?.rollback(),
         () => generatedStateSnapshot?.restore(),
-        () => applicationSettingSnapshot?.restore(),
       ]);
 
     try {
@@ -1434,7 +1431,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         const nextPluginSettingsState = resolvePluginSettingsState(
           baseNextConfig,
           nextPluginSettings,
-          { reusePreparedApplicationSettings: true },
         );
         nextApplicationPluginSettings =
           nextPluginSettingsState.applicationSettings;
@@ -1516,7 +1512,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         candidateCommitted = true;
         await commitStagedPluginHooks(stagedPluginHooks);
         await nextGeneratedStateSnapshot.commit();
-        applicationSettingSnapshot?.commit();
       };
 
       const previousConfig = activeConfig;
@@ -1755,6 +1750,7 @@ async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
     bundler: options?.bundler,
     flags: options?.flags,
     requireBundler: true,
+    activatePluginSetup: true,
   });
   const bundler = prepared.config.bundler;
   if (!bundler) {

@@ -54,9 +54,10 @@ export default defineConfig({
 ```
 
 The `plugins` array preserves installation order among otherwise equivalent
-plugins; declared dependencies and `enforce` tiers may reorder hooks. Factory
-arguments hold Application configuration; there is no parallel top-level
-configuration bag.
+plugins; required dependencies and present optional dependencies may perform a
+stable topological reorder. There is no global pre/post tier spanning unrelated
+plugin stages. Factory arguments hold Application configuration; there is no
+parallel top-level configuration bag.
 
 ## Declare Application and Page Contracts
 
@@ -187,7 +188,9 @@ the plugin declares Application or Page options. The same key identifies both
 contracts and their CoreGraph settings. A hooks-only plugin may omit it. Plugin
 keys and names must each be unique in one Application.
 
-`dependencies`, `optionalDependencies`, and `enforce` control hook ordering.
+`dependencies` names plugins that must be installed and active first.
+`optionalDependencies` adds the same ordering edge only when the named plugin
+is present and active. Otherwise evjs preserves the authored array order.
 Unknown descriptor fields and misspelled hooks are rejected.
 
 Plugin configuration exists only at Application and Page scope. Derive Route or
@@ -238,12 +241,13 @@ export default defineConfig({
 Do not use `configureBundler()` for framework protocol paths. Server functions,
 PPR, and RSC endpoints are derived from `server.basePath`.
 
-After `configure()` finishes, every later `ctx.config` is typed as a deeply
-read-only view of the resolved framework config. evjs also supplies a detached,
-frozen snapshot at runtime so JavaScript plugins cannot mutate the active
-framework config through that view. `configureBundler()` may mutate only its
-explicit bundler-config argument. Plugin authors should keep framework
-configuration changes in this one validated phase.
+After `configure()` finishes, every later `ctx.config` is a detached, frozen
+metadata view of the resolved framework config. Installed plugins expose only
+their identity, key, and activation state; the selected bundler exposes only
+its name and capabilities. Callable plugin hooks and adapter build/dev methods
+are not projected through another plugin's context. `configureBundler()` may
+mutate only its explicit bundler-config argument. Plugin authors should keep
+framework configuration changes in this one validated phase.
 
 ## Initialize Shared State in `setup()`
 
@@ -287,18 +291,24 @@ hook-specific contracts.
 
 ## Installation and Execution Modes
 
-The factory controls Page omission without changing plugin execution or typed
-Application options:
+The normal and `withPageOptIn()` factory forms control Page omission without
+changing typed Application options. `.when()` separately controls whether the
+installed plugin executes:
 
 - `plugin(options)` installs and executes the plugin; Pages with defaults are
   enabled when their key is omitted;
 - for a Page contract with defaults, `plugin.withPageOptIn(options)` installs and
   executes the same plugin with the same Application options, but every Page
   must opt in with `true` or an object;
+- `plugin(options).when(condition, reason?)` keeps the contracts and generated
+  Page types installed, but a false condition disables owner settings and skips
+  `configure()`, `setup()`, and IR emission;
 - a `false`, `null`, or `undefined` entry in `config.plugins` omits the whole
   plugin and executes no plugin hook.
 
 Required Application options stay required in either available factory form.
+Reusable typed groups should be created with `definePluginPreset(factory)`;
+bare nested arrays and asynchronous preset results are rejected.
 
 ## Choose the Right Extension Point
 

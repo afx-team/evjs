@@ -27,6 +27,30 @@ The `plugins` array is the ordered installation boundary. Configuration stays
 in each factory call, so there is no separate extension bag or repeated package
 key.
 
+Plugin packages can expose a typed group without asking applications to manage
+its internal members:
+
+```ts
+import { definePluginPreset } from "@evjs/ev/plugin";
+
+export const observability = definePluginPreset(
+  (options: ObservabilityOptions) => [
+    analytics(options.analytics),
+    monitoring(options.monitoring),
+  ],
+);
+```
+
+The application still installs one explicit entry:
+
+```ts
+plugins: [observability({ analytics: {}, monitoring: {} })]
+```
+
+Only `definePluginPreset()` results are expanded. Raw nested arrays and
+asynchronous preset results are rejected, so runtime installation and generated
+Page types are derived from the same deterministic tuple.
+
 ## Configure a Page
 
 Put Page behavior next to the Page and use the plugin's short key:
@@ -86,6 +110,7 @@ Application options. They differ only in what an omitted key on a Page means:
 |---|---|
 | `analytics(config)` | Install and execute the plugin. An omitted Page uses Page defaults when they exist; otherwise that Page is off. |
 | `analytics.withPageOptIn(config)` | For a Page contract with defaults, install and execute the plugin but require every Page to opt in explicitly. |
+| `analytics(config).when(condition, reason?)` | Keep the plugin and its Page types installed, but skip all executable plugin stages when the condition is false. |
 | `false`, `null`, or `undefined` in `plugins` | Omit the whole plugin conditionally; no plugin hook executes. |
 | `analytics` omitted on a Page after `analytics(config)` | Enable with Page defaults when the Page contract has defaults; otherwise disable that Page. |
 | `analytics` omitted on a Page after `analytics.withPageOptIn(config)` | Disable that Page, even when Page defaults exist. |
@@ -129,7 +154,24 @@ contract defaults, install the plugin normally, and set `analytics: false` on
 exceptions. A Page contract without defaults always treats omission as off and
 requires an object to enable the Page.
 
-For a build-only condition, use a falsy array entry:
+When Page config must remain typed across environments, keep the plugin
+installed and conditionally execute it:
+
+```ts
+plugins: [
+  analytics(options).when(
+    process.env.ANALYTICS === "1",
+    "ANALYTICS is not enabled",
+  ),
+]
+```
+
+A false condition disables its Application and Page settings and skips
+`configure()`, `setup()`, and IR emission. `ev inspect` reports the plugin as
+inactive with the supplied reason, while `src/plugin-types.d.ts` still includes
+its Page key.
+
+Use a falsy entry only when the plugin should be omitted completely:
 
 ```ts
 plugins: [process.env.ANALYTICS === "1" && analytics(options)]
@@ -137,16 +179,15 @@ plugins: [process.env.ANALYTICS === "1" && analytics(options)]
 
 A plugin with a possible falsy branch is not statically guaranteed to be
 installed, so its key is intentionally unavailable to Page config. Use this
-form for whole-plugin conditions that have no Page settings. When Pages
-configure the plugin, install it deterministically and use `analytics: false`
-or `withPageOptIn()` for Page-specific activation.
+form for whole-plugin conditions that have no Page settings.
 
 Plugin keys are derived only from the definite entries of the tuple inferred by
 `defineConfig()`. A widened plugin array, a conditional choice between arrays,
 or a conditional choice between whole config objects cannot prove that an
 entry exists and therefore exposes no key to Page config. Keep
 Page-configurable plugins directly in the
-`defineConfig({ plugins: [...] })` tuple.
+`defineConfig({ plugins: [...] })` tuple or in a statically known
+`definePluginPreset()` result.
 
 ## Type Safety and Validation
 

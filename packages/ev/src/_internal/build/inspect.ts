@@ -12,6 +12,7 @@ import {
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
+import { getDefinedPluginDeclaration } from "../../plugin/defined.js";
 import type { CliFlags, PluginContext } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import {
@@ -34,10 +35,8 @@ import { CANONICAL_PAGE_ROUTE_ROOT } from "./page-route-conventions.js";
 import { createPageRouteNodesFromCoreGraph } from "./page-route-types.js";
 import type { PageRouteDiscovery } from "./page-routes.js";
 import {
-  collectPluginHooks,
   orderPluginsByDependencies,
   runConfigureHooks,
-  runDisposeHooks,
 } from "./plugin-lifecycle.js";
 import { resolvePluginSettingsState } from "./plugin-settings.js";
 import { toProjectPath } from "./utils.js";
@@ -101,6 +100,19 @@ export interface InspectHtmlDocument {
   owner: unknown;
 }
 
+export interface InspectPlugin {
+  /** Position after stable dependency ordering. */
+  order: number;
+  name: string;
+  key?: string;
+  active: boolean;
+  inactiveReason?: string;
+  dependencies: string[];
+  optionalDependencies: string[];
+  /** Descriptor stages declared by the plugin, without activating setup(). */
+  declaredStages: Array<"configure" | "setup" | "emitIR">;
+}
+
 export interface InspectFrameworkBuildResult {
   cwd: string;
   mode: "development" | "production";
@@ -138,6 +150,8 @@ export interface InspectFrameworkBuildResult {
     html: InspectHtmlDocument[];
     generated?: GeneratedFrameworkPlan;
   };
+  /** Installed plugins and their non-activating execution plan. */
+  plugins: InspectPlugin[];
   diagnostics: InspectDiagnostic[];
   fileDependencies: string[];
   pluginWatchFiles: string[];
@@ -242,10 +256,32 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   const {
     registry: pluginSettings,
     applicationSettings: applicationPluginSettings,
-  } = resolvePluginSettingsState(baseConfig, undefined, {
-    reusePreparedApplicationSettings: true,
-  });
+  } = resolvePluginSettingsState(baseConfig);
   const config = baseConfig;
+  const plugins = config.plugins.map((plugin, order): InspectPlugin => {
+    const declaration = getDefinedPluginDeclaration(plugin);
+    return {
+      order,
+      name: plugin.name,
+      ...(declaration?.key ? { key: declaration.key } : {}),
+      active: declaration?.active ?? true,
+      ...(declaration?.inactiveReason
+        ? { inactiveReason: declaration.inactiveReason }
+        : {}),
+      dependencies: [...(plugin.dependencies ?? [])],
+      optionalDependencies: [...(plugin.optionalDependencies ?? [])],
+      declaredStages: declaration
+        ? [...declaration.stages]
+        : [
+            plugin.configure ? ("configure" as const) : undefined,
+            plugin.setup ? ("setup" as const) : undefined,
+            plugin.emitIR ? ("emitIR" as const) : undefined,
+          ].filter(
+            (stage): stage is "configure" | "setup" | "emitIR" =>
+              stage !== undefined,
+          ),
+    };
+  });
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginContext<TBundlerCfg> = {
     mode,
@@ -258,130 +294,119 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       pluginWatchFiles.add(path.resolve(cwd, file));
     },
   };
-  const hooks = await collectPluginHooks(config.plugins, pluginContext);
-  let disposed = false;
-  const dispose = async () => {
-    if (disposed) return;
-    disposed = true;
-    await runDisposeHooks(hooks, pluginContext);
-  };
-
   try {
-    try {
-      validateHtmlTemplates(cwd, config);
-    } catch (err) {
-      diagnostics.push({
-        level: "error",
-        source: "html",
-        message: formatInspectError(err),
-      });
-    }
+    validateHtmlTemplates(cwd, config);
+  } catch (err) {
+    diagnostics.push({
+      level: "error",
+      source: "html",
+      message: formatInspectError(err),
+    });
+  }
 
-    let analysis: Awaited<ReturnType<typeof createCoreGraph>>;
-    let latestAnalysis: Awaited<ReturnType<typeof createCoreGraph>> | undefined;
-    let plan: BuildPlan | undefined;
-    try {
-      const materialized = await analyzeAndMaterializeFrameworkIR({
-        cwd,
-        mode,
-        command,
-        config,
-        pluginContext,
-        pluginSettings,
-        applicationPluginSettings,
-        write: false,
-        onAnalysis(currentAnalysis) {
-          latestAnalysis = currentAnalysis;
-        },
-      });
-      analysis = materialized.analysis;
-      plan = materialized.plan;
-    } catch (err) {
-      analysis =
-        latestAnalysis ??
-        (await createCoreGraph(config, cwd, {
-          pluginSettings,
-          applicationPluginSettings,
-        }));
-      diagnostics.push({
-        level: "error",
-        source: "contributions",
-        message: formatInspectError(err),
-      });
-    }
-    diagnostics.push(
-      ...analysis.diagnostics.map((diagnostic) =>
-        toInspectDiagnostic("graph", diagnostic),
-      ),
-    );
-    const bundlerGaps =
-      bundler && plan ? getBundlerBuildCapabilityGaps(bundler, plan) : [];
-    diagnostics.push(
-      ...bundlerGaps.map((gap) => ({
-        level: "error" as const,
-        source: "bundler" as const,
-        message: `Bundler "${bundler?.name}" lacks ${gap.capability}: ${gap.reason}.`,
-      })),
-    );
-
-    return {
+  let analysis: Awaited<ReturnType<typeof createCoreGraph>>;
+  let latestAnalysis: Awaited<ReturnType<typeof createCoreGraph>> | undefined;
+  let plan: BuildPlan | undefined;
+  try {
+    const materialized = await analyzeAndMaterializeFrameworkIR({
       cwd,
       mode,
       command,
-      routing: createInspectRouting(config, analysis.graph),
-      pageRoutes: createPageRouteNodesFromCoreGraph(analysis.graph).map(
-        (route) => ({
-          id: route.id,
-          path: route.path,
-          module: route.module,
-        }),
-      ),
-      routeFiles: createInspectRouteFiles(cwd, pageRouteDiscovery, diagnostics),
-      graph: analysis.graph,
-      runtime: {
-        server: config.server.runtime,
-        ...(config.transport.baseUrl ? { transport: config.transport } : {}),
+      config,
+      pluginContext,
+      pluginSettings,
+      applicationPluginSettings,
+      write: false,
+      onAnalysis(currentAnalysis) {
+        latestAnalysis = currentAnalysis;
       },
-      output: {
-        client: config.output.client,
-        server: config.output.server,
-      },
-      ...(bundler
-        ? {
-            bundler: {
-              name: bundler.name,
-              capabilities: {
-                build: { ...bundler.capabilities.build },
-                dev: { ...bundler.capabilities.dev },
-              },
-              gaps: bundlerGaps,
-            },
-          }
-        : {}),
-      buildPlan: plan
-        ? {
-            entries: plan.entries.map((entry) => ({
-              name: entry.name,
-              kind: entry.kind,
-              environment: entry.environment,
-              ...(entry.owner ? { owner: entry.owner } : {}),
-            })),
-            html: plan.html.map((document) => ({
-              id: document.id,
-              fileName: document.fileName,
-              ...(document.aliases ? { aliases: [...document.aliases] } : {}),
-              owner: document.owner,
-            })),
-            ...(plan.generated ? { generated: plan.generated } : {}),
-          }
-        : undefined,
-      diagnostics,
-      fileDependencies: analysis.fileDependencies,
-      pluginWatchFiles: [...pluginWatchFiles].sort(),
-    };
-  } finally {
-    await dispose();
+    });
+    analysis = materialized.analysis;
+    plan = materialized.plan;
+  } catch (err) {
+    analysis =
+      latestAnalysis ??
+      (await createCoreGraph(config, cwd, {
+        pluginSettings,
+        applicationPluginSettings,
+      }));
+    diagnostics.push({
+      level: "error",
+      source: "contributions",
+      message: formatInspectError(err),
+    });
   }
+  diagnostics.push(
+    ...analysis.diagnostics.map((diagnostic) =>
+      toInspectDiagnostic("graph", diagnostic),
+    ),
+  );
+  const bundlerGaps =
+    bundler && plan ? getBundlerBuildCapabilityGaps(bundler, plan) : [];
+  diagnostics.push(
+    ...bundlerGaps.map((gap) => ({
+      level: "error" as const,
+      source: "bundler" as const,
+      message: `Bundler "${bundler?.name}" lacks ${gap.capability}: ${gap.reason}.`,
+    })),
+  );
+
+  return {
+    cwd,
+    mode,
+    command,
+    routing: createInspectRouting(config, analysis.graph),
+    pageRoutes: createPageRouteNodesFromCoreGraph(analysis.graph).map(
+      (route) => ({
+        id: route.id,
+        path: route.path,
+        module: route.module,
+      }),
+    ),
+    routeFiles: createInspectRouteFiles(cwd, pageRouteDiscovery, diagnostics),
+    graph: analysis.graph,
+    runtime: {
+      server: config.server.runtime,
+      ...(config.transport.baseUrl ? { transport: config.transport } : {}),
+    },
+    output: {
+      client: config.output.client,
+      server: config.output.server,
+    },
+    ...(bundler
+      ? {
+          bundler: {
+            name: bundler.name,
+            capabilities: {
+              build: { ...bundler.capabilities.build },
+              dev: { ...bundler.capabilities.dev },
+            },
+            gaps: bundlerGaps,
+          },
+        }
+      : {}),
+    buildPlan: plan
+      ? {
+          entries: plan.entries.map((entry) => ({
+            name: entry.name,
+            kind: entry.kind,
+            environment: entry.environment,
+            ...(entry.owner ? { owner: entry.owner } : {}),
+          })),
+          html: plan.html.map((document) => ({
+            id: document.id,
+            fileName: document.fileName,
+            ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+            owner: document.owner,
+          })),
+          ...(plan.generated ? { generated: plan.generated } : {}),
+        }
+      : undefined,
+    plugins,
+    diagnostics,
+    fileDependencies: analysis.fileDependencies,
+    pluginWatchFiles: [...pluginWatchFiles].sort(),
+  };
 }
 function toInspectDiagnostic(
   source: InspectDiagnostic["source"],

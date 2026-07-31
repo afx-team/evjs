@@ -78,8 +78,9 @@ hook 内可见，不会改变后续 hook 或 deployment adapter 收到的输入�
 framework output 完成 link 并稳定后调用；output 周期失败时不调用 `afterBuild()`。
 由于此时 output 已发布，dev 中的 `afterBuild()` 失败只会报告 warning，已发布快照仍
 保持 active，server activation 也会继续；同样的失败在 production build 中仍会使构建失败。
-`ev prepare` 与 `ev inspect` 不会产生 bundler facts，因此都不会调用 `beforeBuild()`
-或 `afterBuild()`。
+`ev prepare` 与 `ev inspect` 是非激活的 analysis 命令：它们会运行 `configure()` 与
+确定性的 IR emission，但不会运行 `setup()`、`beforeBuild()`、`afterBuild()` 或
+`dispose()`。
 
 `setup()` 与 IR emission context 提供 `addWatchFile()` 来注册 analysis 依赖；
 build-cycle、output、HTML 与 dispose context 不提供它。文件变化时，框架复用已提交的
@@ -95,9 +96,10 @@ adapter 无法安全地原地替换配置，更新会 fail-closed 并明确提�
 
 ## 资源释放
 
-`dispose()` 用于释放 `setup()` 创建的资源。Prepared plugin snapshot 不再活跃时会调用
-它：一次性 `build` 或 `prepare` 命令结束后、dev session 停止时，或成功的 config
-reload 用新快照替换旧快照后。它不会在每次 dev rebuild 后执行。
+`dispose()` 用于释放 `setup()` 创建的资源。Activated plugin snapshot 不再活跃时会调用
+它：一次性 `build` 结束后、dev session 停止时，或成功的 config reload 用新快照替换旧
+快照后。它不会在每次 dev rebuild 后执行。非激活的 `prepare` 与 `inspect` 没有 setup
+资源需要释放。
 
 适合在这里关闭跨多个 hook 调用存活的 file watcher、timer、worker process、socket
 或临时 service handle；普通内存值无需清理。对于在 `setup()` 中取得的资源，应立即

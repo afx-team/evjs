@@ -24,6 +24,28 @@ export default defineConfig({
 `plugins` 数组是有序安装边界。配置直接放在各工厂调用中，因此不需要另一份 extension
 bag，也不需要重复 package key。
 
+插件包可以对外提供类型安全的插件组合，而不要求应用管理其内部成员：
+
+```ts
+import { definePluginPreset } from "@evjs/ev/plugin";
+
+export const observability = definePluginPreset(
+  (options: ObservabilityOptions) => [
+    analytics(options.analytics),
+    monitoring(options.monitoring),
+  ],
+);
+```
+
+应用仍然只安装一个显式条目：
+
+```ts
+plugins: [observability({ analytics: {}, monitoring: {} })]
+```
+
+evjs 只展开 `definePluginPreset()` 的结果。裸嵌套数组和异步 preset 结果会被拒绝，
+确保 runtime 安装结果与生成的 Page 类型来自同一个确定 tuple。
+
 ## 配置 Page
 
 把页面行为放在 Page 旁边，并使用插件的短 key：
@@ -75,6 +97,7 @@ Application 配置与 Page 配置是两份独立的类型合同：
 |---|---|
 | `analytics(config)` | 安装并执行插件。Page 有 defaults 时，省略 key 会使用 defaults；否则该 Page 关闭。 |
 | `analytics.withPageOptIn(config)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
+| `analytics(config).when(condition, reason?)` | 保持插件和 Page 类型已安装；条件为 false 时跳过所有可执行插件阶段。 |
 | `plugins` 中的 `false`、`null` 或 `undefined` | 条件式省略整个插件；不执行任何插件 hook。 |
 | `analytics(config)` 后 Page 省略 key | Page 合同有 defaults 时用 defaults 启用；否则关闭该 Page。 |
 | `analytics.withPageOptIn(config)` 后 Page 省略 key | 即使 Page 有 defaults，也关闭该 Page。 |
@@ -116,20 +139,35 @@ export default definePageConfig({
 例外 Page 中设置 `analytics: false`。没有 defaults 的 Page 合同始终把省略视为关闭，
 并要求通过 object 启用 Page。
 
-对于构建期条件，直接使用 falsy 数组项：
+Page config 需要在不同环境中保持类型稳定时，保留安装并按条件执行插件：
+
+```ts
+plugins: [
+  analytics(options).when(
+    process.env.ANALYTICS === "1",
+    "ANALYTICS is not enabled",
+  ),
+]
+```
+
+条件为 false 时，Application 与 Page setting 都会关闭，并跳过 `configure()`、
+`setup()` 与 IR emission。`ev inspect` 会展示 inactive 状态和原因，而
+`src/plugin-types.d.ts` 仍包含对应 Page key。
+
+只有需要彻底省略插件时才使用 falsy 条目：
 
 ```ts
 plugins: [process.env.ANALYTICS === "1" && analytics(options)]
 ```
 
 可能进入 falsy 分支的插件并不保证安装，因此不会向 Page config 暴露 key。这种写法
-适用于没有 Page setting 的整插件条件。Page 需要配置插件时，应确定性安装插件，再用
-`analytics: false` 或 `withPageOptIn()` 控制 Page 级启用。
+适用于没有 Page setting 的整插件条件。
 
 Plugin key 只从 `defineConfig()` 推导出的 tuple 中确定存在的条目生成。宽化后的 plugin
 array、在多个 array 之间做条件选择，或在多个完整 config object 之间做条件选择，都
 无法证明某个条目一定存在，因此不会向 Page config 暴露 key。需要 Page 配置的插件应
-直接保留在 `defineConfig({ plugins: [...] })` tuple 中。
+直接保留在 `defineConfig({ plugins: [...] })` tuple 或静态确定的
+`definePluginPreset()` 结果中。
 
 ## 类型安全与校验
 
