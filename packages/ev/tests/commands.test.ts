@@ -7195,7 +7195,7 @@ describe("build", () => {
   });
 });
 
-describe("dev", () => {
+describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
   it("rejects a duplicate dev run before starting a second bundler", async () => {
     const cwd = await createProject();
     let starts = 0;
