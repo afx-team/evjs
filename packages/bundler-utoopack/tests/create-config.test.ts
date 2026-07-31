@@ -146,6 +146,59 @@ describe("createUtoopackConfig", () => {
     ).resolves.toMatchObject({ mode: "production" });
   });
 
+  it("enables production optimizations by default", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode: "production" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.optimization).toMatchObject({
+      concatenateModules: true,
+      removeUnusedExports: true,
+      removeUnusedImports: true,
+    });
+  });
+
+  it("does not enable production optimizations for development", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode: "development" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.optimization).toBeUndefined();
+  });
+
+  it("lets bundlerConfig hooks override production module concatenation", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode: "production" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [
+        {
+          bundlerConfig(config) {
+            config.optimization ??= {};
+            config.optimization.concatenateModules = false;
+          },
+        },
+      ],
+    );
+
+    expect(utoopackConfig.optimization?.concatenateModules).toBe(false);
+  });
+
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
       name: "generated-alias",

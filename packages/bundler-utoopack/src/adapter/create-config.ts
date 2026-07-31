@@ -139,6 +139,15 @@ export async function createUtoopackConfig(
     externals: createResolveExternals(plan),
     sourceMaps: !isProduction,
     stats: true,
+    ...(isProduction
+      ? {
+          optimization: {
+            concatenateModules: true,
+            removeUnusedExports: true,
+            removeUnusedImports: true,
+          },
+        }
+      : {}),
     react: {
       runtime: "automatic",
     },
