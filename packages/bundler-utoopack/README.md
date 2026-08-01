@@ -35,7 +35,7 @@ import { defineConfig } from "@evjs/ev";
 import { definePlugin } from "@evjs/ev/plugin";
 
 const myUtoopackPlugin = definePlugin({
-  id: "@example/my-utoopack-plugin",
+  id: "my-utoopack-plugin",
   setup() {
     return {
       bundlerConfig: utoopack((config) => {

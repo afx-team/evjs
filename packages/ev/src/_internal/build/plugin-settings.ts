@@ -21,13 +21,16 @@ import type { Plugin } from "../../plugin/index.js";
 import type { ResolvedPageFileConfig } from "./page-config-module.js";
 import { orderPluginsByDependencies } from "./plugin-lifecycle.js";
 
-export interface RegisteredPluginSettings extends DefinedPluginDeclaration {
+export interface RegisteredPluginSettings {
+  readonly id: string;
+  readonly application?: DefinedPluginDeclaration["application"];
+  readonly page?: DefinedPluginDeclaration["page"];
   readonly plugin: object;
 }
 
 export interface PluginSettingsRegistry {
   readonly entries: readonly RegisteredPluginSettings[];
-  readonly byKey: ReadonlyMap<string, RegisteredPluginSettings>;
+  readonly byId: ReadonlyMap<string, RegisteredPluginSettings>;
   readonly catalog: CorePluginCatalogSnapshot;
 }
 
@@ -57,35 +60,34 @@ export interface ApplyPluginSettingsOptions {
   readonly session?: PluginSettingsResolutionSession;
 }
 
-/** Collect installed descriptor plugins and their public owner contracts. */
+/** Collect every installed plugin and any public owner contracts it declares. */
 export function collectPluginSettingsRegistry<TBundlerCfg>(
   plugins: readonly Plugin<TBundlerCfg>[],
 ): PluginSettingsRegistry {
   const entries: RegisteredPluginSettings[] = [];
-  const byKey = new Map<string, RegisteredPluginSettings>();
+  const byId = new Map<string, RegisteredPluginSettings>();
   const catalogEntries: Record<string, CorePluginCatalogEntrySnapshot> = {};
 
   for (const plugin of orderPluginsByDependencies([...plugins])) {
+    const pluginId = plugin.id;
     const declaration = getDefinedPluginDeclaration(plugin);
-    if (!declaration) continue;
-    if (declaration.key) {
-      const existing = byKey.get(declaration.key);
-      if (existing) {
-        throw new Error(
-          `[evjs] Plugin key "${declaration.key}" is declared by both "${existing.id}" and "${declaration.id}". Every installed Page plugin key must be unique.`,
-        );
-      }
-    }
-    const registered = Object.freeze({ ...declaration, plugin });
-    entries.push(registered);
-    if (registered.key) byKey.set(registered.key, registered);
-    if (Object.hasOwn(catalogEntries, registered.settingsKey)) {
+    const existing = byId.get(pluginId);
+    if (existing) {
       throw new Error(
-        `[evjs] Plugin internal key "${registered.settingsKey}" is shared by multiple installed plugins. Application-only keys are derived from complete plugin ids; use distinct ids.`,
+        `[evjs] Duplicate plugin id "${pluginId}". Plugin ids must be globally unique.`,
       );
     }
-    defineRecordValue(catalogEntries, registered.settingsKey, {
-      id: registered.id,
+    const registered: RegisteredPluginSettings = Object.freeze({
+      id: pluginId,
+      ...(declaration?.application
+        ? { application: declaration.application }
+        : {}),
+      ...(declaration?.page ? { page: declaration.page } : {}),
+      plugin,
+    });
+    entries.push(registered);
+    byId.set(registered.id, registered);
+    defineRecordValue(catalogEntries, registered.id, {
       ...(registered.application
         ? { application: contractSnapshot(registered.application) }
         : {}),
@@ -102,7 +104,7 @@ export function collectPluginSettingsRegistry<TBundlerCfg>(
 
   return Object.freeze({
     entries: Object.freeze(entries),
-    byKey,
+    byId,
     catalog: Object.freeze({ entries: Object.freeze(catalogEntries) }),
   });
 }
@@ -123,11 +125,9 @@ export function resolvePluginSettingsState<TBundlerCfg>(
       context,
       { reusePrepared: options.reusePreparedApplicationSettings === true },
     );
-    if (setting) {
-      defineRecordValue(applicationSettings, entry.settingsKey, {
-        enabled: setting.enabled,
-      });
-    }
+    defineRecordValue(applicationSettings, entry.id, {
+      enabled: setting?.enabled ?? true,
+    });
   }
   return Object.freeze({
     registry,
@@ -224,13 +224,13 @@ function resolvePageSettings(
     if (!entry.page) continue;
     const setting = resolveDefinedPluginPageSetting(
       entry.plugin,
-      getOwn(configured, requirePageKey(entry)),
+      getOwn(configured, entry.id),
       context,
     );
     if (setting) {
       defineRecordValue(
         settings,
-        requirePageKey(entry),
+        entry.id,
         cloneSetting(setting as CorePagePluginSetting),
       );
     }
@@ -246,16 +246,16 @@ function assertPageConfiguredKeys(
   source: string | undefined,
   pageId: string,
 ): void {
-  for (const key of Object.keys(configured)) {
-    const entry = registry.byKey.get(key);
+  for (const id of Object.keys(configured)) {
+    const entry = registry.byId.get(id);
     if (!entry) {
       throw new Error(
-        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${key}", but that plugin is not installed by ev.config.`,
+        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${id}", but that plugin is not installed by ev.config.`,
       );
     }
     if (!entry.page) {
       throw new Error(
-        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${key}", but plugin "${entry.id}" does not declare Page configuration.`,
+        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${id}", but plugin "${entry.id}" does not declare Page configuration.`,
       );
     }
   }
@@ -266,19 +266,12 @@ function assertApplicationSettings(
   settings: CoreApplicationPluginSettings,
 ): void {
   for (const entry of registry.entries) {
-    if (!Object.hasOwn(settings, entry.settingsKey)) {
+    if (!Object.hasOwn(settings, entry.id)) {
       throw new Error(
         `[evjs] Application settings for installed plugin "${entry.id}" were not resolved before graph analysis.`,
       );
     }
   }
-}
-
-function requirePageKey(entry: RegisteredPluginSettings): string {
-  if (entry.key) return entry.key;
-  throw new Error(
-    `[evjs] Internal invariant: Page-aware plugin "${entry.id}" has no Page key.`,
-  );
 }
 
 function graphApplicationContext(
@@ -316,7 +309,6 @@ function cloneCatalog(
       Object.entries(catalog.entries).map(([key, entry]) => [
         key,
         {
-          id: entry.id,
           ...(entry.application
             ? { application: { ...entry.application } }
             : {}),

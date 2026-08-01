@@ -13,7 +13,7 @@ Use `buildOutput()` when a deployment adapter needs plugin-owned metadata:
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deployMetadata = definePlugin({
-  id: "@example/deploy-metadata",
+  id: "deploy-metadata",
   setup() {
     return {
       buildOutput(output) {
@@ -40,7 +40,7 @@ Use `ctx.owner.kind` to target Page-owned documents:
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const pageMetadata = definePlugin({
-  id: "@example/page-metadata",
+  id: "page-metadata",
   setup() {
     return {
       transformHtml(doc, ctx) {
@@ -67,7 +67,7 @@ import crypto from "node:crypto";
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const cspNonce = definePlugin({
-  id: "@example/csp-nonce",
+  id: "csp-nonce",
   setup() {
     return {
       transformHtml(doc) {

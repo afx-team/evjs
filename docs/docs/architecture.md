@@ -45,8 +45,8 @@ src/pages/**/page.{ts,tsx,js,jsx}
 
 The containing directory owns the Page scope and determines the URL. Adjacent
 `page.config.ts` supplies static Page metadata, rendering settings, and a
-generated short-keyed `plugins` map. SPA and MPA use the same Page and Route
-identities; only their Documents and client entries differ.
+`plugins` map keyed by canonical plugin ids. SPA and MPA use the same Page and
+Route identities; only their Documents and client entries differ.
 
 ### Explicit SPA input
 
@@ -79,8 +79,8 @@ suffix is only a source-organization convention.
 
 Applications install plugin factories through `config.plugins`. Each factory
 receives its independent typed Application configuration. A Page-aware plugin
-also declares a short key and a separate Page contract consumed from adjacent
-`page.config.ts#plugins`.
+also declares a separate Page contract consumed from adjacent
+`page.config.ts#plugins` under the plugin's same canonical `id`.
 
 Application and Page contracts never merge with each other. Authored values
 deep-merge over defaults within their own contract. Page settings are strict
@@ -89,8 +89,8 @@ code. Plugins derive Route and Document contributions from normalized Pages
 and explicitly project any runtime code or data.
 
 `ev prepare`, `ev dev`, and `ev build` generate `src/plugin-types.d.ts` from
-the static `ev.config.ts` type so Page config receives key and value completion
-without importing plugin packages.
+the static `ev.config.ts` type so Page config receives plugin id and value
+completion without importing plugin packages.
 
 ## Build Stages
 

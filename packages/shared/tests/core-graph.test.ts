@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CoreGraph } from "../src/manifest/index.js";
 import {
   assertCoreGraph,
+  assertPluginId,
   CONFIG_ROUTE_PROVIDER_ID,
   coreRoutePatternShape,
   coreRoutePatternsEqual,
@@ -9,6 +10,56 @@ import {
   PAGE_ANCHOR_PROVIDER_ID,
   resolveCorePageOwner,
 } from "../src/manifest/index.js";
+
+const WINDOWS_DEVICE_PLUGIN_IDS = [
+  "aux",
+  "con",
+  "nul",
+  "prn",
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+];
+
+describe("assertPluginId", () => {
+  it.each([
+    "analytics",
+    "com0",
+    "com10",
+    "com1-tools",
+    "con-tools",
+    "error-reporting",
+    "lpt0",
+    "lpt10",
+  ])('accepts canonical plugin id "%s"', (id) => {
+    expect(() => assertPluginId(id, "plugin.id")).not.toThrow();
+  });
+
+  it.each([
+    "@company/analytics",
+    "1analytics",
+    "-analytics",
+    "Analytics",
+    "analytics-",
+    "analytics--reporting",
+    "analytics.reporting",
+    "analytics_plugin",
+  ])('rejects non-canonical plugin id "%s"', (id) => {
+    expect(() => assertPluginId(id, "plugin.id")).toThrow(
+      "must be a lowercase plugin id",
+    );
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "prototype",
+    ...WINDOWS_DEVICE_PLUGIN_IDS,
+  ])('rejects reserved plugin id "%s"', (id) => {
+    expect(() => assertPluginId(id, "plugin.id")).toThrow(
+      "reserved object key or Windows device basename",
+    );
+  });
+});
 
 describe("assertCoreGraph", () => {
   it("accepts a graph with consistent semantic ownership indexes", () => {
@@ -46,12 +97,13 @@ describe("assertCoreGraph", () => {
 
   it("accepts a Plugin-owned Document", () => {
     const graph = createValidGraph();
+    graph.plugins.entries["html-overlay"] = {};
     getDocument(graph).owner = {
       kind: "plugin",
-      pluginId: "@company/html-overlay",
+      pluginId: "html-overlay",
     };
     getDocument(graph).provenance = {
-      producer: { kind: "plugin", id: "@company/html-overlay" },
+      producer: { kind: "plugin", id: "html-overlay" },
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
@@ -69,12 +121,65 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("requires a non-empty Plugin Document owner id", () => {
+  it("requires a canonical Plugin Document owner id", () => {
     const graph = createValidGraph();
     getDocument(graph).owner = { kind: "plugin", pluginId: "" };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      "coreGraph.documents.app:default.owner.pluginId must be a non-empty string",
+      'coreGraph.documents.app:default.owner.pluginId "" must be a lowercase plugin id',
+    );
+  });
+
+  it("rejects Plugin Document owners that are not installed", () => {
+    const graph = createValidGraph();
+    getDocument(graph).owner = { kind: "plugin", pluginId: "html-overlay" };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'coreGraph.documents.app:default.owner.pluginId "html-overlay" is not installed in coreGraph.plugins.entries',
+    );
+  });
+
+  it("rejects Plugin provenance that is not installed", () => {
+    const graph = createValidGraph();
+    getApplication(graph).provenance = {
+      producer: { kind: "plugin", id: "analytics" },
+    };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'coreGraph.applications.default.provenance.producer.id "analytics" is not installed in coreGraph.plugins.entries',
+    );
+  });
+
+  it("rejects uninstalled Plugin provenance on Routes", () => {
+    const graph = createValidGraph();
+    getClientRoute(graph).provenance = {
+      producer: { kind: "plugin", id: "analytics" },
+    };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'coreGraph.routes[0].provenance.producer.id "analytics" is not installed in coreGraph.plugins.entries',
+    );
+  });
+
+  it("rejects uninstalled Plugin provenance on Documents", () => {
+    const graph = createValidGraph();
+    getDocument(graph).provenance = {
+      producer: { kind: "plugin", id: "analytics" },
+    };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'coreGraph.documents.app:default.provenance.producer.id "analytics" is not installed in coreGraph.plugins.entries',
+    );
+  });
+
+  it("keeps Page provenance provider-owned", () => {
+    const graph = createValidGraph();
+    getPage(graph).provenance = {
+      producer: { kind: "plugin", id: "analytics" },
+    };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'coreGraph.pages.orders.provenance producer must be provider "@evjs/provider/page-anchor"',
     );
   });
 
@@ -677,7 +782,6 @@ describe("assertCoreGraph", () => {
   it("accepts Application enablement and independent Page plugin settings", () => {
     const graph = createValidGraph();
     graph.plugins.entries.example = {
-      id: "@company/example-plugin",
       application: { schemaVersion: "1" },
       page: {
         schemaVersion: "2",
@@ -864,11 +968,10 @@ describe("assertCoreGraph", () => {
     getPage(graph).plugins.example = { enabled: true };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      'uses plugin key "example", but that plugin is not installed',
+      'uses plugin id "example", but that plugin is not installed',
     );
 
     graph.plugins.entries.example = {
-      id: "@company/example-plugin",
       application: {},
     };
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
@@ -876,27 +979,23 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("validates catalog keys, unique ids, and contracts", () => {
+  it("validates catalog ids and contracts", () => {
     const graph = createValidGraph();
     graph.plugins.entries.analytics = {
-      id: "@company/analytics",
       page: { defaultable: false },
     };
     graph.plugins.entries.monitor = {
-      id: "@company/analytics",
       application: {},
     };
 
-    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      'duplicates the plugin id registered by key "analytics"',
-    );
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
 
-    const invalidKeyGraph = createValidGraph();
+    const invalidIdGraph = createValidGraph();
     const entries = Object.create(null) as Record<string, unknown>;
-    entries["invalid.key"] = { id: "@company/invalid" };
-    invalidKeyGraph.plugins.entries = entries as never;
-    expect(() => assertCoreGraph(invalidKeyGraph, "coreGraph")).toThrow(
-      "must be a lowercase plugin key",
+    entries["invalid.key"] = {};
+    invalidIdGraph.plugins.entries = entries as never;
+    expect(() => assertCoreGraph(invalidIdGraph, "coreGraph")).toThrow(
+      "must be a lowercase plugin id",
     );
 
     const invalidContractGraph = createValidGraph();
@@ -907,11 +1006,13 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("requires non-empty plugin ids and boolean enabled flags", () => {
-    const emptyIdGraph = createValidGraph();
-    emptyIdGraph.plugins.entries.example = { id: "" };
-    expect(() => assertCoreGraph(emptyIdGraph, "coreGraph")).toThrow(
-      "coreGraph.plugins.entries.example.id must be a non-empty string",
+  it("rejects legacy catalog value ids and non-boolean enabled flags", () => {
+    const legacyIdGraph = createValidGraph();
+    Reflect.set(legacyIdGraph.plugins.entries, "example", {
+      id: "@company/example-plugin",
+    });
+    expect(() => assertCoreGraph(legacyIdGraph, "coreGraph")).toThrow(
+      "coreGraph.plugins.entries.example.id is not supported",
     );
 
     const invalidSettingGraph = createValidGraph();
@@ -928,17 +1029,18 @@ describe("assertCoreGraph", () => {
     "__proto__",
     "constructor",
     "prototype",
-  ])('rejects unsafe plugin catalog key "%s"', (key) => {
+    ...WINDOWS_DEVICE_PLUGIN_IDS,
+  ])('rejects reserved plugin catalog id "%s"', (id) => {
     const graph = createValidGraph();
     const entries = Object.create(null) as Record<string, unknown>;
-    Object.defineProperty(entries, key, {
+    Object.defineProperty(entries, id, {
       enumerable: true,
-      value: { id: `@company/${key}` },
+      value: {},
     });
     graph.plugins.entries = entries as never;
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      "must not be __proto__, constructor, or prototype",
+      "reserved object key or Windows device basename",
     );
   });
 
@@ -1408,7 +1510,6 @@ function addPluginCatalogEntry(
   graph: CoreGraph,
 ): CoreGraph["plugins"]["entries"][string] {
   const entry: CoreGraph["plugins"]["entries"][string] = {
-    id: "@company/example-plugin",
     page: { defaultable: true },
   };
   graph.plugins.entries.example = entry;

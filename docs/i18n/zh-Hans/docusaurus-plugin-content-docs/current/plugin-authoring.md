@@ -16,7 +16,7 @@ contributions 会在之后的 graph planning 中执行。Descriptor 方法不能
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const buildTimer = definePlugin({
-  id: "@example/build-timer",
+  id: "build-timer",
   setup() {
     const start = Date.now();
     return {
@@ -60,8 +60,7 @@ type AnalyticsPageConfig = {
 };
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
-  key: "analytics",
+  id: "analytics",
 
   application: pluginConfig<AnalyticsApplicationConfig>({
     validate(value) {
@@ -92,11 +91,11 @@ export const analytics = definePlugin({
 
 Application 工厂参数从 `application` 推导。生成的 `src/plugin-types.d.ts` 声明会桥接
 静态 `typeof import("../ev.config").default` 类型，TypeScript 再从中推导每个 plugin
-`key` 及其供 `definePageConfig()` 使用的 Page value。精确桥接适用于 `ev.config.ts`；
-JavaScript 配置保持安全，但不会声称拥有精确 Page key。可能进入 falsy 分支的条目也会
-被排除，因为运行时并不保证安装它们。宽化后的 array，以及条件化的 config 或 array
-联合也会基于同一理由被排除；需要 Page 配置的插件应直接放在传给 `defineConfig()` 的
-tuple 中。
+`id` 及其供 `definePageConfig()` 使用的 Page value。精确桥接适用于 `ev.config.ts`；
+JavaScript 配置保持安全，但不会声称拥有精确的 Page plugin-id registry。可能进入
+falsy 分支的条目也会被排除，因为运行时并不保证安装它们。宽化后的 array，以及条件化
+的 config 或 array 联合也会基于同一理由被排除；需要 Page 配置的插件应直接放在传给
+`defineConfig()` 的 tuple 中。
 Application 与 Page 的具体写法见[插件](./plugins)。
 
 Application 与 Page value 不会相互合并。在任一合同内部，authoring 字段会在校验前
@@ -121,7 +120,7 @@ authoring 字段会深度合并到 defaults，包括嵌套的 plain object；显
 mode，应读取后续方法的 `ctx.config`。
 
 Page 省略语义由 Page 合同是否有 defaults，以及 defaultable 合同采用的工厂写法共同
-决定。使用 `plugin(options)` 时，有 defaults 的 Page 在省略 key 后使用 defaults，
+决定。使用 `plugin(options)` 时，有 defaults 的 Page 省略该插件 id 后使用 defaults，
 否则关闭。defaultable 合同还会暴露 `plugin.forPages(options)`，此时省略始终关闭；
 non-defaultable 合同本身已经是 opt-in-only，不再暴露多余的方法。显式 `false` 关闭
 Page，`true` 要求 defaults，object 则在合并 defaults 并校验后启用 Page。
@@ -146,9 +145,15 @@ symbol、bigint、非有限数值、class instance、稀疏数组与循环引用
 
 ## 标识与顺序
 
-插件 `id` 是稳定的依赖与生命周期标识。只有声明 Page 配置时，才需要短小写 `key`，
-例如 `analytics` 或 `error-reporting`；纯 Application 插件省略它。一个 Application
-中的 plugin id 与已声明 Page key 必须分别唯一。
+每个插件只声明一个稳定、短小写的 `id`，例如 `analytics` 或 `error-reporting`。
+同一个 canonical id 用于依赖与生命周期状态、generated IR；插件声明 Page 合同时，
+它也作为 `page.config.ts#plugins` 中的键。它不是 package name，也没有独立的 Page
+别名：package 可以叫 `@company/analytics`，plugin id 则是 `analytics`。id 必须以
+小写字母开头，只能包含小写字母、数字，以及用单个连字符分隔的 segment；
+`__proto__`、`constructor`、`prototype`，以及 Windows 设备 basename（`con`、
+`prn`、`aux`、`nul`、`com1` 至 `com9`、`lpt1` 至 `lpt9`）是保留值。这保证原样
+使用的 id 在所有支持平台上都能安全地作为 generated path 的单个 segment。一个
+Application 中的 plugin id 必须唯一。
 
 `dependencies`、`optionalDependencies` 与 `enforce` 控制 hook 顺序。未知 descriptor
 字段与拼错的 hook 会被拒绝。
@@ -178,7 +183,7 @@ import { merge } from "@evjs/ev/config";
 import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
 
 const serverBasePath = definePlugin({
-  id: "@example/server-base-path",
+  id: "server-base-path",
   application: pluginConfig({
     defaults: { basePath: "/_framework" },
   }),
@@ -219,7 +224,7 @@ Setup context 提供 `mode`、`command`、`cwd`、resolved `config`、`logger`�
 
 工厂只控制 Page 省略语义，不改变插件执行和类型安全的 Application options：
 
-- `plugin(options)` 安装并执行插件；Page 有 defaults 时，省略 key 会启用该 Page；
+- `plugin(options)` 安装并执行插件；Page 有 defaults 时，省略该插件项会启用该 Page；
 - Page 合同有 defaults 时，`plugin.forPages(options)` 使用相同 Application options
   安装并执行同一个插件，但每个 Page 都必须通过 `true` 或 object 显式启用；
 - `config.plugins` 中的 `false`、`null` 或 `undefined` 会省略整个插件，不执行任何插件

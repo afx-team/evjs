@@ -203,7 +203,7 @@ schema 字段时，可以在写文件前包装这份 metadata：
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deployAdapter = definePlugin({
-  id: "@example/deploy-adapter",
+  id: "deploy-adapter",
   setup() {
     return {
       buildEnd({ deploymentMetadata }) {

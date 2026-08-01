@@ -410,7 +410,7 @@ describe("loadConfigFile", () => {
     ).resolves.toMatchObject({
       html: "./index.html",
       routing: { mode: "spa" },
-      plugins: [{ name: "node-deployment-adapter" }],
+      plugins: [{ id: "node-deployment-adapter" }],
     });
   });
 
@@ -425,8 +425,7 @@ describe("loadConfigFile", () => {
         import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
 
         const analytics = definePlugin({
-          id: "@company/analytics",
-          key: "analytics",
+          id: "analytics",
           application: pluginConfig({
             defaults: { channel: "web" },
           }),

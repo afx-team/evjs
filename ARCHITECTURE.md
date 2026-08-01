@@ -30,7 +30,8 @@ The semantic inputs are:
 - `config.plugins` installs typed plugin factories and supplies each plugin's
   independent Application configuration.
 - adjacent `page.config.ts` modules provide static title, named metadata,
-  rendering settings, and a generated short-keyed Page plugin map. Plugins
+  rendering settings, and a Page plugin map keyed by each plugin's canonical
+  `id`. Plugins
   derive Route or Document behavior from the normalized Page graph.
 - `application.routes` is an explicit SPA-only route tree. It normalizes into
   the same graph and cannot be combined with canonical `routing` discovery.

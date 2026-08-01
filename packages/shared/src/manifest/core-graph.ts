@@ -52,9 +52,31 @@ export type PageId = string;
 export type RouteId = string;
 export type DocumentId = string;
 
-const UNSAFE_CORE_PLUGIN_KEYS = new Set([
+const RESERVED_PLUGIN_IDS = new Set([
   "__proto__",
+  "aux",
+  "com1",
+  "com2",
+  "com3",
+  "com4",
+  "com5",
+  "com6",
+  "com7",
+  "com8",
+  "com9",
+  "con",
   "constructor",
+  "lpt1",
+  "lpt2",
+  "lpt3",
+  "lpt4",
+  "lpt5",
+  "lpt6",
+  "lpt7",
+  "lpt8",
+  "lpt9",
+  "nul",
+  "prn",
   "prototype",
 ]);
 
@@ -190,15 +212,14 @@ export type CoreDocumentBootstrap =
   | { kind: "page"; pageId: PageId };
 
 /**
- * Installed plugin contract metadata captured with the graph. Per-owner
- * settings refer to these short keys and are validated against this catalog.
+ * Installed plugin contract metadata captured with the graph. Each entry is
+ * keyed by the plugin's canonical id; per-owner settings use the same id.
  */
 export interface CorePluginCatalogSnapshot {
   entries: Record<string, CorePluginCatalogEntrySnapshot>;
 }
 
 export interface CorePluginCatalogEntrySnapshot {
-  id: string;
   application?: CorePluginApplicationContractSnapshot;
   page?: CorePluginPageContractSnapshot;
 }
@@ -354,6 +375,11 @@ export function assertCoreGraph(
     pluginCatalog,
     `${source}.plugins.entries`,
   );
+  assertPluginReferencesRegistered(
+    graph as unknown as CoreGraph,
+    pluginCatalog,
+    source,
+  );
 
   assertUniqueDocumentOutputs(documents, source);
   assertApplicationIndexes(applications, pages, routesById, documents, source);
@@ -398,24 +424,94 @@ function assertPluginSettingsRegistrations(
   }
 }
 
+function assertPluginReferencesRegistered(
+  graph: CoreGraph,
+  catalog: Record<string, CorePluginCatalogEntrySnapshot>,
+  source: string,
+): void {
+  for (const [applicationId, application] of Object.entries(
+    graph.applications,
+  )) {
+    assertPluginProvenanceRegistered(
+      application.provenance,
+      catalog,
+      `${source}.applications.${applicationId}.provenance.producer.id`,
+      `${source}.plugins.entries`,
+    );
+  }
+  for (const [index, route] of graph.routes.entries()) {
+    assertPluginProvenanceRegistered(
+      route.provenance,
+      catalog,
+      `${source}.routes[${index}].provenance.producer.id`,
+      `${source}.plugins.entries`,
+    );
+  }
+  for (const [documentId, document] of Object.entries(graph.documents)) {
+    assertPluginProvenanceRegistered(
+      document.provenance,
+      catalog,
+      `${source}.documents.${documentId}.provenance.producer.id`,
+      `${source}.plugins.entries`,
+    );
+    if (document.owner.kind === "plugin") {
+      assertPluginRegistered(
+        document.owner.pluginId,
+        catalog,
+        `${source}.documents.${documentId}.owner.pluginId`,
+        `${source}.plugins.entries`,
+      );
+    }
+  }
+}
+
+function assertPluginProvenanceRegistered(
+  provenance: CoreNodeProvenance,
+  catalog: Record<string, CorePluginCatalogEntrySnapshot>,
+  source: string,
+  catalogSource: string,
+): void {
+  if (provenance.producer.kind === "plugin") {
+    assertPluginRegistered(
+      provenance.producer.id,
+      catalog,
+      source,
+      catalogSource,
+    );
+  }
+}
+
+function assertPluginRegistered(
+  pluginId: string,
+  catalog: Record<string, CorePluginCatalogEntrySnapshot>,
+  source: string,
+  catalogSource: string,
+): void {
+  if (!Object.hasOwn(catalog, pluginId)) {
+    throw new Error(
+      `[evjs] ${source} "${pluginId}" is not installed in ${catalogSource}.`,
+    );
+  }
+}
+
 function assertPluginSettingOwners(
   settings: CoreApplicationPluginSettings | CorePagePluginSettings,
   requirePageContract: boolean,
   source: string,
   catalog: Record<string, CorePluginCatalogEntrySnapshot>,
 ): void {
-  for (const key of Object.keys(settings)) {
-    const definition = getOwn(catalog, key) as
+  for (const pluginId of Object.keys(settings)) {
+    const definition = getOwn(catalog, pluginId) as
       | CorePluginCatalogEntrySnapshot
       | undefined;
     if (!definition) {
       throw new Error(
-        `[evjs] ${source} uses plugin key "${key}", but that plugin is not installed.`,
+        `[evjs] ${source} uses plugin id "${pluginId}", but that plugin is not installed.`,
       );
     }
     if (requirePageContract && !definition.page) {
       throw new Error(
-        `[evjs] ${source} uses plugin key "${key}", but plugin "${definition.id}" does not declare a Page contract.`,
+        `[evjs] ${source} uses plugin id "${pluginId}", but that plugin does not declare a Page contract.`,
       );
     }
   }
@@ -730,7 +826,7 @@ function assertDocumentOwner(value: unknown, source: string): void {
   }
   if (owner.kind === "plugin") {
     assertObjectKeys(owner, source, ["kind", "pluginId"]);
-    assertNonEmptyString(owner.pluginId, `${source}.pluginId`);
+    assertPluginId(owner.pluginId, `${source}.pluginId`);
     return;
   }
   throw new Error(
@@ -1413,9 +1509,9 @@ function assertPluginSettings(
   allowConfig: boolean,
 ): void {
   const settings = assertRecord(value, source);
-  for (const [key, valueSetting] of Object.entries(settings)) {
-    assertCorePluginKey(key, `${source} key`);
-    const settingSource = `${source}.${key}`;
+  for (const [pluginId, valueSetting] of Object.entries(settings)) {
+    assertPluginId(pluginId, `${source} plugin id`);
+    const settingSource = `${source}.${pluginId}`;
     const setting = assertObjectShape(
       valueSetting,
       settingSource,
@@ -1439,26 +1535,16 @@ function assertPluginCatalog(
 ): Record<string, CorePluginCatalogEntrySnapshot> {
   const catalog = assertObjectShape(value, source, ["entries"]);
   const entries = assertRecord(catalog.entries, `${source}.entries`);
-  const keyById = new Map<string, string>();
 
-  for (const [key, valueEntry] of Object.entries(entries)) {
-    assertCorePluginKey(key, `${source}.entries key`);
-    const entrySource = `${source}.entries.${key}`;
+  for (const [pluginId, valueEntry] of Object.entries(entries)) {
+    assertPluginId(pluginId, `${source}.entries plugin id`);
+    const entrySource = `${source}.entries.${pluginId}`;
     const entry = assertObjectShape(
       valueEntry,
       entrySource,
-      ["id"],
+      [],
       ["application", "page"],
     );
-    assertTrimmedNonEmptyString(entry.id, `${entrySource}.id`);
-    const id = entry.id as string;
-    const existingKey = keyById.get(id);
-    if (existingKey !== undefined) {
-      throw new Error(
-        `[evjs] ${entrySource}.id "${id}" duplicates the plugin id registered by key "${existingKey}".`,
-      );
-    }
-    keyById.set(id, key);
 
     const application = getOwn(entry, "application");
     if (application !== undefined) {
@@ -1493,13 +1579,19 @@ function assertPluginContract(
   }
 }
 
-function assertCorePluginKey(value: string, source: string): void {
+/** Validate the canonical short id shared by plugin config, graph, and IR. */
+export function assertPluginId(
+  value: unknown,
+  source = "plugin id",
+): asserts value is string {
   if (
+    typeof value !== "string" ||
     !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ||
-    UNSAFE_CORE_PLUGIN_KEYS.has(value)
+    RESERVED_PLUGIN_IDS.has(value)
   ) {
+    const actual = typeof value === "string" ? ` "${value}"` : "";
     throw new Error(
-      `[evjs] ${source} "${value}" must be a lowercase plugin key such as "analytics" or "error-reporting" and must not be __proto__, constructor, or prototype.`,
+      `[evjs] ${source}${actual} must be a lowercase plugin id such as "analytics" or "error-reporting" and must not be a reserved object key or Windows device basename.`,
     );
   }
 }
@@ -1523,7 +1615,11 @@ function assertProvenance(
       `[evjs] ${source}.producer.kind must be "core", "provider", or "plugin".`,
     );
   }
-  assertNonEmptyString(producer.id, `${source}.producer.id`);
+  if (producer.kind === "plugin") {
+    assertPluginId(producer.id, `${source}.producer.id`);
+  } else {
+    assertNonEmptyString(producer.id, `${source}.producer.id`);
+  }
   const provenanceSource = getOwn(provenance, "source");
   if (provenanceSource !== undefined) {
     assertNonEmptyString(provenanceSource, `${source}.source`);

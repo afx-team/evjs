@@ -22,60 +22,66 @@ import { assertBuildEndDeploymentOutputsAvailable } from "./deployment-output-re
 const typedPluginHookNames: readonly (keyof PluginHooks)[] = PLUGIN_HOOK_NAMES;
 
 interface PluginOrderDeclaration {
-  name: string;
-  dependencies?: string[];
-  optionalDependencies?: string[];
+  id: string;
+  dependencies?: readonly string[];
+  optionalDependencies?: readonly string[];
   enforce?: "pre" | "normal" | "post";
 }
 
 export function orderPluginsByDependencies<
   TPlugin extends PluginOrderDeclaration,
 >(plugins: TPlugin[]): TPlugin[] {
-  const pluginByName = new Map<string, TPlugin>();
-  const dependentsByName = new Map<string, string[]>();
-  const dependencyCountByName = new Map<string, number>();
+  const pluginById = new Map<string, TPlugin>();
+  const dependentsById = new Map<string, string[]>();
+  const dependencyCountById = new Map<string, number>();
 
   for (const plugin of plugins) {
-    if (pluginByName.has(plugin.name)) {
+    if (pluginById.has(plugin.id)) {
       throw new Error(
-        `[evjs] Duplicate plugin name "${plugin.name}". Plugin names must be unique.`,
+        `[evjs] Duplicate plugin id "${plugin.id}". Plugin ids must be globally unique.`,
       );
     }
-    pluginByName.set(plugin.name, plugin);
-    dependentsByName.set(plugin.name, []);
-    dependencyCountByName.set(plugin.name, 0);
+    pluginById.set(plugin.id, plugin);
+    dependentsById.set(plugin.id, []);
+    dependencyCountById.set(plugin.id, 0);
   }
 
   function addDependency(
     plugin: TPlugin,
-    dependencyName: string,
+    dependencyId: string,
     optional: boolean,
   ): void {
-    const dependency = pluginByName.get(dependencyName);
+    if (dependencyId === plugin.id) {
+      const field = optional ? "optionalDependencies" : "dependencies";
+      throw new Error(
+        `[evjs] Plugin "${plugin.id}" ${field} must not contain its own id.`,
+      );
+    }
+    const dependency = pluginById.get(dependencyId);
     if (!dependency) {
       if (optional) return;
       throw new Error(
-        `[evjs] Plugin "${plugin.name}" depends on missing plugin "${dependencyName}".`,
+        `[evjs] Plugin "${plugin.id}" depends on missing plugin "${dependencyId}".`,
       );
     }
-    dependentsByName.get(dependencyName)?.push(plugin.name);
-    dependencyCountByName.set(
-      plugin.name,
-      (dependencyCountByName.get(plugin.name) ?? 0) + 1,
+    dependentsById.get(dependencyId)?.push(plugin.id);
+    dependencyCountById.set(
+      plugin.id,
+      (dependencyCountById.get(plugin.id) ?? 0) + 1,
     );
   }
 
   for (const plugin of plugins) {
-    for (const dependencyName of plugin.dependencies ?? []) {
-      addDependency(plugin, dependencyName, false);
+    for (const dependencyId of plugin.dependencies ?? []) {
+      addDependency(plugin, dependencyId, false);
     }
-    for (const dependencyName of plugin.optionalDependencies ?? []) {
-      addDependency(plugin, dependencyName, true);
+    for (const dependencyId of plugin.optionalDependencies ?? []) {
+      addDependency(plugin, dependencyId, true);
     }
   }
 
   const ready = plugins
-    .filter((plugin) => dependencyCountByName.get(plugin.name) === 0)
+    .filter((plugin) => dependencyCountById.get(plugin.id) === 0)
     .sort(comparePluginEnforce);
   const ordered: TPlugin[] = [];
 
@@ -84,12 +90,12 @@ export function orderPluginsByDependencies<
     if (!plugin) break;
     ordered.push(plugin);
 
-    for (const dependentName of dependentsByName.get(plugin.name) ?? []) {
+    for (const dependentId of dependentsById.get(plugin.id) ?? []) {
       const nextDependencyCount =
-        (dependencyCountByName.get(dependentName) ?? 0) - 1;
-      dependencyCountByName.set(dependentName, nextDependencyCount);
+        (dependencyCountById.get(dependentId) ?? 0) - 1;
+      dependencyCountById.set(dependentId, nextDependencyCount);
       if (nextDependencyCount !== 0) continue;
-      const dependent = pluginByName.get(dependentName);
+      const dependent = pluginById.get(dependentId);
       if (dependent) {
         ready.push(dependent);
         ready.sort(comparePluginEnforce);
@@ -98,7 +104,7 @@ export function orderPluginsByDependencies<
   }
 
   if (ordered.length !== plugins.length) {
-    throwPluginDependencyCycle(plugins, ordered, pluginByName);
+    throwPluginDependencyCycle(plugins, ordered, pluginById);
   }
   return ordered;
 }
@@ -106,38 +112,38 @@ export function orderPluginsByDependencies<
 function throwPluginDependencyCycle<TPlugin extends PluginOrderDeclaration>(
   plugins: TPlugin[],
   ordered: TPlugin[],
-  pluginByName: Map<string, TPlugin>,
+  pluginById: Map<string, TPlugin>,
 ): never {
-  const remainingNames = plugins
+  const remainingIds = plugins
     .filter((plugin) => !ordered.includes(plugin))
-    .map((plugin) => plugin.name);
-  const remaining = new Set(remainingNames);
+    .map((plugin) => plugin.id);
+  const remaining = new Set(remainingIds);
 
-  for (const pluginName of remainingNames) {
+  for (const pluginId of remainingIds) {
     const dependencyPath: string[] = [];
     const seen = new Set<string>();
-    let currentName = pluginName;
-    let repeatedName: string | undefined;
+    let currentId = pluginId;
+    let repeatedId: string | undefined;
 
     while (true) {
-      if (seen.has(currentName)) {
-        repeatedName = currentName;
+      if (seen.has(currentId)) {
+        repeatedId = currentId;
         break;
       }
-      seen.add(currentName);
-      dependencyPath.push(currentName);
-      const current = pluginByName.get(currentName);
-      const nextName = [
+      seen.add(currentId);
+      dependencyPath.push(currentId);
+      const current = pluginById.get(currentId);
+      const nextId = [
         ...(current?.dependencies ?? []),
         ...(current?.optionalDependencies ?? []),
-      ].find((name) => remaining.has(name));
-      if (!nextName) break;
-      currentName = nextName;
+      ].find((id) => remaining.has(id));
+      if (!nextId) break;
+      currentId = nextId;
     }
 
-    if (repeatedName) {
-      const cycleStart = dependencyPath.indexOf(repeatedName);
-      const cycle = [...dependencyPath.slice(cycleStart), repeatedName].join(
+    if (repeatedId) {
+      const cycleStart = dependencyPath.indexOf(repeatedId);
+      const cycle = [...dependencyPath.slice(cycleStart), repeatedId].join(
         " -> ",
       );
       throw new Error(`[evjs] Circular plugin dependency detected: ${cycle}.`);
@@ -145,7 +151,7 @@ function throwPluginDependencyCycle<TPlugin extends PluginOrderDeclaration>(
   }
 
   throw new Error(
-    `[evjs] Circular plugin dependency detected among: ${remainingNames.join(", ")}.`,
+    `[evjs] Circular plugin dependency detected among: ${remainingIds.join(", ")}.`,
   );
 }
 
@@ -176,7 +182,7 @@ export async function collectPluginHooks<TBundlerCfg>(
     for (const plugin of plugins) {
       if (!plugin.setup) continue;
       const hooks = resolvePluginSetupHooks<TBundlerCfg>(
-        plugin.name,
+        plugin.id,
         await plugin.setup(setupContext),
       );
       if (hooks) allHooks.push(hooks);
@@ -196,13 +202,13 @@ export async function collectPluginHooks<TBundlerCfg>(
 }
 
 function resolvePluginSetupHooks<TBundlerCfg>(
-  pluginName: string,
+  pluginId: string,
   hooks: unknown,
 ): PluginHooks<TBundlerCfg> | undefined {
   if (hooks === undefined) return undefined;
   if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" setup hook must return a plugin hooks object or undefined.`,
+      `[evjs] Plugin "${pluginId}" setup hook must return a plugin hooks object or undefined.`,
     );
   }
 
@@ -210,24 +216,24 @@ function resolvePluginSetupHooks<TBundlerCfg>(
   for (const key of Reflect.ownKeys(hookConfig)) {
     if (typeof key !== "string") {
       throw new Error(
-        `[evjs] Plugin "${pluginName}" setup hook returned an unsupported symbol field.`,
+        `[evjs] Plugin "${pluginId}" setup hook returned an unsupported symbol field.`,
       );
     }
     const descriptor = Object.getOwnPropertyDescriptor(hookConfig, key);
     if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
       throw new Error(
-        `[evjs] Plugin "${pluginName}" setup hook returned "${key}" must be an enumerable own data property.`,
+        `[evjs] Plugin "${pluginId}" setup hook returned "${key}" must be an enumerable own data property.`,
       );
     }
     if (!isPluginHookName(key)) {
-      throwUnknownPluginHook(pluginName, key);
+      throwUnknownPluginHook(pluginId, key);
     }
     if (
       descriptor.value !== undefined &&
       typeof descriptor.value !== "function"
     ) {
       throw new Error(
-        `[evjs] Plugin "${pluginName}" setup hook returned ${key} must be a function.`,
+        `[evjs] Plugin "${pluginId}" setup hook returned ${key} must be a function.`,
       );
     }
   }
@@ -240,17 +246,17 @@ function isPluginHookName(
   return (typedPluginHookNames as readonly string[]).includes(value);
 }
 
-function throwUnknownPluginHook(pluginName: string, hookName: string): never {
+function throwUnknownPluginHook(pluginId: string, hookName: string): never {
   const replacement = PLUGIN_HOOK_NAMES.find(
     (candidate) => candidate.toLowerCase() === hookName.toLowerCase(),
   );
   if (replacement) {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" setup hook returned unsupported hook "${hookName}". Use "${replacement}" instead.`,
+      `[evjs] Plugin "${pluginId}" setup hook returned unsupported hook "${hookName}". Use "${replacement}" instead.`,
     );
   }
   throw new Error(
-    `[evjs] Plugin "${pluginName}" setup hook returned unknown hook "${hookName}". Supported hooks are ${PLUGIN_HOOK_NAMES.join(", ")}.`,
+    `[evjs] Plugin "${pluginId}" setup hook returned unknown hook "${hookName}". Supported hooks are ${PLUGIN_HOOK_NAMES.join(", ")}.`,
   );
 }
 
@@ -277,10 +283,10 @@ export async function runConfigHooks<TBundlerCfg>(
     if (!plugin.config) continue;
     const hookInput = config ?? {};
     const nextConfig = await plugin.config(hookInput, ctx);
-    assertConfigHookDidNotInstallPlugins(plugin.name, hookInput);
+    assertConfigHookDidNotInstallPlugins(plugin.id, hookInput);
     if (nextConfig !== undefined) {
       config = cloneConfigHookInput(
-        resolvePluginConfigHookResult<TBundlerCfg>(plugin.name, nextConfig),
+        resolvePluginConfigHookResult<TBundlerCfg>(plugin.id, nextConfig),
       );
     }
   }
@@ -300,12 +306,12 @@ function createConfigHookInput<TBundlerCfg>(
 }
 
 function assertConfigHookDidNotInstallPlugins(
-  pluginName: string,
+  pluginId: string,
   config: object,
 ): void {
   if (!Object.hasOwn(config, "plugins")) return;
   throw new Error(
-    `[evjs] Plugin "${pluginName}" config hook cannot change config.plugins. Install plugins only in the Application config.`,
+    `[evjs] Plugin "${pluginId}" config hook cannot change config.plugins. Install plugins only in the Application config.`,
   );
 }
 
@@ -381,15 +387,15 @@ function isPlainObject(value: object): boolean {
 }
 
 function resolvePluginConfigHookResult<TBundlerCfg>(
-  pluginName: string,
+  pluginId: string,
   config: unknown,
 ): PluginConfigHookInput<TBundlerCfg> {
   if (config && typeof config === "object" && !Array.isArray(config)) {
-    assertConfigHookDidNotInstallPlugins(pluginName, config);
+    assertConfigHookDidNotInstallPlugins(pluginId, config);
     return config as PluginConfigHookInput<TBundlerCfg>;
   }
   throw new Error(
-    `[evjs] Plugin "${pluginName}" config hook must return a config object or undefined.`,
+    `[evjs] Plugin "${pluginId}" config hook must return a config object or undefined.`,
   );
 }
 
@@ -541,7 +547,7 @@ export function hasSamePluginIdentity<TBundlerCfg>(
 ): boolean {
   return (
     previous.length === next.length &&
-    previous.every((plugin, index) => plugin.name === next[index]?.name)
+    previous.every((plugin, index) => plugin.id === next[index]?.id)
   );
 }
 

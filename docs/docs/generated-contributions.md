@@ -37,7 +37,7 @@ flowchart TB
   end
 
   subgraph Materialize["Materialized .ev output"]
-    Files[".ev/plugins/<plugin>\ngenerated artifacts"]
+    Files[".ev/plugins/<id>\ngenerated artifacts"]
     Manifest[".ev/manifest.json\nmodules + slots + importEdges"]
   end
 
@@ -69,10 +69,9 @@ flowchart TB
 │   ├── main.ts
 │   └── server.ts
 ├── plugins/
-│   └── qiankun/
-│       └── slave/
-│           ├── entry-wrapper.ts
-│           └── original-entry.ts
+│   └── qiankun-slave/
+│       ├── entry-wrapper.ts
+│       └── original-entry.ts
 ├── manifest.json
 └── types.d.ts
 ```
@@ -83,11 +82,11 @@ The structure is stable and readable:
   build-plan snapshots. `core-graph.json` is the single semantic source of
   truth consumed by planning and inspection.
 - `entries/` contains framework-owned entry facades consumed by bundlers.
-- `plugins/<plugin>/` contains plugin generated artifacts.
-- Plugin names are normalized into path segments; a role suffix such as
-  `@evjs/plugin-qiankun:slave` becomes `qiankun/slave`.
+- `plugins/<id>/` contains plugin generated artifacts.
+- A plugin's canonical `id` is its generated-artifact path segment; for example,
+  `qiankun-slave` owns `plugins/qiankun-slave/`.
 - `manifest.json` ties together generated artifacts, import edges, slot items,
-  producer plugin names, scopes, and final entries.
+  producer plugin ids, scopes, and final entries.
 
 Generated files may import generated-only `@evjs/ev/_internal/*` helpers when
 they need framework runtime internals. Plugin source should not import those
@@ -127,7 +126,7 @@ Generated modules use opaque refs instead of exposing filesystem paths:
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
+  id: "analytics",
   contributions(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
@@ -187,9 +186,8 @@ replacement entry owns that first `start()` call and later `app.render()`
 remounts. Other entry types cannot disable framework startup.
 
 Generated plugin paths are stable and readable. For example, a plugin with id
-`@evjs/plugin-qiankun:slave` writes modules under
-`.ev/plugins/qiankun/slave/*` and exposes specifiers such as
-`evjs:generated/qiankun/slave/entry-wrapper`.
+`qiankun-slave` writes modules under `.ev/plugins/qiankun-slave/*` and exposes
+specifiers such as `evjs:generated/qiankun-slave/entry-wrapper`.
 
 Use `ctx.slot(name).add(...)` to attach generated artifacts to the framework.
 The supported slots are:
@@ -289,7 +287,7 @@ an entry contribution.
 For code review or debugging, inspect `.ev/manifest.json` first:
 
 1. Find the final entry under `entries`.
-2. Inspect `generated.modules` for plugin artifacts and producer plugin names.
+2. Inspect `generated.modules` for plugin artifacts and producer plugin ids.
 3. Inspect `generated.slots` to see where artifacts attach.
 4. Inspect `generated.importEdges` to understand generated-to-generated imports.
 5. Open the matching files under `.ev/entries` and `.ev/plugins`.

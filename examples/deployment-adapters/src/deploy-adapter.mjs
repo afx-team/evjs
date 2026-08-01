@@ -4,7 +4,7 @@ import { createDeploymentArtifact } from "@evjs/ev/deployment";
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deploymentExampleAdapter = definePlugin({
-  id: "@example/deployment-adapter",
+  id: "deployment-adapter",
   setup(ctx) {
     return {
       buildOutput(output) {

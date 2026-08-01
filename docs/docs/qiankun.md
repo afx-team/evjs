@@ -475,7 +475,7 @@ type TernMasterConfig = {
 };
 
 export const ternMaster = definePlugin({
-  id: "@company/evjs-plugin-tern:master",
+  id: "tern-master",
   application: pluginConfig<TernMasterConfig>(),
 
   setup() {
@@ -560,7 +560,7 @@ type TernSlaveConfig = {
 };
 
 export const ternSlave = definePlugin({
-  id: "@company/evjs-plugin-tern:slave",
+  id: "tern-slave",
   application: pluginConfig<TernSlaveConfig>({ defaults: {} }),
 
   setup(ctx) {

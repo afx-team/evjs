@@ -204,17 +204,21 @@ describe("plugin type output", () => {
     await writeFixtureFiles(cwd, {
       "ev.config.ts": `
         interface AnalyticsPlugin {
-          readonly key: "analytics";
+          readonly id: "analytics";
+          readonly page: true;
           readonly channel: "checkout";
         }
         interface ConditionalPlugin {
-          readonly key: "conditional-analytics";
+          readonly id: "conditional-analytics";
+          readonly page: true;
         }
         interface BranchAPlugin {
-          readonly key: "branch-a";
+          readonly id: "branch-a";
+          readonly page: true;
         }
         interface BranchBPlugin {
-          readonly key: "branch-b";
+          readonly id: "branch-b";
+          readonly page: true;
         }
         declare const condition: boolean;
         declare const enabled: AnalyticsPlugin;
@@ -222,7 +226,7 @@ describe("plugin type output", () => {
         declare const conditional: ConditionalPlugin;
         declare const branchA: BranchAPlugin;
         declare const branchB: BranchBPlugin;
-        declare const applicationOnly: { readonly id: "@test/application-only" };
+        declare const applicationOnly: { readonly id: "application-only" };
         export default {
           plugins: [
             condition ? enabled : disabled,
@@ -268,113 +272,118 @@ describe("plugin type output", () => {
           ]
             ? DefinitelyInstalledPluginEntries<TPlugins>
             : never;
-        export type ExtractInstalledPlugin<TConfig, TKey extends string> =
-          Extract<ConfiguredPlugin<TConfig>, { readonly key: TKey }>;
+        export type ExtractInstalledPlugin<TConfig, TId extends string> =
+          Extract<ConfiguredPlugin<TConfig>, { readonly id: TId }>;
         type InstalledConfig =
           InstalledPluginRegistry extends { readonly config: infer TConfig }
             ? TConfig
             : never;
         export type InstalledPlugin = ConfiguredPlugin<InstalledConfig>;
-        type PluginKey<TPlugin> =
-          TPlugin extends { readonly key: infer TKey extends string }
-            ? TKey
+        type PluginId<TPlugin> =
+          TPlugin extends {
+            readonly id: infer TId extends string;
+            readonly page: true;
+          }
+            ? TId
             : never;
-        export type InstalledPagePluginKey =
-          PluginKey<InstalledPlugin>;
-        export type DeterministicTupleKey = PluginKey<
+        export type InstalledPagePluginId =
+          PluginId<InstalledPlugin>;
+        export type DeterministicTupleId = PluginId<
           ConfiguredPlugin<{
             readonly plugins: readonly [
-              { readonly key: "tuple-analytics" }
+              { readonly id: "tuple-analytics"; readonly page: true }
             ]
           }>
         >;
-        export type ConditionalConfigKey = PluginKey<
+        export type ConditionalConfigId = PluginId<
           ConfiguredPlugin<
             | {
                 readonly plugins: readonly [
-                  { readonly key: "conditional-config-a" }
+                  { readonly id: "conditional-config-a"; readonly page: true }
                 ]
               }
             | {
                 readonly plugins: readonly [
-                  { readonly key: "conditional-config-b" }
+                  { readonly id: "conditional-config-b"; readonly page: true }
                 ]
               }
           >
         >;
-        export type ConditionalPluginArrayKey = PluginKey<
+        export type ConditionalPluginArrayId = PluginId<
           ConfiguredPlugin<{
             readonly plugins:
-              | readonly [{ readonly key: "conditional-array-a" }]
-              | readonly [{ readonly key: "conditional-array-b" }]
+              | readonly [{ readonly id: "conditional-array-a"; readonly page: true }]
+              | readonly [{ readonly id: "conditional-array-b"; readonly page: true }]
           }>
         >;
-        export type WidenedPluginArrayKey = PluginKey<
+        export type WidenedPluginArrayId = PluginId<
           ConfiguredPlugin<{
             readonly plugins: readonly {
-              readonly key: "widened-analytics"
+              readonly id: "widened-analytics"
+              readonly page: true
             }[]
           }>
         >;
       `,
       "src/page.config.ts": `
         import type {
-          ConditionalConfigKey,
-          ConditionalPluginArrayKey,
-          DeterministicTupleKey,
+          ConditionalConfigId,
+          ConditionalPluginArrayId,
+          DeterministicTupleId,
           ExtractInstalledPlugin,
-          InstalledPagePluginKey,
+          InstalledPagePluginId,
           InstalledPlugin,
           InstalledPluginRegistry,
-          WidenedPluginArrayKey,
+          WidenedPluginArrayId,
         } from "@evjs/ev/config";
         type Plugin = ExtractInstalledPlugin<
           InstalledPluginRegistry["config"],
           "analytics"
         >;
-        const key: InstalledPagePluginKey = "analytics";
+        const id: InstalledPagePluginId = "analytics";
         const plugin: Plugin = {
-          key: "analytics",
+          id: "analytics",
+          page: true,
           channel: "checkout",
         };
-        const deterministicTupleKey: DeterministicTupleKey =
+        const deterministicTupleId: DeterministicTupleId =
           "tuple-analytics";
         // @ts-expect-error A conditional config does not guarantee either plugin.
-        const conditionalConfigKey: ConditionalConfigKey =
+        const conditionalConfigId: ConditionalConfigId =
           "conditional-config-a";
         // @ts-expect-error A conditional plugin array does not guarantee either plugin.
-        const conditionalPluginArrayKey: ConditionalPluginArrayKey =
+        const conditionalPluginArrayId: ConditionalPluginArrayId =
           "conditional-array-a";
         // @ts-expect-error A widened array may be empty at runtime.
-        const widenedPluginArrayKey: WidenedPluginArrayKey =
+        const widenedPluginArrayId: WidenedPluginArrayId =
           "widened-analytics";
-        // @ts-expect-error Application-only plugins have no Page key.
-        const applicationOnlyKey: InstalledPagePluginKey = "application-only";
+        // @ts-expect-error Application-only plugins have no Page id.
+        const applicationOnlyId: InstalledPagePluginId = "application-only";
         // @ts-expect-error Runtime false/null/undefined branches are excluded.
-        const inactiveKey: InstalledPagePluginKey = "inactive";
+        const inactiveId: InstalledPagePluginId = "inactive";
         // @ts-expect-error A conditionally omitted plugin is not definitely installed.
-        const conditionalKey: InstalledPagePluginKey = "conditional-analytics";
+        const conditionalId: InstalledPagePluginId = "conditional-analytics";
         // @ts-expect-error Neither side of a conditional plugin branch is guaranteed.
-        const branchAKey: InstalledPagePluginKey = "branch-a";
+        const branchAId: InstalledPagePluginId = "branch-a";
         // @ts-expect-error Neither side of a conditional plugin branch is guaranteed.
-        const branchBKey: InstalledPagePluginKey = "branch-b";
+        const branchBId: InstalledPagePluginId = "branch-b";
         type InactivePlugin = Extract<
           InstalledPlugin,
           false | null | undefined
         >;
         // @ts-expect-error Inactive config sentinels are not plugin instances.
         const inactivePlugin: InactivePlugin = false;
-        void key;
+        void id;
         void plugin;
-        void deterministicTupleKey;
-        void conditionalConfigKey;
-        void conditionalPluginArrayKey;
-        void widenedPluginArrayKey;
-        void applicationOnlyKey;
-        void inactiveKey;
-        void conditionalKey;
-        void branchAKey;
-        void branchBKey;
+        void deterministicTupleId;
+        void conditionalConfigId;
+        void conditionalPluginArrayId;
+        void widenedPluginArrayId;
+        void applicationOnlyId;
+        void inactiveId;
+        void conditionalId;
+        void branchAId;
+        void branchBId;
         void inactivePlugin;
       `,
       "tsconfig.json": JSON.stringify({
@@ -404,11 +413,95 @@ describe("plugin type output", () => {
     ).resolves.toMatchObject({ stderr: "" });
   });
 
+  it("type-checks real plugin factories through the generated Page bridge", async () => {
+    const cwd = await createTempDir();
+    const repoRoot = path.resolve(import.meta.dirname, "../../..");
+    const nodeTypeRoot = path.dirname(
+      path.dirname(require.resolve("@types/node/package.json")),
+    );
+    await writeFixtureFiles(cwd, {
+      "ev.config.ts": `
+        import { defineConfig } from "@evjs/ev";
+        import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+
+        const analytics = definePlugin({
+          id: "analytics",
+          page: pluginConfig<{ channel: string }>({
+            defaults: { channel: "default" },
+          }),
+        });
+        const applicationOnly = definePlugin({
+          id: "application-only",
+          application: pluginConfig({ defaults: { enabled: true } }),
+        });
+        const monitoring = definePlugin({
+          id: "monitoring",
+          page: pluginConfig<{ level: string }>(),
+        });
+        const widenedMonitoring = monitoring() as Omit<
+          ReturnType<typeof monitoring>,
+          "id"
+        > & { readonly id: string };
+
+        export default defineConfig({
+          plugins: [analytics(), applicationOnly(), widenedMonitoring] as const,
+        });
+      `,
+      "src/page.config.ts": `
+        import { definePageConfig } from "@evjs/ev";
+
+        export default definePageConfig({
+          plugins: {
+            analytics: { channel: "checkout" },
+            // @ts-expect-error Application-only plugin ids are not available to Pages.
+            "application-only": true,
+            // @ts-expect-error A widened plugin id is not a definite Page identity.
+            monitoring: { level: "error" },
+          },
+        });
+      `,
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          ignoreDeprecations: "6.0",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          noEmit: true,
+          paths: {
+            "@evjs/client": [
+              path.join(repoRoot, "packages/client/src/index.ts"),
+            ],
+            "@evjs/ev": [path.join(repoRoot, "packages/ev/src/index.ts")],
+            "@evjs/ev/*": [path.join(repoRoot, "packages/ev/src/*")],
+            "@evjs/server": [
+              path.join(repoRoot, "packages/server/src/index.ts"),
+            ],
+            "@evjs/shared/*": [path.join(repoRoot, "packages/shared/src/*")],
+          },
+          skipLibCheck: true,
+          strict: true,
+          target: "ESNext",
+          typeRoots: [nodeTypeRoot],
+          types: ["node"],
+        },
+        include: ["ev.config.ts", "src"],
+      }),
+    });
+    await syncPluginTypes({ cwd });
+
+    const tsc = require.resolve("typescript/bin/tsc");
+    await expect(
+      execFileAsync(process.execPath, [tsc, "--project", "tsconfig.json"], {
+        cwd,
+      }),
+    ).resolves.toMatchObject({ stderr: "" });
+  });
+
   it("keeps JavaScript configs from widening the Page registry to any", async () => {
     const cwd = await createTempDir();
     await writeFixtureFiles(cwd, {
       "ev.config.mjs": `
-        export default { plugins: [{ key: "analytics" }] };
+        export default { plugins: [{ id: "analytics" }] };
       `,
       "src/framework-config.ts": `
         export interface InstalledPluginRegistry {}

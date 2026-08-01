@@ -26,6 +26,7 @@ import type {
   ServerAppEntryMetadata,
   ServerMiddlewareNode,
 } from "@evjs/shared/manifest";
+import { assertPluginId } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type {
   ContributionContext,
@@ -117,7 +118,7 @@ type GeneratedSource =
 interface InternalGeneratedModule {
   key: string;
   id: string;
-  pluginName: string;
+  pluginId: string;
   scope: GeneratedScope;
   source: GeneratedSource;
   resolvedSource?: string;
@@ -261,7 +262,9 @@ class ContributionCollector<TBundlerCfg> {
   ) {}
 
   async run(plugin: Plugin<TBundlerCfg>): Promise<void> {
-    const emit = this.createEmitApi(plugin.name);
+    const pluginId = plugin.id;
+    assertPluginId(pluginId, "plugin id");
+    const emit = this.createEmitApi(pluginId);
     const context: ContributionContext<TBundlerCfg> = {
       ...this.options.pluginContext,
       mode: this.options.mode,
@@ -271,7 +274,7 @@ class ContributionCollector<TBundlerCfg> {
       framework: createFrameworkIRView(this.options.graph, this.options.plan),
       emit,
       slot: <K extends FrameworkSlotName>(name: K) =>
-        this.createSlot(plugin.name, name),
+        this.createSlot(pluginId, name),
     };
     await plugin.contributions?.(context);
   }
@@ -308,7 +311,7 @@ class ContributionCollector<TBundlerCfg> {
         !Object.hasOwn(this.options.graph.pages, module.scope.pageId)
       ) {
         throw new Error(
-          `[evjs] Plugin "${module.pluginName}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
+          `[evjs] Plugin "${module.pluginId}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
         );
       }
     }
@@ -330,7 +333,7 @@ class ContributionCollector<TBundlerCfg> {
             ? `application "${target.applicationId}"`
             : "an application";
           throw new Error(
-            `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
+            `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
           );
         }
         const pageId = target.pageId;
@@ -343,7 +346,7 @@ class ContributionCollector<TBundlerCfg> {
           ? ` It is served by shared SPA application "${route.applicationId}".`
           : "";
         throw new Error(
-          `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
+          `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
         );
       }
 
@@ -362,7 +365,7 @@ class ContributionCollector<TBundlerCfg> {
             ? `application "${target.applicationId}"`
             : "an application";
           throw new Error(
-            `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
+            `[evjs] Plugin "${slot.pluginId}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
           );
         }
         const pageId = target.pageId;
@@ -375,7 +378,7 @@ class ContributionCollector<TBundlerCfg> {
           ? ` It shares the Document owned by SPA application "${route.applicationId}".`
           : "";
         throw new Error(
-          `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
+          `[evjs] Plugin "${slot.pluginId}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
         );
       }
     }
@@ -387,7 +390,7 @@ class ContributionCollector<TBundlerCfg> {
     if (target.kind === "page") {
       if (Object.hasOwn(this.options.graph.pages, target.pageId)) return;
       throw new Error(
-        `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets unknown page "${target.pageId}".`,
+        `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets unknown page "${target.pageId}".`,
       );
     }
     if (
@@ -397,7 +400,7 @@ class ContributionCollector<TBundlerCfg> {
       return;
     }
     throw new Error(
-      `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets unknown application "${target.applicationId}".`,
+      `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets unknown application "${target.applicationId}".`,
     );
   }
 
@@ -417,11 +420,11 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private createEmitApi(pluginName: string): EmitApi {
+  private createEmitApi(pluginId: string): EmitApi {
     return {
       module: (input) => {
-        const id = validateContributionId(input.id, pluginName);
-        return this.emitGeneratedModule(pluginName, {
+        const id = validateContributionId(input.id, pluginId);
+        return this.emitGeneratedModule(pluginId, {
           id,
           scope: input.scope,
           source: input.source,
@@ -430,13 +433,13 @@ class ContributionCollector<TBundlerCfg> {
         });
       },
       data: (input) => {
-        const id = validateContributionId(input.id, pluginName);
+        const id = validateContributionId(input.id, pluginId);
         assertStaticJsonValue(
           input.value,
-          `Plugin "${pluginName}" generated data "${id}" value`,
+          `Plugin "${pluginId}" generated data "${id}" value`,
         );
         const source = `${JSON.stringify(input.value, null, 2)}\n`;
-        return this.emitGeneratedModule(pluginName, {
+        return this.emitGeneratedModule(pluginId, {
           id,
           scope: input.scope,
           source,
@@ -445,24 +448,24 @@ class ContributionCollector<TBundlerCfg> {
         });
       },
       entryFacade: (input) => {
-        const id = validateContributionId(input.id, pluginName);
+        const id = validateContributionId(input.id, pluginId);
         const entry = findFrameworkEntry(
           this.options.plan,
           input.entry,
-          pluginName,
+          pluginId,
           id,
         );
         if (entry.environment !== "client") {
           throw new Error(
-            `[evjs] Plugin "${pluginName}" entry facade "${id}" can only target client entries.`,
+            `[evjs] Plugin "${pluginId}" entry facade "${id}" can only target client entries.`,
           );
         }
         if (input.autoStart === false && entry.metadata?.type !== "pages-app") {
           throw new Error(
-            `[evjs] Plugin "${pluginName}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
+            `[evjs] Plugin "${pluginId}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
           );
         }
-        return this.emitGeneratedModule(pluginName, {
+        return this.emitGeneratedModule(pluginId, {
           id,
           scope: input.scope ?? generatedScopeForEntry(entry),
           source: ({ importFile }) =>
@@ -475,14 +478,14 @@ class ContributionCollector<TBundlerCfg> {
       },
       importOf: (ref) =>
         this.importOf(ref, {
-          from: pluginName,
+          from: pluginId,
           kind: "plugin-import-helper",
         }),
     };
   }
 
   private emitGeneratedModule(
-    pluginName: string,
+    pluginId: string,
     input: {
       id: string;
       scope: GeneratedScope;
@@ -493,13 +496,13 @@ class ContributionCollector<TBundlerCfg> {
   ): GeneratedModuleRef {
     if (!SUPPORTED_GENERATED_EXTENSIONS.has(input.extension)) {
       throw new Error(
-        `[evjs] Plugin "${pluginName}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
+        `[evjs] Plugin "${pluginId}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
       );
     }
-    validateGeneratedScope(pluginName, input.id, input.scope);
-    const key = this.reserveKey(pluginName, input.id, input.keyKind);
+    validateGeneratedScope(pluginId, input.id, input.scope);
+    const key = this.reserveKey(pluginId, input.id, input.keyKind);
     const module = this.createGeneratedModule({
-      pluginName,
+      pluginId,
       id: input.id,
       key,
       scope: input.scope,
@@ -515,33 +518,29 @@ class ContributionCollector<TBundlerCfg> {
   }
 
   private createSlot<K extends FrameworkSlotName>(
-    pluginName: string,
+    pluginId: string,
     name: K,
   ): FrameworkSlot<K> {
-    validateEnum(
-      name,
-      FRAMEWORK_SLOT_NAMES,
-      `Plugin "${pluginName}" slot name`,
-    );
+    validateEnum(name, FRAMEWORK_SLOT_NAMES, `Plugin "${pluginId}" slot name`);
     return {
       add: (input) => {
-        assertRecord(input, `Plugin "${pluginName}" ${name} contribution`);
-        const normalized = this.normalizeSlotInput(pluginName, name, input);
+        assertRecord(input, `Plugin "${pluginId}" ${name} contribution`);
+        const normalized = this.normalizeSlotInput(pluginId, name, input);
         this.slots.push(normalized);
       },
     };
   }
 
   private normalizeSlotInput<K extends FrameworkSlotName>(
-    pluginName: string,
+    pluginId: string,
     name: K,
     input: FrameworkSlotInput<K>,
   ): FrameworkSlotPlanItem {
-    const base = this.createSlotBase(pluginName, input);
+    const base = this.createSlotBase(pluginId, input);
     switch (name) {
       case "client.entry": {
         const item = input as FrameworkSlotInput<"client.entry">;
-        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
         return {
           ...base,
           slot: name,
@@ -575,7 +574,7 @@ class ContributionCollector<TBundlerCfg> {
       }
       case "page.wrapper": {
         const item = input as FrameworkSlotInput<"page.wrapper">;
-        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
         return {
           ...base,
           slot: name,
@@ -599,7 +598,7 @@ class ContributionCollector<TBundlerCfg> {
       }
       case "server.request.middleware": {
         const item = input as FrameworkSlotInput<"server.request.middleware">;
-        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
         return {
           ...base,
           slot: name,
@@ -643,7 +642,7 @@ class ContributionCollector<TBundlerCfg> {
       case "resolve.alias": {
         const item = input as FrameworkSlotInput<"resolve.alias">;
         assertTrimmedString(item.specifier, `${base.key}.specifier`);
-        assertGeneratedModuleOrString(pluginName, item.id, item.replacement);
+        assertGeneratedModuleOrString(pluginId, item.id, item.replacement);
         return {
           ...base,
           slot: name,
@@ -678,44 +677,44 @@ class ContributionCollector<TBundlerCfg> {
       }
     }
     throw new Error(
-      `[evjs] Plugin "${pluginName}" requested unsupported slot "${String(name)}".`,
+      `[evjs] Plugin "${pluginId}" requested unsupported slot "${String(name)}".`,
     );
   }
 
   private createSlotBase(
-    pluginName: string,
+    pluginId: string,
     input: { id: string },
-  ): Pick<FrameworkSlotPlanItem, "key" | "id" | "pluginName"> {
-    const id = validateContributionId(input.id, pluginName);
+  ): Pick<FrameworkSlotPlanItem, "key" | "id" | "pluginId"> {
+    const id = validateContributionId(input.id, pluginId);
     return {
-      key: this.reserveKey(pluginName, id, "slot contribution"),
+      key: this.reserveKey(pluginId, id, "slot contribution"),
       id,
-      pluginName,
+      pluginId,
     };
   }
 
   private createGeneratedModule(input: {
-    pluginName: string;
+    pluginId: string;
     id: string;
     key: string;
     scope: GeneratedScope;
     source: GeneratedSource;
     extension: string;
   }): InternalGeneratedModule {
-    const pluginSlug = sanitizePluginPathSegment(input.pluginName);
+    const pluginSegment = input.pluginId;
     const idSlug = sanitizePortableArtifactPathSegment(input.id);
     const specifierPath = reserveUniquePortableArtifactPath(
       this.usedGeneratedModulePathKeys,
       (attempt) =>
-        `${pluginSlug}/${collisionSafeArtifactStem(idSlug, input.key, attempt)}`,
-      `Plugin "${input.pluginName}" generated module "${input.id}" artifact path`,
+        `${pluginSegment}/${collisionSafeArtifactStem(idSlug, input.key, attempt)}`,
+      `Plugin "${input.pluginId}" generated module "${input.id}" artifact path`,
     );
     const file = `./${GENERATED_IR_DIR}/plugins/${specifierPath}${input.extension}`;
     const specifier = `evjs:generated/${specifierPath}`;
     return {
       key: input.key,
       id: input.id,
-      pluginName: input.pluginName,
+      pluginId: input.pluginId,
       scope: input.scope,
       source: input.source,
       extension: input.extension,
@@ -725,12 +724,12 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private reserveKey(pluginName: string, id: string, label: string): string {
-    const key = `${pluginName}:${id}`;
+  private reserveKey(pluginId: string, id: string, label: string): string {
+    const key = `${pluginId}:${id}`;
     const existing = this.seenKeys.get(key);
     if (existing) {
       throw new Error(
-        `[evjs] Duplicate contribution id "${id}" in plugin "${pluginName}". It was already used by ${existing}.`,
+        `[evjs] Duplicate contribution id "${id}" in plugin "${pluginId}". It was already used by ${existing}.`,
       );
     }
     this.seenKeys.set(key, label);
@@ -1124,13 +1123,13 @@ function isFrameworkApplicationEntryView(
 function findFrameworkEntry(
   plan: BuildPlan,
   view: FrameworkEntryView,
-  pluginName: string,
+  pluginId: string,
   id: string,
 ): BuildEntry {
   const entry = plan.entries.find((item) => item.name === view.name);
   if (entry) return entry;
   throw new Error(
-    `[evjs] Plugin "${pluginName}" entry facade "${id}" references unknown framework entry "${view.name}".`,
+    `[evjs] Plugin "${pluginId}" entry facade "${id}" references unknown framework entry "${view.name}".`,
   );
 }
 
@@ -1724,46 +1723,32 @@ function collisionSafeArtifactStem(
   return attempt === 1 ? `${base}-${suffix}` : `${base}-${suffix}-${attempt}`;
 }
 
-function sanitizePluginPathSegment(value: string): string {
-  const normalized = value
-    .replace(/^@evjs\/plugin-/, "")
-    .replace(/^@/, "")
-    .replace(/\/plugin-/g, "/")
-    .replace(/^plugin-/, "");
-  const segments = normalized
-    .replace(/:/g, "/")
-    .split(/[\\/]+/)
-    .map(sanitizePortableArtifactPathSegment)
-    .filter(Boolean);
-  return segments.join("/") || "generated";
-}
-
 function shortHash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 8);
 }
 
-function validateContributionId(id: string, pluginName: string): string {
+function validateContributionId(id: string, pluginId: string): string {
   if (typeof id !== "string" || id.trim() === "") {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" contribution id must be a non-empty string.`,
+      `[evjs] Plugin "${pluginId}" contribution id must be a non-empty string.`,
     );
   }
   if (id !== id.trim()) {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" contribution id "${id}" must not contain leading or trailing whitespace.`,
+      `[evjs] Plugin "${pluginId}" contribution id "${id}" must not contain leading or trailing whitespace.`,
     );
   }
   return id;
 }
 
 function validateGeneratedScope(
-  pluginName: string,
+  pluginId: string,
   id: string,
   scope: GeneratedScope,
 ): void {
   if (!scope || typeof scope !== "object") {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" generated module "${id}" must declare a valid scope.`,
+      `[evjs] Plugin "${pluginId}" generated module "${id}" must declare a valid scope.`,
     );
   }
   if (scope.kind === "application" || scope.kind === "server") return;
@@ -1775,7 +1760,7 @@ function validateGeneratedScope(
     return;
   }
   throw new Error(
-    `[evjs] Plugin "${pluginName}" generated module "${id}" has an invalid scope.`,
+    `[evjs] Plugin "${pluginId}" generated module "${id}" has an invalid scope.`,
   );
 }
 
@@ -1798,12 +1783,12 @@ function validateContributionTarget(
 }
 
 function assertGeneratedModuleOrString(
-  pluginName: string,
+  pluginId: string,
   id: string,
   value: GeneratedModuleRef | string,
 ): void {
   if (typeof value === "string") {
-    assertTrimmedString(value, `${pluginName}:${id}.module`);
+    assertTrimmedString(value, `${pluginId}:${id}.module`);
     return;
   }
   assertGeneratedModuleRef(value);
@@ -1891,7 +1876,7 @@ function toGeneratedModulePlan(
   return {
     key: module.key,
     id: module.id,
-    pluginName: module.pluginName,
+    pluginId: module.pluginId,
     scope: module.scope,
     file: module.file,
     specifier: module.specifier,

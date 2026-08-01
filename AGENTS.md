@@ -72,17 +72,18 @@ server routes, examples, or scaffolds change.
    functions or supported named async values. They do not default-export or
    runtime re-export functions.
 7. Adjacent build-time `page.config.ts` owns static title, named `meta`,
-   `render`, `hydrate`, `prerender`, `rsc`, and the generated short-keyed
-   `plugins` map. `meta` emits only `<meta name="..." content="...">`. CSR
+   `render`, `hydrate`, `prerender`, `rsc`, and the generated `plugins` map
+   keyed by canonical plugin id. `meta` emits only
+   `<meta name="..." content="...">`. CSR
    omits `hydrate`; PPR and RSC use `render: "ssr"` without Page-level
    hydration.
 8. Applications install and configure plugins through `config.plugins`,
    normally as `pluginFactory(applicationConfig)`. Application and Page
-   contracts are independent. Page values are strict JSON; a Page key may be
-   omitted, `false`, `true` when defaults exist, or an options object according
-   to the plugin's declared defaults and `forPages()` activation mode. Route
-   and Document contributions derive from the normalized Page graph instead
-   of exposing separate plugin configuration surfaces.
+   contracts are independent. A plugin id may be omitted from a Page's strict
+   JSON map, or its value may be `false`, `true` when defaults exist, or an
+   options object according to declared defaults and `forPages()` activation.
+   Route and Document contributions derive from the normalized Page graph
+   instead of exposing separate plugin configuration surfaces.
 9. Treat `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
    `.turbo`, and `node_modules` as generated output. Scaffolds and templates
    must not copy generated route or plugin types. Keep declarations under

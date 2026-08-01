@@ -124,7 +124,7 @@ describe("createWebpackConfigs", () => {
             expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
             expect(() => {
               (ctx.config.plugins as unknown as unknown[]).push({
-                name: "late-plugin",
+                id: "late-plugin",
               });
             }).toThrow(TypeError);
           },
@@ -537,7 +537,7 @@ describe("createWebpackConfigs", () => {
 
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<WebpackConfig> = {
-      name: "generated-alias",
+      id: "generated-alias",
       contributions(ctx) {
         const configModule = ctx.emit.data({
           id: "config",

@@ -24,7 +24,7 @@ describe("collectPluginHooks", () => {
     } satisfies PluginContext;
     const plugins: Plugin[] = [
       {
-        name: "first",
+        id: "first",
         setup(setupContext) {
           events.push("setup:first");
           return {
@@ -36,7 +36,7 @@ describe("collectPluginHooks", () => {
         },
       },
       {
-        name: "second",
+        id: "second",
         setup() {
           events.push("setup:second");
           throw new Error("setup blocked");
@@ -63,7 +63,7 @@ describe("collectPluginHooks", () => {
     const observedConfigs: unknown[] = [];
     const pathRewrite = (requestPath: string) => requestPath;
     const plugin: Plugin = {
-      name: "immutable-context",
+      id: "immutable-context",
       dependencies: ["dependency"],
       setup(ctx) {
         observedConfigs.push(ctx.config);
@@ -85,14 +85,14 @@ describe("collectPluginHooks", () => {
             observedConfigs.push(buildContext.config);
             expect(() => {
               (buildContext.config.plugins as Plugin[]).push({
-                name: "late-plugin",
+                id: "late-plugin",
               });
             }).toThrow(TypeError);
           },
         };
       },
     };
-    const dependency: Plugin = { name: "dependency" };
+    const dependency: Plugin = { id: "dependency" };
     const config = resolveConfig({
       plugins: [dependency, plugin],
       server: { basePath: "/api" },
@@ -123,7 +123,7 @@ describe("collectPluginHooks", () => {
     expect(new Set(observedConfigs).size).toBe(1);
     expect(observedConfigs[0]).not.toBe(config);
     expect(config.server.basePath).toBe("/api");
-    expect(config.plugins.map((installed) => installed.name)).toEqual([
+    expect(config.plugins.map((installed) => installed.id)).toEqual([
       "dependency",
       "immutable-context",
     ]);

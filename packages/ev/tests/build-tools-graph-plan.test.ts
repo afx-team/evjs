@@ -363,6 +363,11 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     const analysis = await createCoreGraph(config, cwd);
     const graphWithPluginDocument: CoreGraph = {
       ...analysis.graph,
+      plugins: {
+        entries: {
+          "test-plugin": {},
+        },
+      },
       applications: {
         ...analysis.graph.applications,
         default: {
@@ -377,9 +382,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           template: "./plugin.html",
           output: "plugin.html",
           applicationId: "default",
-          owner: { kind: "plugin", pluginId: "@test/plugin" },
+          owner: { kind: "plugin", pluginId: "test-plugin" },
           provenance: {
-            producer: { kind: "plugin", id: "@test/plugin" },
+            producer: { kind: "plugin", id: "test-plugin" },
           },
         },
       },

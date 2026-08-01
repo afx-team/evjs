@@ -745,7 +745,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "prepare-core",
+      id: "prepare-core",
       config(config, ctx) {
         events.push(`config:${ctx.command}`);
         return config;
@@ -802,13 +802,11 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const analytics = definePlugin({
-      id: "@test/analytics",
-      key: "analytics",
+      id: "analytics",
       page: pluginConfig<{ channel: string }>(),
     });
     const access = definePlugin({
-      id: "@test/access",
-      key: "access",
+      id: "access",
       page: pluginConfig<{ policy: string }>(),
     });
     const pluginTypesFile = path.join(cwd, "src/plugin-types.d.ts");
@@ -845,7 +843,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "reads-cli-flags",
+      id: "reads-cli-flags",
       setup(ctx) {
         events.push(`setup:${ctx.flags?.mock}:${ctx.flags?.coverage}`);
         return {
@@ -885,7 +883,7 @@ describe("prepareFrameworkBuild", () => {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
-              name: "first",
+              id: "first",
               setup() {
                 events.push("setup:first");
                 return {
@@ -896,7 +894,7 @@ describe("prepareFrameworkBuild", () => {
               },
             },
             {
-              name: "second",
+              id: "second",
               setup() {
                 events.push("setup:second");
                 throw new Error("setup blocked");
@@ -919,7 +917,7 @@ describe("prepareFrameworkBuild", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
-            name: "first",
+            id: "first",
             setup() {
               return {
                 dispose() {
@@ -929,7 +927,7 @@ describe("prepareFrameworkBuild", () => {
             },
           },
           {
-            name: "second",
+            id: "second",
             setup() {
               return {
                 dispose() {
@@ -957,7 +955,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "generated-fixture",
+      id: "generated-fixture",
       contributions(ctx) {
         expect(Object.isFrozen(ctx.config)).toBe(true);
         expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
@@ -1124,7 +1122,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createSpaProject();
     const collidingIds = ["runtime", "runtime*`=)", "runtime{`{+"];
     const plugin: Plugin<Record<string, never>> = {
-      name: "collision",
+      id: "collision",
       contributions(ctx) {
         for (const id of collidingIds) {
           ctx.emit.module({
@@ -1245,7 +1243,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "spa-page-wrappers",
+      id: "spa-page-wrappers",
       contributions(ctx) {
         const first = ctx.emit.module({
           id: "first-wrapper",
@@ -1424,7 +1422,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "all-runtime-page-wrappers",
+      id: "all-runtime-page-wrappers",
       contributions(ctx) {
         const first = ctx.emit.module({
           id: "first-wrapper",
@@ -1582,7 +1580,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-page-wrapper-runtime",
+      id: "invalid-page-wrapper-runtime",
       contributions(ctx) {
         ctx.slot("page.wrapper").add({
           id: "server-wrapper",
@@ -1616,7 +1614,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "tmp-parity",
+      id: "tmp-parity",
       contributions(ctx) {
         const config = ctx.emit.data({
           id: "ctoken-config",
@@ -1876,7 +1874,7 @@ describe("prepareFrameworkBuild", () => {
   ] as const)("rejects emit.data values containing %s", async (_label, createValue, expected) => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-generated-data",
+      id: "invalid-generated-data",
       contributions(ctx) {
         ctx.emit.data({
           id: "payload",
@@ -1912,7 +1910,7 @@ describe("prepareFrameworkBuild", () => {
       }
     > = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "observe-semantic-pages",
+      id: "observe-semantic-pages",
       contributions(ctx) {
         observedPages = ctx.framework.pages.map((page) => {
           return {
@@ -1993,7 +1991,7 @@ describe("prepareFrameworkBuild", () => {
     > = [];
     let observedClientEntries: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "observe-page-anchors",
+      id: "observe-page-anchors",
       contributions(ctx) {
         observedPages = ctx.framework.pages.map((page) => ({
           id: page.id,
@@ -2101,7 +2099,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-spa-page-entry",
+      id: "invalid-spa-page-entry",
       contributions(ctx) {
         const pageModule = ctx.emit.module({
           id: "page-entry",
@@ -2140,7 +2138,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-spa-page-document",
+      id: "invalid-spa-page-document",
       contributions(ctx) {
         ctx.slot("html.tag").add({
           id: "page-meta",
@@ -2175,7 +2173,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "mpa-application-target",
+      id: "mpa-application-target",
       contributions(ctx) {
         const installer = ctx.emit.module({
           id: "installer",
@@ -2237,7 +2235,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-client-entry-runtime",
+      id: "invalid-client-entry-runtime",
       contributions(ctx) {
         const installer = ctx.emit.module({
           id: "installer",
@@ -2274,7 +2272,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "unknown-constructor-page",
+      id: "unknown-constructor-page",
       contributions(ctx) {
         ctx.emit.module({
           id: "constructor-module",
@@ -2328,7 +2326,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "source-alias",
+      id: "source-alias",
       contributions(ctx) {
         ctx.slot("resolve.alias").add({
           id: "features",
@@ -2382,7 +2380,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "entry-wrapper",
+      id: "entry-wrapper",
       contributions(ctx) {
         const entry = ctx.framework.getApplicationEntry();
         if (!entry) throw new Error("missing Application entry");
@@ -2461,7 +2459,7 @@ describe("prepareFrameworkBuild", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "server-contribution",
+      id: "server-contribution",
       contributions(ctx) {
         const middleware = ctx.emit.module({
           id: "request-middleware",
@@ -2542,7 +2540,7 @@ describe("prepareFrameworkBuild", () => {
   it("rejects duplicate contribution ids per plugin", async () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
-      name: "duplicate-contributions",
+      id: "duplicate-contributions",
       contributions(ctx) {
         ctx.emit.module({
           id: "same",
@@ -2571,10 +2569,62 @@ describe("prepareFrameworkBuild", () => {
     );
   });
 
+  it("keeps one contribution identity when a plugin mutates its id", async () => {
+    const cwd = await createSpaProject();
+    const plugin: Plugin<Record<string, never>> = {
+      id: "stable-contributor",
+      contributions(ctx) {
+        expect(Reflect.set(this, "id", "mutated-contributor")).toBe(false);
+        const generated = ctx.emit.module({
+          id: "runtime",
+          scope: { kind: "application" },
+          source: "export {};",
+        });
+        ctx.slot("resolve.alias").add({
+          id: "runtime-alias",
+          specifier: "virtual:runtime",
+          replacement: generated,
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      expect(manifest.generated?.modules).toContainEqual(
+        expect.objectContaining({
+          key: "stable-contributor:runtime",
+          pluginId: "stable-contributor",
+          file: "./.ev/plugins/stable-contributor/runtime.ts",
+        }),
+      );
+      expect(manifest.generated?.slots).toContainEqual(
+        expect.objectContaining({
+          key: "stable-contributor:runtime-alias",
+          pluginId: "stable-contributor",
+        }),
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
   it("rejects invalid contribution slot payloads", async () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-contribution",
+      id: "invalid-contribution",
       contributions(ctx) {
         const module = ctx.emit.module({
           id: "module",
@@ -2677,7 +2727,7 @@ describe("build", () => {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
-              name: "cleanup",
+              id: "cleanup",
               setup() {
                 events.push("setup");
                 return {
@@ -2702,7 +2752,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "records-lifecycle",
+      id: "records-lifecycle",
       setup(ctx) {
         expect(ctx.config.bundler?.name).toBe("mock");
         events.push(`setup:${ctx.mode}`);
@@ -2714,7 +2764,6 @@ describe("build", () => {
             events.push(`buildOutput:${Object.keys(output.assets).join(",")}`);
             output.assets.main.css = ["main.patched.css"];
             output.apps.default.assets.js = ["main.patched.js"];
-            output.server.assets.js = ["server.patched.js"];
             output.deployment = { platform: "test" };
           },
           buildEnd(result) {
@@ -2723,7 +2772,7 @@ describe("build", () => {
                 "buildEnd",
                 result.output.assets.main?.css[0],
                 result.output.apps.default.assets.js[0],
-                result.output.server.assets.js[0],
+                result.output.server.entry ?? "no-server",
                 String(result.output.deployment?.platform),
               ].join(":"),
             );
@@ -2753,7 +2802,7 @@ describe("build", () => {
       "bundler.build",
       "bundler.entries:main",
       "buildOutput:main",
-      "buildEnd:main.patched.css:main.patched.js:server.patched.js:test",
+      "buildEnd:main.patched.css:main.patched.js:no-server:test",
       "dispose:production",
     ]);
     await expect(
@@ -2876,7 +2925,7 @@ describe("build", () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-output",
+      id: "invalid-output",
       setup() {
         return {
           buildOutput(output) {
@@ -2918,7 +2967,7 @@ describe("build", () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-document-output",
+      id: "invalid-document-output",
       setup() {
         return {
           buildOutput(output) {
@@ -2965,7 +3014,7 @@ describe("build", () => {
   it("keeps CoreGraph Route identity immutable through buildOutput hooks", async () => {
     const cwd = await createSpaProject();
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-route-output",
+      id: "invalid-route-output",
       setup() {
         return {
           buildOutput(output) {
@@ -2994,7 +3043,7 @@ describe("build", () => {
   it("keeps CoreGraph Application identity immutable through buildOutput hooks", async () => {
     const cwd = await createSpaProject();
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-application-output",
+      id: "invalid-application-output",
       setup() {
         return {
           buildOutput(output) {
@@ -3028,7 +3077,7 @@ describe("build", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-page-output",
+      id: "invalid-page-output",
       setup() {
         return {
           buildOutput(output) {
@@ -3072,7 +3121,7 @@ describe("build", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-page-path-output",
+      id: "invalid-page-path-output",
       setup() {
         return {
           buildOutput(output) {
@@ -3109,7 +3158,7 @@ describe("build", () => {
       `${path.basename(cwd)}-outside-output`,
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-output-path",
+      id: "invalid-output-path",
       setup() {
         return {
           buildOutput(output) {
@@ -3145,7 +3194,7 @@ describe("build", () => {
     const events: string[] = [];
     const plugins: Plugin<Record<string, never>>[] = [
       {
-        name: "temporarily-mutates-runtime",
+        id: "temporarily-mutates-runtime",
         setup() {
           return {
             buildOutput(output) {
@@ -3156,7 +3205,7 @@ describe("build", () => {
         },
       },
       {
-        name: "observes-temporary-runtime",
+        id: "observes-temporary-runtime",
         setup() {
           return {
             buildOutput(output) {
@@ -3167,7 +3216,7 @@ describe("build", () => {
         },
       },
       {
-        name: "restores-runtime",
+        id: "restores-runtime",
         setup() {
           return {
             buildOutput(output) {
@@ -3211,7 +3260,7 @@ describe("build", () => {
     const observedRootDirs: string[] = [];
     const plugins: Plugin[] = [
       {
-        name: "mutates-transform-snapshot",
+        id: "mutates-transform-snapshot",
         setup() {
           return {
             transformHtml(_doc, ctx) {
@@ -3229,7 +3278,7 @@ describe("build", () => {
         },
       },
       {
-        name: "observes-transform-snapshot",
+        id: "observes-transform-snapshot",
         setup() {
           return {
             transformHtml(_doc, ctx) {
@@ -3360,7 +3409,7 @@ describe("build", () => {
   }>)("rejects buildOutput $label mutation", async ({ mutate }) => {
     const cwd = await createServerOutputProject();
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-output-semantics",
+      id: "invalid-output-semantics",
       setup() {
         return {
           buildOutput(output) {
@@ -3389,7 +3438,7 @@ describe("build", () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const invalidMetadata: Plugin<Record<string, never>> = {
-      name: "invalid-deployment-metadata",
+      id: "invalid-deployment-metadata",
       setup() {
         return {
           buildOutput(output) {
@@ -3400,7 +3449,7 @@ describe("build", () => {
       },
     };
     const laterPlugin: Plugin<Record<string, never>> = {
-      name: "later-output-hook",
+      id: "later-output-hook",
       setup() {
         return {
           buildOutput() {
@@ -3528,7 +3577,7 @@ describe("build", () => {
       touched.push(label);
     };
     const plugin: Plugin<Record<string, never>> = {
-      name: "nested-asset-output",
+      id: "nested-asset-output",
       setup() {
         return {
           buildOutput(output) {
@@ -3617,7 +3666,7 @@ describe("build", () => {
       return Object.values(result.output.assets)[0]?.js[0] ?? "none";
     };
     const plugin: Plugin<Record<string, never>> = {
-      name: "manifest-result",
+      id: "manifest-result",
       setup() {
         return {
           buildStart() {
@@ -3715,7 +3764,7 @@ describe("build", () => {
     const events: string[] = [];
     let transformSawContribution = false;
     const plugin: Plugin<Record<string, never>> = {
-      name: "html-contribution",
+      id: "html-contribution",
       contributions(ctx) {
         ctx.slot("html.tag").add({
           id: "meta",
@@ -3803,7 +3852,7 @@ describe("build", () => {
     let runtimeMetadata: unknown;
     let frameworkPageMetadata: unknown;
     const plugin: Plugin<Record<string, never>> = {
-      name: "page-metadata-order",
+      id: "page-metadata-order",
       contributions(ctx) {
         frameworkPageMetadata = ctx.framework.pages.find(
           (page) => page.id === "index",
@@ -3919,7 +3968,7 @@ describe("build", () => {
     let frameworkRuntime: BuildResult["frameworkRuntime"];
     const transformedFiles: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "server-document-shell",
+      id: "server-document-shell",
       contributions(ctx) {
         ctx.slot("html.tag").add({
           id: "server-document-contribution",
@@ -4047,7 +4096,7 @@ describe("build", () => {
           routing: { mode: "spa" },
           plugins: [
             {
-              name: "removes-server-document-marker",
+              id: "removes-server-document-marker",
               setup() {
                 return {
                   transformHtml(doc, ctx) {
@@ -4122,7 +4171,7 @@ describe("build", () => {
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
-      name: "page-scope",
+      id: "page-scope",
       contributions(ctx) {
         const homeEntry = ctx.emit.module({
           id: "home-entry",
@@ -4988,7 +5037,7 @@ describe("build", () => {
         routing: { mode: "spa" },
         plugins: [
           {
-            name: "reads-memory-output",
+            id: "reads-memory-output",
             setup() {
               return {
                 buildEnd(result) {
@@ -5038,7 +5087,7 @@ describe("build", () => {
         routing: { mode: "spa" },
         plugins: [
           {
-            name: "captures-page-output",
+            id: "captures-page-output",
             setup() {
               return {
                 buildEnd(result) {
@@ -5108,7 +5157,7 @@ describe("build", () => {
         routing: { mode: "mpa" },
         plugins: [
           {
-            name: "records-raw-output",
+            id: "records-raw-output",
             setup() {
               return {
                 buildEnd(result) {
@@ -5292,7 +5341,6 @@ describe("build", () => {
             },
           },
           serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
             [reportServerEntry]: {
               js: [`${reportServerEntry}.js`],
               css: [],
@@ -5566,7 +5614,7 @@ describe("build", () => {
     const bundler = createMockBundler(events, { recordEndpoint: true });
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "sets-server-base-path",
+      id: "sets-server-base-path",
       config(config, ctx) {
         events.push(`config:${ctx.mode}`);
         config.server = {
@@ -5603,7 +5651,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-dev-port",
+      id: "invalid-dev-port",
       config(config) {
         events.push("config");
         config.dev = {
@@ -5637,7 +5685,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-config-return",
+      id: "invalid-config-return",
       config() {
         events.push("config");
         return null as never;
@@ -5667,7 +5715,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-setup-return",
+      id: "invalid-setup-return",
       setup() {
         events.push("setup");
         return [] as never;
@@ -5697,7 +5745,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "invalid-lifecycle-hook",
+      id: "invalid-lifecycle-hook",
       setup() {
         events.push("setup");
         return {
@@ -5729,7 +5777,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
-      name: "typo-lifecycle-hook",
+      id: "typo-lifecycle-hook",
       setup() {
         events.push("setup");
         return {
@@ -7086,7 +7134,7 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     const pluginA: Plugin<Record<string, never>> = {
-      name: "plugin-a",
+      id: "plugin-a",
       config(config) {
         events.push("config:a");
         return config;
@@ -7104,7 +7152,7 @@ describe("build", () => {
       },
     };
     const pluginB: Plugin<Record<string, never>> = {
-      name: "plugin-b",
+      id: "plugin-b",
       dependencies: ["plugin-a"],
       config(config) {
         events.push("config:b");
@@ -7154,14 +7202,14 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     function plugin(
-      name: string,
+      id: string,
       dependencies?: string[],
     ): Plugin<Record<string, never>> {
       return {
-        name,
+        id,
         dependencies,
         setup() {
-          events.push(`setup:${name}`);
+          events.push(`setup:${id}`);
         },
       };
     }
@@ -7200,20 +7248,20 @@ describe("build", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
-            name: "post",
+            id: "post",
             enforce: "post",
             setup() {
               events.push("setup:post");
             },
           },
           {
-            name: "normal",
+            id: "normal",
             setup() {
               events.push("setup:normal");
             },
           },
           {
-            name: "pre",
+            id: "pre",
             enforce: "pre",
             setup() {
               events.push("setup:pre");
@@ -7242,17 +7290,17 @@ describe("build", () => {
     const bundler = createMockBundler(events);
 
     function plugin(
-      name: string,
+      id: string,
       options: Pick<
         Plugin<Record<string, never>>,
         "dependencies" | "optionalDependencies"
       > = {},
     ): Plugin<Record<string, never>> {
       return {
-        name,
+        id,
         ...options,
         setup() {
-          events.push(`setup:${name}`);
+          events.push(`setup:${id}`);
         },
       };
     }
@@ -7294,7 +7342,7 @@ describe("build", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
-            name: "plugin-b",
+            id: "plugin-b",
             dependencies: ["plugin-c"],
             optionalDependencies: ["plugin-a"],
             setup() {
@@ -7302,7 +7350,7 @@ describe("build", () => {
             },
           },
           {
-            name: "plugin-c",
+            id: "plugin-c",
             setup() {
               events.push("setup:plugin-c");
             },
@@ -7332,7 +7380,7 @@ describe("build", () => {
       build(
         {
           output: { client: "dist/client", server: "dist/server" },
-          plugins: [{ name: "plugin-b", dependencies: ["plugin-a"] }],
+          plugins: [{ id: "plugin-b", dependencies: ["plugin-a"] }],
         },
         { cwd, bundler },
       ),
@@ -7349,8 +7397,8 @@ describe("build", () => {
         {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
-            { name: "plugin-a", dependencies: ["plugin-b"] },
-            { name: "plugin-b", dependencies: ["plugin-a"] },
+            { id: "plugin-a", dependencies: ["plugin-b"] },
+            { id: "plugin-b", dependencies: ["plugin-a"] },
           ],
         },
         { cwd, bundler },
@@ -7370,8 +7418,8 @@ describe("build", () => {
         {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
-            { name: "plugin-a", optionalDependencies: ["plugin-b"] },
-            { name: "plugin-b", dependencies: ["plugin-a"] },
+            { id: "plugin-a", optionalDependencies: ["plugin-b"] },
+            { id: "plugin-b", dependencies: ["plugin-a"] },
           ],
         },
         { cwd, bundler },
@@ -7381,7 +7429,7 @@ describe("build", () => {
     );
   });
 
-  it("throws on duplicate plugin names", async () => {
+  it("throws on duplicate plugin ids", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
@@ -7390,11 +7438,11 @@ describe("build", () => {
       build(
         {
           output: { client: "dist/client", server: "dist/server" },
-          plugins: [{ name: "plugin-a" }, { name: "plugin-a" }],
+          plugins: [{ id: "plugin-a" }, { id: "plugin-a" }],
         },
         { cwd, bundler },
       ),
-    ).rejects.toThrow('Duplicate plugin name "plugin-a"');
+    ).rejects.toThrow('Duplicate plugin id "plugin-a"');
   });
 
   it("fails on invalid plugin declarations before config hooks and bundling", async () => {
@@ -7408,7 +7456,7 @@ describe("build", () => {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
-              name: "",
+              id: "",
               config(config) {
                 events.push("config");
                 return config;
@@ -7418,7 +7466,7 @@ describe("build", () => {
         },
         { cwd, bundler },
       ),
-    ).rejects.toThrow("[evjs] plugins[0].name must be a non-empty string.");
+    ).rejects.toThrow('[evjs] plugins[0].id "" must be a lowercase plugin id');
 
     expect(events).toEqual([]);
   });
@@ -7570,7 +7618,7 @@ describe("dev", () => {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
-              name: "failing-start",
+              id: "failing-start",
               setup() {
                 return {
                   buildStart() {
@@ -7619,7 +7667,7 @@ describe("dev", () => {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
-              name: "cleanup",
+              id: "cleanup",
               setup() {
                 return {
                   dispose() {
@@ -7684,7 +7732,7 @@ describe("dev", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
-            name: "watcher-cleanup",
+            id: "watcher-cleanup",
             setup() {
               return {
                 dispose() {
@@ -7795,7 +7843,7 @@ describe("dev", () => {
     }) as never);
     let contributionCalls = 0;
     const plugin: Plugin<Record<string, never>> = {
-      name: "late-watch-registration-failure",
+      id: "late-watch-registration-failure",
       contributions(ctx) {
         contributionCalls += 1;
         if (contributionCalls > 1) ctx.addWatchFile(forbiddenPath);
@@ -8134,7 +8182,7 @@ describe("dev", () => {
       let setupCalls = 0;
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
-        name: "startup-plugin-watch-reconciliation",
+        id: "startup-plugin-watch-reconciliation",
         setup(ctx) {
           setupCalls += 1;
           ctx.addWatchFile(pluginDataPath);
@@ -8245,7 +8293,7 @@ describe("dev", () => {
       let contributionCalls = 0;
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
-        name: "startup-paused-plugin-contributions",
+        id: "startup-paused-plugin-contributions",
         async contributions(ctx) {
           contributionCalls += 1;
           events.push(`contribution:${contributionCalls}`);
@@ -8349,8 +8397,12 @@ describe("dev", () => {
     "reconciles an analysis dependency changed while initial plugin contributions are paused",
     async () => {
       const cwd = await createSpaProject();
-      const dependency = path.join(cwd, "framework-extra.json");
-      await writeFile(dependency, "initial", "utf-8");
+      const dependency = path.join(cwd, "src/pages/page.config.ts");
+      await writeFile(
+        dependency,
+        'export default { title: "initial" };',
+        "utf-8",
+      );
       const events: string[] = [];
       let markInitialContributionStarted: (() => void) | undefined;
       const initialContributionStarted = new Promise<void>((resolve) => {
@@ -8363,16 +8415,13 @@ describe("dev", () => {
       let contributionCalls = 0;
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
-        name: "startup-analysis-dependency-reconciliation",
-        setup(ctx) {
-          if (!ctx.config.routing) {
-            throw new Error("Expected canonical Page routing to be resolved.");
-          }
-          Object.assign(ctx.config.routing, { dependencies: [dependency] });
-        },
+        id: "startup-analysis-dependency-reconciliation",
         async contributions(ctx) {
           contributionCalls += 1;
-          const value = fs.readFileSync(dependency, "utf-8");
+          const source = fs.readFileSync(dependency, "utf-8");
+          const value = source.includes("changed-during-startup")
+            ? "changed-during-startup"
+            : "initial";
           events.push(`contribution:${contributionCalls}:${value}`);
           if (contributionCalls === 1) {
             markInitialContributionStarted?.();
@@ -8427,7 +8476,11 @@ describe("dev", () => {
 
       try {
         await initialContributionStarted;
-        await writeFile(dependency, "changed-during-startup", "utf-8");
+        await writeFile(
+          dependency,
+          'export default { title: "changed-during-startup" };',
+          "utf-8",
+        );
         releaseInitialContribution?.();
         await Promise.race([
           running,
@@ -9008,7 +9061,7 @@ describe("dev", () => {
         routing: { mode: "spa" },
         plugins: [
           {
-            name: "unchanged-watch-key",
+            id: "unchanged-watch-key",
             setup(context) {
               context.addWatchFile(dependency);
               return {
@@ -9131,7 +9184,7 @@ describe("dev", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
-            name: "dev-build-end",
+            id: "dev-build-end",
             setup() {
               return {
                 buildEnd(result) {
@@ -9166,7 +9219,7 @@ describe("dev", () => {
       failBuildEnd = false,
     ): Plugin<Record<string, never>> {
       return {
-        name: "framework-output-build-end-rollback",
+        id: "framework-output-build-end-rollback",
         setup() {
           return {
             transformHtml(document) {
@@ -9317,7 +9370,7 @@ describe("dev", () => {
       snapshot: "old" | "candidate",
     ): Plugin<Record<string, never>> {
       return {
-        name: "framework-output-finalization-rollback",
+        id: "framework-output-finalization-rollback",
         setup() {
           return {
             transformHtml(document) {
@@ -9494,7 +9547,7 @@ describe("dev", () => {
       snapshot: "old" | "candidate",
     ): Plugin<Record<string, never>> {
       return {
-        name: "framework-output-finalize-contract",
+        id: "framework-output-finalize-contract",
         setup() {
           return {
             transformHtml(document) {
@@ -9656,7 +9709,7 @@ describe("dev", () => {
       snapshot: "old" | "candidate",
     ): Plugin<Record<string, never>> {
       return {
-        name: "framework-output-adapter-rollback",
+        id: "framework-output-adapter-rollback",
         setup() {
           return {
             transformHtml(document) {
@@ -9852,7 +9905,7 @@ describe("dev", () => {
         routing: { mode: "spa" },
         plugins: [
           {
-            name: "framework-output-rebuild-rollback",
+            id: "framework-output-rebuild-rollback",
             setup() {
               return {
                 transformHtml(document, context) {
@@ -9915,7 +9968,7 @@ describe("dev", () => {
       failSecondDocument = false,
     ): Plugin<Record<string, never>> {
       return {
-        name: "framework-output-transform-html-rollback",
+        id: "framework-output-transform-html-rollback",
         setup() {
           let transformedDocuments = 0;
           return {
@@ -10263,7 +10316,7 @@ describe("dev", () => {
     let loadConfigCalls = 0;
     let setupCount = 0;
     const topologyPlugin: Plugin<Record<string, never>> = {
-      name: "route-root-topology-probe",
+      id: "route-root-topology-probe",
       setup() {
         setupCount += 1;
         return {};
@@ -11234,7 +11287,7 @@ describe("dev", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
-            name: "semantic-empty-output",
+            id: "semantic-empty-output",
             setup(ctx) {
               ctx.addWatchFile("./semantic-source.txt");
               return {
@@ -11584,7 +11637,7 @@ describe("dev", () => {
       releaseCandidateContribution = resolve;
     });
     const plugin: Plugin<Record<string, never>> = {
-      name: "reload-context",
+      id: "reload-context",
       async contributions(ctx) {
         if (ctx.config.dev.proxy[0]?.target === "https://example.com") {
           markCandidateContributionStarted?.();
@@ -11720,7 +11773,7 @@ describe("dev", () => {
     const createSnapshotPlugin = (
       snapshot: "new" | "old",
     ): Plugin<Record<string, never>> => ({
-      name: "late-generation-snapshot",
+      id: "late-generation-snapshot",
       setup(ctx) {
         const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
         events.push(`setup:${snapshot}:${setupTarget}`);
@@ -12036,12 +12089,12 @@ describe("dev", () => {
       let oldOutputBlocked = false;
 
       function createSnapshotPlugin(
-        name: string,
+        id: string,
         snapshot: "old" | "new",
         blockFirstOutput = false,
       ): Plugin<Record<string, never>> {
         return {
-          name,
+          id,
           setup(ctx) {
             const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
             return {
@@ -12049,22 +12102,20 @@ describe("dev", () => {
                 const buildTarget =
                   buildContext.config.dev.proxy[0]?.target ?? "initial";
                 events.push(
-                  `buildOutput:${name}:${snapshot}:start:${buildTarget}`,
+                  `buildOutput:${id}:${snapshot}:start:${buildTarget}`,
                 );
                 if (blockFirstOutput && !oldOutputBlocked) {
                   oldOutputBlocked = true;
                   markOldOutputStarted?.();
                   await oldOutputGate;
                 }
-                events.push(
-                  `buildOutput:${name}:${snapshot}:end:${buildTarget}`,
-                );
+                events.push(`buildOutput:${id}:${snapshot}:end:${buildTarget}`);
               },
               buildEnd() {
-                events.push(`buildEnd:${name}:${snapshot}`);
+                events.push(`buildEnd:${id}:${snapshot}`);
               },
               transformHtml(document) {
-                events.push(`transformHtml:${name}:${snapshot}`);
+                events.push(`transformHtml:${id}:${snapshot}`);
                 document.body?.appendChild(
                   document.createComment(` snapshot:${snapshot} `),
                 );
@@ -12073,7 +12124,7 @@ describe("dev", () => {
                 const disposeTarget =
                   disposeContext.config.dev.proxy[0]?.target ?? "initial";
                 events.push(
-                  `dispose:${name}:${snapshot}:${setupTarget}:${disposeTarget}`,
+                  `dispose:${id}:${snapshot}:${setupTarget}:${disposeTarget}`,
                 );
               },
             };
@@ -12280,7 +12331,7 @@ describe("dev", () => {
       releaseCandidateDispose = resolve;
     });
     const plugin: Plugin<Record<string, never>> = {
-      name: "rollback-snapshot-context",
+      id: "rollback-snapshot-context",
       setup(ctx) {
         const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
         events.push(`setup:${setupTarget}`);
@@ -12769,7 +12820,7 @@ describe("dev", () => {
 
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "observe-committed-config",
+      id: "observe-committed-config",
       setup() {
         return {
           dispose(ctx) {
@@ -13009,20 +13060,18 @@ describe("dev", () => {
     );
     await writeFile(
       configFile,
-      'export default { plugins: { theme: { value: "light" } } };',
+      'export default { plugins: { "page-theme": { value: "light" } } };',
       "utf-8",
     );
 
     const pageThemeConfig = pluginConfig<{ value: string }>();
     const plugin = definePlugin<
       "page-theme",
-      "theme",
       undefined,
       typeof pageThemeConfig,
       Record<string, never>
     >({
       id: "page-theme",
-      key: "theme",
       page: pageThemeConfig,
       contributePage(ctx) {
         const theme = ctx.pageOptions.value;
@@ -13094,7 +13143,7 @@ describe("dev", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     await writeFile(
       configFile,
-      'export default { plugins: { theme: { value: "dark" } } };',
+      'export default { plugins: { "page-theme": { value: "dark" } } };',
       "utf-8",
     );
 
@@ -14004,7 +14053,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("runs staged same-name plugin hooks before applying a dev config update", async () => {
+  it("runs staged same-id plugin hooks before applying a dev config update", async () => {
     const cwd = await createProject();
     await writeFile(
       path.join(cwd, "src/pages/home/page.tsx"),
@@ -14020,7 +14069,7 @@ describe("dev", () => {
     const events: string[] = [];
     function createPlugin(label: string): Plugin<Record<string, never>> {
       return {
-        name: "same-name-plugin",
+        id: "same-id-plugin",
         contributions() {
           events.push(`contribution:${label}`);
         },
@@ -14137,7 +14186,7 @@ describe("dev", () => {
     ): Plugin<Record<string, never>> {
       let contributionCount = 0;
       return {
-        name: "same-name-plugin",
+        id: "same-id-plugin",
         contributions() {
           contributionCount += 1;
           events.push(`contribution:${label}:${contributionCount}`);
@@ -14471,7 +14520,7 @@ describe("dev", () => {
         watchFile: string,
       ): Plugin<Record<string, never>> {
         return {
-          name: "candidate-plugin-watch",
+          id: "candidate-plugin-watch",
           setup(ctx) {
             events.push(`setup:${label}`);
             ctx.addWatchFile(`./${watchFile}`);
@@ -14675,7 +14724,7 @@ describe("dev", () => {
     ): Plugin<Record<string, never>> {
       let contributionCount = 0;
       return {
-        name: "same-name-plugin",
+        id: "same-id-plugin",
         contributions() {
           contributionCount += 1;
           events.push(`contribution:${label}:${contributionCount}`);

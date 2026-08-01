@@ -9,14 +9,15 @@ import {
   type PathPatternListValidationError,
   type PathPatternValidationError,
 } from "@evjs/shared";
-import type {
-  HydrationMode,
-  PageMetadata,
-  PageRouteNode,
-  PrerenderConfig,
-  RenderMode,
-  ServerMiddlewareNode,
-  ServerRouteNode,
+import {
+  assertPluginId,
+  type HydrationMode,
+  type PageMetadata,
+  type PageRouteNode,
+  type PrerenderConfig,
+  type RenderMode,
+  type ServerMiddlewareNode,
+  type ServerRouteNode,
 } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "../_internal/build/bundler.js";
 import {
@@ -541,9 +542,7 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "secure",
 ]);
 const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
-  "name",
   "id",
-  "key",
   "dependencies",
   "optionalDependencies",
   "enforce",
@@ -719,10 +718,18 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   }
   assertConfigArray(plugins, "plugins");
   const resolved: Plugin<TBundlerCfg>[] = [];
+  const ids = new Set<string>();
   for (let index = 0; index < plugins.length; index++) {
     const plugin = plugins[index];
     if (plugin === false || plugin === null || plugin === undefined) continue;
-    resolved.push(resolvePluginConfig<TBundlerCfg>(plugin, index));
+    const resolvedPlugin = resolvePluginConfig<TBundlerCfg>(plugin, index);
+    if (ids.has(resolvedPlugin.id)) {
+      throw new Error(
+        `[evjs] Duplicate plugin id "${resolvedPlugin.id}". Plugin ids must be globally unique.`,
+      );
+    }
+    ids.add(resolvedPlugin.id);
+    resolved.push(resolvedPlugin);
   }
   return resolved;
 }
@@ -742,16 +749,14 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     pluginConfig,
     PUBLIC_PLUGIN_CONFIG_KEYS,
     path,
-    "name, id, key, dependencies, optionalDependencies, enforce, config, setup, or contributions",
+    "id, dependencies, optionalDependencies, enforce, config, setup, or contributions",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
         : undefined,
   );
   const {
-    name: rawName,
     id: rawId,
-    key: rawKey,
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
     enforce: rawEnforce,
@@ -778,31 +783,40 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       `${path}.contributions`,
     );
   }
+  assertPluginId(rawId, `${path}.id`);
   const dependencies =
     rawDependencies === undefined
       ? undefined
-      : cloneStringArray(rawDependencies, `${path}.dependencies`);
+      : clonePluginIdArray(rawDependencies, `${path}.dependencies`);
   const optionalDependencies =
     rawOptionalDependencies === undefined
       ? undefined
-      : cloneStringArray(
+      : clonePluginIdArray(
           rawOptionalDependencies,
           `${path}.optionalDependencies`,
         );
   if (dependencies !== undefined && optionalDependencies !== undefined) {
     assertDisjointPluginDependencies(dependencies, optionalDependencies, path);
   }
+  if (dependencies?.includes(rawId)) {
+    throw new Error(
+      `[evjs] ${path}.dependencies must not contain the plugin's own id "${rawId}".`,
+    );
+  }
+  if (optionalDependencies?.includes(rawId)) {
+    throw new Error(
+      `[evjs] ${path}.optionalDependencies must not contain the plugin's own id "${rawId}".`,
+    );
+  }
 
   const resolved: Plugin<TBundlerCfg> = {
-    name: assertTrimmedNonEmptyString(rawName, `${path}.name`),
-    ...(rawId !== undefined
-      ? { id: assertTrimmedNonEmptyString(rawId, `${path}.id`) }
+    id: rawId,
+    ...(dependencies !== undefined
+      ? { dependencies: Object.freeze(dependencies) }
       : {}),
-    ...(rawKey !== undefined
-      ? { key: assertTrimmedNonEmptyString(rawKey, `${path}.key`) }
+    ...(optionalDependencies !== undefined
+      ? { optionalDependencies: Object.freeze(optionalDependencies) }
       : {}),
-    ...(dependencies !== undefined ? { dependencies } : {}),
-    ...(optionalDependencies !== undefined ? { optionalDependencies } : {}),
     ...(rawEnforce !== undefined
       ? {
           enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
@@ -815,7 +829,7 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
-  return resolved;
+  return Object.freeze(resolved);
 }
 
 function assertDisjointPluginDependencies(
@@ -1859,21 +1873,21 @@ function assertPluginEnforce(value: unknown, path: string): Plugin["enforce"] {
   throw new Error(`[evjs] ${path} must be "pre", "normal", or "post".`);
 }
 
-function cloneStringArray(value: unknown, path: string): string[] {
+function clonePluginIdArray(value: unknown, path: string): string[] {
   if (!Array.isArray(value)) {
-    throw new Error(`[evjs] ${path} must be an array of plugin names.`);
+    throw new Error(`[evjs] ${path} must be an array of plugin ids.`);
   }
   assertConfigArray(value, path);
   const seen = new Set<string>();
   return value.map((item, index) => {
-    const pluginName = assertTrimmedNonEmptyString(item, `${path}[${index}]`);
-    if (seen.has(pluginName)) {
+    assertPluginId(item, `${path}[${index}]`);
+    if (seen.has(item)) {
       throw new Error(
-        `[evjs] ${path} must not contain duplicate plugin name "${pluginName}".`,
+        `[evjs] ${path} must not contain duplicate plugin id "${item}".`,
       );
     }
-    seen.add(pluginName);
-    return pluginName;
+    seen.add(item);
+    return item;
   });
 }
 

@@ -148,7 +148,7 @@ describe("createUtoopackConfig", () => {
 
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
-      name: "generated-alias",
+      id: "generated-alias",
       contributions(ctx) {
         const configModule = ctx.emit.data({
           id: "config",

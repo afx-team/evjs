@@ -2,9 +2,9 @@
 
 Plugins extend supported framework stages without expanding the core
 application config. Applications install a plugin once in `ev.config.ts`;
-Pages can then use the plugin's short key to configure, enable, or disable
-Page-specific behavior. Lifecycle hooks and generated contributions remain the
-extension points for build, bundler, HTML, and runtime integration.
+Pages can then use that same canonical `id` to configure, enable, or disable
+Page-specific behavior. Lifecycle hooks and generated contributions remain
+the extension points for build, bundler, HTML, and runtime integration.
 
 ## Install and Configure an Application
 
@@ -24,12 +24,12 @@ configuration. A plugin without Application configuration is called without
 arguments, for example `buildTimer()`.
 
 The `plugins` array is the ordered installation boundary. Configuration stays
-in each factory call, so there is no separate extension bag or repeated package
-key.
+in each factory call, so there is no separate extension bag or duplicate
+identifier.
 
 ## Configure a Page
 
-Put Page behavior next to the Page and use the plugin's short key:
+Put Page behavior next to the Page and use the same plugin `id`:
 
 ```ts
 // src/pages/checkout/page.config.ts
@@ -44,16 +44,18 @@ export default definePageConfig({
 
 No plugin import is needed in `page.config.ts`. `ev prepare`, `ev dev`, and
 `ev build` generate `src/plugin-types.d.ts` as a stable bridge to
-the discovered config. With `ev.config.ts`, TypeScript derives exact plugin
-keys and Page value types from the static config type; JavaScript configs get a
-safe bridge without an `any` registry, so use TypeScript config when Pages need
-plugin completion. Only entries that are statically guaranteed to install are
-exposed to Page config. Do not edit or import the generated declaration. Keep
-`src` included by the project's `tsconfig.json`.
+the discovered config. With `ev.config.ts`, TypeScript derives the exact plugin
+ids available to Pages and their value types from the static config type;
+JavaScript configs get a safe bridge without an `any` registry, so use
+TypeScript config when Pages need plugin completion. Only entries that are
+statically guaranteed to install are exposed to Page config. Do not edit or
+import the generated declaration. Keep `src` included by the project's
+`tsconfig.json`.
 
-The Page keeps one `plugins` map so third-party keys cannot collide with core
-fields such as `title` or `render`. Inside that map, Page configuration uses a
-short key instead of a package name or another nested plugin layer.
+The Page keeps one `plugins` map so plugin ids cannot collide with core fields
+such as `title` or `render`. Inside that map, Page configuration reuses the
+plugin's short canonical `id`; there is no package-like id, Page alias, or
+another nested plugin layer.
 
 ## Application and Page Settings Are Independent
 
@@ -76,15 +78,16 @@ applications do not configure separate Route or Document plugin surfaces.
 ## Enable or Disable by Scope
 
 Both factory forms install and execute the plugin and resolve the same typed
-Application options. They differ only in what an omitted Page key means:
+Application options. They differ only in what an omitted Page plugin entry
+means:
 
 | Authoring form | Result |
 |---|---|
 | `analytics(config)` | Install and execute the plugin. An omitted Page uses Page defaults when they exist; otherwise that Page is off. |
 | `analytics.forPages(config)` | For a Page contract with defaults, install and execute the plugin but require every Page to opt in explicitly. |
 | `false`, `null`, or `undefined` in `plugins` | Omit the whole plugin conditionally; no plugin hook executes. |
-| Page key omitted after `analytics(config)` | Enable with Page defaults when the Page contract has defaults; otherwise disable that Page. |
-| Page key omitted after `analytics.forPages(config)` | Disable that Page, even when Page defaults exist. |
+| Page plugin entry omitted after `analytics(config)` | Enable with Page defaults when the Page contract has defaults; otherwise disable that Page. |
+| Page plugin entry omitted after `analytics.forPages(config)` | Disable that Page, even when Page defaults exist. |
 | `analytics: false` | Disable this Page. |
 | `analytics: true` | Enable this Page with Page `defaults`; rejected when no defaults exist. |
 | `analytics: { ... }` | Enable this Page after merging the object over Page defaults and validating it. |
@@ -132,16 +135,17 @@ plugins: [process.env.ANALYTICS === "1" && analytics(options)]
 ```
 
 A plugin with a possible falsy branch is not statically guaranteed to be
-installed, so its Page key is intentionally unavailable. Use this form for
-whole-plugin conditions that have no Page settings. When Pages configure the
-plugin, install it deterministically and use `analytics: false` or
-`forPages()` for Page-specific activation.
+installed, so its id is intentionally absent from the generated Page registry.
+Use this form for whole-plugin conditions that have no Page settings. When
+Pages configure the plugin, install it deterministically and use
+`analytics: false` or `forPages()` for Page-specific activation.
 
-Page keys are derived only from the definite entries of the tuple inferred by
-`defineConfig()`. A widened plugin array, a conditional choice between arrays,
-or a conditional choice between whole config objects cannot prove that an
-entry exists and therefore exposes no Page key. Keep Page-configurable plugins
-directly in the `defineConfig({ plugins: [...] })` tuple.
+The generated Page registry includes plugin ids only from definite entries of
+the tuple inferred by `defineConfig()`. A widened plugin array, a conditional
+choice between arrays, or a conditional choice between whole config objects
+cannot prove that an entry exists and therefore exposes no plugin id to Page
+config. Keep Page-configurable plugins directly in the
+`defineConfig({ plugins: [...] })` tuple.
 
 ## Type Safety and Validation
 

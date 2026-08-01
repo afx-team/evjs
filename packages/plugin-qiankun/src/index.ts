@@ -86,8 +86,8 @@ interface GeneratedSourceHelpers {
   importFile(file: string): string;
 }
 
-const masterPluginName = "@evjs/plugin-qiankun:master";
-const slavePluginName = "@evjs/plugin-qiankun:slave";
+const masterPluginId = "qiankun-master";
+const slavePluginId = "qiankun-slave";
 const qiankunRuntime = resolveQiankunRuntimeModulePath();
 const qiankunRuntimeImport = "@evjs/plugin-qiankun/runtime";
 const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
@@ -167,7 +167,7 @@ export async function contributeQiankunSlave<
 }
 
 export const evPluginQiankunMaster = definePlugin({
-  id: masterPluginName,
+  id: masterPluginId,
   application: pluginConfig<QiankunMasterPluginOptions>(),
   enforce: "pre",
   async contributions(ctx) {
@@ -179,7 +179,7 @@ export const evPluginQiankunMaster = definePlugin({
 });
 
 export const evPluginQiankunSlave = definePlugin({
-  id: slavePluginName,
+  id: slavePluginId,
   application: pluginConfig<QiankunSlavePluginOptions>({ defaults: {} }),
   enforce: "pre",
   async contributions(ctx) {

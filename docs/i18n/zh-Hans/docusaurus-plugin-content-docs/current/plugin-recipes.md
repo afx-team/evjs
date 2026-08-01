@@ -12,7 +12,7 @@ Deployment adapter 需要 plugin-owned metadata 时，使用 `buildOutput()`：
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deployMetadata = definePlugin({
-  id: "@example/deploy-metadata",
+  id: "deploy-metadata",
   setup() {
     return {
       buildOutput(output) {
@@ -38,7 +38,7 @@ export const deployMetadata = definePlugin({
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const pageMetadata = definePlugin({
-  id: "@example/page-metadata",
+  id: "page-metadata",
   setup() {
     return {
       transformHtml(doc, ctx) {
@@ -65,7 +65,7 @@ import crypto from "node:crypto";
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const cspNonce = definePlugin({
-  id: "@example/csp-nonce",
+  id: "csp-nonce",
   setup() {
     return {
       transformHtml(doc) {

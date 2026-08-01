@@ -1,10 +1,6 @@
 import { type WebpackConfig, webpackAdapter } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/ev";
-import type {
-  DefinedPluginApplicationInput,
-  DefinedPluginPageInput,
-  Plugin,
-} from "@evjs/ev/plugin";
+import type { Plugin } from "@evjs/ev/plugin";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   evPluginQiankunMaster,
@@ -19,12 +15,16 @@ import type {
 
 describe("qiankun plugin config types", () => {
   it("keeps the master contract application-only", () => {
-    type Master = ReturnType<typeof evPluginQiankunMaster>;
-
     expectTypeOf<
-      DefinedPluginApplicationInput<Master>
+      Parameters<typeof evPluginQiankunMaster>[0]
     >().toEqualTypeOf<QiankunMasterPluginOptions>();
-    expectTypeOf<DefinedPluginPageInput<Master>>().toEqualTypeOf<never>();
+    const assertNoPageContract = () => {
+      // @ts-expect-error Application-only factories do not expose forPages().
+      evPluginQiankunMaster.forPages({
+        resolver: "./src/qiankun.master.ts",
+      });
+    };
+    expect(assertNoPageContract).toBeTypeOf("function");
   });
 
   it("keeps master configuration required and slave configuration optional", () => {
@@ -34,12 +34,12 @@ describe("qiankun plugin config types", () => {
     const slave = evPluginQiankunSlave();
     const configuredSlave = evPluginQiankunSlave({ name: "catalog" });
 
-    expect(master.key).toBeUndefined();
+    expect(master.id).toBe("qiankun-master");
     expect("forPages" in evPluginQiankunMaster).toBe(false);
-    expect(slave.key).toBeUndefined();
-    expect(configuredSlave.key).toBeUndefined();
+    expect(slave.id).toBe("qiankun-slave");
+    expect(configuredSlave.id).toBe("qiankun-slave");
     expectTypeOf<
-      DefinedPluginApplicationInput<typeof slave>
+      Exclude<Parameters<typeof evPluginQiankunSlave>[0], undefined>
     >().toEqualTypeOf<QiankunSlavePluginOptions>();
 
     const assertInvalidMasterAuthoring = () => {

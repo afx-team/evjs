@@ -11,8 +11,7 @@ type PageMetadata = {
 };
 
 const metadataPlugin = definePlugin({
-  id: "@example/metadata",
-  key: "metadata",
+  id: "metadata",
   application: pluginConfig<ApplicationMetadata>({ schemaVersion: "1" }),
   page: pluginConfig<PageMetadata>({
     schemaVersion: "1",
@@ -34,7 +33,7 @@ const metadataPlugin = definePlugin({
 });
 
 const txtPlugin = definePlugin({
-  id: "@example/txt",
+  id: "txt",
   config(config) {
     config.server = {
       ...(typeof config.server === "object" ? config.server : {}),

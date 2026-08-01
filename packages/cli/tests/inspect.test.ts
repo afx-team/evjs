@@ -415,7 +415,6 @@ describe("inspect", () => {
     );
     expect(result.routeFiles).toEqual([]);
     result.graph.plugins.entries.analytics = {
-      id: "@company/analytics",
       application: { schemaVersion: "1" },
       page: { schemaVersion: "2", defaultable: true },
     };
@@ -424,7 +423,7 @@ describe("inspect", () => {
     expect(text).not.toContain("provider=@evjs/provider/config-route");
     expect(text).toContain("Plugins");
     expect(text).toContain(
-      "analytics: id=@company/analytics, contracts=application,page, pageDefaultable=true",
+      "analytics: contracts=application,page, pageDefaultable=true",
     );
     expect(text).not.toContain("owners=");
     expect(text).not.toMatch(/CoreGraph v\d+/);
@@ -438,7 +437,7 @@ describe("inspect", () => {
       "src/main.tsx": "console.log('app');",
     });
     const plugin: Plugin<Record<string, never>> = {
-      name: "inspect-contribution",
+      id: "inspect-contribution",
       contributions(ctx) {
         const module = ctx.emit.module({
           id: "entry",
@@ -465,7 +464,7 @@ describe("inspect", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "entry",
-          pluginName: "inspect-contribution",
+          pluginId: "inspect-contribution",
         }),
       ]),
     );

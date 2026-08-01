@@ -219,7 +219,7 @@ files:
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const deployAdapter = definePlugin({
-  id: "@example/deploy-adapter",
+  id: "deploy-adapter",
   setup() {
     return {
       buildEnd({ deploymentMetadata }) {

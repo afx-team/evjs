@@ -133,7 +133,7 @@ describe("resolveConfig", () => {
     };
 
     const plugin: Plugin = {
-      name: "reads-bundler-name",
+      id: "reads-bundler-name",
       setup(ctx) {
         expect(ctx.config.bundler?.name).toBe("utoopack");
         return {};
@@ -154,9 +154,9 @@ describe("resolveConfig", () => {
 describe("plugin setup edge cases", () => {
   it("plugins without setup or returning void are silently skipped", async () => {
     const plugins: Plugin[] = [
-      { name: "no-setup" },
-      { name: "void-setup", setup: () => undefined },
-      { name: "real", setup: () => ({ buildStart: () => {} }) },
+      { id: "no-setup" },
+      { id: "void-setup", setup: () => undefined },
+      { id: "real", setup: () => ({ buildStart: () => {} }) },
     ];
     const hooks = await collectPluginHooks(plugins, CTX);
     expect(hooks).toHaveLength(1);
@@ -166,7 +166,7 @@ describe("plugin setup edge cases", () => {
     const order: string[] = [];
     const plugins: Plugin[] = [
       {
-        name: "slow",
+        id: "slow",
         async setup() {
           await new Promise((r) => setTimeout(r, 10));
           order.push("slow-setup-done");
@@ -174,7 +174,7 @@ describe("plugin setup edge cases", () => {
         },
       },
       {
-        name: "fast",
+        id: "fast",
         setup() {
           order.push("fast-setup-done");
           return { buildStart: () => {} };
@@ -240,7 +240,7 @@ describe("closure-based shared state between hooks", () => {
     let reported = { mode: "", elapsed: 0, assets: 0 };
 
     const analyticsPlugin: Plugin = {
-      name: "analytics",
+      id: "analytics",
       setup(ctx) {
         let t0 = 0;
         return {

@@ -49,17 +49,6 @@ export type {
   HtmlTagPlacement,
 } from "@evjs/shared/manifest";
 export {
-  type DefinedPluginApplicationInput,
-  type DefinedPluginConfigContext,
-  type DefinedPluginContributionContext,
-  type DefinedPluginDescriptor,
-  type DefinedPluginFactory,
-  type DefinedPluginInstance,
-  type DefinedPluginPageContributionContext,
-  type DefinedPluginPageDefaultable,
-  type DefinedPluginPageInput,
-  type DefinedPluginPageOptions,
-  type DefinedPluginSetupContext,
   definePlugin,
   type PluginConfigContract,
   type PluginConfigOptions,
@@ -269,21 +258,18 @@ export interface Plugin<TBundlerCfg = unknown> {
   /** Type-only marker that keeps bundler-specific plugins incompatible. */
   readonly [pluginBundlerConfigType]?: PluginBundlerConfigType<TBundlerCfg>;
 
-  /** Plugin name for debugging and logging. */
-  name: string;
-
-  /** @internal Stable descriptor identity for a `definePlugin()` instance. */
-  id?: string;
-
-  /** @internal Page configuration key for a `definePlugin()` instance. */
-  key?: string;
+  /**
+   * Stable plugin identity used by dependencies, Page settings, generated IR,
+   * diagnostics, and logging.
+   */
+  readonly id: string;
 
   /**
    * Required plugin dependencies that must run before this plugin.
    *
    * Missing required dependencies are treated as configuration errors.
    */
-  dependencies?: string[];
+  readonly dependencies?: readonly string[];
 
   /**
    * Optional plugin dependencies that run before this plugin when present.
@@ -291,7 +277,7 @@ export interface Plugin<TBundlerCfg = unknown> {
    * Missing optional dependencies are ignored. Present optional dependencies
    * still participate in dependency ordering and cycle detection.
    */
-  optionalDependencies?: string[];
+  readonly optionalDependencies?: readonly string[];
 
   /**
    * Modify the raw user config before defaults are resolved.

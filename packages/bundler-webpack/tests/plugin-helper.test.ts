@@ -38,7 +38,7 @@ describe("webpack plugin helper", () => {
 
   it("keeps a default definePlugin factory bundler-agnostic", () => {
     const factory = definePlugin({
-      id: "@test/webpack-helper",
+      id: "webpack-helper",
       setup() {
         return {
           bundlerConfig: webpack((config) => {
@@ -53,6 +53,6 @@ describe("webpack plugin helper", () => {
     });
 
     const plugin: Plugin<{ output: string }> = factory();
-    expect(plugin.name).toBe("@test/webpack-helper");
+    expect(plugin.id).toBe("webpack-helper");
   });
 });

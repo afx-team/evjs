@@ -15,7 +15,7 @@ export type { ConfigPatch } from "@evjs/ev/config";
  * import { utoopack } from "@evjs/bundler-utoopack";
  *
  * const myPlugin: Plugin = {
- *   name: "my-plugin",
+ *   id: "my-plugin",
  *   setup(ctx) {
  *     return {
  *       bundlerConfig: utoopack((config) => {

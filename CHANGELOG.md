@@ -9,9 +9,16 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ⚠️ Breaking Changes
 
 - **Single plugin configuration model** — Applications install typed plugin
-  factories in `config.plugins`; Pages use one generated short-keyed `plugins`
-  map. The previous owner-scoped extension registries and separate Route or
-  Document configuration surfaces are removed.
+  factories in `config.plugins`; Pages use one generated `plugins` map keyed by
+  canonical plugin ids. The previous owner-scoped extension registries and
+  separate Route or Document configuration surfaces are removed.
+- **Canonical plugin identity** — Plugins now declare one lowercase `id`, used
+  unchanged for installation, Page settings, dependency ordering, CoreGraph
+  catalog entries, diagnostics, and `.ev/plugins/<id>` output. The previous
+  `name`, `key`, `settingsKey`, and generated `pluginName` fields are removed;
+  package-like ids, unsafe object-property ids, and Windows device basenames
+  are rejected when plugins are defined and when graph snapshots are validated,
+  before generated-IR processing.
 - **Application-level qiankun route overlay** — The qiankun master no longer
   exposes a Page contract or derives micro-app bindings from `page.config.ts`.
   Its async Application resolver returns the authoritative `apps/routes`
@@ -49,10 +56,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ✨ Improvements
 
 - **Stable Page plugin types** — `prepare`, `dev`, and `build` generate
-  `src/plugin-types.d.ts` as a static bridge to `ev.config.ts`, so Page keys and
+  `src/plugin-types.d.ts` as a static bridge to `ev.config.ts`, so ids and Page
   values for definitely installed plugins retain editor types without Page
   imports. JavaScript config stays isolated from `any` rather than claiming
-  exact Page keys.
+  exact Page plugin ids.
 - **Predictable plugin activation** — Plugin factories distinguish normal
   installation from Page-only opt-in with `forPages()` on defaultable Page
   contracts. Falsy entries in `config.plugins` conditionally omit a plugin; on

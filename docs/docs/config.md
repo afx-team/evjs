@@ -174,9 +174,9 @@ configuration. Its argument is typed directly by the plugin package, so there
 is no second namespace, registration call, or configuration object to keep in
 sync. Conditional entries may use `false`, `null`, or `undefined`; inactive
 entries are omitted at runtime. Because they are not guaranteed to install,
-entries with a possible falsy branch do not expose Page keys. When the Page
-contract has defaults, use `plugin.forPages(config)` to keep the plugin and its
-Application options active while every Page opts in explicitly.
+entries with a possible falsy branch do not expose plugin ids to Page config.
+When the Page contract has defaults, use `plugin.forPages(config)` to keep the
+plugin and its Application options active while every Page opts in explicitly.
 
 Application configuration may contain typed executable options or explicit
 module references when the plugin contract allows them. Do not put secrets in
@@ -232,10 +232,10 @@ and SSG Pages may use `hydrate: "none" | "load"`; ordinary SSR defaults to
 `"load"`, SSG defaults to `"none"`, and RSC/PPR remain unhydrated at Page level.
 `meta` is a string record for `<meta name="key" content="value">`; it does not
 accept `property`, `charset`, links, scripts, functions, or a generic head
-tree. Installed Page-aware plugins use generated short keys under `plugins`.
+tree. Installed Page-aware plugins use their canonical ids under `plugins`.
 The Page module does not import the plugin package: `ev prepare`, `ev dev`, and
 `ev build` generate `src/plugin-types.d.ts` as a stable bridge to the static
-type of `ev.config.ts`. TypeScript derives Page keys and values from that
+type of `ev.config.ts`. TypeScript derives plugin ids and Page values from that
 config type, but only for entries statically guaranteed to install. JavaScript
 config does not widen the Page registry to `any`; use `ev.config.ts` when Page
 plugin completion is required.
@@ -244,9 +244,9 @@ Application and Page configuration are independent plugin contracts. evjs
 does not merge the object passed to the Application factory into a Page value.
 Within either contract, authored fields deep-merge over that contract's
 defaults before validation. Within the Page map, a normal factory call uses
-Page defaults for an omitted key when defaults exist; otherwise omission
-disables that Page. Defaultable Page contracts expose `forPages()`, which
-always treats omission as disabled; non-defaultable contracts are already
+Page defaults for an omitted plugin entry when defaults exist; otherwise
+omission disables that Page. Defaultable Page contracts expose `forPages()`,
+which always treats omission as disabled; non-defaultable contracts are already
 opt-in-only. `false` disables the plugin for this Page, `true` requires Page
 defaults, and an object enables it after merging over Page defaults and
 validation. Page objects must be strict static JSON.
@@ -376,7 +376,8 @@ export default defineConfig({
 
 Install plugins through `plugins`, normally as
 `pluginFactory(applicationConfig)`. A plugin can declare an independent Page
-contract whose short key becomes available in adjacent `page.config.ts` files.
+contract whose canonical `id` becomes available in adjacent `page.config.ts`
+files.
 The same Plugin descriptor owns config, setup, contributions, and lifecycle
 hooks. See [Plugins](./plugins).
 

@@ -19,7 +19,7 @@ and lifecycle hooks never belong on the descriptor.
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const buildTimer = definePlugin({
-  id: "@example/build-timer",
+  id: "build-timer",
   setup() {
     const start = Date.now();
     return {
@@ -65,8 +65,7 @@ type AnalyticsPageConfig = {
 };
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
-  key: "analytics",
+  id: "analytics",
 
   application: pluginConfig<AnalyticsApplicationConfig>({
     validate(value) {
@@ -98,12 +97,12 @@ export const analytics = definePlugin({
 The Application factory argument is inferred from `application`. The generated
 `src/plugin-types.d.ts` declaration bridges the static
 `typeof import("../ev.config").default` type, from which TypeScript derives each
-plugin `key` and its Page value for `definePageConfig()`. This exact bridge is
-available for `ev.config.ts`; JavaScript config stays safe but does not claim
-exact Page keys. Entries with a possible falsy branch are also excluded because
-they are not guaranteed to exist at runtime. Widened arrays and conditional
-config or array unions are excluded for the same reason; keep Page-configurable
-plugins in the tuple passed directly to `defineConfig()`. See
+plugin `id` and its Page value for `definePageConfig()`. This exact bridge is
+available for `ev.config.ts`; JavaScript config stays safe but does not claim an
+exact Page plugin-id registry. Entries with a possible falsy branch are also
+excluded because they are not guaranteed to exist at runtime. Widened arrays
+and conditional config or array unions are excluded for the same reason; keep
+Page-configurable plugins in the tuple passed directly to `defineConfig()`. See
 [Plugins](./plugins) for the Application and Page authoring forms.
 
 Application and Page values never merge with each other. Within either
@@ -134,13 +133,13 @@ the authored mode before `config()` runs; read the later method's `ctx.config`
 when the final resolved framework mode matters.
 
 Page omission is determined by whether the Page contract has defaults and, for
-defaultable contracts, the factory form. With `plugin(options)`, an omitted
-Page uses defaults when they exist and is otherwise disabled. A defaultable
-contract also exposes `plugin.forPages(options)`, where omission is always
-disabled. A non-defaultable contract is already opt-in-only and does not expose
-the redundant method. Explicit `false` disables a Page, `true` requires
-defaults, and an object enables the Page after merging over any defaults and
-validation.
+defaultable contracts, the factory form. With `plugin(options)`, a Page that
+omits the plugin id uses defaults when they exist and is otherwise disabled. A
+defaultable contract also exposes `plugin.forPages(options)`, where omission is
+always disabled. A non-defaultable contract is already opt-in-only and does
+not expose the redundant method. Explicit `false` disables a Page, `true`
+requires defaults, and an object enables the Page after merging over any
+defaults and validation.
 
 Standard Schema libraries can infer input and output types directly:
 
@@ -166,10 +165,17 @@ select executable runtime code.
 
 ## Identity and Ordering
 
-Plugin `id` values are stable dependency and lifecycle identities. A short
-lowercase `key`, such as `analytics` or `error-reporting`, is required only when
-the plugin declares Page configuration. Application-only plugins omit it.
-Declared Page keys and plugin ids must be unique in one Application.
+Every plugin declares one stable, short, lowercase `id`, such as `analytics` or
+`error-reporting`. The same canonical id identifies dependencies and lifecycle
+state, owns generated IR, and—when the plugin declares a Page contract—keys
+its entry in `page.config.ts#plugins`. It is not a package name and has no
+separate Page alias: the package may be `@company/analytics`, while its plugin
+id is `analytics`. An id must start with a lowercase letter and contain only
+non-empty lowercase alphanumeric segments separated by hyphens. `__proto__`,
+`constructor`, `prototype`, and Windows device basenames (`con`, `prn`, `aux`,
+`nul`, `com1` through `com9`, and `lpt1` through `lpt9`) are reserved. This
+keeps the unchanged id safe as one generated path segment on every supported
+platform. Plugin ids must be unique in one Application.
 
 `dependencies`, `optionalDependencies`, and `enforce` control hook ordering.
 Unknown descriptor fields and misspelled hooks are rejected.
@@ -204,7 +210,7 @@ import { merge } from "@evjs/ev/config";
 import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
 
 const serverBasePath = definePlugin({
-  id: "@example/server-base-path",
+  id: "server-base-path",
   application: pluginConfig({
     defaults: { basePath: "/_framework" },
   }),
@@ -250,7 +256,7 @@ The factory controls Page omission without changing plugin execution or typed
 Application options:
 
 - `plugin(options)` installs and executes the plugin; Pages with defaults are
-  enabled when their key is omitted;
+  enabled when their plugin entry is omitted;
 - for a Page contract with defaults, `plugin.forPages(options)` installs and
   executes the same plugin with the same Application options, but every Page
   must opt in with `true` or an object;

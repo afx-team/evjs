@@ -67,10 +67,10 @@ Release automation replaces them with the release version before publishing.
 4. Framework Pages use `src/pages/**/page.*`; server request Routes use
    `src/apis/**/api.*`. The containing directory owns scope and URL
    in both trees.
-5. Put Page metadata, rendering settings, and the generated short-keyed plugin
-   map in adjacent `page.config.ts`. Configure plugins at Application scope
-   through factory calls in `config.plugins`; do not add Route or Document
-   plugin configuration surfaces.
+5. Put Page metadata, rendering settings, and the generated plugin map keyed by
+   canonical plugin id in adjacent `page.config.ts`. Configure plugins at
+   Application scope through factory calls in `config.plugins`; do not add Route
+   or Document plugin configuration surfaces.
 6. Server-function modules begin with `"use server";` and export named callable
    values. Use `.server.*` when colocation makes the boundary easier to see.
 7. Keep `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
@@ -112,8 +112,8 @@ Release automation replaces them with the release version before publishing.
    `definePlugin()` and `pluginConfig()`.
 2. Install the factory in `config.plugins` and pass its typed Application
    options there.
-3. Configure installed Page-aware plugins under the generated short key in
-   adjacent `page.config.ts`. Page values are strict JSON; callbacks and
+3. Configure installed Page-aware plugins under their canonical id in adjacent
+   `page.config.ts`. Page values are strict JSON; callbacks and
    secrets stay in Application options or plugin code.
 4. Derive Route or Document behavior from the normalized Page graph and
    project runtime behavior explicitly through contributions or another

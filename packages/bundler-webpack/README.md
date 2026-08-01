@@ -14,7 +14,7 @@ import { defineConfig } from "@evjs/ev";
 import { definePlugin } from "@evjs/ev/plugin";
 
 const webpackCustomization = definePlugin({
-  id: "@example/webpack-customization",
+  id: "webpack-customization",
   setup() {
     return {
       bundlerConfig: webpack((configs) => {

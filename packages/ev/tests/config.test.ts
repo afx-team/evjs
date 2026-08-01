@@ -50,8 +50,7 @@ interface RequiredApplicationPluginConfig {
 }
 
 const analyticsPlugin = definePlugin({
-  id: "@test/analytics",
-  key: "analytics",
+  id: "analytics",
   application: pluginConfig<TypedApplicationPluginConfig>({
     defaults: {
       endpoint: "/events",
@@ -68,14 +67,13 @@ const analyticsPlugin = definePlugin({
 const installedAnalyticsPlugin = analyticsPlugin();
 
 const accessPlugin = definePlugin({
-  id: "@test/access",
-  key: "access",
+  id: "access",
   page: pluginConfig<RequiredPagePluginConfig>(),
 });
 const installedAccessPlugin = accessPlugin();
 
 const applicationOnlyPlugin = definePlugin({
-  id: "@test/application-only",
+  id: "application-only",
   application: pluginConfig<RequiredApplicationPluginConfig>(),
 });
 const installedApplicationOnlyPlugin = applicationOnlyPlugin({
@@ -83,7 +81,7 @@ const installedApplicationOnlyPlugin = applicationOnlyPlugin({
 });
 
 const inferredDefaultsPlugin = definePlugin({
-  id: "@test/inferred-defaults",
+  id: "inferred-defaults",
   application: pluginConfig({
     defaults: { channel: "web" },
   }),
@@ -94,26 +92,29 @@ const installedInferredDefaultsPlugin = inferredDefaultsPlugin({
 
 const customBundlerPageConfig = pluginConfig<{ variant: "a" | "b" }>();
 const customBundlerPlugin = definePlugin<
-  "@test/custom-bundler",
   "custom-bundler",
   undefined,
   typeof customBundlerPageConfig,
   { feature: boolean }
 >({
-  id: "@test/custom-bundler",
-  key: "custom-bundler",
+  id: "custom-bundler",
   page: customBundlerPageConfig,
 });
 const installedCustomBundlerPlugin = customBundlerPlugin();
 
-const conditionalEvConfig = defineConfig({
+const ambientOnlyPlugin = definePlugin({
+  id: "ambient-only",
+  page: pluginConfig({ defaults: { enabled: true } }),
+})();
+
+const installedEvConfig = defineConfig({
+  bundler: {} as BundlerAdapter<{ feature: boolean }>,
   plugins: [
-    Math.random() > 0.5 ? analyticsPlugin() : false,
-    Math.random() > 0.5 ? accessPlugin() : false,
+    installedAnalyticsPlugin,
+    installedAccessPlugin,
     installedApplicationOnlyPlugin,
-    null,
-    undefined,
-  ],
+    installedCustomBundlerPlugin,
+  ] as const,
 });
 
 type DeterministicTuplePlugin = ExtractInstalledPlugin<
@@ -140,11 +141,9 @@ type WidenedArrayPlugin = ExtractInstalledPlugin<
 
 declare module "../src/config/index.js" {
   interface InstalledPluginRegistry {
-    readonly config: typeof conditionalEvConfig;
-    readonly analytics: typeof installedAnalyticsPlugin;
-    readonly access: typeof installedAccessPlugin;
-    readonly "application-only": typeof installedApplicationOnlyPlugin;
-    readonly "custom-bundler": typeof installedCustomBundlerPlugin;
+    readonly config: typeof installedEvConfig;
+    /** Must not affect Page plugin ids; generated `config` is authoritative. */
+    readonly ambientOnly: typeof ambientOnlyPlugin;
   }
 }
 
@@ -261,7 +260,7 @@ describe("config authoring", () => {
     expect(disabled.plugins).toEqual({ analytics: false, access: false });
   });
 
-  it("exposes Page keys only from definitely installed config tuples", () => {
+  it("exposes Page plugin ids only from definitely installed config tuples", () => {
     expectTypeOf<DeterministicTuplePlugin>().toEqualTypeOf<
       typeof installedAnalyticsPlugin
     >();
@@ -295,7 +294,7 @@ describe("config authoring", () => {
   it("rejects unknown plugins and invalid registered Page settings", () => {
     const unknown = definePageConfig({
       plugins: {
-        // @ts-expect-error Page plugin keys come from the installed config tuple.
+        // @ts-expect-error Page plugin ids come from the installed config tuple.
         missing: false,
       },
     });
@@ -303,6 +302,12 @@ describe("config authoring", () => {
       plugins: {
         // @ts-expect-error true requires Page defaults declared by the plugin.
         access: true,
+      },
+    });
+    const ambientRegistryBypass = definePageConfig({
+      plugins: {
+        // @ts-expect-error Arbitrary registry fields cannot install Page plugins.
+        "ambient-only": true,
       },
     });
     const invalidNestedField = definePageConfig({
@@ -331,6 +336,7 @@ describe("config authoring", () => {
 
     expect(unknown.plugins).toBeDefined();
     expect(missingRequiredConfig.plugins).toBeDefined();
+    expect(ambientRegistryBypass.plugins).toBeDefined();
     expect(invalidNestedField.plugins).toBeDefined();
     expect(nonStaticValue.plugins).toBeDefined();
   });
@@ -343,14 +349,13 @@ describe("config authoring", () => {
     const config = defineConfig({ plugins: [plugin] });
     const annotated: Config = { plugins: [plugin] };
 
-    expectTypeOf(plugin.id).toEqualTypeOf<"@test/analytics">();
-    expectTypeOf(plugin.key).toEqualTypeOf<"analytics">();
+    expectTypeOf(plugin.id).toEqualTypeOf<"analytics">();
     expect(config.plugins[0]).toBe(plugin);
     expect(defineConfig(annotated)).toBe(annotated);
-    expect(installedApplicationOnlyPlugin.key).toBeUndefined();
+    expect(installedApplicationOnlyPlugin.id).toBe("application-only");
     expect(installedInferredDefaultsPlugin).toHaveProperty(
-      "name",
-      "@test/inferred-defaults",
+      "id",
+      "inferred-defaults",
     );
   });
 
@@ -436,7 +441,7 @@ describe("config authoring", () => {
 
   it("keeps plugin installation out of the config hook contract", () => {
     const factory = definePlugin({
-      id: "@test/framework-config-only",
+      id: "framework-config-only",
       config(config) {
         // @ts-expect-error Config hook inputs do not expose plugin installation.
         void config.plugins;
@@ -451,7 +456,7 @@ describe("config authoring", () => {
     const invalidReturnHook: ConfigHook = () => installedConfig;
 
     expect(invalidReturnHook).toBeTypeOf("function");
-    expect(factory()).toHaveProperty("name", "@test/framework-config-only");
+    expect(factory()).toHaveProperty("id", "framework-config-only");
   });
 });
 
@@ -566,7 +571,7 @@ describe("resolveConfig", () => {
       enumerable: true,
       get() {
         arrayGetterCalls++;
-        return { name: "hidden-plugin" };
+        return { id: "hidden-plugin" };
       },
     });
     expect(() => resolveConfig({ plugins } as never)).toThrow(
@@ -1125,9 +1130,7 @@ describe("resolveConfig", () => {
   it("accepts only the single plugin descriptor shape", () => {
     const setup = () => ({});
     const plugin = {
-      name: "test-plugin",
-      id: "@test/plugin",
-      key: "test-plugin",
+      id: "test-plugin",
       dependencies: ["required"],
       optionalDependencies: ["optional"],
       enforce: "pre" as const,
@@ -1139,15 +1142,20 @@ describe("resolveConfig", () => {
 
     expect(resolved.plugins).toEqual([plugin]);
     expect(resolved.plugins[0]).toMatchObject({
-      name: "test-plugin",
-      id: "@test/plugin",
-      key: "test-plugin",
+      id: "test-plugin",
     });
+    expect(resolved.plugins[0]).not.toBe(plugin);
+    expect(Object.isFrozen(resolved.plugins[0])).toBe(true);
+    expect(Object.isFrozen(resolved.plugins[0]?.dependencies)).toBe(true);
+    expect(Object.isFrozen(resolved.plugins[0]?.optionalDependencies)).toBe(
+      true,
+    );
+    expect(Reflect.set(resolved.plugins[0] ?? {}, "id", "mutated")).toBe(false);
     expect(() =>
       resolveConfig({
         plugins: [
           {
-            name: "legacy-descriptor",
+            id: "legacy-descriptor",
             describe() {},
           } as never,
         ],
@@ -1157,7 +1165,7 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
-            name: "metadata-plugin",
+            id: "metadata-plugin",
             description: "package-local metadata",
           } as never,
         ],
@@ -1167,7 +1175,7 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
-            name: "test-plugin",
+            id: "test-plugin",
             buildStart() {},
           } as never,
         ],
@@ -1177,12 +1185,27 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
-            name: "test-plugin",
+            id: "test-plugin",
             buildOutput() {},
           } as never,
         ],
       }),
     ).toThrow("Return the hook from plugins[0].setup() instead");
+    expect(() =>
+      resolveConfig({ plugins: [{ name: "legacy-name" } as never] }),
+    ).toThrow("plugins[0].name is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [{ id: "legacy-key", key: "legacy-key" } as never],
+      }),
+    ).toThrow("plugins[0].key is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          { id: "legacy-settings-key", settingsKey: "legacy" } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].settingsKey is not supported");
   });
 
   it("does not share resolved mutable state between calls", () => {

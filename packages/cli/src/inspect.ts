@@ -93,13 +93,12 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
     lines,
     "Plugins",
     Object.entries(result.graph.plugins.entries),
-    ([key, registration]) => {
+    ([id, registration]) => {
       const contracts = [
         registration.application ? "application" : undefined,
         registration.page ? "page" : undefined,
       ].filter(Boolean);
       const metadata = [
-        `id=${formatCoreIdentifier(registration.id)}`,
         contracts.length > 0 ? `contracts=${contracts.join(",")}` : undefined,
         registration.page
           ? `pageDefaultable=${registration.page.defaultable}`
@@ -107,7 +106,8 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
       ]
         .filter(Boolean)
         .join(", ");
-      return `${key}: ${metadata}`;
+      const formattedId = formatCoreIdentifier(id);
+      return metadata ? `${formattedId}: ${metadata}` : formattedId;
     },
   );
 

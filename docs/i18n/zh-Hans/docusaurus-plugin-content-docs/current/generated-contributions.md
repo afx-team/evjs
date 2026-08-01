@@ -33,7 +33,7 @@ flowchart TB
   end
 
   subgraph Materialize["Materialized .ev output"]
-    Files[".ev/plugins/<plugin>\ngenerated artifacts"]
+    Files[".ev/plugins/<id>\ngenerated artifacts"]
     Manifest[".ev/manifest.json\nmodules + slots + importEdges"]
   end
 
@@ -65,10 +65,9 @@ flowchart TB
 │   ├── main.ts
 │   └── server.ts
 ├── plugins/
-│   └── qiankun/
-│       └── slave/
-│           ├── entry-wrapper.ts
-│           └── original-entry.ts
+│   └── qiankun-slave/
+│       ├── entry-wrapper.ts
+│       └── original-entry.ts
 ├── manifest.json
 └── types.d.ts
 ```
@@ -78,10 +77,10 @@ flowchart TB
 - `framework/` 保存 normalized graph、provenance、diagnostic 与 build-plan
   快照。`core-graph.json` 是 planning 与 inspection 消费的唯一语义事实来源。
 - `entries/` 保存 bundler 消费的框架 entry facade。
-- `plugins/<plugin>/` 保存插件生成产物。
-- 插件名会规范化为路径段；例如 `@evjs/plugin-qiankun:slave` 会变成
-  `qiankun/slave`。
-- `manifest.json` 串联 generated artifacts、import edges、slot items、生产插件名、
+- `plugins/<id>/` 保存插件生成产物。
+- 插件的 canonical `id` 直接作为 generated artifact 路径段；例如
+  `qiankun-slave` 持有 `plugins/qiankun-slave/`。
+- `manifest.json` 串联 generated artifacts、import edges、slot items、生产插件 id、
   scope 和最终 entries。
 
 生成文件在需要 framework runtime internals 时可以 import generated-only
@@ -118,7 +117,7 @@ module，也仍然可见。
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
+  id: "analytics",
   contributions(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
@@ -176,9 +175,9 @@ contributions(ctx) {
 hydration marker 语义。Replacement entry 负责首次 `start()` 调用以及之后的
 `app.render()` remount。其他 entry 类型不能关闭 framework startup。
 
-插件生成路径稳定且可读。例如 id 为 `@evjs/plugin-qiankun:slave` 的插件会写入
-`.ev/plugins/qiankun/slave/*`，并暴露类似
-`evjs:generated/qiankun/slave/entry-wrapper` 的 specifier。
+插件生成路径稳定且可读。例如 id 为 `qiankun-slave` 的插件会写入
+`.ev/plugins/qiankun-slave/*`，并暴露类似
+`evjs:generated/qiankun-slave/entry-wrapper` 的 specifier。
 
 使用 `ctx.slot(name).add(...)` 把 generated artifacts 挂到 framework 上。支持的
 slots 如下：
@@ -268,7 +267,7 @@ Contribution 层不替代插件生命周期：
 调试或 code review 时，先看 `.ev/manifest.json`：
 
 1. 在 `entries` 中找到最终 entry。
-2. 查看 `generated.modules`，确认插件产物和 producer plugin。
+2. 查看 `generated.modules`，确认插件产物和 producer plugin id。
 3. 查看 `generated.slots`，确认产物挂载位置。
 4. 查看 `generated.importEdges`，理解 generated-to-generated import。
 5. 打开 `.ev/entries` 和 `.ev/plugins` 下对应文件。

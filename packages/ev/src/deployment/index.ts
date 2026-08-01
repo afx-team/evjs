@@ -324,7 +324,7 @@ export function nodeDeploymentAdapter(
   options: NodeDeploymentAdapterOptions = {},
 ): Plugin {
   return {
-    name: "node-deployment-adapter",
+    id: "node-deployment-adapter",
     setup(ctx) {
       return {
         buildEnd: declareDeploymentOutputReservations(
@@ -456,7 +456,7 @@ export function staticDeploymentAdapter(
   options: StaticDeploymentAdapterOptions = {},
 ): Plugin {
   return {
-    name: "static-deployment-adapter",
+    id: "static-deployment-adapter",
     setup(ctx) {
       return {
         buildEnd: declareDeploymentOutputReservations(
@@ -566,7 +566,7 @@ export function edgeDeploymentAdapter(
   options: EdgeDeploymentAdapterOptions = {},
 ): Plugin {
   return {
-    name: "edge-deployment-adapter",
+    id: "edge-deployment-adapter",
     setup(ctx) {
       return {
         buildEnd: declareDeploymentOutputReservations(

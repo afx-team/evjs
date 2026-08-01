@@ -6,6 +6,8 @@ import type {
   BuildPlan,
   ComponentModel,
   CoreGraph,
+  FrameworkSlotPlanItem,
+  GeneratedModulePlan,
   HydrationMode,
   PageMetadata,
   PageRouteKind,
@@ -415,6 +417,30 @@ function toCorePattern(
 }
 
 describe("assertFrameworkManifestShape", () => {
+  it("uses canonical plugin ids in generated framework plans", () => {
+    const generatedModule = {
+      key: "analytics:application:runtime",
+      id: "runtime",
+      pluginId: "analytics",
+      scope: { kind: "application" },
+      file: ".ev/plugins/analytics/application/runtime.ts",
+      specifier: "#ev/plugin/analytics/application/runtime",
+      extension: ".ts",
+      sourceHash: "hash",
+    } satisfies GeneratedModulePlan;
+    const generatedSlot = {
+      key: "analytics:resolve.alias:runtime",
+      id: "runtime",
+      pluginId: "analytics",
+      slot: "resolve.alias",
+      specifier: "analytics/runtime",
+      replacement: generatedModule.specifier,
+    } satisfies FrameworkSlotPlanItem;
+
+    expect(generatedModule.pluginId).toBe("analytics");
+    expect(generatedSlot.pluginId).toBe("analytics");
+  });
+
   it("accepts generated framework manifests", () => {
     expect(() =>
       assertFrameworkManifestShape(createMinimalBuildOutput(), "manifest"),

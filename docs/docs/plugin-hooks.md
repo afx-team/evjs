@@ -204,7 +204,7 @@ import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const yamlPlugin = definePlugin({
-  id: "@example/yaml-support",
+  id: "yaml-support",
   setup() {
     return {
       bundlerConfig: utoopack((cfg) => {
@@ -230,7 +230,7 @@ import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
 import { definePlugin } from "@evjs/ev/plugin";
 
 const webpackAlias = definePlugin({
-  id: "@example/webpack-alias",
+  id: "webpack-alias",
   setup() {
     return {
       bundlerConfig: webpack((config) => {

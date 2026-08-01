@@ -536,9 +536,17 @@ describe("createDeploymentArtifact", () => {
         },
       },
     ];
+    const pluginContext = {
+      mode: "production",
+      command: "build",
+      cwd: "/project",
+      config: {} as PluginContext["config"],
+      logger: {} as PluginContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginContext;
 
     await expect(
-      runBuildOutputHooks(hooks, output, {} as never, () => {
+      runBuildOutputHooks(hooks, output, pluginContext, () => {
         assertFrameworkManifestShape(
           output,
           "BuildOutput after buildOutput hooks",

@@ -942,7 +942,7 @@ export interface GeneratedFrameworkFilePlan {
 export interface GeneratedModulePlan {
   key: string;
   id: string;
-  pluginName: string;
+  pluginId: string;
   scope: GeneratedScope;
   file: string;
   specifier: string;
@@ -981,7 +981,7 @@ export type FrameworkSlotPlanItem =
 interface FrameworkSlotPlanItemBase {
   key: string;
   id: string;
-  pluginName: string;
+  pluginId: string;
 }
 
 export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
@@ -2465,6 +2465,7 @@ export {
 export {
   type ApplicationId,
   assertCoreGraph,
+  assertPluginId,
   CONFIG_ROUTE_PROVIDER_ID,
   type CoreApplicationNode,
   type CoreApplicationPluginSetting,

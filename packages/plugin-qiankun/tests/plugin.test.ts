@@ -56,7 +56,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       evPluginQiankunMaster({ resolver: "./src/qiankun.master.ts" }),
     );
     const captured = createContributionCapture(cwd, {});
-    const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:master");
+    const sourceDir = generatedModuleDir(cwd, "qiankun-master");
 
     await plugin.contributions?.(captured.ctx);
 
@@ -149,7 +149,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const wrapper = captured.modules.find(
       (module) => module.id === "entry-wrapper",
     );
-    const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:slave");
+    const sourceDir = generatedModuleDir(cwd, "qiankun-slave");
     const source = renderModule(wrapper, captured.importOf, (file) =>
       toRelativeImport(sourceDir, file),
     );
@@ -314,7 +314,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const wrapper = captured.modules.find(
       (module) => module.id === "entry-wrapper",
     );
-    const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:slave");
+    const sourceDir = generatedModuleDir(cwd, "qiankun-slave");
     const importFile = (file: string) => toRelativeImport(sourceDir, file);
     const wrapperSource = renderModule(wrapper, captured.importOf, importFile);
     expect(original).toBeDefined();
@@ -719,22 +719,6 @@ function toRelativeImport(fromDir: string, targetFile: string): string {
   return relative;
 }
 
-function generatedModuleDir(cwd: string, pluginName: string): string {
-  return path.join(cwd, ".ev", "plugins", sanitizePathSegment(pluginName));
-}
-
-function sanitizePathSegment(value: string): string {
-  const normalized = value
-    .replace(/^@evjs\/plugin-/, "")
-    .replace(/^@/, "")
-    .replace(/\/plugin-/g, "/")
-    .replace(/^plugin-/, "");
-  const segments = normalized
-    .replace(/:/g, "/")
-    .split(/[\\/]+/)
-    .map((segment) =>
-      segment.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, ""),
-    )
-    .filter(Boolean);
-  return segments.join("/") || "generated";
+function generatedModuleDir(cwd: string, pluginId: string): string {
+  return path.join(cwd, ".ev", "plugins", pluginId);
 }

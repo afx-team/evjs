@@ -931,9 +931,9 @@ describe("page.config modules", () => {
       message: /document has unknown field "extensions"/,
     },
     {
-      label: "a legacy namespaced plugin key",
+      label: "a legacy namespaced plugin id",
       source: 'export default { plugins: { "@company/feature": true } };',
-      message: /must be a lowercase plugin key/,
+      message: /must be a lowercase plugin id/,
     },
     {
       label: "an invalid Page plugin setting",
