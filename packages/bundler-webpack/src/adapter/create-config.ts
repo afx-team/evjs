@@ -8,6 +8,7 @@ import {
   assertSafeBuildOwnedOutputPath,
   assertSafeBundlerCleanOutputPath,
   canonicalPortableArtifactPathKey,
+  createPluginConfigView,
   type ResolvedBuildOutputPaths,
   resolveBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
@@ -201,7 +202,7 @@ export async function createWebpackConfigs(
     mode: plan.mode,
     command: plan.mode === "production" ? "build" : "dev",
     cwd,
-    config,
+    config: createPluginConfigView(config),
     bundlerName: "webpack",
     environment:
       clientEntries.length > 0 && serverEntries.length > 0

@@ -51,6 +51,7 @@ import {
 } from "./generated/client-entry-source.js";
 import { applyPageWrapperContributions } from "./generated/page-wrapper-contribution.js";
 import { createReactServerPageEntrySource } from "./generated/react-server-page-source.js";
+import { createPluginConfigView } from "./plugin-lifecycle.js";
 import {
   reserveUniquePortableArtifactPath,
   sanitizePortableArtifactPathSegment,
@@ -266,7 +267,7 @@ class ContributionCollector<TBundlerCfg> {
       mode: this.options.mode,
       command: this.options.command,
       cwd: this.options.cwd,
-      config: this.options.config,
+      config: createPluginConfigView(this.options.config),
       framework: createFrameworkIRView(this.options.graph, this.options.plan),
       emit,
       slot: <K extends FrameworkSlotName>(name: K) =>

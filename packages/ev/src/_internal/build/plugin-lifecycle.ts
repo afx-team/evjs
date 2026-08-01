@@ -12,6 +12,7 @@ import type {
   BuildResult,
   Plugin,
   PluginConfigContext,
+  PluginConfigHookInput,
   PluginContext,
   PluginHooks,
 } from "../../plugin/index.js";
@@ -167,12 +168,16 @@ export async function collectPluginHooks<TBundlerCfg>(
   beforeRollback?: () => void | Promise<void>,
 ): Promise<PluginHooks<TBundlerCfg>[]> {
   const allHooks: PluginHooks<TBundlerCfg>[] = [];
+  const setupContext: PluginContext<TBundlerCfg> = {
+    ...ctx,
+    config: createPluginConfigView(ctx.config),
+  };
   try {
     for (const plugin of plugins) {
       if (!plugin.setup) continue;
       const hooks = resolvePluginSetupHooks<TBundlerCfg>(
         plugin.name,
-        await plugin.setup(ctx),
+        await plugin.setup(setupContext),
       );
       if (hooks) allHooks.push(hooks);
     }
@@ -253,10 +258,14 @@ export async function runConfigHooks<TBundlerCfg>(
   userConfig: Config<TBundlerCfg> | undefined,
   ctx: PluginConfigContext,
 ): Promise<Config<TBundlerCfg> | undefined> {
-  let config = cloneConfigHookInput(userConfig);
+  const clonedConfig = cloneConfigHookInput(userConfig);
+  // Use a separate clone graph so aliases elsewhere in raw config cannot
+  // mutate the authoritative installation after `plugins` is hidden.
+  const installedPlugins = cloneConfigHookInput(clonedConfig?.plugins);
   const plugins = orderPluginsByDependencies(
-    resolvePluginsConfig<TBundlerCfg>(config?.plugins),
+    resolvePluginsConfig<TBundlerCfg>(installedPlugins),
   );
+  let config = createConfigHookInput(clonedConfig);
   const applicationSettingContext =
     createPluginApplicationSettingContext(config);
 
@@ -266,22 +275,59 @@ export async function runConfigHooks<TBundlerCfg>(
 
   for (const plugin of plugins) {
     if (!plugin.config) continue;
-    const nextConfig = await plugin.config(config ?? {}, ctx);
+    const hookInput = config ?? {};
+    const nextConfig = await plugin.config(hookInput, ctx);
+    assertConfigHookDidNotInstallPlugins(plugin.name, hookInput);
     if (nextConfig !== undefined) {
       config = cloneConfigHookInput(
         resolvePluginConfigHookResult<TBundlerCfg>(plugin.name, nextConfig),
       );
     }
   }
-  return config;
+  return restoreInstalledPlugins(config, installedPlugins);
 }
 
-function cloneConfigHookInput<TBundlerCfg>(
+function createConfigHookInput<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
+): PluginConfigHookInput<TBundlerCfg> | undefined {
+  if (!config) return undefined;
+  if (!Reflect.deleteProperty(config, "plugins")) {
+    throw new Error(
+      "[evjs] Unable to isolate config.plugins from plugin hooks.",
+    );
+  }
+  return config as PluginConfigHookInput<TBundlerCfg>;
+}
+
+function assertConfigHookDidNotInstallPlugins(
+  pluginName: string,
+  config: object,
+): void {
+  if (!Object.hasOwn(config, "plugins")) return;
+  throw new Error(
+    `[evjs] Plugin "${pluginName}" config hook cannot change config.plugins. Install plugins only in the Application config.`,
+  );
+}
+
+function restoreInstalledPlugins<TBundlerCfg>(
+  config: PluginConfigHookInput<TBundlerCfg> | undefined,
+  plugins: Config<TBundlerCfg>["plugins"],
 ): Config<TBundlerCfg> | undefined {
-  return cloneConfigHookValue(config, new WeakMap()) as
-    | Config<TBundlerCfg>
-    | undefined;
+  if (!config) return undefined;
+  const restored = cloneConfigHookInput(config);
+  if (plugins !== undefined) {
+    Object.defineProperty(restored, "plugins", {
+      configurable: true,
+      enumerable: true,
+      value: plugins,
+      writable: true,
+    });
+  }
+  return restored;
+}
+
+function cloneConfigHookInput<TValue>(config: TValue): TValue {
+  return cloneConfigHookValue(config, new WeakMap()) as TValue;
 }
 
 function cloneConfigHookValue(
@@ -337,9 +383,10 @@ function isPlainObject(value: object): boolean {
 function resolvePluginConfigHookResult<TBundlerCfg>(
   pluginName: string,
   config: unknown,
-): Config<TBundlerCfg> {
+): PluginConfigHookInput<TBundlerCfg> {
   if (config && typeof config === "object" && !Array.isArray(config)) {
-    return config as Config<TBundlerCfg>;
+    assertConfigHookDidNotInstallPlugins(pluginName, config);
+    return config as PluginConfigHookInput<TBundlerCfg>;
   }
   throw new Error(
     `[evjs] Plugin "${pluginName}" config hook must return a config object or undefined.`,
@@ -350,7 +397,11 @@ export async function runBuildStartHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
   ctx: PluginContext<TBundlerCfg>,
 ): Promise<void> {
-  for (const hook of hooks) await hook.buildStart?.(ctx);
+  const buildStartContext: PluginContext<TBundlerCfg> = {
+    ...ctx,
+    config: createPluginConfigView(ctx.config),
+  };
+  for (const hook of hooks) await hook.buildStart?.(buildStartContext);
 }
 
 export async function runBuildOutputHooks<TBundlerCfg>(
@@ -408,10 +459,80 @@ export function createLatePluginContext<TBundlerCfg>(
     mode: ctx.mode,
     command: ctx.command,
     cwd: ctx.cwd,
-    config: ctx.config,
+    config: createPluginConfigView(ctx.config),
     ...(ctx.flags === undefined ? {} : { flags: ctx.flags }),
     logger: ctx.logger,
   };
+}
+
+const pluginConfigViews = new WeakMap<object, object>();
+
+/**
+ * Create the isolated structural snapshot exposed through resolved plugin
+ * contexts. Framework-owned arrays and plain records are deeply cloned and
+ * frozen; functions and non-plain values remain opaque and are never frozen
+ * in place.
+ */
+export function createPluginConfigView<TBundlerCfg>(
+  config: PluginContext<TBundlerCfg>["config"],
+): PluginContext<TBundlerCfg>["config"] {
+  const existing = pluginConfigViews.get(config);
+  if (existing) {
+    return existing as PluginContext<TBundlerCfg>["config"];
+  }
+  const view = cloneReadonlyPluginConfigValue(
+    config,
+    new WeakMap(),
+    "config",
+  ) as PluginContext<TBundlerCfg>["config"];
+  pluginConfigViews.set(config, view);
+  pluginConfigViews.set(view, view);
+  return view;
+}
+
+function cloneReadonlyPluginConfigValue(
+  value: unknown,
+  seen: WeakMap<object, object>,
+  path: string,
+): unknown {
+  if (!value || typeof value !== "object") return value;
+  if (!Array.isArray(value) && !isPlainObject(value)) return value;
+
+  const existing = seen.get(value);
+  if (existing) return existing;
+  const clone: object = Array.isArray(value)
+    ? new Array(value.length)
+    : Object.create(Object.getPrototypeOf(value));
+  seen.set(value, clone);
+
+  for (const key of Reflect.ownKeys(value)) {
+    if (
+      (Array.isArray(value) && key === "length") ||
+      isDefinedPluginRuntimePropertyKey(key)
+    ) {
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor) continue;
+    if ("value" in descriptor) {
+      Object.defineProperty(clone, key, {
+        configurable: true,
+        enumerable: descriptor.enumerable,
+        value: cloneReadonlyPluginConfigValue(
+          descriptor.value,
+          seen,
+          `${path}.${String(key)}`,
+        ),
+        writable: true,
+      });
+      continue;
+    }
+    throw new Error(
+      `[evjs] Resolved plugin context ${path}.${String(key)} must be a data property, not an accessor.`,
+    );
+  }
+
+  return Object.freeze(clone);
 }
 
 export function hasSamePluginIdentity<TBundlerCfg>(

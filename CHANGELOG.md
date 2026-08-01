@@ -32,6 +32,11 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   non-finite numbers, negative zero, unsafe keys, sparse arrays, and cycles are
   rejected before output publication; each deployment projection is now an
   isolated snapshot.
+- **Application-owned plugin installation** — Plugin `config()` hooks now
+  receive and return only framework configuration. They cannot add, remove,
+  reorder, or replace `config.plugins`; the Application's original plugin
+  installation remains authoritative across the complete lifecycle. Resolved
+  plugin contexts receive one isolated, frozen framework-config view.
 
 ### ✨ Improvements
 

@@ -201,7 +201,10 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   bundler?: BundlerAdapter<TBundlerCfg>;
 
   /**
-   * Framework plugins to extend behavior or modify the bundler config.
+   * Application-owned framework plugin installation.
+   *
+   * Plugins may extend framework behavior or modify bundler configuration,
+   * but their config hooks cannot change this list.
    */
   plugins?: readonly (Plugin<TBundlerCfg> | false | null | undefined)[];
 }

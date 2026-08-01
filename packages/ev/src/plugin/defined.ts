@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { Config, DefaultBundlerConfig } from "../config/index.js";
+import type { DefaultBundlerConfig } from "../config/index.js";
 import {
   assertPluginKey,
   type ResolvedPagePluginConfigInput,
@@ -14,6 +14,7 @@ import type {
   GeneratedModuleRef,
   Plugin,
   PluginConfigContext,
+  PluginConfigHookInput,
   PluginContext,
   PluginHooks,
 } from "./index.js";
@@ -343,14 +344,19 @@ type DefinedPluginConfigHook<
   TApplication extends AnyPluginConfigContract | undefined,
   TBundlerCfg,
 > = <TActualBundlerCfg extends TBundlerCfg = TBundlerCfg>(
-  config: Config<TActualBundlerCfg>,
+  config: PluginConfigHookInput<TActualBundlerCfg>,
   context: DefinedPluginConfigContext<TApplication>,
 ) =>
-  | Config<TActualBundlerCfg>
+  | DefinedPluginConfigHookOutput<TActualBundlerCfg>
   | undefined
   | void
-  | Promise<Config<TActualBundlerCfg> | undefined>
+  | Promise<DefinedPluginConfigHookOutput<TActualBundlerCfg> | undefined>
   | Promise<void>;
+
+type DefinedPluginConfigHookOutput<TBundlerCfg> =
+  PluginConfigHookInput<TBundlerCfg> & {
+    readonly plugins?: never;
+  };
 
 type DefinedPluginSetupResult<TBundlerCfg> =
   | PluginHooks<TBundlerCfg>

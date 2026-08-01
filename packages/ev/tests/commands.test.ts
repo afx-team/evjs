@@ -975,6 +975,12 @@ describe("prepareFrameworkBuild", () => {
     const plugin: Plugin<Record<string, never>> = {
       name: "generated-fixture",
       contributions(ctx) {
+        expect(Object.isFrozen(ctx.config)).toBe(true);
+        expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
+        expect(Object.isFrozen(ctx.config.plugins[0])).toBe(true);
+        expect(() => {
+          (ctx.config.plugins as Plugin<Record<string, never>>[]).splice(0, 1);
+        }).toThrow(TypeError);
         expect(Object.isFrozen(ctx.framework)).toBe(true);
         expect(Object.isFrozen(ctx.framework.entries)).toBe(true);
         const mainEntry = ctx.framework.getEntry("main");

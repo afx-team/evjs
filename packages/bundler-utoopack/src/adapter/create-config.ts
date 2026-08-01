@@ -15,6 +15,7 @@ import {
   assertPortableRelativeArtifactPath,
   assertSafeBuildOutputPaths,
   canonicalPortableArtifactPathKey,
+  createPluginConfigView,
   resolveBuildOutputPaths,
   SERVER_FUNCTION_TRANSFORM_RUNTIME,
 } from "@evjs/ev/_internal/build";
@@ -197,7 +198,7 @@ export async function createUtoopackConfig(
     mode: isProduction ? "production" : "development",
     command: isProduction ? "build" : "dev",
     cwd,
-    config,
+    config: createPluginConfigView(config),
     bundlerName: "utoopack",
     environment: finalServerEntry ? "mixed" : "client",
     logger,

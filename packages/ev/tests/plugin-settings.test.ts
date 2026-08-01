@@ -590,6 +590,205 @@ describe("definePlugin and pluginConfig", () => {
     expect(input.server).toBeUndefined();
   });
 
+  it.each([
+    "add",
+    "remove",
+    "reorder",
+    "replace",
+  ] as const)("rejects config hooks that %s the plugin installation", async (mutation) => {
+    const events: string[] = [];
+    const latePlugin: Plugin = {
+      name: "late-plugin",
+      config() {
+        events.push("late:config");
+      },
+    };
+    const replacementPlugin: Plugin = {
+      name: "second-plugin",
+      config() {
+        events.push("replacement:config");
+      },
+    };
+    const secondPlugin: Plugin = {
+      name: "second-plugin",
+      config() {
+        events.push("second:config");
+      },
+    };
+    const firstPlugin: Plugin = {
+      name: "first-plugin",
+      config(config) {
+        events.push("first:config");
+        let plugins: NonNullable<Config["plugins"]>;
+        if (mutation === "add") {
+          plugins = [firstPlugin, secondPlugin, latePlugin];
+        } else if (mutation === "remove") {
+          plugins = [firstPlugin];
+        } else if (mutation === "reorder") {
+          plugins = [secondPlugin, firstPlugin];
+        } else {
+          plugins = [firstPlugin, replacementPlugin];
+        }
+        if (mutation === "replace") {
+          return { ...config, plugins } as unknown as typeof config;
+        }
+        (config as Config).plugins = plugins;
+      },
+    };
+
+    await expect(
+      runConfigHooks(
+        { plugins: [firstPlugin, secondPlugin] },
+        {
+          command: "build",
+          cwd: process.cwd(),
+          mode: "production",
+        },
+      ),
+    ).rejects.toThrow(
+      '[evjs] Plugin "first-plugin" config hook cannot change config.plugins. Install plugins only in the Application config.',
+    );
+    expect(events).toEqual(["first:config"]);
+  });
+
+  it("preserves the Application plugin installation across config hooks", async () => {
+    const events: string[] = [];
+    const firstPlugin: Plugin = {
+      name: "first-plugin",
+      config() {
+        events.push("first:config");
+        return { routing: { mode: "mpa" } };
+      },
+    };
+    const secondPlugin: Plugin = {
+      name: "second-plugin",
+      config(config) {
+        events.push("second:config");
+        config.server = { basePath: "/api" };
+      },
+    };
+
+    const configured = await runConfigHooks(
+      {
+        plugins: [firstPlugin, false, secondPlugin, null, undefined],
+        routing: { mode: "spa" },
+      },
+      {
+        command: "build",
+        cwd: process.cwd(),
+        mode: "production",
+      },
+    );
+
+    expect(events).toEqual(["first:config", "second:config"]);
+    expect(
+      configured?.plugins?.map((plugin) =>
+        plugin && typeof plugin === "object" ? plugin.name : plugin,
+      ),
+    ).toEqual(["first-plugin", false, "second-plugin", null, undefined]);
+    expect(
+      resolveConfig(configured).plugins.map((plugin) => plugin.name),
+    ).toEqual(["first-plugin", "second-plugin"]);
+    expect(configured?.routing).toEqual({ mode: "mpa" });
+    expect(configured?.server).toEqual({ basePath: "/api" });
+  });
+
+  it("isolates the Application plugin installation from raw config aliases", async () => {
+    const events: string[] = [];
+    const replacementPlugin: Plugin = { name: "replacement-plugin" };
+    const secondPlugin: Plugin = {
+      name: "second-plugin",
+      config() {
+        events.push("second:config");
+      },
+    };
+    const firstPlugin: Plugin = {
+      name: "first-plugin",
+      config(config) {
+        events.push("first:config");
+        const aliasedPlugins = (
+          config as typeof config & { pluginAlias: Plugin[] }
+        ).pluginAlias;
+        aliasedPlugins.splice(1, 1, replacementPlugin);
+        Reflect.deleteProperty(config, "pluginAlias");
+      },
+    };
+    const installedPlugins = [firstPlugin, secondPlugin];
+
+    const configured = await runConfigHooks(
+      {
+        plugins: installedPlugins,
+        pluginAlias: installedPlugins,
+      } as Config & { pluginAlias: Plugin[] },
+      {
+        command: "build",
+        cwd: process.cwd(),
+        mode: "production",
+      },
+    );
+
+    expect(events).toEqual(["first:config", "second:config"]);
+    expect(
+      configured?.plugins?.map((plugin) =>
+        plugin && typeof plugin === "object" ? plugin.name : plugin,
+      ),
+    ).toEqual(["first-plugin", "second-plugin"]);
+    expect(configured).not.toHaveProperty("pluginAlias");
+  });
+
+  it("rejects an own undefined plugins field from a config hook result", async () => {
+    const plugin: Plugin = {
+      name: "undefined-plugin-installation",
+      config(config) {
+        return {
+          ...config,
+          plugins: undefined,
+        } as unknown as typeof config;
+      },
+    };
+
+    await expect(
+      runConfigHooks(
+        { plugins: [plugin] },
+        {
+          command: "build",
+          cwd: process.cwd(),
+          mode: "production",
+        },
+      ),
+    ).rejects.toThrow(
+      '[evjs] Plugin "undefined-plugin-installation" config hook cannot change config.plugins. Install plugins only in the Application config.',
+    );
+  });
+
+  it("rejects an accessor named plugins from a config hook", async () => {
+    const plugin: Plugin = {
+      name: "accessor-plugin",
+      config(config) {
+        Object.defineProperty(config, "plugins", {
+          configurable: true,
+          enumerable: true,
+          get() {
+            return undefined;
+          },
+        });
+      },
+    };
+
+    await expect(
+      runConfigHooks(
+        { plugins: [plugin] },
+        {
+          command: "build",
+          cwd: process.cwd(),
+          mode: "production",
+        },
+      ),
+    ).rejects.toThrow(
+      '[evjs] Plugin "accessor-plugin" config hook cannot change config.plugins. Install plugins only in the Application config.',
+    );
+  });
+
   it("preserves length fields on ordinary config objects", async () => {
     const plugin: Plugin = {
       name: "observes-length-field",

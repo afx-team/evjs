@@ -116,6 +116,13 @@ describe("createWebpackConfigs", () => {
         {
           bundlerConfig(_configs, ctx) {
             ctx.addWatchFile("./webpack-plugin.config.ts");
+            expect(Object.isFrozen(ctx.config)).toBe(true);
+            expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
+            expect(() => {
+              (ctx.config.plugins as unknown as unknown[]).push({
+                name: "late-plugin",
+              });
+            }).toThrow(TypeError);
           },
         },
       ],
@@ -127,6 +134,7 @@ describe("createWebpackConfigs", () => {
     );
 
     expect(watchedFiles).toEqual(["./webpack-plugin.config.ts"]);
+    expect(config.plugins).toEqual([]);
   });
 
   it("rejects a renamed replacement that removes an expected framework role", async () => {

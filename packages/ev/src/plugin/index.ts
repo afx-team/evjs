@@ -186,11 +186,22 @@ export interface PluginConfigContext {
   readonly command: "dev" | "build";
 }
 
+/** Framework configuration a plugin may change before defaults are resolved. */
+export type PluginConfigHookInput<TBundlerCfg = DefaultBundlerConfig> = Omit<
+  Config<TBundlerCfg>,
+  "plugins"
+>;
+
+type PluginConfigHookOutput<TBundlerCfg> =
+  PluginConfigHookInput<TBundlerCfg> & {
+    readonly plugins?: never;
+  };
+
 type ConfigHookResult<TBundlerCfg> =
-  | Config<TBundlerCfg>
+  | PluginConfigHookOutput<TBundlerCfg>
   | undefined
   | void
-  | Promise<Config<TBundlerCfg> | undefined>
+  | Promise<PluginConfigHookOutput<TBundlerCfg> | undefined>
   | Promise<void>;
 
 type PluginSetupResult<TBundlerCfg> =
@@ -232,7 +243,7 @@ type ReadonlyFrameworkConfig<TBundlerCfg> = DeepReadonly<
 type PluginConfigHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
-  config: Config<TActualBundlerCfg>,
+  config: PluginConfigHookInput<TActualBundlerCfg>,
   ctx: PluginConfigContext,
 ) => ConfigHookResult<TActualBundlerCfg>;
 
@@ -286,7 +297,8 @@ export interface Plugin<TBundlerCfg = unknown> {
    * Modify the raw user config before defaults are resolved.
    *
    * Use this for framework-level config such as `server.basePath` that must
-   * be visible to dev proxy setup and build-time runtime defines.
+   * be visible to dev proxy setup and build-time runtime defines. Plugin
+   * installation is application-owned and cannot be changed from this hook.
    */
   config?: PluginConfigHook<TBundlerCfg>;
 

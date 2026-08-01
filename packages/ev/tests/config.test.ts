@@ -433,6 +433,26 @@ describe("config authoring", () => {
 
     expect(assertInvalidAuthoring).toBeTypeOf("function");
   });
+
+  it("keeps plugin installation out of the config hook contract", () => {
+    const factory = definePlugin({
+      id: "@test/framework-config-only",
+      config(config) {
+        // @ts-expect-error Config hook inputs do not expose plugin installation.
+        void config.plugins;
+        // @ts-expect-error Config hook inputs cannot assign plugin installation.
+        config.plugins = undefined;
+        return config;
+      },
+    });
+    const installedConfig: Config = { plugins: [] };
+    type ConfigHook = NonNullable<Plugin["config"]>;
+    // @ts-expect-error A full Application config cannot be returned from a plugin config hook.
+    const invalidReturnHook: ConfigHook = () => installedConfig;
+
+    expect(invalidReturnHook).toBeTypeOf("function");
+    expect(factory()).toHaveProperty("name", "@test/framework-config-only");
+  });
 });
 
 describe("resolveConfig", () => {

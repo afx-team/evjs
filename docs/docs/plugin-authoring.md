@@ -186,6 +186,15 @@ derivation. Return a config object, or return `undefined` after mutating the
 received working copy in place. evjs isolates that copy from the caller and
 from the last committed dev configuration, so a failed reload cannot leak
 candidate mutations.
+`config.plugins` is deliberately excluded from the working copy. Plugin
+installation is owned by the Application config: its entries and declared
+order remain fixed for the complete lifecycle snapshot, while hook execution
+still follows `dependencies`, `optionalDependencies`, and `enforce`.
+Any own `plugins` property added in place or returned, including `undefined`,
+is rejected.
+Resolved plugin contexts expose the same isolated, frozen framework-config
+view, so setup, contribution, bundler, and lifecycle hooks cannot mutate the
+Application's live configuration through `ctx.config`.
 `null`, arrays, and other return values are rejected. The result is validated by
 the same resolver as user config before `setup()` or bundling runs.
 

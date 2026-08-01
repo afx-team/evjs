@@ -22,6 +22,7 @@ export {
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   resolveBundlerClientEntryAssets,
+  resolveBundlerServerEntryAssets,
 } from "./bundler.js";
 export { assertBundlerEmittedFiles } from "./bundler-output-files.js";
 export {
@@ -88,6 +89,7 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
+export { createPluginConfigView } from "./plugin-lifecycle.js";
 export type {
   PluginSettingsRegistry,
   PluginSettingsResolutionSession,

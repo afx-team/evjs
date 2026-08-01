@@ -163,6 +163,12 @@ symbol、bigint、非有限数值、class instance、稀疏数组与循环引用
 派生的框架配置。它可以返回 config object，也可以在原对象上就地修改后返回
 `undefined`。收到的是与调用方及上一份已提交 dev 配置隔离的工作副本，因此失败的
 reload 不会泄漏候选 mutation。
+工作副本会刻意排除 `config.plugins`。插件安装由 Application 配置持有，其条目和声明
+顺序会在完整生命周期快照内保持不变；hook 的实际执行顺序仍由 `dependencies`、
+`optionalDependencies` 与 `enforce` 决定。无论原地添加还是随返回值提供，任何自有
+`plugins` 属性（包括 `undefined`）都会被拒绝。所有已解析的插件 context 都会看到
+同一份隔离、冻结的框架配置视图，因此 setup、contribution、bundler 与 lifecycle hook
+无法通过 `ctx.config` 修改 Application 的实时配置。
 `null`、array 和其他返回值会被拒绝。最终配置会经过和用户配置相同的 resolver 校验，
 然后才会运行 `setup()` 或开始 bundling。
 

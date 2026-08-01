@@ -829,6 +829,13 @@ describe("createUtoopackConfig", () => {
             ctx.addWatchFile("./utoopack-plugin.config.ts");
             expect(ctx.bundlerName).toBe("utoopack");
             expect(ctx.environment).toBe("client");
+            expect(Object.isFrozen(ctx.config)).toBe(true);
+            expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
+            expect(() => {
+              (ctx.config.plugins as unknown as unknown[]).push({
+                name: "late-plugin",
+              });
+            }).toThrow(TypeError);
           },
         },
       ],
@@ -837,6 +844,7 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.output?.publicPath).toBe("runtime");
     expect(watchedFiles).toEqual(["./utoopack-plugin.config.ts"]);
+    expect(config.plugins).toEqual([]);
   });
 
   it("rejects a plugin output override that targets the canonical server output", async () => {
