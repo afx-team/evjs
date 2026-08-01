@@ -14,11 +14,25 @@ type FrameworkCommand = (
   options: { cwd: string; flags: CliFlags },
 ) => Promise<void>;
 
+type ConfigLoader = (
+  cwd: string,
+  context?: { onDependency(file: string): void },
+) => Promise<Config<DefaultBundlerConfig> | undefined>;
+
+type DevFrameworkCommand = (
+  config: Config<DefaultBundlerConfig> | undefined,
+  options: {
+    cwd: string;
+    flags: CliFlags;
+    loadConfig: ConfigLoader;
+  },
+) => Promise<void>;
+
 export interface CliProgramDependencies {
   version: string;
   cwd(): string;
-  loadConfig(cwd: string): Promise<Config<DefaultBundlerConfig> | undefined>;
-  dev: FrameworkCommand;
+  loadConfig: ConfigLoader;
+  dev: DevFrameworkCommand;
   build: FrameworkCommand;
   prepare: FrameworkCommand;
   inspect(options: InspectCommandOptions): Promise<InspectCommandResult>;
@@ -65,8 +79,11 @@ export async function runCliProgram(
       await runCommand("Failed to start dev server", async () => {
         const cwd = dependencies.cwd();
         const flags = parseCliFlags(command.args);
-        const config = await dependencies.loadConfig(cwd);
-        await dependencies.dev(config, { cwd, flags });
+        await dependencies.dev(undefined, {
+          cwd,
+          flags,
+          loadConfig: dependencies.loadConfig,
+        });
       });
     });
 

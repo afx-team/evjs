@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { GraphConfig } from "../src/_internal/build/graph/index.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
@@ -329,9 +330,21 @@ describe("page.config modules", () => {
       "report",
       "./src/pages/report/page.config.ts",
     );
+    const observedDependencies = new Set<string>();
 
-    await expect(resolvePageConfigModules(cwd, metadata)).rejects.toThrow(
-      "Failed to load static config module",
+    await expect(
+      resolvePageConfigModules(cwd, metadata, {
+        onSourceDependency(file) {
+          observedDependencies.add(path.resolve(file));
+        },
+      }),
+    ).rejects.toThrow("Failed to load static config module");
+    await expectRealDependencies(
+      [...observedDependencies],
+      [
+        path.resolve(cwd, "src/config/channel.ts"),
+        path.resolve(cwd, "src/pages/report/page.config.ts"),
+      ],
     );
     await Promise.all([
       fs.writeFile(
@@ -356,6 +369,480 @@ describe("page.config modules", () => {
     expect(resolved.pages.report.plugins.feature).toEqual({
       channel: "fresh",
     });
+  });
+
+  it("observes unresolved helper candidates before config evaluation", async () => {
+    const cwd = await createFixture({
+      "src/config/.keep": "",
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from "../../config/channel.js";
+        export default {
+          plugins: { feature: { channel } },
+        };
+      `,
+    });
+    const metadata = createPageMetadata(
+      "report",
+      "./src/pages/report/page.config.ts",
+    );
+    const helper = path.resolve(cwd, "src/config/channel.ts");
+    const observedDependencies = new Set<string>();
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata, {
+        onSourceDependency(file) {
+          observedDependencies.add(path.resolve(file));
+        },
+      }),
+    ).rejects.toThrow("Failed to load static config module");
+    expect(observedDependencies).toContain(helper);
+
+    await fs.writeFile(helper, 'export const channel = "recovered";', "utf-8");
+    const resolved = await resolvePageConfigModules(cwd, metadata);
+
+    expect(resolved.pages.report.plugins.feature).toEqual({
+      channel: "recovered",
+    });
+  });
+
+  it("keeps higher-priority missing helper candidates observable", async () => {
+    const cwd = await createFixture({
+      "src/config/title.ts": 'export const title = "TypeScript";',
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { title } from "../../config/title.js";
+        export default { title };
+      `,
+    });
+    const metadata = createPageMetadata(
+      "report",
+      "./src/pages/report/page.config.ts",
+    );
+    const javascriptCandidate = path.resolve(cwd, "src/config/title.js");
+    const typescriptHelper = path.resolve(cwd, "src/config/title.ts");
+    const observedDependencies = new Set<string>();
+
+    const first = await resolvePageConfigModules(cwd, metadata, {
+      onSourceDependency(file) {
+        observedDependencies.add(path.resolve(file));
+      },
+    });
+
+    expect(first.pages.report.metadata?.title).toBe("TypeScript");
+    expect([...observedDependencies]).toEqual(
+      expect.arrayContaining([javascriptCandidate, typescriptHelper]),
+    );
+    const firstRealDependencies = await Promise.all(
+      first.dependencies.map((file) => fs.realpath(file)),
+    );
+    expect(firstRealDependencies).toContain(
+      await fs.realpath(typescriptHelper),
+    );
+    expect(first.dependencies).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/[/\\]title\.js$/)]),
+    );
+
+    await fs.writeFile(
+      javascriptCandidate,
+      'export const title = "JavaScript";',
+      "utf-8",
+    );
+
+    const second = await resolvePageConfigModules(cwd, metadata);
+
+    expect(second.pages.report.metadata?.title).toBe("JavaScript");
+    const secondRealDependencies = await Promise.all(
+      second.dependencies.map((file) => fs.realpath(file)),
+    );
+    expect(secondRealDependencies).toContain(
+      await fs.realpath(javascriptCandidate),
+    );
+    expect(secondRealDependencies).not.toContain(
+      await fs.realpath(typescriptHelper),
+    );
+  });
+
+  it("observes project package imports before config evaluation", async () => {
+    const cwd = await createFixture({
+      "package.json": JSON.stringify({
+        name: "page-config-imports",
+        imports: {
+          "#settings": "./src/config/settings.ts",
+        },
+      }),
+      "src/config/settings.ts": `
+        throw new Error("broken package import");
+        export const channel = "recovered";
+      `,
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from "#settings";
+        export default {
+          plugins: { feature: { channel } },
+        };
+      `,
+    });
+    const metadata = createPageMetadata(
+      "report",
+      "./src/pages/report/page.config.ts",
+    );
+    const helper = path.resolve(cwd, "src/config/settings.ts");
+    const observedDependencies = new Set<string>();
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata, {
+        onSourceDependency(file) {
+          observedDependencies.add(path.resolve(file));
+        },
+      }),
+    ).rejects.toThrow("Failed to load static config module");
+    await expectRealDependencies([...observedDependencies], [helper]);
+
+    await fs.writeFile(helper, 'export const channel = "recovered";', "utf-8");
+    const resolved = await resolvePageConfigModules(cwd, metadata);
+
+    expect(resolved.pages.report.plugins.feature).toEqual({
+      channel: "recovered",
+    });
+  });
+
+  it("reloads project package import mappings from the current manifest", async () => {
+    const cwd = await createFixture({
+      "package.json": JSON.stringify({
+        name: "page-config-import-reload",
+        imports: {
+          "#settings": {
+            node: {
+              require: "./src/config/first.ts",
+              import: "./src/config/import-only.ts",
+            },
+          },
+        },
+      }),
+      "src/config/first.ts": 'export const channel = "first";',
+      "src/config/import-only.ts": 'export const channel = "import-only";',
+      "src/config/second.ts": 'export const channel = "second";',
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from "#settings";
+        export default { plugins: { feature: { channel } } };
+      `,
+    });
+    const metadata = createPageMetadata(
+      "report",
+      "./src/pages/report/page.config.ts",
+    );
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata),
+    ).resolves.toMatchObject({
+      pages: {
+        report: { plugins: { feature: { channel: "first" } } },
+      },
+    });
+    await fs.writeFile(
+      path.join(cwd, "package.json"),
+      JSON.stringify({
+        name: "page-config-import-reload",
+        imports: {
+          "#settings": {
+            node: {
+              require: "./src/config/second.ts",
+              import: "./src/config/import-only.ts",
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata),
+    ).resolves.toMatchObject({
+      pages: {
+        report: { plugins: { feature: { channel: "second" } } },
+      },
+    });
+
+    await fs.writeFile(
+      path.join(cwd, "package.json"),
+      JSON.stringify({
+        name: "page-config-import-reload",
+        imports: {
+          "#settings": {
+            node: {
+              require: "./src/config/missing.ts",
+              import: "./src/config/import-only.ts",
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata),
+    ).resolves.toMatchObject({
+      pages: {
+        report: { plugins: { feature: { channel: "import-only" } } },
+      },
+    });
+  });
+
+  it.each([
+    ["blocked", null],
+    ["invalid", "../escaped-settings.ts"],
+  ])("does not bypass an explicitly %s require package target", async (_label, requireTarget) => {
+    const cwd = await createFixture({
+      "package.json": JSON.stringify({
+        imports: {
+          "#settings": {
+            node: {
+              require: requireTarget,
+              import: "./src/config/import-only.ts",
+            },
+          },
+        },
+      }),
+      "src/config/import-only.ts": 'export const channel = "must-not-load";',
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+          import { channel } from "#settings";
+          export default { plugins: { feature: { channel } } };
+        `,
+    });
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("report", "./src/pages/report/page.config.ts"),
+      ),
+    ).rejects.toThrow("Failed to load static config module");
+  });
+
+  it("observes missing project package import targets and manifests", async () => {
+    const cwd = await createFixture({
+      "package.json": JSON.stringify({
+        name: "missing-page-config-import",
+        imports: {
+          "#settings": "./src/config/settings.ts",
+        },
+      }),
+      "src/config/.keep": "",
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from "#settings";
+        export default {
+          plugins: { feature: { channel } },
+        };
+      `,
+    });
+    const metadata = createPageMetadata(
+      "report",
+      "./src/pages/report/page.config.ts",
+    );
+    const helper = path.resolve(cwd, "src/config/settings.ts");
+    const realHelper = path.join(
+      await fs.realpath(path.dirname(helper)),
+      path.basename(helper),
+    );
+    const manifest = path.resolve(cwd, "package.json");
+    const observedDependencies = new Set<string>();
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata, {
+        onSourceDependency(file) {
+          observedDependencies.add(path.resolve(file));
+        },
+      }),
+    ).rejects.toThrow("Failed to load static config module");
+    expect(observedDependencies).toContain(realHelper);
+    await expectRealDependencies([...observedDependencies], [manifest]);
+
+    await fs.writeFile(helper, 'export const channel = "recovered";', "utf-8");
+    const resolved = await resolvePageConfigModules(cwd, metadata);
+
+    expect(resolved.pages.report.plugins.feature).toEqual({
+      channel: "recovered",
+    });
+  });
+
+  it("recovers after adding a project package import mapping", async () => {
+    const cwd = await createFixture({
+      "package.json": JSON.stringify({ name: "added-page-config-import" }),
+      "src/config/.keep": "",
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from "#settings";
+        export default { plugins: { feature: { channel } } };
+      `,
+    });
+    const metadata = createPageMetadata(
+      "report",
+      "./src/pages/report/page.config.ts",
+    );
+    const manifest = path.resolve(cwd, "package.json");
+    const observedDependencies = new Set<string>();
+
+    await expect(
+      resolvePageConfigModules(cwd, metadata, {
+        onSourceDependency(file) {
+          observedDependencies.add(path.resolve(file));
+        },
+      }),
+    ).rejects.toThrow("Failed to load static config module");
+    await expectRealDependencies([...observedDependencies], [manifest]);
+
+    await Promise.all([
+      fs.writeFile(
+        path.join(cwd, "src/config/settings.ts"),
+        'export const channel = "added";',
+        "utf-8",
+      ),
+      fs.writeFile(
+        manifest,
+        JSON.stringify({
+          name: "added-page-config-import",
+          imports: { "#settings": "./src/config/settings.ts" },
+        }),
+        "utf-8",
+      ),
+    ]);
+
+    const resolved = await resolvePageConfigModules(cwd, metadata);
+    expect(resolved.pages.report.plugins.feature).toEqual({ channel: "added" });
+  });
+
+  it("does not observe Page config dependencies through escaped symlinks", async () => {
+    const externalDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-page-config-external-"),
+    );
+    tempDirs.push(externalDirectory);
+    const externalHelper = path.join(externalDirectory, "settings.ts");
+    await fs.writeFile(
+      externalHelper,
+      [
+        'throw new Error("broken external settings");',
+        'export const channel = "external";',
+      ].join("\n"),
+      "utf-8",
+    );
+    const cwd = await createFixture({
+      "src/config/.keep": "",
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from "../../config/settings";
+        export default {
+          plugins: { feature: { channel } },
+        };
+      `,
+    });
+    const linkedHelper = path.resolve(cwd, "src/config/settings.ts");
+    await fs.symlink(externalHelper, linkedHelper);
+    const observedDependencies = new Set<string>();
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("report", "./src/pages/report/page.config.ts"),
+        {
+          onSourceDependency(file) {
+            observedDependencies.add(path.resolve(file));
+          },
+        },
+      ),
+    ).rejects.toThrow("Failed to load static config module");
+
+    expect(observedDependencies).not.toContain(linkedHelper);
+    expect(observedDependencies).not.toContain(externalHelper);
+  });
+
+  it("rejects external file URLs in Page config modules", async () => {
+    const externalDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-page-config-file-url-"),
+    );
+    tempDirs.push(externalDirectory);
+    const externalHelper = path.join(externalDirectory, "settings.ts");
+    await fs.writeFile(
+      externalHelper,
+      'export const channel = "external";',
+      "utf-8",
+    );
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { channel } from ${JSON.stringify(pathToFileURL(externalHelper).href)};
+        export default { plugins: { feature: { channel } } };
+      `,
+    });
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("report", "./src/pages/report/page.config.ts"),
+      ),
+    ).rejects.toMatchObject({
+      cause: {
+        message: expect.stringContaining("resolves outside project root"),
+      },
+    });
+  });
+
+  it("rejects package manifests that resolve through escaped symlinks", async () => {
+    const externalDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-page-config-manifest-external-"),
+    );
+    tempDirs.push(externalDirectory);
+    const externalManifest = path.join(externalDirectory, "package.json");
+    await fs.writeFile(
+      externalManifest,
+      JSON.stringify({ name: "external-package-scope" }),
+      "utf-8",
+    );
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default { title: "Report" };
+      `,
+    });
+    await fs.symlink(externalManifest, path.join(cwd, "package.json"));
+    const observedDependencies = new Set<string>();
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("report", "./src/pages/report/page.config.ts"),
+        {
+          onSourceDependency(file) {
+            observedDependencies.add(path.resolve(file));
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      cause: {
+        message: expect.stringContaining("resolves outside project root"),
+      },
+    });
+
+    const observedRealPaths = await Promise.all(
+      [...observedDependencies].map((file) =>
+        fs.realpath(file).catch(() => path.resolve(file)),
+      ),
+    );
+    expect(observedRealPaths).not.toContain(
+      await fs.realpath(externalManifest),
+    );
   });
 
   it("invalidates helpers when a page config root is renamed", async () => {
@@ -814,7 +1301,11 @@ async function expectRealDependencies(
   expected: string[],
 ): Promise<void> {
   const realReceived = new Set(
-    await Promise.all(received.map((file) => fs.realpath(file))),
+    (
+      await Promise.all(
+        received.map((file) => fs.realpath(file).catch(() => undefined)),
+      )
+    ).filter((file): file is string => file !== undefined),
   );
   for (const file of expected) {
     expect(realReceived).toContain(await fs.realpath(file));

@@ -51,14 +51,18 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
 ): Promise<void> {
   const { loadConfig } = await import("./load-config.js");
   const defaultLoadConfig = loadConfig<TBundlerCfg>;
-  const bundler =
-    options?.bundler ??
-    userConfig?.bundler ??
-    (defaultBundler as unknown as BundlerAdapter<TBundlerCfg>);
+  const reloadInitialConfig =
+    options?.reloadInitialConfig ?? userConfig === undefined;
+  const configLoader =
+    options?.loadConfig ??
+    (reloadInitialConfig ? defaultLoadConfig : undefined);
   await frameworkDev<TBundlerCfg>(userConfig, {
     ...options,
-    bundler,
-    loadConfig: options?.loadConfig ?? defaultLoadConfig,
+    fallbackBundler:
+      options?.fallbackBundler ??
+      (defaultBundler as unknown as BundlerAdapter<TBundlerCfg>),
+    loadConfig: configLoader,
+    reloadInitialConfig,
   });
 }
 

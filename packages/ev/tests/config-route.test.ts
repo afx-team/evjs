@@ -6,7 +6,7 @@ import {
   linkBuildOutput,
   type PagesAppEntryMetadata,
 } from "@evjs/shared/manifest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GENERATED_PAGES_APP_BUILD_ENTRY } from "../src/_internal/build/build-entry-conventions.js";
 import { prepareFrameworkBuild } from "../src/_internal/build/commands.js";
 import { createFrameworkHtmlDocument } from "../src/_internal/build/framework-html-document.js";
@@ -362,6 +362,56 @@ describe("explicit SPA route graph", () => {
         target: { kind: "page", pageId: "403" },
       }),
     );
+  });
+
+  it("does not bypass an inaccessible higher-priority explicit component", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/pages/report.js":
+        "export default function Report() { return null; }",
+    });
+    const config = resolveConfig({
+      application: {
+        routes: [{ path: "/report", component: "./report" }],
+      },
+    });
+    const base = path.join(cwd, "src/pages/report");
+    const inaccessibleCandidate = `${base}.ts`;
+    const observed = new Set<string>();
+    const originalStat = fs.stat.bind(fs);
+    const statSpy = vi.spyOn(fs, "stat").mockImplementation((async (
+      ...args: Parameters<typeof fs.stat>
+    ) => {
+      if (path.resolve(String(args[0])) === inaccessibleCandidate) {
+        throw Object.assign(new Error("permission denied"), {
+          code: "EACCES",
+        });
+      }
+      return originalStat(...args);
+    }) as typeof fs.stat);
+
+    try {
+      await expect(
+        createConfigRouteGraph(config, cwd, undefined, (file) => {
+          observed.add(path.resolve(file));
+        }),
+      ).rejects.toMatchObject({ code: "EACCES" });
+      expect([...observed]).toEqual(
+        expect.arrayContaining([
+          base,
+          `${base}.ts`,
+          `${base}.tsx`,
+          `${base}.js`,
+          `${base}.jsx`,
+          path.join(base, "index.ts"),
+          path.join(base, "index.tsx"),
+          path.join(base, "index.js"),
+          path.join(base, "index.jsx"),
+        ]),
+      );
+    } finally {
+      statSpy.mockRestore();
+    }
   });
 
   it("uses explicit route path syntax and diagnoses the target file convention", async () => {

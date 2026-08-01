@@ -125,7 +125,22 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 2. 服务端函数、服务端文件路由、SSR、PPR 和 RSC 请求会进入服务端开发运行时。
 3. BuildPlan 中精确的 fn/RSC endpoint 与已启用的 PPR 子树会自动代理；
    `server.basePath` 自身不是代理 namespace。
-4. 文件变化时会触发浏览器和服务端重建；修改配置化 entry 或路由 topology 后需要重启 `ev dev`。
+4. 文件变化时会触发浏览器和服务端重建，file-convention Page 与 API Route topology
+   也会动态发现。修改插件 identity 或端口，或者所选 bundler 提示无法动态应用 plan update
+   时，需要重启 `ev dev`。
+
+Framework control plane 的依赖（例如配置文件及其项目内 import、Page 与 Route 声明，
+以及插件添加的监听文件）会共享原生目录 watcher。如果操作系统的原生 watcher 资源耗尽，`ev dev` 会输出警告，
+将受影响的 watcher 集合切换为依赖轮询，并让后续创建的 framework watcher 集合继续使用轮询。
+Bundler HMR 的监听仍由 adapter 自己负责。权限错误和其他未知 watcher 错误会在执行清理后
+终止 dev session，不会在监听覆盖不完整时继续运行。
+
+Framework plan update 采用事务语义。evjs 会先保留 bundler generation，再修改生成的 `.ev`
+输入，并且只使用所选 generation 的新鲜 build facts 发布 canonical manifest 与 HTML。
+如果 analysis、plugin hook、link 或 output emission 失败，evjs 会先恢复上一份生成状态和
+canonical output，再恢复原 generation。Adapter 的收尾也有明确的提交边界：可能失败的
+finalization preparation 会在输出仍可恢复时执行；只有 Core 提交所选 canonical output 后，
+adapter 才会释放延迟的编译工作。
 
 ## 编程式 API
 
@@ -157,6 +172,11 @@ framework preflight 会对照 active BuildPlan 检查这些 capability。
 
 `@evjs/cli` 也导出 programmatic helper，会自动注入默认的 Utoopack 适配器，与 `ev dev`
 和 `ev build` 命令保持一致。
+
+编程式调用 `dev()` 时，显式传入的 config 默认是权威输入，启动阶段不会再被配置文件覆盖。
+`dev(undefined, options)` 会加载发现到的配置；`reloadInitialConfig: true` 则会明确要求传入的
+或默认的 `loadConfig` 替换启动 config。若只希望自定义 `loadConfig` 用于后续监听重载，可以
+同时设置 `reloadInitialConfig: false`。
 
 ## 传输层
 

@@ -1,4 +1,6 @@
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +12,7 @@ import {
 } from "@evjs/shared/manifest";
 import { configureSync, resetSync } from "@logtape/logtape";
 import { execa } from "execa";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createPageClientBuildEntryName,
   createPageServerBuildEntryName,
@@ -20,12 +22,17 @@ import {
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
+  BundlerBuildFactsDisposition,
+  BundlerDevController,
+  BundlerDevUpdateTransition,
 } from "../src/_internal/build/bundler.js";
+import { isEmptyBuildPlanUpdate } from "../src/_internal/build/bundler.js";
 import {
   build,
   dev,
   prepareFrameworkBuild,
 } from "../src/_internal/build/commands.js";
+import { loadConfigFile } from "../src/_internal/build/config-module.js";
 import { materializeFrameworkIR } from "../src/_internal/build/generated-contributions.js";
 import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
 import {
@@ -69,6 +76,121 @@ const fullBundlerCapabilities = {
 const BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR =
   "[evjs] buildOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.";
 
+type TestDevTransitionOutcome = "accept" | "rollback";
+
+function createTestDevController(
+  implementation: Omit<
+    BundlerDevController<Record<string, never>>,
+    "beginUpdate"
+  >,
+  hooks: {
+    onBegin?(): void | Promise<void>;
+    onPrepareFinalize?(): void | Promise<void>;
+    onFinalize?(): unknown;
+    onResume?(outcome: TestDevTransitionOutcome): void | Promise<void>;
+  } = {},
+): BundlerDevController<Record<string, never>> {
+  let active:
+    | {
+        outcome?: TestDevTransitionOutcome;
+        prepared: boolean;
+        resumed: boolean;
+        resumeFailed: boolean;
+        transition: BundlerDevUpdateTransition;
+      }
+    | undefined;
+
+  return {
+    ...implementation,
+    async beginUpdate() {
+      if (active) {
+        throw new Error("Test bundler received overlapping update boundaries.");
+      }
+      const transition: BundlerDevUpdateTransition = {
+        accept() {
+          select("accept");
+        },
+        rollback() {
+          select("rollback");
+        },
+        async resume() {
+          if (!active?.outcome) {
+            throw new Error(
+              "Test bundler resumed an update before selecting an outcome.",
+            );
+          }
+          if (active.resumed) {
+            throw new Error("Test bundler resumed an update outcome twice.");
+          }
+          const outcome = active.outcome;
+          try {
+            await hooks.onResume?.(outcome);
+            if (active) active.resumed = true;
+          } catch (error) {
+            if (active) active.resumeFailed = true;
+            throw error;
+          }
+        },
+        async prepareFinalize() {
+          if (!active?.resumed) {
+            throw new Error(
+              "Test bundler prepared finalization before a successful resume.",
+            );
+          }
+          await hooks.onPrepareFinalize?.();
+          if (active) active.prepared = true;
+        },
+        finalize() {
+          if (!active?.prepared) {
+            throw new Error(
+              "Test bundler finalized an update before successful preparation.",
+            );
+          }
+          const result = hooks.onFinalize?.();
+          active = undefined;
+          return result as undefined;
+        },
+      };
+      const select = (outcome: TestDevTransitionOutcome) => {
+        if (!active) {
+          throw new Error("Test bundler selected a settled update boundary.");
+        }
+        if (
+          active.outcome &&
+          !(
+            active.outcome === "accept" &&
+            outcome === "rollback" &&
+            (active.resumeFailed || active.resumed) &&
+            !active.prepared
+          )
+        ) {
+          throw new Error("Test bundler selected an update outcome twice.");
+        }
+        active.outcome = outcome;
+        active.prepared = false;
+        active.resumed = false;
+        active.resumeFailed = false;
+      };
+      active = {
+        prepared: false,
+        resumed: false,
+        resumeFailed: false,
+        transition,
+      };
+      await hooks.onBegin?.();
+      return transition;
+    },
+    async updatePlan(update, options) {
+      if (!active || options.transition !== active.transition) {
+        throw new Error(
+          "Test bundler updatePlan() did not receive its active transition.",
+        );
+      }
+      await implementation.updatePlan(update, options);
+    },
+  };
+}
+
 interface EmbeddedClientRuntime {
   runtime: {
     server?: Record<string, unknown>;
@@ -89,6 +211,63 @@ async function writeFile(
 ): Promise<void> {
   await fs.promises.mkdir(path.dirname(file), { recursive: true });
   await fs.promises.writeFile(file, data, options);
+}
+
+type ControlledFsWatcher = EventEmitter & {
+  close: ReturnType<typeof vi.fn>;
+  ref(): fs.FSWatcher;
+  unref(): fs.FSWatcher;
+};
+
+function installControlledFsWatch() {
+  const records: Array<{
+    listener: (
+      eventType: fs.WatchEventType,
+      filename: string | Buffer | null,
+    ) => void;
+    target: string;
+    watcher: ControlledFsWatcher;
+  }> = [];
+  const spy = vi.spyOn(fs, "watch").mockImplementation(((
+    ...args: unknown[]
+  ) => {
+    const watcher = new EventEmitter() as ControlledFsWatcher;
+    watcher.close = vi.fn();
+    watcher.ref = () => watcher as fs.FSWatcher;
+    watcher.unref = () => watcher as fs.FSWatcher;
+    records.push({
+      listener: args.at(-1) as (typeof records)[number]["listener"],
+      target: path.resolve(String(args[0])),
+      watcher,
+    });
+    return watcher;
+  }) as never);
+
+  return {
+    async dispatchFileChange(file: string): Promise<void> {
+      const watchTarget = path.dirname(file);
+      await vi.waitFor(() =>
+        expect(
+          records.some(
+            (record) =>
+              record.target === watchTarget &&
+              record.watcher.close.mock.calls.length === 0,
+          ),
+        ).toBe(true),
+      );
+      for (const record of records) {
+        if (
+          record.target === watchTarget &&
+          record.watcher.close.mock.calls.length === 0
+        ) {
+          record.listener("change", path.basename(file));
+        }
+      }
+    },
+    restore() {
+      spy.mockRestore();
+    },
+  };
 }
 
 async function createProject() {
@@ -306,8 +485,10 @@ function createRouteUpdateBundler(
     },
     async dev({ plan }) {
       recordPagesAppRoutes("initial", plan.entries[0]?.metadata, events);
-      return {
-        async updatePlan(update) {
+      return createTestDevController({
+        async updatePlan(update, options) {
+          options.activate();
+          if (isEmptyBuildPlanUpdate(update)) return;
           recordPagesAppRoutes(
             "changed",
             update.entries.changed[0]?.metadata,
@@ -322,7 +503,7 @@ function createRouteUpdateBundler(
           );
           process.emit("SIGINT");
         },
-      };
+      });
     },
   };
 }
@@ -354,6 +535,37 @@ async function waitForEvent(
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+}
+
+async function waitForEventCountToStabilize(
+  events: string[],
+  event: string,
+  quietMs = 150,
+  timeoutMs = devUpdateTimeoutMs,
+): Promise<number> {
+  const startedAt = Date.now();
+  const pollIntervalMs = 20;
+  const requiredStableChecks = Math.max(1, Math.ceil(quietMs / pollIntervalMs));
+  let lastCount = events.filter((entry) => entry === event).length;
+  let stableChecks = 0;
+
+  while (stableChecks < requiredStableChecks) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(
+        `Timed out waiting for event count to stabilize: ${event}. Observed: ${events.join(", ")}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    const currentCount = events.filter((entry) => entry === event).length;
+    if (currentCount === lastCount) {
+      stableChecks += 1;
+      continue;
+    }
+    lastCount = currentCount;
+    stableChecks = 0;
+  }
+
+  return lastCount;
 }
 
 function captureFrameworkUpdateFailures(
@@ -7348,13 +7560,13 @@ describe("dev", () => {
       async dev() {
         events.push("bundler.dev");
         process.emit("SIGINT");
-        return {
+        return createTestDevController({
           async updatePlan() {},
           close() {
             events.push("bundler.close");
             throw new Error("close blocked");
           },
-        };
+        });
       },
     };
 
@@ -7382,6 +7594,1463 @@ describe("dev", () => {
     expect(events).toEqual(["bundler.dev", "bundler.close", "dispose"]);
   });
 
+  it("terminates and cleans up dev after an asynchronous dependency watcher failure", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const watchers: Array<
+      EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      }
+    > = [];
+    let markWatcherOpened: (() => void) | undefined;
+    const watcherOpened = new Promise<void>((resolve) => {
+      markWatcherOpened = resolve;
+    });
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation((() => {
+      const watcher = new EventEmitter() as (typeof watchers)[number];
+      watcher.close = vi.fn();
+      watcher.ref = () => watcher as fs.FSWatcher;
+      watcher.unref = () => watcher as fs.FSWatcher;
+      watchers.push(watcher);
+      markWatcherOpened?.();
+      return watcher;
+    }) as never);
+    const resourceError = Object.assign(new Error("watcher access denied"), {
+      code: "EACCES",
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan() {},
+          close() {
+            events.push("bundler.close");
+          },
+        });
+      },
+    };
+    const running = dev(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [
+          {
+            name: "watcher-cleanup",
+            setup() {
+              return {
+                dispose() {
+                  events.push("dispose");
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+    let settled = false;
+    const outcome = running.then(
+      () => {
+        settled = true;
+        return undefined;
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      },
+    );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      await watcherOpened;
+      watchers[0]?.emit("error", resourceError);
+      const failure = await Promise.race([
+        outcome,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("watcher failure cleanup timed out")),
+            2_000,
+          );
+        }),
+      ]);
+
+      expect(failure).toMatchObject({
+        cause: resourceError,
+        code: "EACCES",
+      });
+      expect(String(failure)).toContain(
+        "[evjs] Development dependency watcher failed for",
+      );
+      expect(watchers.length).toBeGreaterThan(0);
+      for (const watcher of watchers) {
+        expect(watcher.close).toHaveBeenCalledTimes(1);
+      }
+      expect(events).toEqual(["bundler.dev", "bundler.close", "dispose"]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+    }
+
+    await dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      {
+        cwd,
+        bundler: {
+          name: "retry",
+          capabilities: fullBundlerCapabilities,
+          async build() {
+            return {};
+          },
+          async dev() {
+            process.emit("SIGINT");
+          },
+        },
+      },
+    );
+  });
+
+  it("fails closed when a late plugin watch registration cannot be inspected", async () => {
+    const cwd = await createSpaProject();
+    const forbiddenPath = path.join(cwd, "forbidden-watch.txt");
+    const events: string[] = [];
+    const watchRecords: Array<{
+      listener: (
+        eventType: fs.WatchEventType,
+        filename: string | Buffer | null,
+      ) => void;
+      target: string;
+      watcher: EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+    }> = [];
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+      ...args: unknown[]
+    ) => {
+      const watcher =
+        new EventEmitter() as (typeof watchRecords)[number]["watcher"];
+      watcher.close = vi.fn();
+      watcher.ref = () => watcher as fs.FSWatcher;
+      watcher.unref = () => watcher as fs.FSWatcher;
+      watchRecords.push({
+        listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+        target: path.resolve(String(args[0])),
+        watcher,
+      });
+      return watcher;
+    }) as never);
+    let contributionCalls = 0;
+    const plugin: Plugin<Record<string, never>> = {
+      name: "late-watch-registration-failure",
+      contributions(ctx) {
+        contributionCalls += 1;
+        if (contributionCalls > 1) ctx.addWatchFile(forbiddenPath);
+      },
+      setup() {
+        return {
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "late-watch-registration-failure",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan() {},
+          close() {
+            events.push("bundler.close");
+          },
+        });
+      },
+    };
+    const running = dev(
+      {
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    const originalLstat = fs.lstatSync;
+    let lstatSpy: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      await waitForEvent(events, "bundler.dev");
+      lstatSpy = vi.spyOn(fs, "lstatSync").mockImplementation(((
+        target: fs.PathLike,
+        ...args: unknown[]
+      ) => {
+        if (path.resolve(String(target)) === forbiddenPath) {
+          throw Object.assign(new Error("watch dependency access denied"), {
+            code: "EACCES",
+          });
+        }
+        return Reflect.apply(originalLstat, fs, [target, ...args]);
+      }) as typeof fs.lstatSync);
+      await vi.waitFor(() =>
+        expect(
+          watchRecords.some(
+            (record) => record.target === path.join(cwd, "src/pages"),
+          ),
+        ).toBe(true),
+      );
+      const pageWatcher = watchRecords.find(
+        (record) => record.target === path.join(cwd, "src/pages"),
+      );
+      if (!pageWatcher) throw new Error("Expected the Page watcher to start.");
+      pageWatcher.listener("change", "page.tsx");
+
+      await expect(
+        Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () => reject(new Error("late watch registration did not fail")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]),
+      ).rejects.toMatchObject({ code: "EACCES" });
+      expect(events).toEqual(["bundler.dev", "bundler.close", "dispose"]);
+    } finally {
+      lstatSpy?.mockRestore();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+    }
+  });
+
+  it("falls back to polling when dependency event watchers exhaust resources", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    let markPollingReady: (() => void) | undefined;
+    const pollingReady = new Promise<void>((resolve) => {
+      markPollingReady = resolve;
+    });
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation((() => {
+      markPollingReady?.();
+      throw Object.assign(new Error("event watcher capacity exhausted"), {
+        code: "EMFILE",
+      });
+    }) as never);
+    const bundler = createRouteUpdateBundler(cwd, events, "/admin");
+    const running = dev(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      await waitForEvent(events, "initial:/");
+      await pollingReady;
+      await writeFile(
+        path.join(cwd, "src/pages/admin/page.tsx"),
+        "export default function Admin() { return null; }",
+        "utf-8",
+      );
+      await Promise.race([
+        running,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("polling route update timed out")),
+            devUpdateTimeoutMs,
+          );
+        }),
+      ]);
+      expect(watchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+    }
+
+    expect(events).toEqual(["initial:/", "changed:/,/admin", "types:true"]);
+  });
+
+  it("reconciles route edits made while the bundler dev server starts", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    let markBundlerStarted: (() => void) | undefined;
+    const bundlerStarted = new Promise<void>((resolve) => {
+      markBundlerStarted = resolve;
+    });
+    let releaseBundler: (() => void) | undefined;
+    const bundlerGate = new Promise<void>((resolve) => {
+      releaseBundler = resolve;
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "startup-route-reconciliation",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        markBundlerStarted?.();
+        await bundlerGate;
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
+            const appEntry = update.next.entries.find(
+              (entry) => entry.metadata?.type === "pages-app",
+            );
+            const routes =
+              appEntry?.metadata?.type === "pages-app"
+                ? appEntry.metadata.routes.map((route) => route.path)
+                : [];
+            events.push(`update:${options?.configChanged}:${routes.join(",")}`);
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+    const running = dev(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await bundlerStarted;
+      await writeFile(
+        path.join(cwd, "src/pages/admin/page.tsx"),
+        "export default function Admin() { return null; }",
+        "utf-8",
+      );
+      releaseBundler?.();
+      await Promise.race([
+        running,
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error("startup route reconciliation timed out")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+    } finally {
+      releaseBundler?.();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+    }
+
+    expect(events).toEqual(["bundler.dev", "update:false:/,/admin"]);
+  });
+
+  it.each([
+    { changed: false, label: "does not invalidate an unchanged dependency" },
+    { changed: true, label: "invalidates a dependency changed during startup" },
+  ])("$label after the bundler registers it", async ({ changed }) => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler.config.json");
+    await writeFile(dependency, "initial", "utf-8");
+    const events: string[] = [];
+    let markRegistered: (() => void) | undefined;
+    const registered = new Promise<void>((resolve) => {
+      markRegistered = resolve;
+    });
+    let releaseBundler: (() => void) | undefined;
+    const bundlerGate = new Promise<void>((resolve) => {
+      releaseBundler = resolve;
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "startup-bundler-watch-reconciliation",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile }) {
+        addWatchFile?.(dependency);
+        events.push("registered");
+        markRegistered?.();
+        await bundlerGate;
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            events.push(`update:${options?.configChanged}`);
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await registered;
+      if (changed) {
+        await fs.promises.writeFile(dependency, "changed", "utf-8");
+      }
+      releaseBundler?.();
+      if (changed) {
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "startup bundler dependency reconciliation timed out",
+                  ),
+                ),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        process.emit("SIGINT");
+        await running;
+      }
+    } finally {
+      releaseBundler?.();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+    }
+
+    expect(events).toEqual(
+      changed ? ["registered", "update:true"] : ["registered"],
+    );
+  });
+
+  it(
+    "reconciles a plugin watch file changed while the bundler dev server starts",
+    async () => {
+      const cwd = await createSpaProject();
+      const pluginDataPath = path.join(cwd, "plugin-data.json");
+      await writeFile(pluginDataPath, "initial", "utf-8");
+      const events: string[] = [];
+      let setupCalls = 0;
+      let loadConfigCalls = 0;
+      const plugin: Plugin<Record<string, never>> = {
+        name: "startup-plugin-watch-reconciliation",
+        setup(ctx) {
+          setupCalls += 1;
+          ctx.addWatchFile(pluginDataPath);
+        },
+        contributions(ctx) {
+          const value = fs.readFileSync(pluginDataPath, "utf-8");
+          events.push(`contribution:${value}`);
+          ctx.emit.data({
+            id: "startup-plugin-watch-data",
+            scope: { kind: "application" },
+            value,
+          });
+        },
+      };
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "startup-plugin-watch-reconciliation",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          await writeFile(pluginDataPath, "changed-during-startup", "utf-8");
+          return createTestDevController({
+            async updatePlan(_update, options) {
+              options.activate();
+              events.push(`update:${options?.configChanged}`);
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const config: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      };
+
+      const running = dev(config, {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return config;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+
+      try {
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) => {
+            timeout = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "startup plugin dependency reconciliation timed out",
+                  ),
+                ),
+              devUpdateTimeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+      }
+
+      expect(setupCalls).toBe(1);
+      expect(loadConfigCalls).toBe(0);
+      expect(events).toEqual([
+        "contribution:initial",
+        "bundler.dev",
+        "contribution:changed-during-startup",
+        "update:false",
+      ]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it(
+    "reconciles a Page added while initial plugin contributions are paused",
+    async () => {
+      const cwd = await createSpaProject();
+      const nestedPageDirectory = path.join(cwd, "src/pages/catalog/details");
+      await fs.promises.mkdir(nestedPageDirectory, { recursive: true });
+      const events: string[] = [];
+      let markInitialContributionStarted: (() => void) | undefined;
+      const initialContributionStarted = new Promise<void>((resolve) => {
+        markInitialContributionStarted = resolve;
+      });
+      let releaseInitialContribution: (() => void) | undefined;
+      const initialContributionGate = new Promise<void>((resolve) => {
+        releaseInitialContribution = resolve;
+      });
+      let contributionCalls = 0;
+      let loadConfigCalls = 0;
+      const plugin: Plugin<Record<string, never>> = {
+        name: "startup-paused-plugin-contributions",
+        async contributions(ctx) {
+          contributionCalls += 1;
+          events.push(`contribution:${contributionCalls}`);
+          if (contributionCalls === 1) {
+            markInitialContributionStarted?.();
+            await initialContributionGate;
+          }
+          ctx.emit.data({
+            id: "startup-paused-plugin-data",
+            scope: { kind: "application" },
+            value: contributionCalls,
+          });
+        },
+      };
+      const config: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      };
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "startup-paused-plugin-contributions",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(update, options) {
+              options.activate();
+              const appEntry = update.next.entries.find(
+                (entry) => entry.metadata?.type === "pages-app",
+              );
+              const routes =
+                appEntry?.metadata?.type === "pages-app"
+                  ? appEntry.metadata.routes.map((route) => route.path)
+                  : [];
+              events.push(
+                `update:${options?.configChanged}:${routes.join(",")}`,
+              );
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(config, {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return config;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await initialContributionStarted;
+        await writeFile(
+          path.join(nestedPageDirectory, "page.tsx"),
+          "export default function Details() { return null; }",
+          "utf-8",
+        );
+        releaseInitialContribution?.();
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () => reject(new Error("startup Page reconciliation timed out")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } finally {
+        releaseInitialContribution?.();
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+      }
+
+      expect(loadConfigCalls).toBe(0);
+      expect(events).toEqual([
+        "contribution:1",
+        "bundler.dev",
+        "contribution:2",
+        "update:false:/,/catalog/details",
+      ]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it(
+    "reconciles an analysis dependency changed while initial plugin contributions are paused",
+    async () => {
+      const cwd = await createSpaProject();
+      const dependency = path.join(cwd, "framework-extra.json");
+      await writeFile(dependency, "initial", "utf-8");
+      const events: string[] = [];
+      let markInitialContributionStarted: (() => void) | undefined;
+      const initialContributionStarted = new Promise<void>((resolve) => {
+        markInitialContributionStarted = resolve;
+      });
+      let releaseInitialContribution: (() => void) | undefined;
+      const initialContributionGate = new Promise<void>((resolve) => {
+        releaseInitialContribution = resolve;
+      });
+      let contributionCalls = 0;
+      let loadConfigCalls = 0;
+      const plugin: Plugin<Record<string, never>> = {
+        name: "startup-analysis-dependency-reconciliation",
+        setup(ctx) {
+          if (!ctx.config.routing) {
+            throw new Error("Expected canonical Page routing to be resolved.");
+          }
+          Object.assign(ctx.config.routing, { dependencies: [dependency] });
+        },
+        async contributions(ctx) {
+          contributionCalls += 1;
+          const value = fs.readFileSync(dependency, "utf-8");
+          events.push(`contribution:${contributionCalls}:${value}`);
+          if (contributionCalls === 1) {
+            markInitialContributionStarted?.();
+            await initialContributionGate;
+          }
+          ctx.emit.data({
+            id: "startup-analysis-dependency-data",
+            scope: { kind: "application" },
+            value,
+          });
+        },
+      };
+      const config: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      };
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "startup-analysis-dependency-reconciliation",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(_update, options) {
+              options.activate();
+              events.push(`update:${options?.configChanged}`);
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(config, {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return config;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await initialContributionStarted;
+        await writeFile(dependency, "changed-during-startup", "utf-8");
+        releaseInitialContribution?.();
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "startup analysis dependency reconciliation timed out",
+                  ),
+                ),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } finally {
+        releaseInitialContribution?.();
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+      }
+
+      expect(loadConfigCalls).toBe(0);
+      expect(events).toEqual([
+        "contribution:1:initial",
+        "bundler.dev",
+        "contribution:2:changed-during-startup",
+        "update:false",
+      ]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it(
+    "reconciles a first-discovered source changed between its read and analysis snapshot",
+    async () => {
+      const cwd = await createSpaProject();
+      const dependency = path.join(cwd, "src/actions.server.ts");
+      await writeFile(
+        path.join(cwd, "src/pages/page.tsx"),
+        [
+          'import { saveInitial } from "../actions.server";',
+          "void saveInitial;",
+          "export default function Page() { return null; }",
+        ].join("\n"),
+        "utf-8",
+      );
+      await writeFile(
+        dependency,
+        [
+          '"use server";',
+          "export async function saveInitial() { return 'initial'; }",
+        ].join("\n"),
+        "utf-8",
+      );
+
+      const changedSource = [
+        '"use server";',
+        "export async function saveChanged() { return 'changed'; }",
+      ].join("\n");
+      const originalReadFile = fsPromises.readFile.bind(fsPromises);
+      let replacedDuringRead = false;
+      const readFileSpy = vi
+        .spyOn(fsPromises, "readFile")
+        .mockImplementation((async (
+          ...args: Parameters<typeof fsPromises.readFile>
+        ) => {
+          const source = await originalReadFile(...args);
+          if (
+            !replacedDuringRead &&
+            path.resolve(String(args[0])) === dependency
+          ) {
+            replacedDuringRead = true;
+            await fs.promises.writeFile(dependency, changedSource, "utf-8");
+          }
+          return source;
+        }) as typeof fsPromises.readFile);
+
+      const events: string[] = [];
+      let loadConfigCalls = 0;
+      const config: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      };
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "source-read-reconciliation",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(update, options) {
+              options.activate();
+              const serverEntry = update.next.entries.find(
+                (entry) => entry.metadata?.type === "server-app",
+              );
+              const serverFunctions =
+                serverEntry?.metadata?.type === "server-app"
+                  ? (serverEntry.metadata.serverFunctions ?? []).map(
+                      (serverFunction) => serverFunction.exportName,
+                    )
+                  : [];
+              events.push(
+                `update:${options?.configChanged}:${serverFunctions.join(",")}`,
+              );
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(config, {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return config;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () => reject(new Error("source read reconciliation timed out")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } finally {
+        readFileSpy.mockRestore();
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+      }
+
+      expect(replacedDuringRead).toBe(true);
+      expect(loadConfigCalls).toBe(0);
+      expect(events).toEqual(["bundler.dev", "update:false:saveChanged"]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it(
+    "reconciles a newly discovered source changed before route watcher handoff",
+    async () => {
+      const cwd = await createSpaProject();
+      const dependency = path.join(cwd, "src/actions.server.ts");
+      await writeFile(
+        dependency,
+        [
+          '"use server";',
+          "export async function saveInitial() { return 'initial'; }",
+        ].join("\n"),
+        "utf-8",
+      );
+
+      const events: string[] = [];
+      type FakeDevWatcher = EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+      const watchRecords: Array<{
+        listener: (
+          eventType: fs.WatchEventType,
+          filename: string | Buffer | null,
+        ) => void;
+        target: string;
+        watcher: FakeDevWatcher;
+      }> = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+        ...args: unknown[]
+      ) => {
+        const watcher = new EventEmitter() as FakeDevWatcher;
+        watcher.close = vi.fn();
+        watcher.ref = () => watcher as fs.FSWatcher;
+        watcher.unref = () => watcher as fs.FSWatcher;
+        watchRecords.push({
+          listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+          target: path.resolve(String(args[0])),
+          watcher,
+        });
+        return watcher;
+      }) as never);
+
+      let updateCalls = 0;
+      const config: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      };
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "route-source-read-reconciliation",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(update, options) {
+              options.activate();
+              updateCalls += 1;
+              const serverEntry = update.next.entries.find(
+                (entry) => entry.metadata?.type === "server-app",
+              );
+              const serverFunctions =
+                serverEntry?.metadata?.type === "server-app"
+                  ? (serverEntry.metadata.serverFunctions ?? []).map(
+                      (serverFunction) => serverFunction.exportName,
+                    )
+                  : [];
+              events.push(
+                `update:${updateCalls}:${options?.configChanged}:${serverFunctions.join(",")}`,
+              );
+              if (updateCalls === 2) process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(config, { cwd, bundler });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      let readFileSpy: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        await waitForEvent(events, "bundler.dev");
+        const pageRoot = path.join(cwd, "src/pages");
+        await vi.waitFor(() =>
+          expect(
+            watchRecords.some((record) => record.target === pageRoot),
+          ).toBe(true),
+        );
+
+        const changedSource = [
+          '"use server";',
+          "export async function saveChanged() { return 'changed'; }",
+        ].join("\n");
+        const originalReadFile = fsPromises.readFile.bind(fsPromises);
+        let replacedDuringRead = false;
+        readFileSpy = vi
+          .spyOn(fsPromises, "readFile")
+          .mockImplementation((async (
+            ...args: Parameters<typeof fsPromises.readFile>
+          ) => {
+            const source = await originalReadFile(...args);
+            if (
+              !replacedDuringRead &&
+              path.resolve(String(args[0])) === dependency
+            ) {
+              replacedDuringRead = true;
+              await fs.promises.writeFile(dependency, changedSource, "utf-8");
+            }
+            return source;
+          }) as typeof fsPromises.readFile);
+
+        await writeFile(
+          path.join(pageRoot, "new/page.tsx"),
+          [
+            'import { saveInitial } from "../../actions.server";',
+            "void saveInitial;",
+            "export default function NewPage() { return null; }",
+          ].join("\n"),
+          "utf-8",
+        );
+        for (const record of watchRecords) {
+          record.listener(
+            "rename",
+            path.relative(record.target, path.join(pageRoot, "new/page.tsx")),
+          );
+        }
+
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(new Error("route source read reconciliation timed out")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+        expect(replacedDuringRead).toBe(true);
+      } finally {
+        readFileSpy?.mockRestore();
+        watchSpy.mockRestore();
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+      }
+
+      expect(events).toEqual([
+        "bundler.dev",
+        "update:1:false:saveInitial",
+        "update:2:false:saveChanged",
+      ]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it(
+    "reloads when a higher-priority extensionless source candidate is created",
+    async () => {
+      const cwd = await createSpaProject();
+      const promotedSource = path.join(cwd, "src/priority.ts");
+      await writeFile(
+        path.join(cwd, "src/pages/page.tsx"),
+        [
+          'import { runPriority } from "../priority";',
+          "void runPriority;",
+          "export default function Page() { return null; }",
+        ].join("\n"),
+        "utf-8",
+      );
+      await writeFile(
+        path.join(cwd, "src/priority.js"),
+        "export async function runPriority() { return 'js'; }",
+        "utf-8",
+      );
+
+      type FakeDevWatcher = EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+      const watchRecords: Array<{
+        listener: (
+          eventType: fs.WatchEventType,
+          filename: string | Buffer | null,
+        ) => void;
+        target: string;
+        watcher: FakeDevWatcher;
+      }> = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+        ...args: unknown[]
+      ) => {
+        const watcher = new EventEmitter() as FakeDevWatcher;
+        watcher.close = vi.fn();
+        watcher.ref = () => watcher as fs.FSWatcher;
+        watcher.unref = () => watcher as fs.FSWatcher;
+        watchRecords.push({
+          listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+          target: path.resolve(String(args[0])),
+          watcher,
+        });
+        return watcher;
+      }) as never);
+
+      const events: string[] = [];
+      const config: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      };
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "extensionless-candidate-promotion",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(update, options) {
+              options.activate();
+              const serverEntry = update.next.entries.find(
+                (entry) => entry.metadata?.type === "server-app",
+              );
+              const serverFunctions =
+                serverEntry?.metadata?.type === "server-app"
+                  ? (serverEntry.metadata.serverFunctions ?? []).map(
+                      (serverFunction) => serverFunction.exportName,
+                    )
+                  : [];
+              events.push(
+                `update:${options.configChanged}:${serverFunctions.join(",")}`,
+              );
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(config, { cwd, bundler });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await waitForEvent(events, "bundler.dev");
+        const sourceRoot = path.join(cwd, "src");
+        await vi.waitFor(() =>
+          expect(
+            watchRecords.some(
+              (record) =>
+                record.target === sourceRoot &&
+                record.watcher.close.mock.calls.length === 0,
+            ),
+          ).toBe(true),
+        );
+
+        await writeFile(
+          promotedSource,
+          [
+            '"use server";',
+            "export async function runPriority() { return 'ts'; }",
+          ].join("\n"),
+          "utf-8",
+        );
+        for (const record of watchRecords) {
+          if (
+            record.target === sourceRoot &&
+            record.watcher.close.mock.calls.length === 0
+          ) {
+            record.listener("rename", path.basename(promotedSource));
+          }
+        }
+
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error("extensionless candidate promotion timed out"),
+                ),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } finally {
+        watchSpy.mockRestore();
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+      }
+
+      expect(events).toEqual(["bundler.dev", "update:false:runPriority"]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it("does not inspect disabled file-convention route roots during startup", async () => {
+    const cwd = await createProject();
+    const pageRoot = path.join(cwd, "src/pages");
+    const apiRoot = path.join(cwd, "src/apis");
+    await fs.promises.mkdir(pageRoot, { recursive: true });
+    await fs.promises.mkdir(apiRoot, { recursive: true });
+    const disabledRoots = new Set([pageRoot, apiRoot]);
+    const originalReaddir = fs.promises.readdir;
+    const readdirSpy = vi.spyOn(fs.promises, "readdir").mockImplementation(((
+      ...args: unknown[]
+    ) => {
+      const target = path.resolve(String(args[0]));
+      if (disabledRoots.has(target)) {
+        return Promise.reject(
+          Object.assign(new Error("disabled route root is inaccessible"), {
+            code: "EACCES",
+          }),
+        );
+      }
+      return Reflect.apply(originalReaddir, fs.promises, args);
+    }) as typeof fs.promises.readdir);
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "disabled-route-root-watch",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        process.emit("SIGINT");
+      },
+    };
+
+    try {
+      await dev(
+        {
+          conventions: false,
+          output: { client: "dist/client", server: "dist/server" },
+        },
+        { cwd, bundler },
+      );
+    } finally {
+      readdirSpy.mockRestore();
+    }
+
+    expect(events).toEqual(["bundler.dev"]);
+  });
+
+  it("keeps an unchanged physical watch plan across filesystem events", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "plugin-data.json");
+    await writeFile(dependency, "initial", "utf-8");
+
+    type FakeDevWatcher = EventEmitter & {
+      close: ReturnType<typeof vi.fn>;
+      ref(): fs.FSWatcher;
+      unref(): fs.FSWatcher;
+    };
+    const records: Array<{
+      listener: (
+        eventType: fs.WatchEventType,
+        filename: string | Buffer | null,
+      ) => void;
+      target: string;
+      watcher: FakeDevWatcher;
+    }> = [];
+    let markDependencyWatcherReady: (() => void) | undefined;
+    const dependencyWatcherReady = new Promise<void>((resolve) => {
+      markDependencyWatcherReady = resolve;
+    });
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+      ...args: unknown[]
+    ) => {
+      const target = path.resolve(String(args[0]));
+      const listener = args.at(-1) as (typeof records)[number]["listener"];
+      const watcher = new EventEmitter() as FakeDevWatcher;
+      watcher.close = vi.fn();
+      watcher.ref = () => watcher as fs.FSWatcher;
+      watcher.unref = () => watcher as fs.FSWatcher;
+      records.push({ listener, target, watcher });
+      if (target === cwd) markDependencyWatcherReady?.();
+      return watcher;
+    }) as never);
+    const events: string[] = [];
+    let contributionCount = 0;
+    let updateCount = 0;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "unchanged-watch-key",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            updateCount += 1;
+            const currentUpdate = updateCount;
+            events.push(`update:${currentUpdate}`);
+            setImmediate(() => events.push(`update.done:${currentUpdate}`));
+          },
+        });
+      },
+    };
+    const running = dev(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+        plugins: [
+          {
+            name: "unchanged-watch-key",
+            setup(context) {
+              context.addWatchFile(dependency);
+              return {
+                dispose() {
+                  events.push("dispose");
+                },
+              };
+            },
+            contributions(context) {
+              contributionCount += 1;
+              events.push(`contribution:${contributionCount}`);
+              context.emit.data({
+                id: "unchanged-watch-key-data",
+                scope: { kind: "application" },
+                value: fs.readFileSync(dependency, "utf-8"),
+              });
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await dependencyWatcherReady;
+      const firstDependencyWatcher = records.find(
+        (record) => record.target === cwd,
+      );
+      if (!firstDependencyWatcher) {
+        throw new Error("Expected the plugin dependency watcher to start.");
+      }
+      const initialWatcherCount = records.length;
+
+      await writeFile(dependency, "first", "utf-8");
+      firstDependencyWatcher.listener("change", path.basename(dependency));
+      await waitForEvent(events, "update.done:1");
+
+      expect(records).toHaveLength(initialWatcherCount);
+      expect(
+        records.every((record) => record.watcher.close.mock.calls.length === 0),
+      ).toBe(true);
+
+      await writeFile(dependency, "second", "utf-8");
+      firstDependencyWatcher.listener("change", path.basename(dependency));
+      await waitForEvent(events, "update.done:2");
+
+      expect(records).toHaveLength(initialWatcherCount);
+      expect(
+        records.every((record) => record.watcher.close.mock.calls.length === 0),
+      ).toBe(true);
+      process.emit("SIGINT");
+      await running;
+      expect(
+        records.every((record) => record.watcher.close.mock.calls.length === 1),
+      ).toBe(true);
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+    }
+
+    expect(events).toEqual([
+      "contribution:1",
+      "bundler.dev",
+      "contribution:2",
+      "update:1",
+      "update.done:1",
+      "contribution:3",
+      "update:2",
+      "update.done:2",
+      "dispose",
+    ]);
+  });
+
   it("runs buildEnd after initial dev output and rebuild output", async () => {
     const cwd = await createSpaProject();
     const rebuildFlags: boolean[] = [];
@@ -7391,7 +9060,7 @@ describe("dev", () => {
       async build() {
         return {};
       },
-      async dev({ callbacks, plan }) {
+      async dev({ callbacks, generation, plan }) {
         const clientEntry = plan.entries.find(
           (entry) => entry.environment === "client",
         );
@@ -7402,10 +9071,10 @@ describe("dev", () => {
               },
             }
           : {};
-        await callbacks.onBuildFacts(facts, { isRebuild: false });
-        await callbacks.onBuildFacts(facts, { isRebuild: true });
+        await callbacks.onBuildFacts(generation, facts, { isRebuild: false });
+        await callbacks.onBuildFacts(generation, facts, { isRebuild: true });
         process.emit("SIGINT");
-        return { async updatePlan() {} };
+        return createTestDevController({ async updatePlan() {} });
       },
     };
 
@@ -7431,6 +9100,926 @@ describe("dev", () => {
     expect(rebuildFlags).toEqual([false, true]);
   });
 
+  it("restores framework-owned dev output when a candidate buildEnd hook fails", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      "candidate buildEnd failed",
+      "candidate-rolled-back",
+    );
+
+    function createOutputPlugin(
+      snapshot: "old" | "candidate",
+      failBuildEnd = false,
+    ): Plugin<Record<string, never>> {
+      return {
+        name: "framework-output-build-end-rollback",
+        setup() {
+          return {
+            transformHtml(document) {
+              document.body?.appendChild(
+                document.createComment(` snapshot:${snapshot} `),
+              );
+            },
+            buildEnd() {
+              events.push(`buildEnd:${snapshot}`);
+              if (failBuildEnd) {
+                throw new Error("candidate buildEnd failed");
+              }
+            },
+          };
+        },
+      };
+    }
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+      plugins: [createOutputPlugin("old")],
+    };
+    let currentConfig = oldConfig;
+    let initialHtml: Buffer | undefined;
+    let initialMetadata: Buffer | undefined;
+    const htmlPath = path.join(cwd, "dist/client/index.html");
+    const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    const factsForPlan = (plan: BuildPlan): BundlerBuildFacts => ({
+      clientEntryAssets: Object.fromEntries(
+        plan.entries
+          .filter((entry) => entry.environment === "client")
+          .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+      ),
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "framework-output-build-end-rollback",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        initialHtml = await fs.promises.readFile(htmlPath);
+        initialMetadata = await fs.promises.readFile(metadataPath);
+        events.push("initial-output");
+        let selectedPlan = plan;
+        let selectedGeneration = generation;
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              options.activate();
+              selectedPlan = update.next;
+              selectedGeneration = options.generation;
+              events.push("candidate-output");
+            },
+          },
+          {
+            async onResume(outcome) {
+              if (outcome === "rollback") {
+                selectedPlan = plan;
+                selectedGeneration = generation;
+              }
+              await callbacks.onBuildFacts(
+                selectedGeneration,
+                factsForPlan(selectedPlan),
+                { isRebuild: true },
+              );
+            },
+          },
+        );
+      },
+    };
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "initial-output");
+      currentConfig = {
+        ...oldConfig,
+        plugins: [createOutputPlugin("candidate", true)],
+      };
+      await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
+      await waitForEvent(events, "candidate-rolled-back");
+
+      expect(initialHtml).toBeDefined();
+      expect(initialMetadata).toBeDefined();
+      await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+        initialHtml,
+      );
+      await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
+        initialMetadata,
+      );
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+        "snapshot:old",
+      );
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      controlledWatch.restore();
+      stopCapturingRollback();
+    }
+
+    expect(events).toEqual([
+      "buildEnd:old",
+      "initial-output",
+      "candidate-output",
+      "buildEnd:candidate",
+      "buildEnd:old",
+      "candidate-rolled-back",
+    ]);
+  });
+
+  it("restores candidate state when transition finalization preparation fails", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      "synthetic finalization preparation failure",
+      "candidate-rolled-back",
+    );
+
+    function createOutputPlugin(
+      snapshot: "old" | "candidate",
+    ): Plugin<Record<string, never>> {
+      return {
+        name: "framework-output-finalization-rollback",
+        setup() {
+          return {
+            transformHtml(document) {
+              document.body?.appendChild(
+                document.createComment(` snapshot:${snapshot} `),
+              );
+            },
+            dispose() {
+              events.push(`dispose:${snapshot}`);
+            },
+          };
+        },
+      };
+    }
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+      plugins: [createOutputPlugin("old")],
+    };
+    let currentConfig = oldConfig;
+    const htmlPath = path.join(cwd, "dist/client/index.html");
+    const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    const generatedRoot = path.join(cwd, ".ev");
+    let initialHtml: Buffer | undefined;
+    let initialMetadata: Buffer | undefined;
+    let initialGeneratedState: Record<string, string> | undefined;
+    let prepareCount = 0;
+    const factsForPlan = (plan: BuildPlan): BundlerBuildFacts => ({
+      clientEntryAssets: Object.fromEntries(
+        plan.entries
+          .filter((entry) => entry.environment === "client")
+          .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+      ),
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "framework-output-finalization-rollback",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        initialHtml = await fs.promises.readFile(htmlPath);
+        initialMetadata = await fs.promises.readFile(metadataPath);
+        initialGeneratedState = await readDirectorySnapshot(generatedRoot);
+        let selectedGeneration = generation;
+        let selectedPlan = plan;
+        events.push("initial-output");
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              options.activate();
+              selectedGeneration = options.generation;
+              selectedPlan = update.next;
+              events.push("candidate-input");
+            },
+          },
+          {
+            async onResume(outcome) {
+              if (outcome === "rollback") {
+                expect(initialHtml).toBeDefined();
+                expect(initialMetadata).toBeDefined();
+                expect(initialGeneratedState).toBeDefined();
+                await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+                  initialHtml,
+                );
+                await expect(
+                  fs.promises.readFile(metadataPath),
+                ).resolves.toEqual(initialMetadata);
+                expect(await readDirectorySnapshot(generatedRoot)).toEqual(
+                  initialGeneratedState,
+                );
+                selectedGeneration = generation;
+                selectedPlan = plan;
+                events.push("rollback-state-restored");
+              }
+              await callbacks.onBuildFacts(
+                selectedGeneration,
+                factsForPlan(selectedPlan),
+                { isRebuild: true },
+              );
+              events.push(`facts:${outcome}`);
+            },
+            async onPrepareFinalize() {
+              prepareCount += 1;
+              if (prepareCount !== 1) return;
+              expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+                "snapshot:candidate",
+              );
+              expect(await readDirectorySnapshot(generatedRoot)).not.toEqual(
+                initialGeneratedState,
+              );
+              events.push("prepare-finalize:reject");
+              throw new Error("synthetic finalization preparation failure");
+            },
+          },
+        );
+      },
+    };
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "initial-output");
+      currentConfig = {
+        ...oldConfig,
+        routing: { mode: "mpa" },
+        plugins: [createOutputPlugin("candidate")],
+      };
+      await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
+      await waitForEvent(events, "candidate-rolled-back");
+
+      await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+        initialHtml,
+      );
+      await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
+        initialMetadata,
+      );
+      expect(await readDirectorySnapshot(generatedRoot)).toEqual(
+        initialGeneratedState,
+      );
+      expect(
+        events.filter((event) => event === "dispose:candidate"),
+      ).toHaveLength(1);
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      controlledWatch.restore();
+      stopCapturingRollback();
+    }
+
+    expect(events).toEqual([
+      "initial-output",
+      "candidate-input",
+      "facts:accept",
+      "prepare-finalize:reject",
+      "dispose:candidate",
+      "rollback-state-restored",
+      "facts:rollback",
+      "candidate-rolled-back",
+      "dispose:old",
+    ]);
+  });
+
+  it("fail-stops a committed candidate when transition finalize returns a Promise", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+
+    function createOutputPlugin(
+      snapshot: "old" | "candidate",
+    ): Plugin<Record<string, never>> {
+      return {
+        name: "framework-output-finalize-contract",
+        setup() {
+          return {
+            transformHtml(document) {
+              document.body?.appendChild(
+                document.createComment(` snapshot:${snapshot} `),
+              );
+            },
+            dispose() {
+              events.push(`dispose:${snapshot}`);
+            },
+          };
+        },
+      };
+    }
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+      plugins: [createOutputPlugin("old")],
+    };
+    let currentConfig = oldConfig;
+    const htmlPath = path.join(cwd, "dist/client/index.html");
+    const generatedRoot = path.join(cwd, ".ev");
+    let initialGeneratedState: Record<string, string> | undefined;
+    const factsForPlan = (plan: BuildPlan): BundlerBuildFacts => ({
+      clientEntryAssets: Object.fromEntries(
+        plan.entries
+          .filter((entry) => entry.environment === "client")
+          .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+      ),
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "framework-output-finalize-contract",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        initialGeneratedState = await readDirectorySnapshot(generatedRoot);
+        let selectedGeneration = generation;
+        let selectedPlan = plan;
+        events.push("initial-output");
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              options.activate();
+              selectedGeneration = options.generation;
+              selectedPlan = update.next;
+              events.push("candidate-input");
+            },
+          },
+          {
+            async onResume(outcome) {
+              events.push(`resume:${outcome}`);
+              await callbacks.onBuildFacts(
+                selectedGeneration,
+                factsForPlan(selectedPlan),
+                { isRebuild: true },
+              );
+            },
+            onFinalize() {
+              events.push("finalize:async");
+              return new Promise<void>(() => {});
+            },
+          },
+        );
+      },
+    };
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "initial-output");
+      currentConfig = {
+        ...oldConfig,
+        routing: { mode: "mpa" },
+        plugins: [createOutputPlugin("candidate")],
+      };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await expect(
+        Promise.race([
+          running,
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(new Error("async finalize contract check timed out")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]),
+      ).rejects.toThrow(
+        "returned a Promise from development transition finalize",
+      );
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+    }
+
+    expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+      "snapshot:candidate",
+    );
+    expect(await readDirectorySnapshot(generatedRoot)).not.toEqual(
+      initialGeneratedState,
+    );
+    expect(events).toEqual([
+      "initial-output",
+      "candidate-input",
+      "resume:accept",
+      "finalize:async",
+      "dispose:old",
+      "dispose:candidate",
+    ]);
+  });
+
+  it("restores candidate output when the adapter rejects an otherwise successful update", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/contact/page.tsx"),
+      "export default function Contact() { return null; }",
+      "utf-8",
+    );
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      "synthetic adapter update failure",
+      "candidate-rolled-back",
+    );
+
+    function createOutputPlugin(
+      snapshot: "old" | "candidate",
+    ): Plugin<Record<string, never>> {
+      return {
+        name: "framework-output-adapter-rollback",
+        setup() {
+          return {
+            transformHtml(document) {
+              document.body?.appendChild(
+                document.createComment(` snapshot:${snapshot} `),
+              );
+            },
+            buildEnd() {
+              events.push(`buildEnd:${snapshot}`);
+            },
+          };
+        },
+      };
+    }
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+      plugins: [createOutputPlugin("old")],
+    };
+    let currentConfig = oldConfig;
+    const htmlPath = path.join(cwd, "dist/client/index.html");
+    const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    let initialHtml: Buffer | undefined;
+    let initialMetadata: Buffer | undefined;
+    let candidateHtmlPaths: string[] = [];
+    const factsForPlan = (plan: BuildPlan): BundlerBuildFacts => ({
+      clientEntryAssets: Object.fromEntries(
+        plan.entries
+          .filter((entry) => entry.environment === "client")
+          .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+      ),
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "framework-output-adapter-rollback",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        initialHtml = await fs.promises.readFile(htmlPath);
+        initialMetadata = await fs.promises.readFile(metadataPath);
+        events.push("initial-output");
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              options.activate();
+              candidateHtmlPaths = update.next.html.flatMap((document) =>
+                [document.fileName, ...(document.aliases ?? [])].map((file) =>
+                  path.resolve(cwd, update.next.output.clientDir, file),
+                ),
+              );
+              events.push("candidate-input-rejected");
+              throw new Error("synthetic adapter update failure");
+            },
+          },
+          {
+            async onResume(outcome) {
+              expect(outcome).toBe("rollback");
+              await callbacks.onBuildFacts(generation, factsForPlan(plan), {
+                isRebuild: true,
+              });
+            },
+          },
+        );
+      },
+    };
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "initial-output");
+      currentConfig = {
+        ...oldConfig,
+        routing: { mode: "mpa" },
+        plugins: [createOutputPlugin("candidate")],
+      };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await waitForEvent(events, "candidate-rolled-back");
+
+      expect(initialHtml).toBeDefined();
+      expect(initialMetadata).toBeDefined();
+      await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+        initialHtml,
+      );
+      await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
+        initialMetadata,
+      );
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+        "snapshot:old",
+      );
+      expect(candidateHtmlPaths).toHaveLength(2);
+      await Promise.all(
+        candidateHtmlPaths.map(async (file) => {
+          await expect(fs.promises.lstat(file)).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        }),
+      );
+      await Promise.all(
+        [...new Set(candidateHtmlPaths.map((file) => path.dirname(file)))].map(
+          async (directory) => {
+            await expect(fs.promises.lstat(directory)).rejects.toMatchObject({
+              code: "ENOENT",
+            });
+          },
+        ),
+      );
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      stopCapturingRollback();
+    }
+
+    expect(events).toEqual([
+      "buildEnd:old",
+      "initial-output",
+      "candidate-input-rejected",
+      "buildEnd:old",
+      "candidate-rolled-back",
+    ]);
+  });
+
+  it("restores framework-owned output when an ordinary dev rebuild fails", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    const htmlPath = path.join(cwd, "dist/client/index.html");
+    const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "framework-output-rebuild-rollback",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, generation, plan }) {
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+            }
+          : {};
+        await callbacks.onBuildFacts(generation, facts);
+        const initialHtml = await fs.promises.readFile(htmlPath);
+        const initialMetadata = await fs.promises.readFile(metadataPath);
+        events.push("initial-output");
+
+        await expect(
+          callbacks.onBuildFacts(generation, facts, { isRebuild: true }),
+        ).rejects.toThrow("ordinary rebuild buildEnd failed");
+        events.push("rebuild-rejected");
+        await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+          initialHtml,
+        );
+        await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
+          initialMetadata,
+        );
+        expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+          "cycle:initial",
+        );
+        process.emit("SIGINT");
+      },
+    };
+
+    await dev(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+        plugins: [
+          {
+            name: "framework-output-rebuild-rollback",
+            setup() {
+              return {
+                transformHtml(document, context) {
+                  const cycle = context.isRebuild ? "failed" : "initial";
+                  events.push(`transform:${cycle}`);
+                  document.body?.appendChild(
+                    document.createComment(` cycle:${cycle} `),
+                  );
+                },
+                buildEnd(result) {
+                  const cycle = result.isRebuild ? "failed" : "initial";
+                  events.push(`buildEnd:${cycle}`);
+                  if (result.isRebuild) {
+                    throw new Error("ordinary rebuild buildEnd failed");
+                  }
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+
+    expect(events).toEqual([
+      "transform:initial",
+      "buildEnd:initial",
+      "initial-output",
+      "transform:failed",
+      "buildEnd:failed",
+      "rebuild-rejected",
+    ]);
+  });
+
+  it("restores partially written MPA output when candidate transformHtml fails", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/contact/page.tsx"),
+      "export default function Contact() { return null; }",
+      "utf-8",
+    );
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      "candidate transformHtml failed",
+      "candidate-rolled-back",
+    );
+
+    function createOutputPlugin(
+      snapshot: "old" | "candidate",
+      failSecondDocument = false,
+    ): Plugin<Record<string, never>> {
+      return {
+        name: "framework-output-transform-html-rollback",
+        setup() {
+          let transformedDocuments = 0;
+          return {
+            transformHtml(document) {
+              transformedDocuments += 1;
+              events.push(`transform:${snapshot}:${transformedDocuments}`);
+              if (failSecondDocument && transformedDocuments === 2) {
+                throw new Error("candidate transformHtml failed");
+              }
+              document.body?.appendChild(
+                document.createComment(` snapshot:${snapshot} `),
+              );
+            },
+          };
+        },
+      };
+    }
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+      plugins: [createOutputPlugin("old")],
+    };
+    let currentConfig = oldConfig;
+    const htmlPath = path.join(cwd, "dist/client/index.html");
+    const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    let initialHtml: Buffer | undefined;
+    let initialMetadata: Buffer | undefined;
+    let candidateHtmlPaths: string[] = [];
+    const factsForPlan = (plan: BuildPlan): BundlerBuildFacts => ({
+      clientEntryAssets: Object.fromEntries(
+        plan.entries
+          .filter((entry) => entry.environment === "client")
+          .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+      ),
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "framework-output-transform-html-rollback",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        initialHtml = await fs.promises.readFile(htmlPath);
+        initialMetadata = await fs.promises.readFile(metadataPath);
+        events.push("initial-output");
+        let selectedPlan = plan;
+        let selectedGeneration = generation;
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              options.activate();
+              events.push("candidate-output");
+              selectedPlan = update.next;
+              selectedGeneration = options.generation;
+              candidateHtmlPaths = update.next.html.flatMap((document) =>
+                [document.fileName, ...(document.aliases ?? [])].map((file) =>
+                  path.resolve(cwd, update.next.output.clientDir, file),
+                ),
+              );
+            },
+          },
+          {
+            async onResume(outcome) {
+              if (outcome === "rollback") {
+                selectedPlan = plan;
+                selectedGeneration = generation;
+              }
+              await callbacks.onBuildFacts(
+                selectedGeneration,
+                factsForPlan(selectedPlan),
+                { isRebuild: true },
+              );
+            },
+          },
+        );
+      },
+    };
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "initial-output");
+      currentConfig = {
+        ...oldConfig,
+        routing: { mode: "mpa" },
+        plugins: [createOutputPlugin("candidate", true)],
+      };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await waitForEvent(events, "candidate-rolled-back");
+
+      expect(initialMetadata).toBeDefined();
+      await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
+        initialMetadata,
+      );
+      expect(initialHtml).toBeDefined();
+      await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+        initialHtml,
+      );
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+        "snapshot:old",
+      );
+      expect(candidateHtmlPaths).toHaveLength(2);
+      await Promise.all(
+        candidateHtmlPaths.map(async (file) => {
+          await expect(fs.promises.lstat(file)).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        }),
+      );
+      await Promise.all(
+        [...new Set(candidateHtmlPaths.map((file) => path.dirname(file)))].map(
+          async (directory) => {
+            await expect(fs.promises.lstat(directory)).rejects.toMatchObject({
+              code: "ENOENT",
+            });
+          },
+        ),
+      );
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      stopCapturingRollback();
+    }
+
+    expect(events).toEqual([
+      "transform:old:1",
+      "initial-output",
+      "candidate-output",
+      "transform:candidate:1",
+      "transform:candidate:2",
+      "transform:old:2",
+      "candidate-rolled-back",
+    ]);
+  });
+
   it("prerenders clientless SSG HTML during initial dev output and rebuilds", async () => {
     const cwd = await createProject();
     await writeFile(
@@ -7451,7 +10040,7 @@ describe("dev", () => {
       async build() {
         return {};
       },
-      async dev({ callbacks, plan }) {
+      async dev({ callbacks, generation, plan }) {
         const reportServerEntry = createPageServerBuildEntryName("report");
         expect(plan.mode).toBe("development");
         expect(plan.entries).toContainEqual(
@@ -7488,15 +10077,15 @@ describe("dev", () => {
         };
         const htmlPath = path.join(cwd, "dist/client/report/index.html");
 
-        await callbacks.onBuildFacts(facts, { isRebuild: false });
+        await callbacks.onBuildFacts(generation, facts, { isRebuild: false });
         emittedHtml.push(await fs.promises.readFile(htmlPath, "utf-8"));
 
         rendering = "Rebuilt dev report";
-        await callbacks.onBuildFacts(facts, { isRebuild: true });
+        await callbacks.onBuildFacts(generation, facts, { isRebuild: true });
         emittedHtml.push(await fs.promises.readFile(htmlPath, "utf-8"));
 
         process.emit("SIGINT");
-        return { async updatePlan() {} };
+        return createTestDevController({ async updatePlan() {} });
       },
     };
 
@@ -7534,8 +10123,10 @@ describe("dev", () => {
         events.push(
           `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
         );
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
+            if (isEmptyBuildPlanUpdate(update)) return;
             const serverEntry = update.entries.added.find(
               (entry) => entry.kind === "server-runtime",
             );
@@ -7548,7 +10139,7 @@ describe("dev", () => {
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -7580,6 +10171,174 @@ describe("dev", () => {
     ]);
   });
 
+  it("rebinds the api route-root watcher after empty directory topology changes", async () => {
+    const cwd = await createProject();
+    const sourceRoot = path.join(cwd, "src");
+    const routeRoot = path.join(sourceRoot, "apis");
+    await fs.promises.mkdir(sourceRoot);
+    type FakeDevWatcher = EventEmitter & {
+      close: ReturnType<typeof vi.fn>;
+      ref(): fs.FSWatcher;
+      unref(): fs.FSWatcher;
+    };
+    const records: Array<{
+      listener: (
+        eventType: fs.WatchEventType,
+        filename: string | Buffer | null,
+      ) => void;
+      target: string;
+      watcher: FakeDevWatcher;
+    }> = [];
+    const watchCounts = new Map<string, number>();
+    const events: string[] = [];
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+      ...args: unknown[]
+    ) => {
+      const target = path.resolve(String(args[0]));
+      const listener = args.at(-1) as (typeof records)[number]["listener"];
+      const watcher = new EventEmitter() as FakeDevWatcher;
+      watcher.close = vi.fn();
+      watcher.ref = () => watcher as fs.FSWatcher;
+      watcher.unref = () => watcher as fs.FSWatcher;
+      records.push({ listener, target, watcher });
+      const count = (watchCounts.get(target) ?? 0) + 1;
+      watchCounts.set(target, count);
+      events.push(`watch:${target}:${count}`);
+      return watcher;
+    }) as never);
+    let contributionCount = 0;
+    let loadConfigCalls = 0;
+    let setupCount = 0;
+    const topologyPlugin: Plugin<Record<string, never>> = {
+      name: "route-root-topology-probe",
+      setup() {
+        setupCount += 1;
+        return {};
+      },
+      contributions() {
+        contributionCount += 1;
+        events.push(`contribution:${contributionCount}`);
+      },
+    };
+    const config: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      plugins: [topologyPlugin],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "route-root-topology",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        events.push(
+          `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
+        );
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
+            events.push(`config-changed:${options?.configChanged}`);
+            const serverEntry = update.entries.added.find(
+              (entry) => entry.kind === "server-runtime",
+            );
+            const routes =
+              serverEntry?.metadata?.type === "server-app"
+                ? serverEntry.metadata.routes.map((route) => route.path)
+                : [];
+            if (!routes.includes("/health")) return;
+            events.push("added-server:/health");
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+    const running = dev(config, {
+      cwd,
+      bundler,
+      loadConfig() {
+        loadConfigCalls += 1;
+        return config;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, `watch:${sourceRoot}:1`, 2_000);
+      const initialWatcher = records.find(
+        (record) => record.target === sourceRoot,
+      );
+      if (!initialWatcher) {
+        throw new Error("Expected the initial route-root ancestor watcher.");
+      }
+
+      await fs.promises.mkdir(routeRoot);
+      initialWatcher.listener("rename", "apis");
+      await waitForEvent(events, `watch:${routeRoot}:1`, 2_000);
+
+      const firstRouteRootWatcher = records.find(
+        (record) => record.target === routeRoot,
+      );
+      if (!firstRouteRootWatcher) {
+        throw new Error("Expected the created route-root watcher.");
+      }
+      await fs.promises.rmdir(routeRoot);
+      firstRouteRootWatcher.listener("rename", null);
+      await waitForEvent(events, `watch:${sourceRoot}:2`, 2_000);
+
+      const sourceWatcher = records.findLast(
+        (record) => record.target === sourceRoot,
+      );
+      if (!sourceWatcher) {
+        throw new Error("Expected the missing route-root ancestor watcher.");
+      }
+      await fs.promises.mkdir(routeRoot);
+      sourceWatcher.listener("rename", "apis");
+      await waitForEvent(events, `watch:${routeRoot}:2`, 2_000);
+
+      const rebuiltRouteRootWatcher = records.findLast(
+        (record) => record.target === routeRoot,
+      );
+      if (!rebuiltRouteRootWatcher) {
+        throw new Error("Expected the rebuilt route-root watcher.");
+      }
+      await writeFile(
+        path.join(routeRoot, "health/api.ts"),
+        "export const GET = async () => Response.json({ ok: true });",
+        "utf-8",
+      );
+      rebuiltRouteRootWatcher.listener("rename", "health");
+
+      await Promise.race([
+        running,
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error("rebuilt route-root update timed out")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+      expect(events).toContain("added-server:/health");
+      expect(events).toContain("config-changed:false");
+      expect(events).not.toContain("config-changed:true");
+      expect(loadConfigCalls).toBe(0);
+      expect(setupCount).toBe(1);
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+    }
+  });
+
   it("recovers when the optional api route root changes from a file to a directory", async () => {
     const cwd = await createProject();
     const routeRoot = path.join(cwd, "src/apis");
@@ -7595,8 +10354,9 @@ describe("dev", () => {
         events.push(
           `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
         );
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             if (
               !update.entries.added.some(
                 (entry) => entry.kind === "server-runtime",
@@ -7607,7 +10367,7 @@ describe("dev", () => {
             events.push("added-server");
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -7655,8 +10415,9 @@ describe("dev", () => {
         events.push(
           `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
         );
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             const serverEntry = update.entries.added.find(
               (entry) => entry.kind === "server-runtime",
             );
@@ -7664,7 +10425,7 @@ describe("dev", () => {
             events.push("added-server");
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -7711,6 +10472,270 @@ describe("dev", () => {
     }
   });
 
+  it("keeps watching a newly created Page tree after invalid config discovery", async () => {
+    const cwd = await createSpaProject();
+    const pageDirectory = path.join(cwd, "src/pages/catalog/details");
+    const pageConfig = path.join(pageDirectory, "page.config.ts");
+    const events: string[] = [];
+    const stopCapturingFailures = captureFrameworkUpdateFailures(
+      events,
+      'has unknown field "unknown"',
+    );
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "invalid-page-config-recovery",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        const appEntry = plan.entries.find(
+          (entry) => entry.metadata?.type === "pages-app",
+        );
+        recordPagesAppRoutes("initial", appEntry?.metadata, events);
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
+            const nextAppEntry = update.next.entries.find(
+              (entry) => entry.metadata?.type === "pages-app",
+            );
+            if (nextAppEntry?.metadata?.type !== "pages-app") return;
+            const routes = nextAppEntry.metadata.routes.map(
+              (route) => route.path,
+            );
+            if (!routes.includes("/catalog/details")) return;
+            events.push("added-page");
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+
+    let running: Promise<void> | undefined;
+    let settled = false;
+    try {
+      running = dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler },
+      );
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await waitForEvent(events, "initial:/");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await writeFile(
+        path.join(pageDirectory, "page.tsx"),
+        "export default function Details() { return null; }",
+        "utf-8",
+      );
+      await writeFile(pageConfig, "export default { unknown: true };", "utf-8");
+      await waitForEvent(events, "framework-update-failed");
+      expect(events).not.toContain("added-page");
+
+      await writeFile(
+        pageConfig,
+        'export default { title: "Details" };',
+        "utf-8",
+      );
+
+      await Promise.race([
+        running,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("fixed Page config update timed out")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+
+      expect(events).toEqual([
+        "initial:/",
+        "framework-update-failed",
+        "added-page",
+      ]);
+    } finally {
+      if (running && !settled) {
+        process.emit("SIGINT");
+        await running.catch(() => undefined);
+      }
+      stopCapturingFailures();
+    }
+  });
+
+  it(
+    "retries a new Page config after only its failing helper changes",
+    async () => {
+      const cwd = await createSpaProject();
+      const pageDirectory = path.join(cwd, "src/pages/catalog/details");
+      const helper = path.join(cwd, "src/config/page-settings.ts");
+      const helperDirectory = path.dirname(helper);
+      await fs.promises.mkdir(helperDirectory, { recursive: true });
+      type FakeDevWatcher = EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+      const watchRecords: Array<{
+        listener: (
+          eventType: fs.WatchEventType,
+          filename: string | Buffer | null,
+        ) => void;
+        target: string;
+        watcher: FakeDevWatcher;
+      }> = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+        ...args: unknown[]
+      ) => {
+        const target = path.resolve(String(args[0]));
+        const listener = args.at(
+          -1,
+        ) as (typeof watchRecords)[number]["listener"];
+        const watcher = new EventEmitter() as FakeDevWatcher;
+        watcher.close = vi.fn();
+        watcher.ref = () => watcher as fs.FSWatcher;
+        watcher.unref = () => watcher as fs.FSWatcher;
+        watchRecords.push({ listener, target, watcher });
+        return watcher;
+      }) as never);
+      const dispatchChange = (file: string) => {
+        for (const record of watchRecords) {
+          if (record.watcher.close.mock.calls.length > 0) continue;
+          const relative = path.relative(record.target, file);
+          if (
+            relative !== "" &&
+            (relative.startsWith("..") || path.isAbsolute(relative))
+          ) {
+            continue;
+          }
+          record.listener("rename", relative || path.basename(file));
+        }
+      };
+      const events: string[] = [];
+      const stopCapturingFailures = captureFrameworkUpdateFailures(
+        events,
+        "Failed to load static config module",
+      );
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "failed-page-config-helper-recovery",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev({ plan }) {
+          const appEntry = plan.entries.find(
+            (entry) => entry.metadata?.type === "pages-app",
+          );
+          recordPagesAppRoutes("initial", appEntry?.metadata, events);
+          return createTestDevController({
+            async updatePlan(update, options) {
+              options.activate();
+              const nextAppEntry = update.next.entries.find(
+                (entry) => entry.metadata?.type === "pages-app",
+              );
+              if (nextAppEntry?.metadata?.type !== "pages-app") return;
+              const routes = nextAppEntry.metadata.routes.map(
+                (route) => route.path,
+              );
+              if (!routes.includes("/catalog/details")) return;
+              events.push(`added-page:${options?.configChanged}`);
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+
+      let running: Promise<void> | undefined;
+      let settled = false;
+      try {
+        running = dev(
+          {
+            output: { client: "dist/client", server: "dist/server" },
+            routing: { mode: "spa" },
+          },
+          { cwd, bundler },
+        );
+        void running.then(
+          () => {
+            settled = true;
+          },
+          () => {
+            settled = true;
+          },
+        );
+        await waitForEvent(events, "initial:/");
+        await writeFile(
+          path.join(pageDirectory, "page.tsx"),
+          "export default function Details() { return null; }",
+          "utf-8",
+        );
+        await writeFile(
+          path.join(pageDirectory, "page.config.ts"),
+          [
+            'import { title } from "../../../config/page-settings.js";',
+            "export default { title };",
+          ].join("\n"),
+          "utf-8",
+        );
+        dispatchChange(path.join(pageDirectory, "page.config.ts"));
+        await waitForEvent(events, "framework-update-failed");
+        expect(events).not.toContain("added-page:false");
+
+        const watcherStartedAt = Date.now();
+        while (
+          !watchRecords.some(
+            (record) =>
+              record.target === helperDirectory &&
+              record.watcher.close.mock.calls.length === 0,
+          )
+        ) {
+          if (Date.now() - watcherStartedAt > devUpdateTimeoutMs) {
+            throw new Error(
+              `Missing failed Page helper watcher. Watched: ${watchRecords
+                .map((record) => record.target)
+                .join(", ")}`,
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+
+        await writeFile(helper, 'export const title = "Details";', "utf-8");
+        dispatchChange(helper);
+
+        await Promise.race([
+          running,
+          new Promise((_, reject) =>
+            setTimeout(
+              () =>
+                reject(new Error("fixed Page config helper update timed out")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+
+        expect(events).toEqual([
+          "initial:/",
+          "framework-update-failed",
+          "added-page:false",
+        ]);
+      } finally {
+        if (running && !settled) {
+          process.emit("SIGINT");
+          await running.catch(() => undefined);
+        }
+        watchSpy.mockRestore();
+        stopCapturingFailures();
+      }
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
   it("does not follow an api route root symlink outside cwd and recovers after replacement", async () => {
     const cwd = await createProject();
     const routeRoot = path.join(cwd, "src/apis");
@@ -7742,8 +10767,9 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             const serverEntry = [
               ...update.entries.added,
               ...update.entries.changed,
@@ -7756,7 +10782,7 @@ describe("dev", () => {
             events.push("recovered-server");
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -7777,9 +10803,10 @@ describe("dev", () => {
       );
       await waitForEvent(events, "framework-update-failed");
 
-      const failuresBeforeExternalEdit = events.filter(
-        (event) => event === "framework-update-failed",
-      ).length;
+      const failuresBeforeExternalEdit = await waitForEventCountToStabilize(
+        events,
+        "framework-update-failed",
+      );
       await writeFile(
         externalRoute,
         "export const GET = async () => Response.json({ outside: false });",
@@ -7856,8 +10883,9 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             const serverEntry = [
               ...update.entries.added,
               ...update.entries.changed,
@@ -7870,7 +10898,7 @@ describe("dev", () => {
             events.push("recovered-source");
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -7892,9 +10920,10 @@ describe("dev", () => {
       );
       await waitForEvent(events, "framework-update-failed");
 
-      const failuresBeforeExternalEdits = events.filter(
-        (event) => event === "framework-update-failed",
-      ).length;
+      const failuresBeforeExternalEdits = await waitForEventCountToStabilize(
+        events,
+        "framework-update-failed",
+      );
       await writeFile(
         externalPage,
         "export default function ChangedOutsidePage() { return null; }",
@@ -7957,8 +10986,9 @@ describe("dev", () => {
         events.push(
           `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
         );
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             const removedServer = update.entries.removed.some(
               (entry) => entry.kind === "server-runtime",
             );
@@ -7971,7 +11001,7 @@ describe("dev", () => {
               process.emit("SIGINT");
             }
           },
-        };
+        });
       },
     };
 
@@ -8023,8 +11053,9 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
+        return createTestDevController({
           async updatePlan(update, options) {
+            options.activate();
             events.push(
               [
                 "update",
@@ -8037,7 +11068,7 @@ describe("dev", () => {
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -8078,6 +11109,362 @@ describe("dev", () => {
     ]);
   });
 
+  it("runs semantic-empty source changes through a fresh generation", async () => {
+    const cwd = await createSpaProject();
+    const sourceDependency = path.join(cwd, "semantic-source.txt");
+    await writeFile(sourceDependency, "initial", "utf-8");
+    const events: string[] = [];
+    let postFinalizeFactsError: unknown;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "semantic-empty-generation",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, generation, plan }) {
+        let currentGeneration = generation;
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+            }
+          : {};
+        events.push("bundler.dev");
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              expect(isEmptyBuildPlanUpdate(update)).toBe(true);
+              options.activate();
+              currentGeneration = options.generation;
+              events.push("update:empty");
+            },
+          },
+          {
+            onBegin() {
+              events.push("boundary:begin");
+            },
+            async onResume(outcome) {
+              expect(outcome).toBe("accept");
+              events.push("resume:accept");
+              await callbacks.onBuildFacts(currentGeneration, facts, {
+                isRebuild: true,
+              });
+              events.push("facts:fresh");
+            },
+            onFinalize() {
+              events.push("transition:finalize");
+              void Promise.resolve(
+                callbacks.onBuildFacts(currentGeneration, facts, {
+                  isRebuild: true,
+                }),
+              )
+                .then((disposition) => {
+                  events.push(`facts:post-finalize:${disposition}`);
+                  process.emit("SIGINT");
+                })
+                .catch((error) => {
+                  postFinalizeFactsError = error;
+                  process.emit("SIGINT");
+                });
+            },
+          },
+        );
+      },
+    };
+
+    const running = dev(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [
+          {
+            name: "semantic-empty-output",
+            setup(ctx) {
+              ctx.addWatchFile("./semantic-source.txt");
+              return {
+                buildEnd(result) {
+                  events.push(`buildEnd:${result.isRebuild}`);
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+    await waitForEvent(events, "bundler.dev");
+    await writeFile(sourceDependency, "changed", "utf-8");
+    await Promise.race([
+      running,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error("semantic-empty update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+    if (postFinalizeFactsError) throw postFinalizeFactsError;
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "boundary:begin",
+      "update:empty",
+      "resume:accept",
+      "buildEnd:true",
+      "facts:fresh",
+      "transition:finalize",
+      "buildEnd:true",
+      "facts:post-finalize:published",
+    ]);
+  });
+
+  it("does not materialize candidate .ev input without a dev controller", async () => {
+    const cwd = await createSpaProject();
+    const bundlerDependency = path.join(cwd, "bundler.config.json");
+    await writeFile(bundlerDependency, '{"mode":"initial"}', "utf-8");
+    const generatedRoot = path.join(cwd, ".ev");
+    const events: string[] = [];
+    const generatedWrites: string[] = [];
+    let recordGeneratedWrites = false;
+    const originalWriteFile = fsPromises.writeFile.bind(fsPromises);
+    const writeSpy = vi
+      .spyOn(fsPromises, "writeFile")
+      .mockImplementation((async (
+        ...args: Parameters<typeof fsPromises.writeFile>
+      ) => {
+        const file = path.resolve(String(args[0]));
+        if (
+          recordGeneratedWrites &&
+          (file === generatedRoot ||
+            file.startsWith(`${generatedRoot}${path.sep}`))
+        ) {
+          generatedWrites.push(file);
+        }
+        return originalWriteFile(...args);
+      }) as typeof fsPromises.writeFile);
+    const stopCapturingRestart = captureFrameworkWarning(
+      events,
+      "The selected bundler does not expose a dev controller.",
+      "Please restart ev dev",
+      "restart-required",
+    );
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "no-dev-controller",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile }) {
+        addWatchFile?.(bundlerDependency);
+        events.push("bundler.dev");
+      },
+    };
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "bundler.dev");
+      const initialGeneratedState = await readDirectorySnapshot(generatedRoot);
+      recordGeneratedWrites = true;
+      await writeFile(bundlerDependency, '{"mode":"changed"}', "utf-8");
+      await waitForEvent(events, "restart-required");
+      expect(generatedWrites).toEqual([]);
+      expect(await readDirectorySnapshot(generatedRoot)).toEqual(
+        initialGeneratedState,
+      );
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => undefined);
+      }
+      stopCapturingRestart();
+      writeSpy.mockRestore();
+    }
+
+    expect(events).toEqual(["bundler.dev", "restart-required"]);
+  });
+
+  it("keeps every config extension candidate watched across replacements", async () => {
+    const cwd = await createSpaProject();
+    const tsConfigPath = path.join(cwd, "ev.config.ts");
+    const mjsConfigPath = path.join(cwd, "ev.config.mjs");
+    await writeFile(tsConfigPath, "export default {};", "utf-8");
+    const events: string[] = [];
+    let configLabel = "initial";
+    let loadConfigCalls = 0;
+    let updateCount = 0;
+    const currentConfig = (): Config<Record<string, never>> => ({
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: `https://${configLabel}.example`,
+          },
+        ],
+      },
+      output: { client: "dist/client", server: "dist/server" },
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "config-extension-replacement",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            updateCount += 1;
+            events.push(
+              `update:${updateCount}:${options?.configChanged}:${options?.config.dev.proxy[0]?.target}`,
+            );
+            if (updateCount === 2) process.emit("SIGINT");
+          },
+        });
+      },
+    };
+    const running = dev(currentConfig(), {
+      cwd,
+      bundler,
+      loadConfig() {
+        loadConfigCalls += 1;
+        return currentConfig();
+      },
+    });
+
+    await waitForEvent(events, "bundler.dev");
+    configLabel = "without-ts";
+    await fs.promises.unlink(tsConfigPath);
+    await waitForEvent(events, "update:1:true:https://without-ts.example");
+
+    configLabel = "from-mjs";
+    await writeFile(mjsConfigPath, "export default {};", "utf-8");
+    await Promise.race([
+      running,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error("config extension replacement timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(loadConfigCalls).toBe(2);
+    expect(events).toEqual([
+      "bundler.dev",
+      "update:1:true:https://without-ts.example",
+      "update:2:true:https://from-mjs.example",
+    ]);
+  });
+
+  it("reloads when only an imported ev.config helper changes", async () => {
+    const cwd = await createSpaProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    const helper = path.join(cwd, "src/config/dev-settings.ts");
+    await writeFile(
+      helper,
+      'export const target = "https://initial.example";',
+      "utf-8",
+    );
+    await writeFile(
+      configPath,
+      [
+        'import { target } from "./src/config/dev-settings.js";',
+        "export default {",
+        '  output: { client: "dist/client", server: "dist/server" },',
+        '  dev: { proxy: [{ context: ["/api"], target }] },',
+        "};",
+      ].join("\n"),
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "imported-config-helper",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ config }) {
+        events.push(`initial:${config.dev.proxy[0]?.target}`);
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            events.push(
+              `update:${options?.configChanged}:${options?.config.dev.proxy[0]?.target}`,
+            );
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+
+    const running = dev(undefined, {
+      cwd,
+      bundler,
+      reloadInitialConfig: true,
+      loadConfig(_cwd, context) {
+        return loadConfigFile<Record<string, never>>(configPath, {
+          onDependency: context?.onDependency,
+        });
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "initial:https://initial.example");
+      await writeFile(
+        helper,
+        'export const target = "https://updated.example";',
+        "utf-8",
+      );
+
+      await Promise.race([
+        running,
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error("imported config helper update timed out")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => undefined);
+      }
+    }
+
+    expect(events).toEqual([
+      "initial:https://initial.example",
+      "update:true:https://updated.example",
+    ]);
+  });
+
   it("fails closed when a bundlerConfig watch dependency changes", async () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
@@ -8092,8 +11479,9 @@ describe("dev", () => {
       async dev({ addWatchFile }) {
         addWatchFile?.(dependency);
         events.push("bundler.dev");
-        return {
+        return createTestDevController({
           async updatePlan(update, options) {
+            options.activate();
             events.push(
               [
                 "update",
@@ -8105,7 +11493,7 @@ describe("dev", () => {
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -8134,8 +11522,22 @@ describe("dev", () => {
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
     const events: string[] = [];
+    let markCandidateContributionStarted: (() => void) | undefined;
+    const candidateContributionStarted = new Promise<void>((resolve) => {
+      markCandidateContributionStarted = resolve;
+    });
+    let releaseCandidateContribution: (() => void) | undefined;
+    const candidateContributionGate = new Promise<void>((resolve) => {
+      releaseCandidateContribution = resolve;
+    });
     const plugin: Plugin<Record<string, never>> = {
       name: "reload-context",
+      async contributions(ctx) {
+        if (ctx.config.dev.proxy[0]?.target === "https://example.com") {
+          markCandidateContributionStarted?.();
+          await candidateContributionGate;
+        }
+      },
       setup(ctx) {
         const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
         events.push(`setup:${setupTarget}`);
@@ -8155,14 +11557,18 @@ describe("dev", () => {
       output: { client: "dist/client", server: "dist/server" },
       plugins: [plugin],
     };
+    let emitActiveBuildFacts:
+      | (() => Promise<BundlerBuildFactsDisposition>)
+      | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
       capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
-      async dev({ addWatchFile, callbacks, plan }) {
+      async dev({ addWatchFile, callbacks, generation, plan }) {
         addWatchFile?.(dependency);
+        let currentGeneration = generation;
         const clientEntry = plan.entries.find(
           (entry) => entry.environment === "client",
         );
@@ -8173,14 +11579,30 @@ describe("dev", () => {
               },
             }
           : {};
+        emitActiveBuildFacts = async () =>
+          await callbacks.onBuildFacts(currentGeneration, facts, {
+            isRebuild: true,
+          });
         events.push("bundler.dev");
-        return {
-          async updatePlan(_update, options) {
-            await callbacks.onBuildFacts(facts, { isRebuild: true });
-            events.push(`update:${options?.configChanged}`);
-            process.emit("SIGINT");
+        return createTestDevController(
+          {
+            async updatePlan(_update, options) {
+              options.activate();
+              currentGeneration = options.generation;
+              events.push(`update:${options.configChanged}`);
+            },
           },
-        };
+          {
+            async onResume(outcome) {
+              expect(outcome).toBe("accept");
+              await callbacks.onBuildFacts(currentGeneration, facts, {
+                isRebuild: true,
+              });
+              events.push("candidate:fresh");
+              process.emit("SIGINT");
+            },
+          },
+        );
       },
     };
 
@@ -8205,24 +11627,736 @@ describe("dev", () => {
     };
     await writeFile(dependency, '{"mode":"changed"}', "utf-8");
 
-    await Promise.race([
-      running,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("bundlerConfig context update timed out")),
-          devUpdateTimeoutMs,
+    try {
+      await candidateContributionStarted;
+      await expect(emitActiveBuildFacts?.()).resolves.toBe("discarded");
+      events.push("boundary:discarded");
+      releaseCandidateContribution?.();
+      await Promise.race([
+        running,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("bundlerConfig context update timed out")),
+            devUpdateTimeoutMs,
+          ),
         ),
-      ),
-    ]);
+      ]);
+    } finally {
+      releaseCandidateContribution?.();
+    }
 
     expect(events).toEqual([
       "setup:initial",
       "bundler.dev",
       "setup:https://example.com",
-      "buildOutput:https://example.com:https://example.com",
+      "boundary:discarded",
       "update:true",
+      "buildOutput:https://example.com:https://example.com",
+      "candidate:fresh",
       "dispose:initial",
       "dispose:https://example.com",
+    ]);
+  });
+
+  it("binds late old facts to their original snapshot until generation commit", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+
+    const createSnapshotPlugin = (
+      snapshot: "new" | "old",
+    ): Plugin<Record<string, never>> => ({
+      name: "late-generation-snapshot",
+      setup(ctx) {
+        const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
+        events.push(`setup:${snapshot}:${setupTarget}`);
+        return {
+          buildOutput(_output, buildContext) {
+            const buildTarget =
+              buildContext.config.dev.proxy[0]?.target ?? "initial";
+            events.push(`buildOutput:${snapshot}:${buildTarget}`);
+          },
+          dispose(disposeContext) {
+            const disposeTarget =
+              disposeContext.config.dev.proxy[0]?.target ?? "initial";
+            events.push(`dispose:${snapshot}:${disposeTarget}`);
+          },
+        };
+      },
+    });
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      plugins: [createSnapshotPlugin("old")],
+      routing: { mode: "spa" },
+    };
+    const nextConfig: Config<Record<string, never>> = {
+      ...oldConfig,
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "https://next.example",
+          },
+        ],
+      },
+      plugins: [createSnapshotPlugin("new")],
+    };
+    let currentConfig = oldConfig;
+    let emitRetiredFacts:
+      | (() => Promise<BundlerBuildFactsDisposition>)
+      | undefined;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "late-generation-snapshot",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+            }
+          : {};
+        emitRetiredFacts = async () =>
+          await callbacks.onBuildFacts(generation, facts, {
+            isRebuild: true,
+          });
+        events.push("bundler.dev");
+        let candidateGeneration = generation;
+        return createTestDevController(
+          {
+            async updatePlan(_update, options) {
+              options.activate();
+              candidateGeneration = options.generation;
+              events.push("generation:activated");
+              await expect(
+                callbacks.onBuildFacts(generation, facts, {
+                  isRebuild: true,
+                }),
+              ).resolves.toBe("discarded");
+              events.push("boundary:old-discarded");
+              await expect(
+                callbacks.onBuildFacts(candidateGeneration, facts, {
+                  isRebuild: true,
+                }),
+              ).resolves.toBe("discarded");
+              events.push("boundary:candidate-discarded");
+              events.push("update:return");
+            },
+          },
+          {
+            async onResume(outcome) {
+              expect(outcome).toBe("accept");
+              await callbacks.onBuildFacts(candidateGeneration, facts, {
+                isRebuild: true,
+              });
+              events.push("candidate:fresh");
+            },
+          },
+        );
+      },
+    };
+
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "bundler.dev");
+      currentConfig = nextConfig;
+      await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+      await waitForEvent(events, "dispose:old:initial");
+
+      const emitRetired = emitRetiredFacts;
+      if (!emitRetired) {
+        throw new Error("Expected a retained old-generation callback.");
+      }
+      await expect(emitRetired()).resolves.toBe("discarded");
+      events.push("retired:discarded");
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+    }
+
+    expect(events).toEqual([
+      "setup:old:initial",
+      "bundler.dev",
+      "setup:new:https://next.example",
+      "generation:activated",
+      "boundary:old-discarded",
+      "boundary:candidate-discarded",
+      "update:return",
+      "buildOutput:new:https://next.example",
+      "candidate:fresh",
+      "dispose:old:initial",
+      "retired:discarded",
+      "dispose:new:https://next.example",
+    ]);
+  });
+
+  it.each([
+    {
+      behavior: "publish-staged",
+      expectedError:
+        "publishing output before activating its staged generation",
+    },
+    {
+      behavior: "omit-activation",
+      expectedError: "completing updatePlan() without calling activate()",
+    },
+    {
+      behavior: "activate-twice",
+      expectedError: "calling updatePlan().activate() more than once",
+    },
+  ] as const)("rejects a bundler generation contract violation: $behavior", async ({
+    behavior,
+    expectedError,
+  }) => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      expectedError,
+      "update:rolled-back",
+    );
+    let emitOldFacts: (() => Promise<void>) | undefined;
+    const config: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: `generation-contract-${behavior}`,
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+            }
+          : {};
+        emitOldFacts = async () => {
+          await callbacks.onBuildFacts(generation, facts, {
+            isRebuild: true,
+          });
+        };
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            events.push(`update:${behavior}`);
+            if (behavior === "publish-staged") {
+              await callbacks.onBuildFacts(options.generation, facts, {
+                isRebuild: true,
+              });
+              return;
+            }
+            if (behavior === "activate-twice") {
+              options.activate();
+              options.activate();
+            }
+          },
+        });
+      },
+    };
+    const running = dev(config, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return config;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "bundler.dev");
+      await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+      await waitForEvent(events, "update:rolled-back");
+      const emitOld = emitOldFacts;
+      if (!emitOld) throw new Error("Expected an old-generation callback.");
+      await emitOld();
+      events.push("old:accepted");
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      stopCapturingRollback();
+    }
+
+    expect(events).toEqual([
+      "bundler.dev",
+      `update:${behavior}`,
+      "update:rolled-back",
+      "old:accepted",
+    ]);
+  });
+
+  it(
+    "drains in-flight output before opening a config transition and publishes fresh candidate facts",
+    async () => {
+      const cwd = await createSpaProject();
+      const dependency = path.join(cwd, "bundler-plugin.config.json");
+      await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+
+      type FakeDevWatcher = EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+      const watchRecords: Array<{
+        listener: (
+          eventType: fs.WatchEventType,
+          filename: string | Buffer | null,
+        ) => void;
+        target: string;
+        watcher: FakeDevWatcher;
+      }> = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+        ...args: unknown[]
+      ) => {
+        const watcher = new EventEmitter() as FakeDevWatcher;
+        watcher.close = vi.fn();
+        watcher.ref = () => watcher as fs.FSWatcher;
+        watcher.unref = () => watcher as fs.FSWatcher;
+        watchRecords.push({
+          listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+          target: path.resolve(String(args[0])),
+          watcher,
+        });
+        return watcher;
+      }) as never);
+
+      const events: string[] = [];
+      let markOldOutputStarted: (() => void) | undefined;
+      const oldOutputStarted = new Promise<void>((resolve) => {
+        markOldOutputStarted = resolve;
+      });
+      let releaseOldOutput: (() => void) | undefined;
+      const oldOutputGate = new Promise<void>((resolve) => {
+        releaseOldOutput = resolve;
+      });
+      let oldOutputBlocked = false;
+
+      function createSnapshotPlugin(
+        name: string,
+        snapshot: "old" | "new",
+        blockFirstOutput = false,
+      ): Plugin<Record<string, never>> {
+        return {
+          name,
+          setup(ctx) {
+            const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
+            return {
+              async buildOutput(_output, buildContext) {
+                const buildTarget =
+                  buildContext.config.dev.proxy[0]?.target ?? "initial";
+                events.push(
+                  `buildOutput:${name}:${snapshot}:start:${buildTarget}`,
+                );
+                if (blockFirstOutput && !oldOutputBlocked) {
+                  oldOutputBlocked = true;
+                  markOldOutputStarted?.();
+                  await oldOutputGate;
+                }
+                events.push(
+                  `buildOutput:${name}:${snapshot}:end:${buildTarget}`,
+                );
+              },
+              buildEnd() {
+                events.push(`buildEnd:${name}:${snapshot}`);
+              },
+              transformHtml(document) {
+                events.push(`transformHtml:${name}:${snapshot}`);
+                document.body?.appendChild(
+                  document.createComment(` snapshot:${snapshot} `),
+                );
+              },
+              dispose(disposeContext) {
+                const disposeTarget =
+                  disposeContext.config.dev.proxy[0]?.target ?? "initial";
+                events.push(
+                  `dispose:${name}:${snapshot}:${setupTarget}:${disposeTarget}`,
+                );
+              },
+            };
+          },
+        };
+      }
+
+      const oldConfig: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [
+          createSnapshotPlugin("first", "old", true),
+          createSnapshotPlugin("second", "old"),
+        ],
+        routing: { mode: "spa" },
+      };
+      const nextConfig: Config<Record<string, never>> = {
+        ...oldConfig,
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "https://next.example",
+            },
+          ],
+        },
+        plugins: [
+          createSnapshotPlugin("first", "new"),
+          createSnapshotPlugin("second", "new"),
+        ],
+      };
+      let currentConfig = oldConfig;
+      let emitBuildFacts: (() => Promise<void>) | undefined;
+      let inFlightOldCycle: Promise<void> | undefined;
+      let markUpdateStarted: (() => void) | undefined;
+      const updateStarted = new Promise<void>((resolve) => {
+        markUpdateStarted = resolve;
+      });
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "plugin-snapshot-output-cycle",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev({ addWatchFile, callbacks, generation, plan }) {
+          addWatchFile?.(dependency);
+          let currentGeneration = generation;
+          const clientEntry = plan.entries.find(
+            (entry) => entry.environment === "client",
+          );
+          const facts: BundlerBuildFacts = clientEntry
+            ? {
+                clientEntryAssets: {
+                  [clientEntry.name]: { js: ["main.js"], css: [] },
+                },
+              }
+            : {};
+          emitBuildFacts = async () => {
+            await callbacks.onBuildFacts(currentGeneration, facts, {
+              isRebuild: true,
+            });
+          };
+          events.push("bundler.dev");
+          return createTestDevController(
+            {
+              async updatePlan(_update, options) {
+                events.push("update");
+                markUpdateStarted?.();
+                options.activate();
+                currentGeneration = options.generation;
+              },
+            },
+            {
+              async onBegin() {
+                events.push("boundary:waiting");
+                await inFlightOldCycle;
+                events.push("boundary:ready");
+              },
+              async onResume(outcome) {
+                expect(outcome).toBe("accept");
+                const nextCycle = emitBuildFacts?.();
+                if (!nextCycle) {
+                  throw new Error("Expected a fresh build-facts callback.");
+                }
+                events.push("next-cycle:fresh");
+                await nextCycle;
+              },
+            },
+          );
+        },
+      };
+      const running = dev(oldConfig, {
+        cwd,
+        bundler,
+        loadConfig() {
+          return currentConfig;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await waitForEvent(events, "bundler.dev");
+        const firstCycle = emitBuildFacts?.();
+        if (!firstCycle) throw new Error("Expected a build-facts callback.");
+        inFlightOldCycle = firstCycle;
+        await oldOutputStarted;
+
+        currentConfig = nextConfig;
+        let dependencyWatcher: (typeof watchRecords)[number] | undefined;
+        await vi.waitFor(() => {
+          dependencyWatcher = watchRecords
+            .slice()
+            .reverse()
+            .find(
+              (record) =>
+                record.target === path.dirname(dependency) &&
+                record.watcher.close.mock.calls.length === 0,
+            );
+          expect(dependencyWatcher).toBeDefined();
+        });
+        if (!dependencyWatcher) {
+          throw new Error("Expected the bundler config dependency watcher.");
+        }
+        dependencyWatcher.listener("change", path.basename(dependency));
+
+        await waitForEvent(events, "boundary:waiting");
+        expect(events).not.toContain("update");
+        releaseOldOutput?.();
+        await firstCycle;
+        await updateStarted;
+        await waitForEvent(events, "dispose:first:old:initial:initial");
+        process.emit("SIGINT");
+        await running;
+      } finally {
+        releaseOldOutput?.();
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+        watchSpy.mockRestore();
+      }
+
+      expect(events).toEqual([
+        "bundler.dev",
+        "buildOutput:first:old:start:initial",
+        "boundary:waiting",
+        "buildOutput:first:old:end:initial",
+        "buildOutput:second:old:start:initial",
+        "buildOutput:second:old:end:initial",
+        "transformHtml:first:old",
+        "transformHtml:second:old",
+        "buildEnd:first:old",
+        "buildEnd:second:old",
+        "boundary:ready",
+        "update",
+        "next-cycle:fresh",
+        "buildOutput:first:new:start:https://next.example",
+        "buildOutput:first:new:end:https://next.example",
+        "buildOutput:second:new:start:https://next.example",
+        "buildOutput:second:new:end:https://next.example",
+        "transformHtml:first:new",
+        "transformHtml:second:new",
+        "buildEnd:first:new",
+        "buildEnd:second:new",
+        "dispose:second:old:initial:initial",
+        "dispose:first:old:initial:initial",
+        "dispose:second:new:https://next.example:https://next.example",
+        "dispose:first:new:https://next.example:https://next.example",
+      ]);
+      const html = await fs.promises.readFile(
+        path.join(cwd, "dist/client/index.html"),
+        "utf-8",
+      );
+      expect(html).toContain("snapshot:new");
+      expect(html).not.toContain("snapshot:old");
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it("restores the previous plugin snapshot before awaiting rollback disposal", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      "mock snapshot rollback failure",
+      "config-update-rolled-back",
+    );
+    let markCandidateDisposeStarted: (() => void) | undefined;
+    const candidateDisposeStarted = new Promise<void>((resolve) => {
+      markCandidateDisposeStarted = resolve;
+    });
+    let releaseCandidateDispose: (() => void) | undefined;
+    const candidateDisposeGate = new Promise<void>((resolve) => {
+      releaseCandidateDispose = resolve;
+    });
+    const plugin: Plugin<Record<string, never>> = {
+      name: "rollback-snapshot-context",
+      setup(ctx) {
+        const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
+        events.push(`setup:${setupTarget}`);
+        return {
+          buildOutput(_output, buildContext) {
+            events.push(
+              `buildOutput:${setupTarget}:${buildContext.config.dev.proxy[0]?.target}`,
+            );
+          },
+          async dispose(disposeContext) {
+            const disposeTarget =
+              disposeContext.config.dev.proxy[0]?.target ?? "initial";
+            events.push(`dispose:${setupTarget}:${disposeTarget}:start`);
+            if (setupTarget === "https://example.com") {
+              markCandidateDisposeStarted?.();
+              await candidateDisposeGate;
+            }
+            events.push(`dispose:${setupTarget}:${disposeTarget}:end`);
+          },
+        };
+      },
+    };
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      plugins: [plugin],
+    };
+    let emitActiveBuildFacts:
+      | (() => Promise<BundlerBuildFactsDisposition>)
+      | undefined;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "rollback-snapshot-context",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, generation, plan }) {
+        addWatchFile?.(dependency);
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+            }
+          : {};
+        emitActiveBuildFacts = async () =>
+          await callbacks.onBuildFacts(generation, facts, {
+            isRebuild: true,
+          });
+        events.push("bundler.dev");
+        return createTestDevController(
+          {
+            async updatePlan() {
+              events.push("update");
+              throw new Error("mock snapshot rollback failure");
+            },
+          },
+          {
+            async onResume(outcome) {
+              expect(outcome).toBe("rollback");
+              await emitActiveBuildFacts?.();
+              events.push("rollback:fresh");
+            },
+          },
+        );
+      },
+    };
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "bundler.dev");
+      currentConfig = {
+        ...currentConfig,
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "https://example.com",
+            },
+          ],
+        },
+      };
+      await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+      await candidateDisposeStarted;
+      await expect(emitActiveBuildFacts?.()).resolves.toBe("discarded");
+      events.push("boundary:discarded");
+      releaseCandidateDispose?.();
+      await waitForEvent(events, "config-update-rolled-back");
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      releaseCandidateDispose?.();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      stopCapturingRollback();
+    }
+
+    expect(events).toEqual([
+      "setup:initial",
+      "bundler.dev",
+      "setup:https://example.com",
+      "update",
+      "dispose:https://example.com:https://example.com:start",
+      "boundary:discarded",
+      "dispose:https://example.com:https://example.com:end",
+      "buildOutput:initial:undefined",
+      "rollback:fresh",
+      "config-update-rolled-back",
+      "dispose:initial:initial:start",
+      "dispose:initial:initial:end",
     ]);
   });
 
@@ -8599,7 +12733,7 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
+        return createTestDevController({
           async updatePlan() {
             const candidateRouteTypes = await fs.promises.readFile(
               path.join(cwd, "src/route-types.d.ts"),
@@ -8611,7 +12745,7 @@ describe("dev", () => {
             events.push("update:throw");
             throw new Error("mock update failure");
           },
-        };
+        });
       },
     };
 
@@ -8681,14 +12815,14 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
+        return createTestDevController({
           async updatePlan() {
             await writeFile(routeTypesPath, userRouteTypes, "utf-8");
             await writeFile(pluginTypesPath, userPluginTypes, "utf-8");
             events.push("update:throw");
             throw new Error("mock update failure after user replacement");
           },
-        };
+        });
       },
     };
 
@@ -8758,14 +12892,15 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             events.push(
               `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -8862,8 +12997,9 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             const tag = update.next.generated?.slots.find(
               (item) =>
                 item.slot === "html.tag" && item.id === "page-theme-meta",
@@ -8889,7 +13025,7 @@ describe("dev", () => {
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -8975,12 +13111,13 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan() {
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
             events.push("update");
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -9031,10 +13168,12 @@ describe("dev", () => {
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await writeFile(path.join(cwd, "plugin-data.json"), "{}", "utf-8");
+    const pluginDataPath = path.join(cwd, "plugin-data.json");
+    await writeFile(pluginDataPath, "initial", "utf-8");
 
     const events: string[] = [];
     let contributionCount = 0;
+    let loadConfigCalls = 0;
     let resolutionCalls = 0;
     const applicationConfig = pluginConfig<{ generation: number }>({
       defaults() {
@@ -9063,8 +13202,11 @@ describe("dev", () => {
       },
       contributions(ctx) {
         contributionCount += 1;
+        const state = fs.existsSync(pluginDataPath)
+          ? fs.readFileSync(pluginDataPath, "utf-8")
+          : "missing";
         events.push(
-          `contribution:${ctx.options.generation}:${contributionCount}`,
+          `contribution:${ctx.options.generation}:${contributionCount}:${state}`,
         );
       },
     })();
@@ -9076,11 +13218,12 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan() {
-            events.push("unexpected update");
+        return createTestDevController({
+          async updatePlan(update, options) {
+            expect(isEmptyBuildPlanUpdate(update)).toBe(true);
+            options.activate();
           },
-        };
+        });
       },
     };
 
@@ -9090,16 +13233,25 @@ describe("dev", () => {
         plugins: [plugin],
         routing: { mode: "mpa" },
       },
-      { cwd, bundler },
+      {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return {
+            output: { client: "dist/client", server: "dist/server" },
+            plugins: [plugin],
+            routing: { mode: "mpa" },
+          };
+        },
+      },
     );
 
     await waitForEvent(events, "bundler.dev");
-    await writeFile(
-      path.join(cwd, "plugin-data.json"),
-      '{"changed":true}',
-      "utf-8",
-    );
-    await waitForEvent(events, "contribution:1:2");
+    await fs.promises.unlink(pluginDataPath);
+    await waitForEvent(events, "contribution:1:2:missing");
+    await writeFile(pluginDataPath, "recreated", "utf-8");
+    await waitForEvent(events, "contribution:1:3:recreated");
     process.emit("SIGINT");
 
     await Promise.race([
@@ -9113,11 +13265,13 @@ describe("dev", () => {
     ]);
 
     expect(resolutionCalls).toBe(1);
+    expect(loadConfigCalls).toBe(0);
     expect(events).toEqual([
       "setup:1",
-      "contribution:1:1",
+      "contribution:1:1:initial",
       "bundler.dev",
-      "contribution:1:2",
+      "contribution:1:2:missing",
+      "contribution:1:3:recreated",
       "dispose:1",
     ]);
   });
@@ -9170,12 +13324,13 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan() {
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
             events.push("update");
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -9281,7 +13436,7 @@ describe("dev", () => {
       async dev({ addWatchFile }) {
         addWatchFile?.(bundlerWatchPath);
         events.push("bundler.dev");
-        return {
+        return createTestDevController({
           async updatePlan(update, options) {
             updateCalls += 1;
             const serverEntry = update.next.entries.find(
@@ -9297,9 +13452,10 @@ describe("dev", () => {
             if (updateCalls === 1) {
               throw new Error("mock config update failure");
             }
+            options.activate();
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -9359,6 +13515,158 @@ describe("dev", () => {
     }
   });
 
+  it("keeps failed-config route changes forced while a retry is in flight", async () => {
+    const cwd = await createSpaProject();
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation((() => {
+      throw Object.assign(new Error("simulated watcher exhaustion"), {
+        code: "EMFILE",
+      });
+    }) as typeof fs.watch);
+    const bundlerWatchPath = path.join(cwd, "bundler-watch.txt");
+    await writeFile(bundlerWatchPath, "initial", "utf-8");
+    await writeFile(
+      path.join(cwd, "src/apis/initial/api.ts"),
+      "export const GET = async () => Response.json({ initial: true });",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const stopCapturingRollback = captureFrameworkWarning(
+      events,
+      "Unable to apply framework plan update without restart:",
+      "mock overlapping config update failure",
+      "config-update-rolled-back",
+    );
+    const currentConfig: Config<Record<string, never>> = {
+      conventions: false,
+      output: { client: "dist/client", server: "dist/server" },
+    };
+    let reloadCalls = 0;
+    let updateCalls = 0;
+    let markSecondUpdateStarted: (() => void) | undefined;
+    const secondUpdateStarted = new Promise<void>((resolve) => {
+      markSecondUpdateStarted = resolve;
+    });
+    let releaseSecondUpdate: (() => void) | undefined;
+    const secondUpdateGate = new Promise<void>((resolve) => {
+      releaseSecondUpdate = resolve;
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "overlapping-failed-config-retry",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile }) {
+        addWatchFile?.(bundlerWatchPath);
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan(update, options) {
+            updateCalls += 1;
+            const serverEntry = update.next.entries.find(
+              (entry) => entry.kind === "server-runtime",
+            );
+            const routes =
+              serverEntry?.metadata?.type === "server-app"
+                ? serverEntry.metadata.routes.map((route) => route.path)
+                : [];
+            events.push(
+              [
+                `update:${updateCalls}`,
+                options?.configChanged,
+                options?.config.server.basePath,
+                routes.join(","),
+              ].join(":"),
+            );
+            if (updateCalls === 1) {
+              throw new Error("mock overlapping config update failure");
+            }
+            if (updateCalls === 2) {
+              markSecondUpdateStarted?.();
+              await secondUpdateGate;
+              throw new Error("mock overlapping config update failure");
+            }
+            options.activate();
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        reloadCalls += 1;
+        return {
+          ...currentConfig,
+          conventions: true,
+          server: { basePath: `/reload-${reloadCalls}` },
+        };
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "bundler.dev");
+      await writeFile(bundlerWatchPath, "first failed candidate", "utf-8");
+      await waitForEvent(events, "config-update-rolled-back");
+
+      await writeFile(
+        path.join(cwd, "src/apis/after/api.ts"),
+        "export const GET = async () => Response.json({ after: true });",
+        "utf-8",
+      );
+      await Promise.race([
+        secondUpdateStarted,
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error("second config retry did not start")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+
+      await writeFile(
+        path.join(cwd, "src/apis/during/api.ts"),
+        "export const GET = async () => Response.json({ during: true });",
+        "utf-8",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      releaseSecondUpdate?.();
+
+      await Promise.race([
+        running,
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error("overlapping config retry timed out")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+
+      expect(reloadCalls).toBe(3);
+      expect(events).toContain(
+        "update:3:true:/reload-3:/after,/during,/initial",
+      );
+    } finally {
+      releaseSecondUpdate?.();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+      stopCapturingRollback();
+    }
+  });
+
   it("updates Page metadata when an adjacent page.config.ts changes during dev", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -9383,8 +13691,9 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             const html = update.next.html.find((item) => item.id === "index");
             events.push(
               [
@@ -9398,7 +13707,7 @@ describe("dev", () => {
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -9433,6 +13742,119 @@ describe("dev", () => {
     ]);
   });
 
+  it("keeps a missing higher-priority Page config import watched after reload", async () => {
+    const cwd = await createProject();
+    const pageConfigPath = path.join(cwd, "src/pages/report/page.config.ts");
+    const javascriptHelper = path.join(cwd, "src/config/title.js");
+    const typescriptHelper = path.join(cwd, "src/config/title.ts");
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      pageConfigPath,
+      [
+        'import { title } from "../../config/title.js";',
+        "export default { title };",
+      ].join("\n"),
+      "utf-8",
+    );
+    await writeFile(
+      typescriptHelper,
+      'export const title = "Initial TypeScript";',
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    let updateCount = 0;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "page-config-import-priority",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, generation, plan }) {
+        let currentGeneration = generation;
+        let currentPlan = plan;
+        const factsForPlan = (nextPlan: BuildPlan): BundlerBuildFacts => ({
+          clientEntryAssets: Object.fromEntries(
+            nextPlan.entries
+              .filter((entry) => entry.environment === "client")
+              .map((entry) => [
+                entry.name,
+                { js: [`${entry.name}.js`], css: [] },
+              ]),
+          ),
+        });
+        events.push(
+          `initial:${plan.html.find((document) => document.id === "report")?.metadata?.title}`,
+        );
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              updateCount += 1;
+              options.activate();
+              currentGeneration = options.generation;
+              currentPlan = update.next;
+              events.push(
+                `update:${updateCount}:${update.next.html.find((document) => document.id === "report")?.metadata?.title}`,
+              );
+            },
+          },
+          {
+            async onResume(outcome) {
+              expect(outcome).toBe("accept");
+              await callbacks.onBuildFacts(
+                currentGeneration,
+                factsForPlan(currentPlan),
+                { isRebuild: true },
+              );
+              events.push(`facts:${updateCount}`);
+            },
+            onFinalize() {
+              events.push(`finalize:${updateCount}`);
+              if (updateCount === 2) process.emit("SIGINT");
+            },
+          },
+        );
+      },
+    };
+    const running = dev({ routing: { mode: "mpa" } }, { cwd, bundler });
+
+    await waitForEvent(events, "initial:Initial TypeScript");
+    await writeFile(
+      typescriptHelper,
+      'export const title = "Reloaded TypeScript";',
+      "utf-8",
+    );
+    await waitForEvent(events, "finalize:1");
+    await writeFile(
+      javascriptHelper,
+      'export const title = "Higher Priority JavaScript";',
+      "utf-8",
+    );
+    await Promise.race([
+      running,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error("Page config import priority timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "initial:Initial TypeScript",
+      "update:1:Reloaded TypeScript",
+      "facts:1",
+      "finalize:1",
+      "update:2:Higher Priority JavaScript",
+      "facts:2",
+      "finalize:2",
+    ]);
+  });
+
   it("adds and removes static Document aliases during dev updates", async () => {
     const cwd = await createProject();
     const pageConfigPath = path.join(cwd, "src/pages/about/page.config.ts");
@@ -9451,36 +13873,48 @@ describe("dev", () => {
       async build() {
         return {};
       },
-      async dev({ plan, callbacks }) {
+      async dev({ plan, callbacks, generation }) {
+        let currentGeneration = generation;
         const aboutEntry = createPageClientBuildEntryName("about");
         const facts: BundlerBuildFacts = {
           clientEntryAssets: {
             [aboutEntry]: { js: [`${aboutEntry}.js`], css: [] },
           },
         };
-        await callbacks.onBuildFacts(facts);
+        await callbacks.onBuildFacts(currentGeneration, facts);
         const aliasPath = path.resolve(
           cwd,
           plan.output.clientDir,
           "about.html",
         );
         events.push(`initial:${fs.existsSync(aliasPath)}`);
-        return {
-          async updatePlan(update) {
-            updateCount += 1;
-            const aliases = update.next.html[0]?.aliases?.join(",") ?? "none";
-            events.push(
-              `update:${updateCount}:${update.html.changed.length}:${aliases}`,
-            );
-            await callbacks.onBuildFacts(facts, { isRebuild: true });
-            events.push(`alias:${updateCount}:${fs.existsSync(aliasPath)}`);
-            if (updateCount === 1) {
-              await writeFile(pageConfigPath, "export default {};", "utf-8");
-            } else {
-              process.emit("SIGINT");
-            }
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              updateCount += 1;
+              options.activate();
+              currentGeneration = options.generation;
+              const aliases = update.next.html[0]?.aliases?.join(",") ?? "none";
+              events.push(
+                `update:${updateCount}:${update.html.changed.length}:${aliases}`,
+              );
+            },
           },
-        };
+          {
+            async onResume(outcome) {
+              expect(outcome).toBe("accept");
+              await callbacks.onBuildFacts(currentGeneration, facts, {
+                isRebuild: true,
+              });
+              events.push(`alias:${updateCount}:${fs.existsSync(aliasPath)}`);
+              if (updateCount === 1) {
+                await writeFile(pageConfigPath, "export default {};", "utf-8");
+              } else {
+                process.emit("SIGINT");
+              }
+            },
+          },
+        );
       },
     };
 
@@ -9565,14 +13999,15 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             events.push(
               `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
             );
             process.emit("SIGINT");
           },
-        };
+        });
       },
     };
 
@@ -9639,6 +14074,7 @@ describe("dev", () => {
     );
     await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
     await writeFile(path.join(cwd, "new-watch.txt"), "new", "utf-8");
+    await writeFile(path.join(cwd, "retired-watch.txt"), "retired", "utf-8");
 
     const events: string[] = [];
     function createPlugin(
@@ -9688,11 +14124,12 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan() {
-            events.push("update");
+        return createTestDevController({
+          async updatePlan(update, options) {
+            expect(isEmptyBuildPlanUpdate(update)).toBe(true);
+            options.activate();
           },
-        };
+        });
       },
     };
     let loadCount = 0;
@@ -9748,6 +14185,379 @@ describe("dev", () => {
     ]);
   });
 
+  it(
+    "retries a failed config update when only its candidate Page config changes",
+    async () => {
+      const cwd = await createProject();
+      const configPath = path.join(cwd, "ev.config.ts");
+      await writeFile(configPath, "export default {};", "utf-8");
+      const candidatePagePath = path.join(cwd, "src/pages/catalog/page.tsx");
+      const candidatePageConfigPath = path.join(
+        cwd,
+        "src/pages/catalog/page.config.ts",
+      );
+      const events: string[] = [];
+      type FakeDevWatcher = EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+      const watchRecords: Array<{
+        listener: (
+          eventType: fs.WatchEventType,
+          filename: string | Buffer | null,
+        ) => void;
+        target: string;
+        watcher: FakeDevWatcher;
+      }> = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+        ...args: unknown[]
+      ) => {
+        const watcher = new EventEmitter() as FakeDevWatcher;
+        watcher.close = vi.fn();
+        watcher.ref = () => watcher as fs.FSWatcher;
+        watcher.unref = () => watcher as fs.FSWatcher;
+        watchRecords.push({
+          listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+          target: path.resolve(String(args[0])),
+          watcher,
+        });
+        return watcher;
+      }) as never);
+      const stopCapturingRollback = captureFrameworkWarning(
+        events,
+        "Unable to apply framework plan update without restart:",
+        "mock candidate Page config update failure",
+        "config-update-rolled-back",
+      );
+      const activeConfig: Config<Record<string, never>> = {
+        conventions: false,
+        output: { client: "dist/client", server: "dist/server" },
+      };
+      const candidateConfig: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      };
+      let currentConfig = activeConfig;
+      let loadConfigCalls = 0;
+      let updateCalls = 0;
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "candidate-page-watch-retry",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(_update, options) {
+              updateCalls += 1;
+              events.push(`update:${updateCalls}:${options?.configChanged}`);
+              if (updateCalls === 1) {
+                throw new Error("mock candidate Page config update failure");
+              }
+              options.activate();
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(activeConfig, {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return currentConfig;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await waitForEvent(events, "bundler.dev");
+        await vi.waitFor(() =>
+          expect(watchRecords.some((record) => record.target === cwd)).toBe(
+            true,
+          ),
+        );
+        const configWatcher = watchRecords.find(
+          (record) => record.target === cwd,
+        );
+        if (!configWatcher) {
+          throw new Error("Expected the config watcher to start.");
+        }
+        const initialWatcherCount = watchRecords.length;
+        await writeFile(
+          candidatePagePath,
+          "export default function Catalog() { return null; }",
+          "utf-8",
+        );
+        await writeFile(
+          candidatePageConfigPath,
+          'export default { title: "First" };',
+          "utf-8",
+        );
+        currentConfig = candidateConfig;
+        configWatcher.listener("change", path.basename(configPath));
+        await waitForEvent(events, "config-update-rolled-back");
+
+        const candidatePageConfigWatcher = watchRecords
+          .slice(initialWatcherCount)
+          .reverse()
+          .find(
+            (record) =>
+              record.target === path.dirname(candidatePageConfigPath) &&
+              record.watcher.close.mock.calls.length === 0,
+          );
+        if (!candidatePageConfigWatcher) {
+          throw new Error(
+            "Expected the candidate Page config watcher to start.",
+          );
+        }
+        await writeFile(
+          candidatePageConfigPath,
+          'export default { title: "Second" };',
+          "utf-8",
+        );
+        candidatePageConfigWatcher.listener(
+          "change",
+          path.basename(candidatePageConfigPath),
+        );
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `candidate Page config retry did not complete. Observed: ${events.join(", ")}`,
+                  ),
+                ),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } finally {
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+        watchSpy.mockRestore();
+        stopCapturingRollback();
+      }
+
+      expect(loadConfigCalls).toBe(2);
+      expect(events).toEqual([
+        "bundler.dev",
+        "update:1:true",
+        "config-update-rolled-back",
+        "update:2:true",
+      ]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
+  it(
+    "retries a failed config update when only its staged plugin watch file changes",
+    async () => {
+      const cwd = await createProject();
+      await writeFile(
+        path.join(cwd, "src/pages/home/page.tsx"),
+        "export default function Home() { return null; }",
+        "utf-8",
+      );
+      const configPath = path.join(cwd, "ev.config.ts");
+      await writeFile(configPath, "export default {};", "utf-8");
+      await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
+      const newWatchPath = path.join(cwd, "new-watch.txt");
+      await writeFile(newWatchPath, "new", "utf-8");
+
+      const events: string[] = [];
+      type FakeDevWatcher = EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        ref(): fs.FSWatcher;
+        unref(): fs.FSWatcher;
+      };
+      const watchRecords: Array<{
+        listener: (
+          eventType: fs.WatchEventType,
+          filename: string | Buffer | null,
+        ) => void;
+        target: string;
+        watcher: FakeDevWatcher;
+      }> = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+        ...args: unknown[]
+      ) => {
+        const watcher = new EventEmitter() as FakeDevWatcher;
+        watcher.close = vi.fn();
+        watcher.ref = () => watcher as fs.FSWatcher;
+        watcher.unref = () => watcher as fs.FSWatcher;
+        watchRecords.push({
+          listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+          target: path.resolve(String(args[0])),
+          watcher,
+        });
+        return watcher;
+      }) as never);
+      const stopCapturingRollback = captureFrameworkWarning(
+        events,
+        "Unable to apply framework plan update without restart:",
+        "mock staged plugin config update failure",
+        "config-update-rolled-back",
+      );
+      function createPlugin(
+        label: string,
+        watchFile: string,
+      ): Plugin<Record<string, never>> {
+        return {
+          name: "candidate-plugin-watch",
+          setup(ctx) {
+            events.push(`setup:${label}`);
+            ctx.addWatchFile(`./${watchFile}`);
+            return {
+              dispose() {
+                events.push(`dispose:${label}`);
+              },
+            };
+          },
+          contributions() {
+            events.push(`contribution:${label}`);
+          },
+        };
+      }
+
+      const oldConfig: Config<Record<string, never>> = {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [createPlugin("old", "old-watch.txt")],
+        routing: { mode: "mpa" },
+      };
+      const nextConfig: Config<Record<string, never>> = {
+        ...oldConfig,
+        plugins: [createPlugin("new", "new-watch.txt")],
+      };
+      let currentConfig = oldConfig;
+      let loadConfigCalls = 0;
+      let updateCalls = 0;
+      const bundler: BundlerAdapter<Record<string, never>> = {
+        name: "candidate-plugin-watch-retry",
+        capabilities: fullBundlerCapabilities,
+        async build() {
+          return {};
+        },
+        async dev() {
+          events.push("bundler.dev");
+          return createTestDevController({
+            async updatePlan(_update, options) {
+              updateCalls += 1;
+              events.push(`update:${updateCalls}:${options?.configChanged}`);
+              if (updateCalls === 1) {
+                throw new Error("mock staged plugin config update failure");
+              }
+              options.activate();
+              process.emit("SIGINT");
+            },
+          });
+        },
+      };
+      const running = dev(oldConfig, {
+        cwd,
+        bundler,
+        loadConfig() {
+          loadConfigCalls += 1;
+          return currentConfig;
+        },
+      });
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      try {
+        await waitForEvent(events, "bundler.dev");
+        await vi.waitFor(() =>
+          expect(watchRecords.some((record) => record.target === cwd)).toBe(
+            true,
+          ),
+        );
+        const configWatcher = watchRecords.find(
+          (record) => record.target === cwd,
+        );
+        if (!configWatcher) {
+          throw new Error("Expected the config watcher to start.");
+        }
+        const initialWatcherCount = watchRecords.length;
+        currentConfig = nextConfig;
+        configWatcher.listener("change", path.basename(configPath));
+        await waitForEvent(events, "config-update-rolled-back");
+
+        const candidatePluginWatcher = watchRecords
+          .slice(initialWatcherCount)
+          .reverse()
+          .find(
+            (record) =>
+              record.target === path.dirname(newWatchPath) &&
+              record.watcher.close.mock.calls.length === 0,
+          );
+        if (!candidatePluginWatcher) {
+          throw new Error(
+            "Expected the candidate plugin watch-file watcher to start.",
+          );
+        }
+
+        await writeFile(newWatchPath, "changed", "utf-8");
+        candidatePluginWatcher.listener("change", path.basename(newWatchPath));
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(new Error("staged plugin watch retry did not complete")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]);
+      } finally {
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+        watchSpy.mockRestore();
+        stopCapturingRollback();
+      }
+
+      expect(loadConfigCalls).toBe(2);
+      expect(events).toEqual([
+        "setup:old",
+        "contribution:old",
+        "bundler.dev",
+        "setup:new",
+        "contribution:new",
+        "update:1:true",
+        "dispose:new",
+        "config-update-rolled-back",
+        "setup:new",
+        "contribution:new",
+        "update:2:true",
+        "dispose:old",
+        "dispose:new",
+      ]);
+    },
+    devUpdateTimeoutMs + 1_000,
+  );
+
   it("refreshes plugin watch files after committed plugin cleanup fails", async () => {
     const cwd = await createProject();
     await writeFile(
@@ -9763,11 +14573,52 @@ describe("dev", () => {
     await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
     await writeFile(path.join(cwd, "new-watch.txt"), "new", "utf-8");
 
+    type FakeDevWatcher = EventEmitter & {
+      close: ReturnType<typeof vi.fn>;
+      ref(): fs.FSWatcher;
+      unref(): fs.FSWatcher;
+    };
+    const watchRecords: Array<{
+      listener: (
+        eventType: fs.WatchEventType,
+        filename: string | Buffer | null,
+      ) => void;
+      target: string;
+      watcher: FakeDevWatcher;
+    }> = [];
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+      ...args: unknown[]
+    ) => {
+      const watcher = new EventEmitter() as FakeDevWatcher;
+      watcher.close = vi.fn();
+      watcher.ref = () => watcher as fs.FSWatcher;
+      watcher.unref = () => watcher as fs.FSWatcher;
+      watchRecords.push({
+        listener: args.at(-1) as (typeof watchRecords)[number]["listener"],
+        target: path.resolve(String(args[0])),
+        watcher,
+      });
+      return watcher;
+    }) as never);
+    const dispatchDirectFileChange = (file: string) => {
+      const parent = path.dirname(file);
+      const basename = path.basename(file);
+      for (const record of watchRecords) {
+        if (
+          record.target === parent &&
+          record.watcher.close.mock.calls.length === 0
+        ) {
+          record.listener("change", basename);
+        }
+      }
+    };
+
     const events: string[] = [];
     function createPlugin(
       label: string,
       watchFile: string,
       failDispose = false,
+      registerDuringDispose = false,
     ): Plugin<Record<string, never>> {
       let contributionCount = 0;
       return {
@@ -9782,6 +14633,9 @@ describe("dev", () => {
           return {
             dispose() {
               events.push(`dispose:${label}`);
+              if (registerDuringDispose) {
+                ctx.addWatchFile("./retired-watch.txt");
+              }
               if (failDispose) throw new Error(`${label} dispose blocked`);
             },
           };
@@ -9792,7 +14646,7 @@ describe("dev", () => {
     let currentConfig: Config<Record<string, never>> = {
       output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "mpa" },
-      plugins: [createPlugin("old", "old-watch.txt", true)],
+      plugins: [createPlugin("old", "old-watch.txt", true, true)],
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
@@ -9802,13 +14656,14 @@ describe("dev", () => {
       },
       async dev() {
         events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
             events.push(
               `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
             );
           },
-        };
+        });
       },
     };
     let loadCount = 0;
@@ -9821,42 +14676,84 @@ describe("dev", () => {
         return currentConfig;
       },
     });
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await writeFile(
-      path.join(cwd, "src/pages/orders/page.tsx"),
-      "export default function Orders() { return null; }",
-      "utf-8",
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
     );
-    currentConfig = {
-      ...currentConfig,
-      routing: { mode: "mpa" },
-      plugins: [createPlugin("new", "new-watch.txt")],
-    };
-    await writeFile(
-      path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa' } }; // updated",
-      "utf-8",
-    );
-    await waitForEvent(
-      events,
-      `update:${createPageClientBuildEntryName("orders")}`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    let timeoutSpy: ReturnType<typeof vi.spyOn> | undefined;
 
-    await writeFile(path.join(cwd, "new-watch.txt"), "changed", "utf-8");
-    await waitForEvent(events, "contribution:new:2");
-    process.emit("SIGINT");
+    try {
+      await waitForEvent(events, "bundler.dev");
+      await writeFile(
+        path.join(cwd, "src/pages/orders/page.tsx"),
+        "export default function Orders() { return null; }",
+        "utf-8",
+      );
+      currentConfig = {
+        ...currentConfig,
+        routing: { mode: "mpa" },
+        plugins: [createPlugin("new", "new-watch.txt")],
+      };
+      const configPath = path.join(cwd, "ev.config.ts");
+      await writeFile(
+        configPath,
+        "export default { routing: { mode: 'mpa' } }; // updated",
+        "utf-8",
+      );
+      dispatchDirectFileChange(configPath);
+      await waitForEvent(
+        events,
+        `update:${createPageClientBuildEntryName("orders")}`,
+      );
+      await waitForEvent(events, "dispose:old");
+      const watcherRetirementStartedAt = Date.now();
+      while (
+        watchRecords.filter(
+          (record) =>
+            record.target === cwd &&
+            record.watcher.close.mock.calls.length === 0,
+        ).length !== 1
+      ) {
+        if (Date.now() - watcherRetirementStartedAt > devUpdateTimeoutMs) {
+          throw new Error(
+            "Timed out waiting for the candidate watcher to close.",
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(loadCount).toBe(1);
 
-    await Promise.race([
-      running,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("dev shutdown timed out")),
-          devUpdateTimeoutMs,
+      timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+      dispatchDirectFileChange(path.join(cwd, "retired-watch.txt"));
+      expect(
+        timeoutSpy.mock.calls.some(
+          (call: readonly unknown[]) => call[1] === 50,
         ),
-      ),
-    ]);
+      ).toBe(false);
+      timeoutSpy.mockRestore();
+      timeoutSpy = undefined;
+      expect(loadCount).toBe(1);
+
+      const newWatchPath = path.join(cwd, "new-watch.txt");
+      await writeFile(newWatchPath, "changed", "utf-8");
+      dispatchDirectFileChange(newWatchPath);
+      await waitForEvent(events, "contribution:new:2");
+      expect(loadCount).toBe(1);
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      timeoutSpy?.mockRestore();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      watchSpy.mockRestore();
+    }
 
     expect(events).toEqual(
       expect.arrayContaining([

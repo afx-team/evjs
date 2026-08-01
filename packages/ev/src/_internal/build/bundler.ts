@@ -34,6 +34,9 @@ export interface BundlerBuildFacts {
   };
 }
 
+/** Whether Core committed a development facts snapshot to canonical output. */
+export type BundlerBuildFactsDisposition = "published" | "discarded";
+
 /**
  * Normalize adapter-native client entrypoint names into the exact BuildPlan
  * names consumed by the linker. A sole raw entrypoint may stand in for a sole
@@ -87,8 +90,23 @@ export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
   addWatchFile?(file: string): void;
 }
 
+/**
+ * Opaque identity for one adapter-visible development build generation.
+ *
+ * Adapters receive these identities from the framework and must return the
+ * identity captured by the compile that produced each facts snapshot. This
+ * keeps late compile results bound to the config and plan that started them.
+ */
+declare const bundlerDevGenerationBrand: unique symbol;
+
+export interface BundlerDevGeneration {
+  readonly [bundlerDevGenerationBrand]: true;
+}
+
 export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
   extends BundlerBuildContext<TBundlerCfg> {
+  /** Generation owned by the initial dev plan. */
+  generation: BundlerDevGeneration;
   callbacks: {
     /**
      * Called after the client development server is listening and framework
@@ -98,13 +116,19 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
     /**
      * Called by the bundler adapter after a dev compile has fresh build facts.
      * The ev orchestrator owns framework output linking, plugin output hooks,
-     * manifest emission, and HTML emission.
+     * manifest emission, and HTML emission. Adapters may acknowledge facts or
+     * notify server readiness only after `published`; `discarded` facts were
+     * not consumed and must be retried from fresh compiler state.
      */
     onBuildFacts: (
+      generation: BundlerDevGeneration,
       facts: BundlerBuildFacts,
       options?: { isRebuild?: boolean },
+    ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>;
+    /** Notify the framework that this generation's server bundle is ready. */
+    onServerBundleReady: (
+      generation: BundlerDevGeneration,
     ) => void | Promise<void>;
-    onServerBundleReady: () => void | Promise<void>;
   };
 }
 
@@ -116,15 +140,61 @@ export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
    * the adapter must refresh its effective bundler configuration.
    */
   configChanged: boolean;
+  /** The exact transition reserved before Core wrote candidate input. */
+  transition: BundlerDevUpdateTransition;
+  /** Generation owned by `update.next`. */
+  generation: BundlerDevGeneration;
+  /**
+   * Activate `generation` exactly once at the adapter's serialized plan
+   * boundary: after every prior-generation facts callback has completed and
+   * before adopting `update.next` or publishing its facts.
+   */
+  activate(): void;
+}
+
+/**
+ * Adapter-owned boundary reserved before Core materializes candidate `.ev`
+ * inputs. Core explicitly accepts the final input or rolls back only after it
+ * has restored the previous generated state. Adapters must drop any compile
+ * that could have observed input while this boundary was active, then obtain
+ * fresh facts for the selected state.
+ */
+export interface BundlerDevUpdateTransition {
+  /** Select the final generated input while keeping the current generation. */
+  accept(): void | Promise<void>;
+  /** Select the previous generation after Core restored its generated input. */
+  rollback(): void | Promise<void>;
+  /** Release deferred compiler work after Core opens the selected consumer. */
+  resume(): void | Promise<void>;
+  /**
+   * Complete any fallible settlement work while the adapter boundary remains
+   * reserved. A rejection must leave the resumed outcome selectable for
+   * rollback.
+   */
+  prepareFinalize(): void | Promise<void>;
+  /**
+   * Release the adapter boundary after Core commits the selected output.
+   * This operation must be synchronous and must not throw.
+   */
+  finalize(): void;
 }
 
 export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
   /** Settles if the adapter-owned dev service terminates independently. */
   done?: Promise<void>;
   close?(): void | Promise<void>;
+  /**
+   * Establish a fail-closed boundary before candidate generated inputs are
+   * written. The returned promise may wait for compiles that started before
+   * the boundary to finish; compiles that start after it must not publish
+   * facts until the adapter has observed the final accepted input state.
+   */
+  beginUpdate():
+    | BundlerDevUpdateTransition
+    | Promise<BundlerDevUpdateTransition>;
   updatePlan(
     update: BuildPlanUpdate,
-    options?: BundlerDevUpdateOptions<TBundlerCfg>,
+    options: BundlerDevUpdateOptions<TBundlerCfg>,
   ): void | Promise<void>;
 }
 

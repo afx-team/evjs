@@ -1,13 +1,16 @@
 import fs from "node:fs";
 
 export interface UtoopackServerStatsMonitor {
+  /** Advance the authoritative baseline after an out-of-band publication. */
+  advance(version: string | undefined): void;
   close(): Promise<void>;
 }
 
 interface StartUtoopackServerStatsMonitorOptions {
   statsPath: string;
   initialVersion: string | undefined;
-  onChange(): Promise<void>;
+  /** Return true only when the observed version was consumed or discarded. */
+  onChange(version: string): Promise<boolean>;
   onError(error: unknown): void;
 }
 
@@ -38,22 +41,27 @@ export function startUtoopackServerStatsMonitor(
   options: StartUtoopackServerStatsMonitorOptions,
 ): UtoopackServerStatsMonitor {
   let currentVersion = options.initialVersion;
+  let baselineRevision = 0;
   let closed = false;
   let queue = Promise.resolve();
   const poll = () => {
     queue = queue.then(processChange, processChange);
   };
   const interval = setInterval(poll, POLL_INTERVAL_MS);
+  interval.unref();
 
   async function processChange(): Promise<void> {
     if (closed) return;
     try {
       const nextVersion = await readServerStatsVersion(options.statsPath);
       if (!nextVersion || nextVersion === currentVersion) return;
-      await options.onChange();
-      currentVersion = nextVersion;
+      const observedRevision = baselineRevision;
+      const consumed = await options.onChange(nextVersion);
+      if (consumed && observedRevision === baselineRevision) {
+        currentVersion = nextVersion;
+      }
     } catch (error) {
-      options.onError(error);
+      if (!closed) options.onError(error);
     }
   }
 
@@ -62,6 +70,10 @@ export function startUtoopackServerStatsMonitor(
   poll();
 
   return {
+    advance(version) {
+      baselineRevision += 1;
+      currentVersion = version;
+    },
     async close() {
       if (closed) return;
       closed = true;

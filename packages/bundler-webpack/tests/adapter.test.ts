@@ -3,7 +3,11 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
+import type {
+  BundlerBuildFacts,
+  BundlerDevController,
+  BundlerDevGeneration,
+} from "@evjs/ev/_internal/build";
 import {
   buildHtml,
   createBuildPlan,
@@ -73,6 +77,49 @@ const frameworkRuntimeByOutput = new WeakMap<
 
 function devIt(name: string, run: () => void | Promise<void>) {
   it(name, run, WEBPACK_DEV_TEST_TIMEOUT);
+}
+
+async function waitForCondition(
+  check: () => boolean | Promise<boolean>,
+  message: string,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await check())) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function createTestDevGeneration(): BundlerDevGeneration {
+  return {} as BundlerDevGeneration;
+}
+
+async function createTestDevUpdateOptions(
+  controller: BundlerDevController<WebpackConfig> | undefined,
+  config: ResolvedConfig<WebpackConfig>,
+  configChanged = false,
+) {
+  if (!controller) throw new Error("Expected webpack dev controller");
+  const transition = await controller.beginUpdate();
+  return {
+    activate: vi.fn(),
+    config,
+    configChanged,
+    generation: createTestDevGeneration(),
+    transition,
+  };
+}
+
+async function settleTestDevUpdate(
+  options: Awaited<ReturnType<typeof createTestDevUpdateOptions>>,
+  outcome: "accept" | "rollback",
+): Promise<void> {
+  if (outcome === "accept") await options.transition.accept();
+  else await options.transition.rollback();
+  await options.transition.resume();
+  await options.transition.prepareFinalize();
+  options.transition.finalize();
 }
 
 function buildIt(name: string, run: () => void | Promise<void>) {
@@ -184,6 +231,7 @@ function createFrameworkCallbacks(options: {
     },
     callbacks: {
       async onBuildFacts(
+        _generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
         callbackOptions?: { isRebuild?: boolean },
       ) {
@@ -197,6 +245,7 @@ function createFrameworkCallbacks(options: {
           onBuildOutput: options.onBuildOutput,
           isRebuild: callbackOptions?.isRebuild,
         });
+        return "published" as const;
       },
       onDevServerReady: options.onDevServerReady,
       onServerBundleReady:
@@ -2362,6 +2411,7 @@ describe("webpackAdapter dev", () => {
         webpackAdapter.dev({
           config,
           cwd,
+          generation: createTestDevGeneration(),
           plan,
           hooks: [],
           callbacks: {
@@ -2412,10 +2462,11 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: {
-        async onBuildFacts(facts, options) {
+        async onBuildFacts(_generation, facts, options) {
           await linkAndEmitBuildOutput({
             bundlerFacts: facts,
             graph: analysis.graph,
@@ -2433,6 +2484,7 @@ describe("webpackAdapter dev", () => {
             },
             isRebuild: options?.isRebuild ?? false,
           });
+          return "published" as const;
         },
         async onServerBundleReady() {},
       },
@@ -2493,6 +2545,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: framework.callbacks,
@@ -2531,12 +2584,19 @@ describe("webpackAdapter dev", () => {
       await expect(
         fs.access(path.join(cwd, "dist/runtime.json")),
       ).rejects.toThrow();
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        config,
+        true,
+      );
       await expect(
-        controller.updatePlan(diffBuildPlan(plan, plan, "config"), {
-          config,
-          configChanged: true,
-        }),
+        controller.updatePlan(
+          diffBuildPlan(plan, plan, "config"),
+          updateOptions,
+        ),
       ).rejects.toThrow("Restart ev dev to apply the updated config");
+      await settleTestDevUpdate(updateOptions, "rollback");
+      expect(updateOptions.activate).not.toHaveBeenCalled();
     } finally {
       await controller.close?.();
     }
@@ -2640,6 +2700,7 @@ describe("webpackAdapter dev", () => {
     const callbacks = {
       ...framework.callbacks,
       async onBuildFacts(
+        generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
         options?: { isRebuild?: boolean },
       ) {
@@ -2648,7 +2709,11 @@ describe("webpackAdapter dev", () => {
         rebuildFlags.push(options?.isRebuild ?? false);
         try {
           await new Promise((resolve) => setTimeout(resolve, 100));
-          await framework.callbacks.onBuildFacts(facts, options);
+          return await framework.callbacks.onBuildFacts(
+            generation,
+            facts,
+            options,
+          );
         } finally {
           activeBuildFacts -= 1;
         }
@@ -2658,6 +2723,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks,
       callbacks,
@@ -2711,6 +2777,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: framework.callbacks,
@@ -2799,6 +2866,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks,
       callbacks: framework.callbacks,
@@ -2810,6 +2878,10 @@ describe("webpackAdapter dev", () => {
         routing: { mode: "mpa", html: "./next.html", mount: "#root" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        nextConfig,
+      );
       const nextPlan = await materializeTestPlan({
         config: nextConfig,
         cwd,
@@ -2822,7 +2894,8 @@ describe("webpackAdapter dev", () => {
 
       failBundlerConfig = true;
       framework.update(nextAnalysis.graph, nextPlan);
-      await controller?.updatePlan(update);
+      await controller?.updatePlan(update, updateOptions);
+      await settleTestDevUpdate(updateOptions, "accept");
 
       const html = await fetchDevText(
         `http://127.0.0.1:${port}/home/index.html`,
@@ -2831,6 +2904,7 @@ describe("webpackAdapter dev", () => {
       expect(update.entries.added).toHaveLength(0);
       expect(update.entries.changed).toHaveLength(0);
       expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
+      expect(updateOptions.activate).toHaveBeenCalledTimes(1);
       expect(html).toContain("next-shell");
       expect(html).toContain('src="/page-client-home.js"');
     } finally {
@@ -2868,7 +2942,21 @@ describe("webpackAdapter dev", () => {
           mode: "development",
         }),
       });
-      const onServerBundleReady = vi.fn();
+      let blockNextServerReady = false;
+      let markBlockedServerReady!: () => void;
+      const blockedServerReady = new Promise<void>((resolve) => {
+        markBlockedServerReady = resolve;
+      });
+      let releaseServerReady!: () => void;
+      const serverReadyGate = new Promise<void>((resolve) => {
+        releaseServerReady = resolve;
+      });
+      const onServerBundleReady = vi.fn(async () => {
+        if (!blockNextServerReady) return;
+        blockNextServerReady = false;
+        markBlockedServerReady();
+        await serverReadyGate;
+      });
       const framework = createFrameworkCallbacks({
         config,
         cwd,
@@ -2880,12 +2968,14 @@ describe("webpackAdapter dev", () => {
       const controller = await webpackAdapter.dev({
         config,
         cwd,
+        generation: createTestDevGeneration(),
         plan,
         hooks: [],
         callbacks: framework.callbacks,
       });
       try {
         onServerBundleReady.mockClear();
+        blockNextServerReady = true;
         const nextGraph = structuredClone(analysis.graph);
         const page = nextGraph.pages.home;
         if (!page) throw new Error("Expected home Page.");
@@ -2893,6 +2983,10 @@ describe("webpackAdapter dev", () => {
           title: "Updated home",
           meta: { description: "Updated description" },
         };
+        const updateOptions = await createTestDevUpdateOptions(
+          controller,
+          config,
+        );
         const nextPlan = await materializeTestPlan({
           config,
           cwd,
@@ -2904,7 +2998,37 @@ describe("webpackAdapter dev", () => {
         const update = diffBuildPlan(plan, nextPlan, "config");
 
         framework.update(nextGraph, nextPlan);
-        await controller?.updatePlan(update);
+        await controller?.updatePlan(update, updateOptions);
+        const settling = settleTestDevUpdate(updateOptions, "accept");
+        await blockedServerReady;
+
+        await fs.writeFile(
+          path.join(cwd, "src/pages/home/page.tsx"),
+          `
+            import { createElement } from "react";
+
+            export default function Home() {
+              return createElement("h1", null, "late-transition-source");
+            }
+          `,
+          "utf-8",
+        );
+        const clientBundle = path.join(cwd, "dist/client/page-client-home.js");
+        await waitForCondition(
+          async () =>
+            (await fs.readFile(clientBundle, "utf-8").catch(() => "")).includes(
+              "late-transition-source",
+            ),
+          "Webpack did not finish the late transition compile.",
+        );
+
+        releaseServerReady();
+        await settling;
+        await waitForCondition(
+          () => onServerBundleReady.mock.calls.length >= 2,
+          "Webpack did not republish dirty transition input after finalize.",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
         expect(update.entries.added).toHaveLength(0);
         expect(update.entries.removed).toHaveLength(0);
@@ -2914,8 +3038,10 @@ describe("webpackAdapter dev", () => {
         expect(update.serverCompilationChanged).toBe(false);
         expect(update.serverDocumentsChanged).toBe(true);
         expect(update.devRoutingChanged).toBe(false);
-        expect(onServerBundleReady).toHaveBeenCalled();
+        expect(updateOptions.activate).toHaveBeenCalledTimes(1);
+        expect(onServerBundleReady).toHaveBeenCalledTimes(2);
       } finally {
+        releaseServerReady();
         await controller?.close?.();
       }
     },
@@ -2969,6 +3095,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks,
       callbacks: framework.callbacks,
@@ -2992,6 +3119,10 @@ describe("webpackAdapter dev", () => {
         routing: { mode: "mpa", mount: "#root" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        nextConfig,
+      );
       const nextPlan = await materializeTestPlan({
         config: nextConfig,
         cwd,
@@ -3003,9 +3134,12 @@ describe("webpackAdapter dev", () => {
       const update = diffBuildPlan(plan, nextPlan, "config");
 
       failBundlerConfig = true;
-      await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "cannot safely replace persistent compiler entries",
-      );
+      await expect(
+        controller?.updatePlan(update, updateOptions),
+      ).rejects.toThrow("cannot safely replace persistent compiler entries");
+      framework.update(analysis.graph, plan);
+      await settleTestDevUpdate(updateOptions, "rollback");
+      expect(updateOptions.activate).not.toHaveBeenCalled();
 
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
@@ -3057,6 +3191,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: framework.callbacks,
@@ -3081,6 +3216,10 @@ describe("webpackAdapter dev", () => {
         routing: { mode: "mpa", mount: "#root" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        nextConfig,
+      );
       const nextPlan = await materializeTestPlan({
         config: nextConfig,
         cwd,
@@ -3093,14 +3232,19 @@ describe("webpackAdapter dev", () => {
       const buildOutputCallsBeforeUpdate = onBuildOutput.mock.calls.length;
 
       framework.update(nextAnalysis.graph, nextPlan);
-      await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "cannot safely replace persistent compiler entries",
-      );
+      await expect(
+        controller?.updatePlan(update, updateOptions),
+      ).rejects.toThrow("cannot safely replace persistent compiler entries");
+      framework.update(analysis.graph, plan);
+      await settleTestDevUpdate(updateOptions, "rollback");
+      expect(updateOptions.activate).not.toHaveBeenCalled();
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         createPageClientBuildEntryName("about"),
       ]);
-      expect(onBuildOutput).toHaveBeenCalledTimes(buildOutputCallsBeforeUpdate);
+      expect(onBuildOutput).toHaveBeenCalledTimes(
+        buildOutputCallsBeforeUpdate + 1,
+      );
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
       };

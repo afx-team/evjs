@@ -27,6 +27,8 @@ export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   plan?: CreateBuildPlanOptions;
   write?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
+  beforeSourceRead?: (file: string) => void;
+  onSourceDependency?: (file: string) => void;
 }
 
 export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
@@ -59,6 +61,10 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       ? await resolvePageConfigModules(
           options.cwd,
           options.config.routing.metadata,
+          {
+            beforeSourceRead: options.beforeSourceRead,
+            onSourceDependency: options.onSourceDependency,
+          },
         )
       : undefined;
   if (options.write !== false) {
@@ -76,6 +82,8 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       pluginSettings: options.pluginSettings,
       applicationPluginSettings: options.applicationPluginSettings,
       pluginSettingsSession,
+      beforeSourceRead: options.beforeSourceRead,
+      onSourceDependency: options.onSourceDependency,
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);

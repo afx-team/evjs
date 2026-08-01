@@ -18,6 +18,15 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   snapshot and installs prepend, match, redirect, and micro-app route
   components before the first render. Resolver routes no longer require fixed
   containers, `activeRule`, or physical Pages at the mounted master paths.
+- **Transactional bundler dev contract** — Persistent custom bundler adapters
+  must reserve each framework update with `beginUpdate()`, activate the supplied
+  generation at their serialized plan boundary, and resume either accepted or
+  restored input. Transition finalization is now two-phase:
+  `prepareFinalize()` performs fallible work while keeping the boundary
+  reserved, and synchronous `finalize()` releases it only after Core commits
+  canonical output. `onBuildFacts()` now returns `"published"` or `"discarded"`;
+  adapters may acknowledge compiler facts and signal server readiness only
+  after publication.
 
 ### ✨ Improvements
 
@@ -39,6 +48,27 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   render. Master runtime overlays remain outside the canonical CoreGraph,
   BuildPlan, deployment routes, and generated `RoutePath` types, while platform
   plugins can reuse the public qiankun contribution and lifecycle-hook helpers.
+
+### 🐛 Bug Fixes
+
+- **Resilient dev dependency watching** — Framework dependencies in the same
+  directory share one native watcher, and project-local config imports remain
+  part of the reload closure. When the operating system exhausts native watcher
+  resources, the affected watcher set falls back to explicit dependency polling
+  and later watcher sets stay in polling mode; permission and unknown watcher
+  failures terminate the session after running cleanup instead of leaving dev
+  running with incomplete coverage.
+- **Transactional dev updates** — Framework plan changes now reserve an adapter
+  generation before writing candidate `.ev` input and publish fresh build facts
+  only after the selected state is stable. Failed updates restore generated IR,
+  generated types, plugin state, and canonical framework output before the
+  previous generation resumes; shutdown also cancels outstanding compiler-stat
+  polling.
+- **Strict static config reload closure** — Config and Page-config loading now
+  observes missing candidates, `require.resolve()` targets, package maps, and
+  transitive project-local imports before evaluation. Unreadable sources,
+  escaped file URLs or symlinks, and invalid package-map semantics fail closed
+  instead of falling through to a lower-priority or unobserved module.
 
 ---
 

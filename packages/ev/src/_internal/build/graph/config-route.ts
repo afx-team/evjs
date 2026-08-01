@@ -39,8 +39,14 @@ import {
 } from "../routes/shared.js";
 import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "../utils.js";
 import type { GraphConfig } from "./index.js";
+import {
+  isMissingSourcePathError,
+  isProjectSourceModule,
+  PROJECT_SOURCE_EXTENSIONS,
+  registerProjectSourceDependencies,
+  registerProjectSourceResolutionCandidates,
+} from "./source-resolution.js";
 
-const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 const CONFIG_ROUTE_PRODUCER = {
   kind: "provider",
   id: CONFIG_ROUTE_PROVIDER_ID,
@@ -54,6 +60,8 @@ type ConfigRouteGraphConfig = GraphConfig & {
 interface ConfigRouteBuildState {
   cwd: string;
   config: ConfigRouteGraphConfig;
+  beforeSourceRead?: (file: string) => void;
+  onSourceDependency?: (file: string) => void;
   pages: Record<string, CorePageNode>;
   routes: CoreRouteNode[];
   documents: Record<string, CoreDocumentNode>;
@@ -82,6 +90,8 @@ function formatConfigRouteAddress(address: readonly number[]): string {
 export async function createConfigRouteGraph(
   config: GraphConfig,
   cwd: string,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<CoreGraph> {
   assertConfigRouteGraphConfig(config);
 
@@ -91,6 +101,8 @@ export async function createConfigRouteGraph(
   const state: ConfigRouteBuildState = {
     cwd,
     config,
+    beforeSourceRead,
+    onSourceDependency,
     pages,
     routes,
     documents,
@@ -106,6 +118,9 @@ export async function createConfigRouteGraph(
         config.application.layout,
         "application.layout",
         "layout",
+        undefined,
+        beforeSourceRead,
+        onSourceDependency,
       )
     : undefined;
   await visitConfigRoutes(
@@ -265,6 +280,9 @@ async function materializeSpaConfigRoute(
         module,
         `${address}.wrappers[${wrapperIndex}]`,
         "wrapper",
+        undefined,
+        state.beforeSourceRead,
+        state.onSourceDependency,
       ),
     ),
   );
@@ -275,6 +293,9 @@ async function materializeSpaConfigRoute(
           declaration.layout,
           `${address}.layout`,
           "layout",
+          undefined,
+          state.beforeSourceRead,
+          state.onSourceDependency,
         )
       : declaration.layout;
   let target: CoreClientRouteNode["target"];
@@ -355,6 +376,8 @@ async function defineConfigRoutePage(
         `${address}.component`,
         "component",
         state.config.application.pageRoot,
+        state.beforeSourceRead,
+        state.onSourceDependency,
       )
     : undefined;
   const anchoredModule =
@@ -364,6 +387,8 @@ async function defineConfigRoutePage(
           state.config.application.pageRoot,
           declaredPageReference,
           `${address}.page`,
+          state.beforeSourceRead,
+          state.onSourceDependency,
         )
       : undefined;
   const module = anchoredModule ?? explicitModule;
@@ -811,14 +836,20 @@ async function resolveConfigRoutePageModule(
   pageRoot: string,
   pageReference: string,
   source: string,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string> {
   const absolutePageDirectory = path.resolve(cwd, pageRoot, pageReference);
   if (!isInsideCwd(cwd, absolutePageDirectory)) {
     throw new Error(`[evjs] ${source} must resolve inside the project root.`);
   }
 
-  const candidates = SOURCE_EXTENSIONS.map((extension) =>
-    path.join(absolutePageDirectory, `${PAGE_ENTRY_BASENAME}${extension}`),
+  const candidates = registerProjectSourceDependencies(
+    cwd,
+    PROJECT_SOURCE_EXTENSIONS.map((extension) =>
+      path.join(absolutePageDirectory, `${PAGE_ENTRY_BASENAME}${extension}`),
+    ),
+    onSourceDependency,
   );
   const resolvedCandidates: string[] = [];
   for (const candidate of candidates) {
@@ -826,14 +857,7 @@ async function resolveConfigRoutePageModule(
     try {
       stat = await fs.stat(candidate);
     } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        (error as { code?: unknown }).code === "ENOENT"
-      ) {
-        continue;
-      }
+      if (isMissingSourcePathError(error)) continue;
       throw error;
     }
     if (!stat.isFile()) {
@@ -852,21 +876,20 @@ async function resolveConfigRoutePageModule(
     );
   }
   if (resolvedCandidates.length === 0) {
+    const alternateResolutionCandidates = registerProjectSourceDependencies(
+      cwd,
+      PROJECT_SOURCE_EXTENSIONS.map((extension) =>
+        path.join(absolutePageDirectory, `index${extension}`),
+      ),
+      onSourceDependency,
+    );
     const alternateCandidates: string[] = [];
-    for (const extension of SOURCE_EXTENSIONS) {
-      const candidate = path.join(absolutePageDirectory, `index${extension}`);
+    for (const candidate of alternateResolutionCandidates) {
       try {
         if ((await fs.stat(candidate)).isFile())
           alternateCandidates.push(candidate);
       } catch (error) {
-        if (
-          !error ||
-          typeof error !== "object" ||
-          !("code" in error) ||
-          (error as { code?: unknown }).code !== "ENOENT"
-        ) {
-          throw error;
-        }
+        if (!isMissingSourcePathError(error)) throw error;
       }
     }
     const explicitReferenceHint =
@@ -894,7 +917,13 @@ async function resolveConfigRoutePageModule(
       `[evjs] ${source} Page module "${module}" must resolve inside application.pageRoot "${pageRoot}" after resolving symlinks.`,
     );
   }
-  await assertConfigRouteReactModule(absolute, module, source, "component");
+  await assertConfigRouteReactModule(
+    absolute,
+    module,
+    source,
+    "component",
+    beforeSourceRead,
+  );
   return module;
 }
 
@@ -908,35 +937,28 @@ async function resolveProjectSourceModule(
   source: string,
   kind: "component" | "wrapper" | "layout",
   pageRoot?: string,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string> {
   const base = path.resolve(cwd, module);
   if (!isInsideCwd(cwd, base)) {
     throw new Error(`[evjs] ${source} must resolve inside the project root.`);
   }
-  const candidates = [base];
-  if (!SOURCE_EXTENSIONS.includes(path.extname(base) as never)) {
-    candidates.push(
-      ...SOURCE_EXTENSIONS.map((extension) => `${base}${extension}`),
-    );
-  }
-  candidates.push(
-    ...SOURCE_EXTENSIONS.map((extension) =>
-      path.join(base, `index${extension}`),
-    ),
+  const projectCandidates = registerProjectSourceResolutionCandidates(
+    cwd,
+    base,
+    onSourceDependency,
   );
-  for (const candidate of candidates) {
-    if (!isInsideCwd(cwd, candidate)) continue;
+  for (const candidate of projectCandidates) {
     let stat: Awaited<ReturnType<typeof fs.stat>>;
     try {
       stat = await fs.stat(candidate);
-    } catch {
+    } catch (error) {
+      if (!isMissingSourcePathError(error)) throw error;
       // Try the next supported project-source candidate.
       continue;
     }
-    if (
-      stat.isFile() &&
-      SOURCE_EXTENSIONS.includes(path.extname(candidate) as never)
-    ) {
+    if (stat.isFile() && isProjectSourceModule(candidate)) {
       const resolved = `./${toPosixPath(path.relative(cwd, candidate))}`;
       if (!(await isRealPathInsideCwd(cwd, candidate))) {
         throw new Error(
@@ -951,7 +973,13 @@ async function resolveProjectSourceModule(
           `[evjs] ${source} component module "${resolved}" must resolve inside application.pageRoot "${pageRoot}" after resolving symlinks.`,
         );
       }
-      await assertConfigRouteReactModule(candidate, resolved, source, kind);
+      await assertConfigRouteReactModule(
+        candidate,
+        resolved,
+        source,
+        kind,
+        beforeSourceRead,
+      );
       return resolved;
     }
   }
@@ -979,7 +1007,9 @@ async function assertConfigRouteReactModule(
   module: string,
   source: string,
   kind: "component" | "wrapper" | "layout",
+  beforeSourceRead?: (file: string) => void,
 ): Promise<void> {
+  beforeSourceRead?.(absolute);
   const code = await fs.readFile(absolute, "utf-8");
   const { ast, error } = parseRouteModuleWithError(code);
   if (!ast) {

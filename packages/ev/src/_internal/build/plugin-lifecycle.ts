@@ -164,6 +164,7 @@ function pluginEnforceRank(plugin: PluginOrderDeclaration): number {
 export async function collectPluginHooks<TBundlerCfg>(
   plugins: Plugin<TBundlerCfg>[],
   ctx: PluginContext<TBundlerCfg>,
+  beforeRollback?: () => void | Promise<void>,
 ): Promise<PluginHooks<TBundlerCfg>[]> {
   const allHooks: PluginHooks<TBundlerCfg>[] = [];
   try {
@@ -178,7 +179,11 @@ export async function collectPluginHooks<TBundlerCfg>(
   } catch (error) {
     return rethrowAfterCleanup(
       error,
-      () => runDisposeHooks(allHooks, ctx),
+      () =>
+        runCleanupTasks([
+          ...(beforeRollback ? [beforeRollback] : []),
+          () => runDisposeHooks(allHooks, ctx),
+        ]),
       "[evjs] Plugin setup failed and rollback also failed.",
     );
   }
