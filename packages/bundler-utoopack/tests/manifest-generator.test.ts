@@ -36,6 +36,7 @@ async function makeProject() {
   await fs.promises.writeFile(
     path.join(cwd, "dist/server/stats.json"),
     JSON.stringify({
+      assets: [{ name: "server.js" }],
       entrypoints: {
         server: { assets: [{ name: "server.js" }] },
       },
@@ -65,9 +66,6 @@ function linkTestManifest(
     plan,
     clientEntryAssets: facts.clientEntryAssets,
     serverEntryAssets: facts.serverEntryAssets,
-    serverEntry: facts.serverEntry,
-    serverAssets: facts.serverAssets,
-    serverModules: facts.serverModules,
   });
 }
 
@@ -153,11 +151,11 @@ describe("UtoopackManifestGenerator", () => {
     await expect(
       new UtoopackManifestGenerator(cwd, plan).build(),
     ).rejects.toThrow(
-      'Utoopack server stats do not identify BuildPlan entrypoint "server" uniquely',
+      'Utoopack server stats do not identify server BuildPlan entrypoint "server" exactly',
     );
   });
 
-  it("uses the only server stats entrypoint when its name differs", async () => {
+  it("rejects a sole server stats entrypoint with a different name", async () => {
     const cwd = await makeProject();
     await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
@@ -173,12 +171,11 @@ describe("UtoopackManifestGenerator", () => {
       pages: [],
     });
 
-    const output = await new UtoopackManifestGenerator(
-      cwd,
-      createPlan(graph),
-    ).build();
-
-    expect(output.serverEntry).toBe("runtime.js");
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow(
+      'Utoopack server stats do not identify server BuildPlan entrypoint "server" exactly; found entrypoints "runtime"',
+    );
   });
 
   it("rejects a server entrypoint without a JavaScript asset", async () => {
@@ -201,7 +198,7 @@ describe("UtoopackManifestGenerator", () => {
     await expect(
       new UtoopackManifestGenerator(cwd, plan).build(),
     ).rejects.toThrow(
-      'Utoopack server entrypoint "server" must emit exactly one self-contained JavaScript entry asset',
+      'Utoopack server stats entrypoint "server" must emit exactly one self-contained JavaScript asset',
     );
   });
 
@@ -226,8 +223,77 @@ describe("UtoopackManifestGenerator", () => {
     await expect(
       new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
     ).rejects.toThrow(
-      'Utoopack server entrypoint "server" must emit exactly one self-contained JavaScript entry asset; found 2',
+      'Utoopack server stats entrypoint "server" must emit exactly one self-contained JavaScript asset; found 2',
     );
+  });
+
+  it("requires a complete server asset inventory", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          server: { assets: [{ name: "server.js" }] },
+        },
+      }),
+    );
+    const graph = createGraph({ cwd, routingMode: "spa", pages: [] });
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow(
+      "Utoopack server stats must provide a complete emitted asset inventory",
+    );
+  });
+
+  it("loads exact build-only SSG server entry facts without a runtime entry", async () => {
+    const cwd = await makeProject();
+    await fs.promises.rm(path.join(cwd, "dist/client/stats.json"));
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        assets: [{ name: "report-server.js" }],
+        entrypoints: {
+          "report-server": { assets: [{ name: "report-server.js" }] },
+        },
+      }),
+    );
+    const graph = createGraph({ cwd, routingMode: "mpa", pages: [] });
+    const basePlan = createPlan(graph);
+    const renderer = {
+      name: "report-server",
+      import: "./src/pages/report/page.tsx",
+      environment: "server" as const,
+      runtime: "node" as const,
+      phase: "build" as const,
+      kind: "page-server" as const,
+      owner: { pageId: "report" },
+    };
+    const plan: BuildPlan = {
+      ...basePlan,
+      entries: [renderer],
+      server: {
+        renderers: [
+          {
+            name: renderer.name,
+            import: renderer.import,
+            phase: renderer.phase,
+            kind: renderer.kind,
+            owner: renderer.owner,
+          },
+        ],
+      },
+    };
+
+    const facts = await new UtoopackManifestGenerator(cwd, plan).build();
+
+    expect(facts.serverEntryAssets).toEqual({
+      "report-server": { js: ["report-server.js"], css: [] },
+    });
+    expect(facts.emittedFiles?.server).toEqual([
+      "report-server.js",
+      "stats.json",
+    ]);
   });
 
   it("rejects non-portable emitted asset inventory paths", async () => {
@@ -312,24 +378,10 @@ describe("UtoopackManifestGenerator", () => {
     await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
-        assets: [
-          { name: "./server.js" },
-          { name: "server.css" },
-          { name: "chunks/server-lazy.js" },
-        ],
+        assets: [{ name: "./server.js" }, { name: "server.css" }],
         entrypoints: {
           server: { assets: [{ name: "server.js" }, { name: "server.css" }] },
         },
-        modules: [
-          {
-            name: "app/src/actions.ts",
-            chunks: ["server.js"],
-          },
-          {
-            name: "app/src/routes.ts",
-            chunks: ["server.js"],
-          },
-        ],
       }),
     );
 
@@ -379,12 +431,7 @@ describe("UtoopackManifestGenerator", () => {
         "assets/logo.svg",
         "stats.json",
       ],
-      server: [
-        "server.js",
-        "server.css",
-        "chunks/server-lazy.js",
-        "stats.json",
-      ],
+      server: ["server.js", "server.css", "stats.json"],
     });
     expect(manifest.apps.default.assets).toEqual({
       js: ["main.js"],
@@ -409,7 +456,7 @@ describe("UtoopackManifestGenerator", () => {
     });
     expect(manifest.server?.functions).toEqual({
       "function-id": {
-        assets: { js: ["server.js"], css: [] },
+        assets: { js: ["server.js"], css: ["server.css"] },
         exportName: "save",
       },
     });
@@ -417,9 +464,23 @@ describe("UtoopackManifestGenerator", () => {
       {
         path: "/api/health",
         methods: ["GET"],
-        assets: { js: ["server.js"], css: [] },
+        assets: { js: ["server.js"], css: ["server.css"] },
       },
     ]);
+    expect(output).not.toHaveProperty("serverModules");
+
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        assets: [{ name: "server.js" }, { name: "chunks/server-lazy.js" }],
+        entrypoints: {
+          server: { assets: [{ name: "server.js" }] },
+        },
+      }),
+    );
+    await expect(generator.build()).rejects.toThrow(
+      'Utoopack server stats emitted unowned JavaScript asset "chunks/server-lazy.js"',
+    );
   });
 
   it("reads stats from the build plan distDir", async () => {
@@ -441,6 +502,7 @@ describe("UtoopackManifestGenerator", () => {
     await fs.promises.writeFile(
       path.join(cwd, "custom-dist/server/stats.json"),
       JSON.stringify({
+        assets: ["./server.js"],
         entrypoints: {
           server: { assets: ["./server.js"] },
         },
@@ -470,9 +532,34 @@ describe("UtoopackManifestGenerator", () => {
       js: ["main.js"],
       css: [],
     });
-    expect(output.serverEntry).toBe("server.js");
-    expect(output.emittedFiles).toBeUndefined();
+    expect(output.serverEntryAssets?.server).toEqual({
+      js: ["server.js"],
+      css: [],
+    });
+    expect(output.emittedFiles).toEqual({
+      server: ["server.js", "stats.json"],
+    });
     expect(manifest.paths.rootDir).toBe("custom-dist");
+  });
+
+  it("returns isolated entry-asset snapshots across collections", async () => {
+    const cwd = await makeProject();
+    const graph = createSpaClientGraph(cwd);
+    const generator = new UtoopackManifestGenerator(cwd, createPlan(graph));
+    const first = await generator.build();
+
+    first.clientEntryAssets?.main?.js.push("mutated-client.js");
+    first.serverEntryAssets?.server?.js.push("mutated-server.js");
+
+    const second = await generator.build();
+    expect(second.clientEntryAssets?.main).toEqual({
+      js: ["main.js"],
+      css: [],
+    });
+    expect(second.serverEntryAssets?.server).toEqual({
+      js: ["server.js"],
+      css: [],
+    });
   });
 
   it("links page assets for MPA output", async () => {
@@ -549,6 +636,11 @@ describe("UtoopackManifestGenerator", () => {
     await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
+        assets: [
+          { name: "server.js" },
+          { name: "campaign.shell.js" },
+          { name: "campaign.offer.js" },
+        ],
         entrypoints: {
           server: { assets: [{ name: "server.js" }] },
           "campaign-ppr-shell": {

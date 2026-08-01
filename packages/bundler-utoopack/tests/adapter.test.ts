@@ -157,6 +157,7 @@ const utoopackMock = vi.hoisted(() => ({
         await fs.promises.writeFile(
           path.join(serverOutDir, "stats.json"),
           JSON.stringify({
+            assets: [{ name: "server.js" }],
             entrypoints: {
               server: {
                 assets: [{ name: "server.js" }],
@@ -313,9 +314,6 @@ function createFrameworkCallbacks(options: {
         plan,
         clientEntryAssets: facts.clientEntryAssets,
         serverEntryAssets: facts.serverEntryAssets,
-        serverEntry: facts.serverEntry,
-        serverAssets: facts.serverAssets,
-        serverModules: facts.serverModules,
       });
       await options.onBuildOutput?.(output);
 

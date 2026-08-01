@@ -403,20 +403,18 @@ function assertSelfContainedServerEntrypoints(
   expectation: FrameworkWebpackOutputExpectation,
 ): void {
   if (expectation.configName === "client") return;
+  if (config.output?.asyncChunks !== false) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" output.asyncChunks must remain false because evjs server loaders import one self-contained entry asset.`,
+    );
+  }
   const optimization = config.optimization;
-  if (!optimization) return;
-  if (
-    optimization.runtimeChunk !== undefined &&
-    optimization.runtimeChunk !== false
-  ) {
+  if (!optimization || optimization.runtimeChunk !== false) {
     throw new Error(
       `[evjs] Webpack config "${expectation.configName}" optimization.runtimeChunk must remain false because evjs server loaders import one self-contained entry asset.`,
     );
   }
-  if (
-    optimization.splitChunks !== undefined &&
-    optimization.splitChunks !== false
-  ) {
+  if (optimization.splitChunks !== false) {
     throw new Error(
       `[evjs] Webpack config "${expectation.configName}" optimization.splitChunks must remain disabled because evjs server loaders import one self-contained entry asset.`,
     );
@@ -721,6 +719,7 @@ function createWebpackConfig(options: {
               type: "commonjs2",
             }
           : undefined,
+      asyncChunks: options.target === "node" ? false : undefined,
     },
     externals: createWebpackExternals(options),
     devtool: isProduction ? false : "source-map",
@@ -821,14 +820,13 @@ function createWebpackConfig(options: {
     ],
     stats: {
       assets: true,
-      chunks: true,
       entrypoints: true,
-      modules: true,
     },
     infrastructureLogging: isProduction ? undefined : { level: "warn" },
     optimization: {
       moduleIds: "deterministic",
       runtimeChunk: false,
+      splitChunks: options.target === "node" ? false : undefined,
     },
   };
 }

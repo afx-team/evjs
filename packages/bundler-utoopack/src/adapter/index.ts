@@ -92,7 +92,7 @@ async function waitForReadableDevStats(
     ...(plan.entries.some((entry) => entry.environment === "client")
       ? [path.join(outputPaths.clientDir, "stats.json")]
       : []),
-    ...(hasRuntimeServerEntry(plan)
+    ...(hasServerEntries(plan)
       ? [path.join(outputPaths.serverDir, "stats.json")]
       : []),
   ];
@@ -369,7 +369,7 @@ async function startUtoopackDev(
     // while facts are being collected, the monitor may conservatively emit a
     // duplicate cycle, but it cannot mistake an unseen newer version for the
     // version represented by the initial callback.
-    const initialServerStatsVersion = hasRuntimeServerEntry(plan)
+    const initialServerStatsVersion = hasServerEntries(plan)
       ? await readServerStatsVersion(serverStatsPath)
       : undefined;
     const initialFacts = await controller.waitForReadableStats(
@@ -394,6 +394,8 @@ async function startUtoopackDev(
     if (hasRuntimeServerEntry(plan)) {
       await callbacks.onServerBundleReady(generation);
       worker.throwIfFailed();
+    }
+    if (hasServerEntries(plan)) {
       controller.markServerStatsPublished(initialServerStatsVersion);
       const monitor = startUtoopackServerStatsMonitor({
         statsPath: serverStatsPath,
@@ -430,6 +432,10 @@ function hasRuntimeServerEntry(plan: BuildPlan): boolean {
     (entry) =>
       entry.environment === "server" && entry.kind === "server-runtime",
   );
+}
+
+function hasServerEntries(plan: BuildPlan): boolean {
+  return plan.entries.some((entry) => entry.environment === "server");
 }
 
 function formatDevServerOrigin(
@@ -646,7 +652,11 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
       { isRebuild: true },
       facts,
     );
-    if (disposition === "published" && !this.closed) {
+    if (
+      disposition === "published" &&
+      hasRuntimeServerEntry(plan) &&
+      !this.closed
+    ) {
       await this.options.onServerBundleReady(generation);
     }
     return disposition;
@@ -709,7 +719,7 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     // A later stats version must never be acknowledged for an earlier facts
     // snapshot. Reading the version first is deliberately conservative: a
     // concurrent rebuild may cause one duplicate cycle, but cannot be lost.
-    const serverStatsVersion = hasRuntimeServerEntry(plan)
+    const serverStatsVersion = hasServerEntries(plan)
       ? await readServerStatsVersion(
           path.join(
             resolveBuildOutputPaths(this.options.cwd, plan).serverDir,
@@ -762,6 +772,8 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
       }
       if (hasRuntimeServerEntry(plan) && !this.closed) {
         await this.options.onServerBundleReady(generation);
+      }
+      if (hasServerEntries(plan) && !this.closed) {
         this.publishedServerStatsVersion = serverStatsVersion;
         this.serverStatsMonitor?.advance(serverStatsVersion);
       }

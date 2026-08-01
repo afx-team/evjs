@@ -2505,7 +2505,6 @@ export {
 export {
   assertBuildOutputLinkInputClientAssets,
   type BuildOutputLinkInput,
-  type BuildOutputServerModule,
   createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,

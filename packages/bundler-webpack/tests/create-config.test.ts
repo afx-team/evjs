@@ -32,6 +32,10 @@ describe("createWebpackConfigs", () => {
     expect(configs[0]?.output?.publicPath).toBe("auto");
     expect(configs[0]?.output?.crossOriginLoading).toBe("anonymous");
     expect(configs[0]?.infrastructureLogging).toEqual({ level: "warn" });
+    expect(configs[0]?.stats).toEqual({
+      assets: true,
+      entrypoints: true,
+    });
     expect(configs[0]?.resolve?.alias).toMatchObject({
       "@": path.resolve(process.cwd(), "src"),
     });

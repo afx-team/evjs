@@ -21,7 +21,10 @@ import {
 } from "./build-output-ownership.js";
 import { resolveBuildOutputPaths } from "./build-output-paths.js";
 import { createBuildResult } from "./build-result.js";
-import type { BundlerBuildFacts } from "./bundler.js";
+import {
+  assertBundlerBuildFactsContract,
+  type BundlerBuildFacts,
+} from "./bundler.js";
 import { assertFrameworkHtmlOutputsAvailable } from "./bundler-output-files.js";
 import { assertBuildEndDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 import { createFrameworkHtmlDocument } from "./framework-html-document.js";
@@ -817,6 +820,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   output: BuildOutput;
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
 }> {
+  assertBundlerBuildFactsContract(options.bundlerFacts);
   await assertSafeBuildOutputPaths(
     options.cwd,
     resolveBuildOutputPaths(options.cwd, options.plan),
@@ -831,9 +835,6 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
       plan: options.plan,
       clientEntryAssets: options.bundlerFacts.clientEntryAssets,
       serverEntryAssets: options.bundlerFacts.serverEntryAssets,
-      serverEntry: options.bundlerFacts.serverEntry,
-      serverAssets: options.bundlerFacts.serverAssets,
-      serverModules: options.bundlerFacts.serverModules,
     }),
   );
 

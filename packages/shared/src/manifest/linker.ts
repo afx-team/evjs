@@ -39,7 +39,6 @@ import { clonePageMetadata } from "./page-metadata.js";
 import {
   assertBuildOutputServerArtifacts,
   assertServerArtifactGroups,
-  assertServerRelativeArtifactPath,
   type ServerArtifactGroupReference,
 } from "./server-artifacts.js";
 
@@ -51,20 +50,19 @@ declare const URL: {
   ): { protocol: string };
 };
 
-export interface BuildOutputServerModule {
-  moduleId: string;
-  assets: AssetGroup;
-}
-
 export interface BuildOutputLinkInput {
   graph: CoreGraph;
   plan: BuildPlan;
   clientEntryAssets?: Record<string, AssetGroup>;
+  /** Assets keyed by the exact server BuildPlan entry name. */
   serverEntryAssets?: Record<string, AssetGroup>;
-  serverEntry?: string;
-  serverAssets?: AssetGroup;
-  serverModules?: BuildOutputServerModule[];
 }
+
+const REMOVED_SERVER_LINK_INPUT_FIELDS = [
+  "serverEntry",
+  "serverAssets",
+  "serverModules",
+] as const;
 
 export interface ServerManifestOutput {
   version: 1;
@@ -87,10 +85,9 @@ export type ServerManifestRouteOutput =
  * from emitted filenames or module stats.
  */
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
+  assertBuildOutputLinkInputContract(input);
   assertBuildOutputLinkInputServerArtifacts(input);
   const serverEntryAssets = input.serverEntryAssets ?? {};
-  const fallbackServerAssets = input.serverAssets ?? EMPTY_ASSETS;
-  const serverModules = input.serverModules ?? [];
   const resolvedClientEntryAssets = resolveClientEntryAssets(
     input.plan,
     input.clientEntryAssets,
@@ -99,17 +96,12 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const clientAssetsForEntry = (entry: BuildEntry) =>
     cloneAssetGroup(resolvedClientEntryAssets.get(entry.name) ?? EMPTY_ASSETS);
   const serverAssetsForEntry = (entry: BuildEntry) => {
-    const assets =
-      serverEntryAssets[entry.name] ??
-      (entry.kind === "server-runtime" && input.serverAssets
-        ? input.serverAssets
-        : undefined);
+    const assets = serverEntryAssets[entry.name];
     if (!assets) {
       throw new Error(
         `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
       );
     }
-    assertExecutableServerEntryAssets(entry, assets);
     return cloneAssetGroup(assets);
   };
   const serverRuntimeEntry = input.plan.entries.find(
@@ -119,13 +111,9 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const htmlDocuments = createHtmlDocumentLookup(input.plan.html);
   const serverRuntimeAssets = serverRuntimeEntry
     ? serverAssetsForEntry(serverRuntimeEntry)
-    : fallbackServerAssets;
+    : cloneAssetGroup(EMPTY_ASSETS);
   const serverEntry = serverRuntimeEntry
-    ? assertServerRuntimeEntry(
-        input.serverEntry ?? serverRuntimeAssets.js[0],
-        serverRuntimeAssets,
-        serverRuntimeEntry,
-      )
+    ? serverRuntimeAssets.js[0]
     : undefined;
   const serverAssets = serverRuntimeEntry
     ? serverRuntimeAssets
@@ -159,12 +147,9 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     return entry ? serverAssetsForEntry(entry).css : [];
   };
 
-  const assetsForSource = (sourceRel: string) =>
-    cloneAssetGroup(
-      serverModules.find((mod) =>
-        moduleIdMatchesSource(mod.moduleId, sourceRel),
-      )?.assets ?? serverAssets,
-    );
+  function cloneServerCapabilityAssets(): AssetGroup {
+    return cloneAssetGroup(serverAssets);
+  }
 
   const entryAssets: Record<string, AssetGroup> = {};
   for (const entry of input.plan.entries) {
@@ -321,7 +306,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const serverFunctions: Record<string, ServerFunctionOutput> = {};
   for (const fn of input.graph.serverFunctions) {
     serverFunctions[fn.id] = {
-      assets: assetsForSource(fn.module),
+      assets: cloneServerCapabilityAssets(),
       exportName: fn.exportName,
     };
   }
@@ -330,7 +315,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     (route) => ({
       path: route.path,
       methods: route.methods,
-      assets: assetsForSource(route.module),
+      assets: cloneServerCapabilityAssets(),
     }),
   );
   const rsc = linkRscOutput(input, serverAssetsForEntry);
@@ -607,65 +592,47 @@ function isNamedEntryAsset(entryName: string, asset: string): boolean {
   return fileName === `${entryName}.js` || fileName.startsWith(`${entryName}.`);
 }
 
-function assertServerRuntimeEntry(
-  serverEntry: string | undefined,
-  assets: AssetGroup,
-  runtimeEntry: BuildEntry | undefined,
-): string {
-  if (!runtimeEntry) {
-    throw new Error(
-      "[evjs] Server build did not declare a server runtime entry.",
-    );
-  }
-  if (serverEntry && assets.js.includes(serverEntry)) return serverEntry;
-  if (serverEntry && assets.js.length > 0) {
-    throw new Error(
-      `[evjs] Server runtime entry "${serverEntry}" must exactly match one JavaScript artifact emitted for build entry "${runtimeEntry.name}".`,
-    );
-  }
-  throw new Error(
-    `[evjs] Server runtime entry "${runtimeEntry.name}" did not produce a server JavaScript asset.`,
-  );
-}
-
 function assertBuildOutputLinkInputServerArtifacts(
   input: BuildOutputLinkInput,
 ): void {
+  const plannedServerEntries = new Map(
+    input.plan.entries
+      .filter((entry) => entry.environment === "server")
+      .map((entry) => [entry.name, entry] as const),
+  );
   const runtimeGroups: ServerArtifactGroupReference[] = [];
   const buildGroups: ServerArtifactGroupReference[] = [];
-  for (const [entryName, assets] of Object.entries(
-    input.serverEntryAssets ?? {},
-  )) {
-    const entry = input.plan.entries.find(
-      (candidate) =>
-        candidate.environment === "server" && candidate.name === entryName,
-    );
-    const groups = entry?.phase === "build" ? buildGroups : runtimeGroups;
+  const serverEntryAssets = input.serverEntryAssets ?? {};
+  for (const entryName of Object.keys(serverEntryAssets)) {
+    if (!plannedServerEntries.has(entryName)) {
+      throw new Error(
+        `[evjs] BuildOutput link input.serverEntryAssets.${entryName} does not match an exact server BuildPlan entry name.`,
+      );
+    }
+  }
+  for (const entry of plannedServerEntries.values()) {
+    const assets = serverEntryAssets[entry.name];
+    if (!assets) {
+      throw new Error(
+        `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
+      );
+    }
+    assertExecutableServerEntryAssets(entry, assets);
+    const groups = entry.phase === "build" ? buildGroups : runtimeGroups;
     groups.push({
       assets,
-      source: `BuildOutput link input.serverEntryAssets.${entryName}`,
+      source: `BuildOutput link input.serverEntryAssets.${entry.name}`,
     });
   }
-  if (input.serverAssets) {
-    runtimeGroups.push({
-      assets: input.serverAssets,
-      source: "BuildOutput link input.serverAssets",
-    });
-  }
-  input.serverModules?.forEach((serverModule, index) => {
-    assertServerArtifactGroups([
-      {
-        assets: serverModule.assets,
-        source: `BuildOutput link input.serverModules[${index}].assets`,
-      },
-    ]);
-  });
   assertServerArtifactGroups(runtimeGroups);
   assertServerArtifactGroups(buildGroups);
-  if (input.serverEntry !== undefined) {
-    assertServerRelativeArtifactPath(
-      input.serverEntry,
-      "BuildOutput link input.serverEntry",
+}
+
+function assertBuildOutputLinkInputContract(input: BuildOutputLinkInput): void {
+  for (const field of REMOVED_SERVER_LINK_INPUT_FIELDS) {
+    if (!Object.hasOwn(input, field)) continue;
+    throw new Error(
+      `[evjs] BuildOutput link input.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
     );
   }
 }
@@ -1359,8 +1326,4 @@ function isFullPrerenderPage(
 
 function toRuntimePathname(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-}
-
-function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {
-  return moduleId === sourceRel || moduleId.endsWith(`/${sourceRel}`);
 }

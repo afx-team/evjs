@@ -8,15 +8,13 @@ import {
   portableArtifactPathsConflict,
   resolveBuildOutputPaths,
   resolveBundlerClientEntryAssets,
+  resolveBundlerServerEntryAssets,
 } from "@evjs/ev/_internal/build";
-import type {
-  AssetGroup,
-  BuildOutputServerModule,
-  BuildPlan,
+import type { AssetGroup, BuildPlan } from "@evjs/shared/manifest";
+import {
+  assertBuildOutputLinkInputClientAssets,
+  assertServerRelativeArtifactPath,
 } from "@evjs/shared/manifest";
-import { assertBuildOutputLinkInputClientAssets } from "@evjs/shared/manifest";
-
-const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
 
 export interface WebpackStatsAsset {
   name?: string;
@@ -26,34 +24,16 @@ export interface WebpackStatsEntrypoint {
   assets?: Array<string | WebpackStatsAsset>;
 }
 
-export interface WebpackStatsModule {
-  name?: string;
-  identifier?: string;
-  id?: string | number;
-  chunks?: Array<string | number>;
-}
-
-export interface WebpackStatsChunk {
-  id?: string | number;
-  names?: string[];
-  files?: string[];
-}
-
 export interface WebpackStatsLike {
   assets?: Array<string | WebpackStatsAsset>;
   /** Assets emitted only by the isolated build-phase server compiler. */
   buildOnlyAssets?: Array<string | WebpackStatsAsset>;
   entrypoints?: Record<string, WebpackStatsEntrypoint>;
-  chunks?: WebpackStatsChunk[];
-  modules?: WebpackStatsModule[];
 }
 
 export class WebpackManifestGenerator {
   private clientEntryAssets: Record<string, AssetGroup> = {};
   private serverEntryAssets: Record<string, AssetGroup> = {};
-  private serverEntry: string | undefined;
-  private serverAssets: AssetGroup = EMPTY_ASSETS;
-  private serverModules: BuildOutputServerModule[] = [];
 
   constructor(
     private cwd: string,
@@ -73,28 +53,20 @@ export class WebpackManifestGenerator {
       clientEntrypoints,
       "Webpack client stats",
     );
+    assertBuildOutputLinkInputClientAssets({
+      plan: this.plan,
+      clientEntryAssets: this.clientEntryAssets,
+    });
 
-    const serverEntrypoints = readEntrypointAssets(this.serverStats);
-    this.serverEntryAssets = serverEntrypoints;
-    const serverRuntimeEntry = this.plan.entries.find(
-      (entry) =>
-        entry.environment === "server" && entry.kind === "server-runtime",
+    this.serverEntryAssets = resolveBundlerServerEntryAssets(
+      this.plan,
+      readEntrypointAssets(this.serverStats),
+      "Webpack server stats",
     );
-    if (serverRuntimeEntry) {
-      const selectedEntrypoint = selectServerEntrypoint(
-        serverEntrypoints,
-        serverRuntimeEntry.name,
-      );
-      this.serverAssets = selectedEntrypoint.assets;
-      this.serverEntry = selectServerJavaScriptAsset(
-        selectedEntrypoint.name,
-        serverRuntimeEntry.name,
-        selectedEntrypoint.assets,
-      );
-    }
-    this.serverModules = collectServerModules(
+    assertSelfContainedWebpackServerEntries(
+      this.plan,
+      this.serverEntryAssets,
       this.serverStats,
-      this.serverAssets,
     );
     const hasPhysicalServerOutput = this.plan.entries.some(
       (entry) => entry.environment === "server" && entry.phase !== "build",
@@ -123,18 +95,11 @@ export class WebpackManifestGenerator {
 
     const facts: BundlerBuildFacts = {
       ...(Object.keys(emittedFiles).length > 0 ? { emittedFiles } : {}),
-      clientEntryAssets: this.clientEntryAssets,
-      serverEntryAssets: this.serverEntryAssets,
-      serverEntry: this.serverEntry,
-      serverAssets: this.serverAssets,
-      serverModules: this.serverModules,
+      clientEntryAssets: cloneEntryAssets(this.clientEntryAssets),
+      serverEntryAssets: cloneEntryAssets(this.serverEntryAssets),
       rscManifests: readRscManifests(outputPaths.clientDir),
     };
     assertBundlerEmittedFiles(facts.emittedFiles);
-    assertBuildOutputLinkInputClientAssets({
-      plan: this.plan,
-      clientEntryAssets: facts.clientEntryAssets,
-    });
     return facts;
   }
 }
@@ -260,84 +225,6 @@ function readEntrypointAssets(
   return byName;
 }
 
-function selectServerEntrypoint(
-  byName: Record<string, AssetGroup>,
-  expectedName: string,
-): { name: string; assets: AssetGroup } {
-  const exact = byName[expectedName];
-  if (exact) return { name: expectedName, assets: exact };
-
-  const entries = Object.entries(byName);
-  if (entries.length === 1) {
-    const entry = entries[0];
-    if (entry) return { name: entry[0], assets: entry[1] };
-  }
-  throw new Error(
-    `[evjs] Webpack server stats do not identify BuildPlan entrypoint "${expectedName}" uniquely; found entrypoints ${entries.length > 0 ? entries.map(([name]) => JSON.stringify(name)).join(", ") : "<none>"}.`,
-  );
-}
-
-function selectServerJavaScriptAsset(
-  statsEntryName: string,
-  _expectedName: string,
-  assets: AssetGroup,
-): string {
-  if (assets.js.length === 1) return assets.js[0] as string;
-  throw new Error(
-    `[evjs] Webpack server entrypoint "${statsEntryName}" must emit exactly one self-contained JavaScript entry asset; found ${assets.js.length}.`,
-  );
-}
-
-function collectServerModules(
-  stats: WebpackStatsLike | undefined,
-  fallbackAssets: AssetGroup,
-): BuildOutputServerModule[] {
-  const chunkFiles = new Map<string | number, string[]>();
-  for (const chunk of stats?.chunks ?? []) {
-    if (chunk.id !== undefined) chunkFiles.set(chunk.id, chunk.files ?? []);
-    for (const name of chunk.names ?? []) {
-      chunkFiles.set(name, chunk.files ?? []);
-    }
-  }
-
-  const result: BuildOutputServerModule[] = [];
-  for (const mod of stats?.modules ?? []) {
-    const moduleId =
-      normalizeModuleId(mod.identifier) ??
-      normalizeModuleId(mod.name) ??
-      normalizeModuleId(mod.id);
-    if (!moduleId) continue;
-
-    result.push({
-      moduleId,
-      assets: assetsFromChunks(mod.chunks, chunkFiles, fallbackAssets),
-    });
-  }
-  return result;
-}
-
-function assetsFromChunks(
-  chunks: Array<string | number> | undefined,
-  chunkFiles: Map<string | number, string[]>,
-  fallback: AssetGroup,
-): AssetGroup {
-  const assets = emptyAssets();
-  for (const chunk of chunks ?? []) {
-    for (const file of chunkFiles.get(chunk) ?? []) {
-      const name = normalizeAssetName(file);
-      if (name && isJavaScriptAsset(name)) {
-        assets.js.push(name);
-      } else if (name?.endsWith(".css")) {
-        assets.css.push(name);
-      }
-    }
-  }
-
-  const deduped = dedupeAssets(assets);
-  if (deduped.js.length > 0 || deduped.css.length > 0) return deduped;
-  return fallback;
-}
-
 function emptyAssets(): AssetGroup {
   return { js: [], css: [] };
 }
@@ -349,22 +236,84 @@ function dedupeAssets(assets: AssetGroup): AssetGroup {
   };
 }
 
+function cloneEntryAssets(
+  entries: Record<string, AssetGroup>,
+): Record<string, AssetGroup> {
+  return Object.fromEntries(
+    Object.entries(entries).map(([name, assets]) => [
+      name,
+      { js: [...assets.js], css: [...assets.css] },
+    ]),
+  );
+}
+
+function assertSelfContainedWebpackServerEntries(
+  plan: BuildPlan,
+  entryAssets: Record<string, AssetGroup>,
+  stats: WebpackStatsLike | undefined,
+): void {
+  const runtimeEntries = plan.entries.filter(
+    (entry) => entry.environment === "server" && entry.phase !== "build",
+  );
+  const buildEntries = plan.entries.filter(
+    (entry) => entry.environment === "server" && entry.phase === "build",
+  );
+  assertExactServerJavaScriptInventory(
+    "Webpack runtime server stats",
+    stats?.assets,
+    runtimeEntries.flatMap((entry) => entryAssets[entry.name]?.js ?? []),
+  );
+  assertExactServerJavaScriptInventory(
+    "Webpack build-only server stats",
+    stats?.buildOnlyAssets,
+    buildEntries.flatMap((entry) => entryAssets[entry.name]?.js ?? []),
+  );
+}
+
+function assertExactServerJavaScriptInventory(
+  source: string,
+  assets: Array<string | WebpackStatsAsset> | undefined,
+  ownedJavaScript: readonly string[],
+): void {
+  if (assets === undefined) {
+    if (ownedJavaScript.length === 0) return;
+    throw new Error(
+      `[evjs] ${source} must provide a complete emitted asset inventory for ${ownedJavaScript.length} server entry asset(s).`,
+    );
+  }
+  const emittedJavaScript = new Set<string>();
+  for (const asset of assets) {
+    const rawName = typeof asset === "string" ? asset : asset.name;
+    const name = normalizeAssetName(rawName);
+    if (!name || !isJavaScriptAsset(name)) continue;
+    emittedJavaScript.add(
+      assertServerRelativeArtifactPath(
+        name,
+        `${source} JavaScript asset ${JSON.stringify(rawName)}`,
+      ),
+    );
+  }
+  const owned = new Set(ownedJavaScript);
+  for (const asset of owned) {
+    if (emittedJavaScript.has(asset)) continue;
+    throw new Error(
+      `[evjs] ${source} are missing exact server entry JavaScript asset "${asset}" from the complete emitted inventory.`,
+    );
+  }
+  for (const asset of emittedJavaScript) {
+    if (owned.has(asset)) continue;
+    throw new Error(
+      `[evjs] ${source} emitted unowned JavaScript asset "${asset}". Every server entry must be self-contained in its exact entry asset.`,
+    );
+  }
+}
+
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
 }
 
 function isJavaScriptAsset(name: string): boolean {
   return /\.(?:cjs|mjs|js)$/.test(name);
-}
-
-function normalizeModuleId(
-  value: string | number | undefined,
-): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return value
-    .replace(/^webpack:\/\/[^/]+\//, "")
-    .replace(/^\.\//, "")
-    .replace(/\?.+$/, "");
 }
 
 function readRscManifests(clientDir: string):

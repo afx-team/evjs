@@ -64,11 +64,6 @@ describe("programmatic API", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
-          },
-          serverEntry: "server.js",
-          serverAssets: { js: ["server.js"], css: [] },
         };
       },
       async dev() {
@@ -109,11 +104,6 @@ describe("programmatic API", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
-          },
-          serverEntry: "server.js",
-          serverAssets: { js: ["server.js"], css: [] },
         };
       },
       async dev() {

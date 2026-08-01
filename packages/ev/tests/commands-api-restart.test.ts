@@ -235,8 +235,6 @@ function createServerFacts(plan: BuildPlan): BundlerBuildFacts {
         { js: [`${entry.name}.js`], css: [] },
       ]),
     ),
-    serverEntry: `${runtimeEntry.name}.js`,
-    serverAssets: { js: [`${runtimeEntry.name}.js`], css: [] },
   };
 }
 
@@ -248,9 +246,14 @@ async function emitServerBuild(
   ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>,
 ): Promise<void> {
   const facts = createServerFacts(plan);
-  if (!facts.serverEntry) throw new Error("Expected a server entry asset.");
+  const runtimeEntry = plan.entries.find(
+    (entry) => entry.kind === "server-runtime",
+  );
+  if (!runtimeEntry) throw new Error("Expected a server runtime entry.");
+  const serverEntry = facts.serverEntryAssets?.[runtimeEntry.name]?.js[0];
+  if (!serverEntry) throw new Error("Expected a server entry asset.");
   await writeFile(
-    path.resolve(cwd, plan.output.serverDir, facts.serverEntry),
+    path.resolve(cwd, plan.output.serverDir, serverEntry),
     "export default { fetch() { return new Response('ok'); } };",
   );
   await onBuildFacts(facts);

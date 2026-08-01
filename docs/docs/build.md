@@ -82,6 +82,13 @@ emitted assets, stats, and manifest paths. A plugin `bundlerConfig()` hook may
 change supported low-level bundler settings, but it cannot override a
 framework-owned client or server output path.
 
+Bundler server facts use `serverEntryAssets`, keyed by each exact server
+BuildPlan entry name. Every server entry must emit exactly one self-contained
+JavaScript asset. When a bundler reports a complete server asset inventory,
+that inventory must contain each declared entry asset and no additional
+unowned JavaScript chunks; Core never infers server ownership from module
+stats or filenames.
+
 Generated HTML embeds the `ClientRuntime` required by browser bootstrap.
 `deployment-metadata.json` is the canonical serialized deployment projection;
 the complete `BuildOutput` remains in memory. Application code must not import

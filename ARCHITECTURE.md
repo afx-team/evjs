@@ -137,6 +137,10 @@ output and are not application source. The plugin declaration stays under
 
 `BuildOutput` is the complete in-memory linked result. It is consumed by
 plugins and deployment composition but is not serialized wholesale.
+Request-time server Functions and API Routes inherit isolated snapshots of the
+single self-contained server runtime asset group. Separate renderer and
+build-phase entry assets remain keyed by exact `BuildPlan` entry names; the
+linker does not infer framework ownership from bundler module-stat paths.
 
 Core serializes the deployment projection to:
 

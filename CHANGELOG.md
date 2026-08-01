@@ -38,6 +38,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   installation remains authoritative across the complete lifecycle. Resolved
   plugin contexts receive one isolated, frozen framework-config view.
 
+- **Canonical server entry assets** — Redundant `serverEntry`, `serverAssets`,
+  and `serverModules` build facts are removed. Adapters must report every
+  server entry through `serverEntryAssets`, keyed by its exact BuildPlan name,
+  with one self-contained JavaScript asset per entry. Complete server asset
+  inventories reject missing entry assets and unowned JavaScript chunks.
+  Server Functions and API Routes receive isolated snapshots of the canonical
+  server runtime assets.
+
 ### ✨ Improvements
 
 - **Stable Page plugin types** — `prepare`, `dev`, and `build` generate

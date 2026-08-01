@@ -448,29 +448,13 @@ function createMockBundler(
 
 function serverBuildFacts(
   plan: BuildPlan,
-): Pick<
-  BundlerBuildFacts,
-  "serverEntryAssets" | "serverEntry" | "serverAssets"
-> {
+): Pick<BundlerBuildFacts, "serverEntryAssets"> {
   const serverEntryAssets = Object.fromEntries(
     plan.entries
       .filter((entry) => entry.environment === "server")
       .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
   );
-  const serverRuntimeEntry = plan.entries.find(
-    (entry) => entry.kind === "server-runtime",
-  );
-  if (!serverRuntimeEntry) {
-    return Object.keys(serverEntryAssets).length > 0
-      ? { serverEntryAssets }
-      : {};
-  }
-
-  return {
-    serverEntryAssets,
-    serverEntry: `${serverRuntimeEntry.name}.js`,
-    serverAssets: { js: [`${serverRuntimeEntry.name}.js`], css: [] },
-  };
+  return Object.keys(serverEntryAssets).length > 0 ? { serverEntryAssets } : {};
 }
 
 function createRouteUpdateBundler(
@@ -3525,16 +3509,9 @@ describe("build", () => {
               { js: [`${entry.name}.js`], css: [] },
             ]),
         );
-        const serverRuntime = plan.entries.find(
-          (entry) => entry.kind === "server-runtime",
-        );
         return {
           clientEntryAssets,
           serverEntryAssets,
-          serverEntry: serverRuntime ? `${serverRuntime.name}.js` : undefined,
-          serverAssets: serverRuntime
-            ? { js: [`${serverRuntime.name}.js`], css: [] }
-            : undefined,
         };
       },
       async dev() {},
@@ -3992,18 +3969,11 @@ describe("build", () => {
               },
             ]),
         );
-        const serverRuntime = plan.entries.find(
-          (entry) => entry.kind === "server-runtime",
-        );
         return {
           clientEntryAssets: {
             [clientEntryName]: clientAssets,
           },
           serverEntryAssets: serverEntries,
-          serverEntry: serverRuntime ? `${serverRuntime.name}.js` : undefined,
-          serverAssets: serverRuntime
-            ? { js: [`${serverRuntime.name}.js`], css: [] }
-            : undefined,
         };
       },
       async dev() {},
@@ -5128,8 +5098,6 @@ describe("build", () => {
               css: [],
             },
           },
-          serverEntry: serverFacts.serverEntry,
-          serverAssets: serverFacts.serverAssets,
         };
       },
       async dev() {},
@@ -5241,7 +5209,6 @@ describe("build", () => {
               css: [],
             },
           },
-          serverAssets: { js: [], css: [] },
           async loadServerModule(asset) {
             if (asset !== `${reportServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);
@@ -10149,7 +10116,6 @@ describe("dev", () => {
               css: [],
             },
           },
-          serverAssets: { js: [], css: [] },
           async loadServerModule(asset) {
             if (asset !== `${reportServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);

@@ -1731,10 +1731,9 @@ function readWebpackStatsJson(
   return stats.toJson({
     all: false,
     assets: true,
-    chunks: true,
+    cachedAssets: true,
     entrypoints: true,
     errors: true,
-    modules: true,
     warnings: true,
   }) as WebpackMultiStatsJson | WebpackStatsJson;
 }
@@ -1947,81 +1946,44 @@ function mergeWebpackStats(
   right: WebpackStatsLike,
   childName?: string,
 ): WebpackStatsLike {
-  const namespacedRight = namespaceWebpackStats(right, childName);
-  if (!left) return namespacedRight;
-
-  const modules = [...(left.modules ?? [])];
-  const seenModules = new Set(modules.map(moduleIdentity).filter(Boolean));
-  for (const mod of namespacedRight.modules ?? []) {
-    const identity = moduleIdentity(mod);
-    if (identity && seenModules.has(identity)) continue;
-    if (identity) seenModules.add(identity);
-    modules.push(mod);
-  }
+  const normalizedRight = normalizeWebpackStats(right, childName);
+  if (!left) return normalizedRight;
 
   return {
-    ...(left.assets || namespacedRight.assets
+    ...(left.assets || normalizedRight.assets
       ? {
-          assets: [...(left.assets ?? []), ...(namespacedRight.assets ?? [])],
+          assets: [...(left.assets ?? []), ...(normalizedRight.assets ?? [])],
         }
       : {}),
     entrypoints: {
       ...(left.entrypoints ?? {}),
-      ...(namespacedRight.entrypoints ?? {}),
+      ...(normalizedRight.entrypoints ?? {}),
     },
-    ...(left.buildOnlyAssets || namespacedRight.buildOnlyAssets
+    ...(left.buildOnlyAssets || normalizedRight.buildOnlyAssets
       ? {
           buildOnlyAssets: [
             ...(left.buildOnlyAssets ?? []),
-            ...(namespacedRight.buildOnlyAssets ?? []),
+            ...(normalizedRight.buildOnlyAssets ?? []),
           ],
         }
       : {}),
-    chunks: [...(left.chunks ?? []), ...(namespacedRight.chunks ?? [])],
-    modules,
   };
 }
 
-function namespaceWebpackStats(
+function normalizeWebpackStats(
   stats: WebpackStatsLike,
   childName?: string,
 ): WebpackStatsLike {
-  if (
-    childName !== BUILD_ONLY_SERVER_CONFIG_NAME &&
-    childName !== "server-rsc"
-  ) {
-    return stats;
-  }
-  const prefixChunk = (value: string | number) => `${childName}:${value}`;
+  if (childName !== BUILD_ONLY_SERVER_CONFIG_NAME) return stats;
 
   return {
     ...stats,
-    ...(childName === BUILD_ONLY_SERVER_CONFIG_NAME
-      ? {
-          assets: undefined,
-          buildOnlyAssets: [
-            ...(stats.buildOnlyAssets ?? []),
-            ...(stats.assets ?? []),
-          ],
-        }
-      : {}),
-    chunks: stats.chunks?.map((chunk) => ({
-      ...chunk,
-      id: chunk.id === undefined ? undefined : prefixChunk(chunk.id),
-      names: chunk.names?.map(prefixChunk),
-    })),
-    modules: stats.modules?.map((mod) => ({
-      ...mod,
-      chunks: mod.chunks?.map(prefixChunk),
-    })),
+    assets: undefined,
+    buildOnlyAssets: [
+      ...(stats.buildOnlyAssets ?? []),
+      ...(stats.assets ?? []),
+    ],
   };
-}
-
-function moduleIdentity(mod: NonNullable<WebpackStatsLike["modules"]>[number]) {
-  if (mod.identifier !== undefined) return `identifier:${mod.identifier}`;
-  if (mod.name !== undefined) return `name:${mod.name}`;
-  if (mod.id !== undefined) return `id:${mod.id}`;
-  return undefined;
 }
 
 export const __testing = {

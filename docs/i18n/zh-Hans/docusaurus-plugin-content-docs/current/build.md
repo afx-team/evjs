@@ -76,6 +76,11 @@ export default defineConfig({
 Plugin `bundlerConfig()` hook 可以修改受支持的底层 bundler setting，但不能覆盖
 framework 持有的 client 或 server 输出路径。
 
+Bundler server fact 使用 `serverEntryAssets`，并以每个 server BuildPlan entry 的
+精确名称为 key。每个 server entry 必须只发射一个自包含 JavaScript 产物。Bundler
+提供完整 server 产物清单时，清单必须包含每个已声明 entry 产物，且不能包含额外的
+无归属 JavaScript chunk；Core 不会再从 module stats 或文件名推断 server ownership。
+
 生成 HTML 包含浏览器 bootstrap 所需 `ClientRuntime`。
 `deployment-metadata.json` 是 canonical serialized deployment projection；
 完整 `BuildOutput` 只存在于内存中。应用代码不得 import 或编辑 deployment

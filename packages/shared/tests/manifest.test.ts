@@ -125,12 +125,14 @@ function createRuntimePlan(
   };
 }
 
-function createDefaultServerEntryAssets(): {
-  server: { js: string[]; css: string[] };
-} {
-  return {
-    server: { js: ["server.js"], css: [] },
-  };
+function createDefaultServerEntryAssets(
+  plan: TestBuildPlan,
+): Record<string, { js: string[]; css: string[] }> {
+  return Object.fromEntries(
+    plan.entries
+      .filter((entry) => entry.environment === "server")
+      .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+  );
 }
 
 type TestBuildPlan = Omit<BuildPlan, "dev"> & {
@@ -241,7 +243,7 @@ function linkBuildOutput(
   },
 ): ReturnType<typeof linkManifestBuildOutput> {
   return linkManifestBuildOutput({
-    serverEntryAssets: createDefaultServerEntryAssets(),
+    serverEntryAssets: createDefaultServerEntryAssets(input.plan),
     ...input,
     graph: createCoreGraphFixture(input.graph),
     plan: {
@@ -3837,49 +3839,24 @@ describe("linkBuildOutput", () => {
       '[evjs] Bundler build facts for server BuildPlan entry "server" (server-runtime) must declare exactly one self-contained JavaScript entry asset; found 0.',
     );
 
-    expect(() =>
-      linkBuildOutput({
+    for (const field of [
+      "serverEntry",
+      "serverAssets",
+      "serverModules",
+    ] as const) {
+      const legacyInput = {
         graph,
         plan,
-        serverEntry: "../../outside.js",
         serverEntryAssets: {
           server: { js: ["server.js"], css: [] },
         },
-      }),
-    ).toThrow(
-      "BuildOutput link input.serverEntry must be a non-empty portable server-relative artifact path",
-    );
+      } as Parameters<typeof linkBuildOutput>[0] & Record<string, unknown>;
+      legacyInput[field] = field === "serverEntry" ? "server.js" : {};
 
-    expect(() =>
-      linkBuildOutput({
-        graph,
-        plan,
-        serverEntry: "other.js",
-        serverEntryAssets: {
-          server: { js: ["server.js"], css: [] },
-        },
-      }),
-    ).toThrow(
-      '[evjs] Server runtime entry "other.js" must exactly match one JavaScript artifact emitted for build entry "server".',
-    );
-
-    expect(() =>
-      linkBuildOutput({
-        graph,
-        plan,
-        serverEntryAssets: {
-          server: { js: ["server.js"], css: [] },
-        },
-        serverModules: [
-          {
-            moduleId: "./src/api.ts",
-            assets: { js: ["../../outside.js"], css: [] },
-          },
-        ],
-      }),
-    ).toThrow(
-      "BuildOutput link input.serverModules[0].assets.js[0] must be a non-empty portable server-relative artifact path",
-    );
+      expect(() => linkBuildOutput(legacyInput)).toThrow(
+        `[evjs] BuildOutput link input.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
+      );
+    }
 
     const buildEntry: BuildPlan["entries"][number] = {
       name: "report-server",
@@ -3919,6 +3896,22 @@ describe("linkBuildOutput", () => {
       phase: "build",
       assets: { js: ["CHUNKS/runtime.js"], css: [] },
     });
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan: mixedRootPlan,
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+          "report-server": {
+            js: ["report-server.js", "report-server-extra.js"],
+            css: [],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] Bundler build facts for server BuildPlan entry "report-server" (page-server) must declare exactly one self-contained JavaScript entry asset; found 2.',
+    );
   });
 
   it("rejects every request-time capability when the plan omits its server runtime", () => {
@@ -4107,7 +4100,7 @@ describe("linkBuildOutput", () => {
     );
   });
 
-  it("isolates AssetGroups projected to distinct server owners", () => {
+  it("isolates canonical runtime assets projected to server capabilities", () => {
     const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
@@ -4142,7 +4135,13 @@ describe("linkBuildOutput", () => {
       runtime: createRuntimePlan(),
     };
 
-    const output = linkBuildOutput({ graph, plan });
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      serverEntryAssets: {
+        server: { js: ["server.js"], css: ["server.css"] },
+      },
+    });
     const functionAssets = output.server.functions.work?.assets;
     const routeAssets = output.server.routes[0]?.assets;
     if (!functionAssets || !routeAssets) {
@@ -4152,12 +4151,17 @@ describe("linkBuildOutput", () => {
     expect(functionAssets).not.toBe(output.server.assets);
     expect(routeAssets).not.toBe(output.server.assets);
     expect(routeAssets).not.toBe(functionAssets);
+    expect(functionAssets).toEqual(output.server.assets);
+    expect(routeAssets).toEqual(output.server.assets);
 
     functionAssets.css.push("work.css");
 
-    expect(functionAssets.css).toEqual(["work.css"]);
-    expect(routeAssets.css).toEqual([]);
-    expect(output.server.assets).toEqual({ js: ["server.js"], css: [] });
+    expect(functionAssets.css).toEqual(["server.css", "work.css"]);
+    expect(routeAssets.css).toEqual(["server.css"]);
+    expect(output.server.assets).toEqual({
+      js: ["server.js"],
+      css: ["server.css"],
+    });
     expect(output.server.entry).toBe("server.js");
     expect(() =>
       assertFrameworkManifestShape(output, "linked output"),
@@ -4584,7 +4588,7 @@ describe("linkBuildOutput", () => {
     );
   });
 
-  it("ignores server build facts when no server runtime entry is planned", () => {
+  it("rejects server facts without an exact planned server entry", () => {
     const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
@@ -4606,17 +4610,17 @@ describe("linkBuildOutput", () => {
       runtime: createRuntimePlan(),
     };
 
-    expect(
+    expect(() =>
       linkBuildOutput({
         graph,
         plan,
-        serverAssets: { js: ["server.js"], css: [] },
-      }).server,
-    ).toEqual({
-      assets: { js: [], css: [] },
-      functions: {},
-      routes: [],
-    });
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      "[evjs] BuildOutput link input.serverEntryAssets.server does not match an exact server BuildPlan entry name.",
+    );
   });
 });
 

@@ -272,9 +272,6 @@ async function emitFrameworkArtifacts(options: {
     plan: options.plan,
     clientEntryAssets: options.facts.clientEntryAssets,
     serverEntryAssets: options.facts.serverEntryAssets,
-    serverEntry: options.facts.serverEntry,
-    serverAssets: options.facts.serverAssets,
-    serverModules: options.facts.serverModules,
   });
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.facts.rscManifests,
@@ -576,50 +573,22 @@ describe("webpack stats ownership", () => {
     expect(requestRouteRule?.frameworkPageRender).toBeUndefined();
   });
 
-  it("namespaces server-rsc chunks and de-dupes modules while merging server stats", () => {
+  it("merges server entrypoint facts without module-stat ownership", () => {
     const serverStats: WebpackStatsLike = {
+      assets: ["server.cjs"],
       entrypoints: {
         server: {
           assets: ["server.cjs"],
         },
       },
-      chunks: [
-        {
-          id: 1,
-          names: ["server"],
-          files: ["server.cjs"],
-        },
-      ],
-      modules: [
-        {
-          identifier: "/project/src/shared.ts",
-          chunks: [1],
-        },
-      ],
     };
     const rscStats: WebpackStatsLike = {
+      assets: ["insights-rsc.cjs"],
       entrypoints: {
         "insights-rsc": {
           assets: ["insights-rsc.cjs"],
         },
       },
-      chunks: [
-        {
-          id: 1,
-          names: ["insights-rsc"],
-          files: ["insights-rsc.cjs"],
-        },
-      ],
-      modules: [
-        {
-          identifier: "/project/src/shared.ts",
-          chunks: [1],
-        },
-        {
-          identifier: "/project/src/Insights.tsx",
-          chunks: [1],
-        },
-      ],
     };
 
     const merged = webpackAdapterTesting.mergeWebpackStats(
@@ -628,28 +597,11 @@ describe("webpack stats ownership", () => {
       "server-rsc",
     );
 
-    expect(merged.chunks).toEqual([
-      {
-        id: 1,
-        names: ["server"],
-        files: ["server.cjs"],
-      },
-      {
-        id: "server-rsc:1",
-        names: ["server-rsc:insights-rsc"],
-        files: ["insights-rsc.cjs"],
-      },
-    ]);
-    expect(merged.modules).toEqual([
-      {
-        identifier: "/project/src/shared.ts",
-        chunks: [1],
-      },
-      {
-        identifier: "/project/src/Insights.tsx",
-        chunks: ["server-rsc:1"],
-      },
-    ]);
+    expect(merged.assets).toEqual(["server.cjs", "insights-rsc.cjs"]);
+    expect(merged.entrypoints).toEqual({
+      server: { assets: ["server.cjs"] },
+      "insights-rsc": { assets: ["insights-rsc.cjs"] },
+    });
   });
 
   it("reports complete portable asset inventories exposed by webpack stats", () => {
@@ -703,11 +655,7 @@ describe("webpack stats ownership", () => {
         entrypoints: { main: { assets: ["main.js"] } },
       },
       {
-        assets: [
-          { name: "./server.cjs" },
-          { name: "server.css" },
-          { name: "chunks/lazy.cjs" },
-        ],
+        assets: [{ name: "./server.cjs" }, { name: "server.css" }],
         entrypoints: {
           server: { assets: ["server.cjs", "server.css"] },
         },
@@ -722,8 +670,33 @@ describe("webpack stats ownership", () => {
         "server.css",
         "stats.json",
       ],
-      server: ["server.cjs", "server.css", "chunks/lazy.cjs", "stats.json"],
+      server: ["server.cjs", "server.css", "stats.json"],
     });
+
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        { assets: ["main.js"], entrypoints: { main: { assets: ["main.js"] } } },
+        {
+          assets: ["server.cjs", "chunks/lazy.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Webpack runtime server stats emitted unowned JavaScript asset "chunks/lazy.cjs"',
+    );
+
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        { assets: ["main.js"], entrypoints: { main: { assets: ["main.js"] } } },
+        { entrypoints: { server: { assets: ["server.cjs"] } } },
+      ).collectBuildFacts(),
+    ).toThrow(
+      "Webpack runtime server stats must provide a complete emitted asset inventory",
+    );
 
     expect(() =>
       new WebpackManifestGenerator(process.cwd(), plan, undefined, {
@@ -755,7 +728,7 @@ describe("webpack stats ownership", () => {
         },
       ).collectBuildFacts(),
     ).toThrow(
-      'Webpack server stats do not identify BuildPlan entrypoint "server" uniquely',
+      'Webpack server stats do not identify server BuildPlan entrypoint "server" exactly',
     );
     expect(() =>
       new WebpackManifestGenerator(
@@ -766,7 +739,10 @@ describe("webpack stats ownership", () => {
             main: { assets: ["runtime.js", "vendor.js"] },
           },
         },
-        { entrypoints: { server: { assets: ["server.cjs"] } } },
+        {
+          assets: ["server.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
       ).collectBuildFacts(),
     ).toThrow(
       'client BuildPlan entry "main" do not identify one JavaScript entry asset',
@@ -780,7 +756,10 @@ describe("webpack stats ownership", () => {
           assets: ["assets", "assets-extra.js", "assets/main.js"],
           entrypoints: { main: { assets: ["assets/main.js"] } },
         },
-        { entrypoints: { server: { assets: ["server.cjs"] } } },
+        {
+          assets: ["server.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
       ).collectBuildFacts(),
     ).toThrow(
       'Bundler emittedFiles.client asset "assets/main.js" conflicts with "assets"',
@@ -793,7 +772,10 @@ describe("webpack stats ownership", () => {
           assets: ["chunks/Foo.js", "chunks/foo.js"],
           entrypoints: { main: { assets: ["chunks/Foo.js"] } },
         },
-        { entrypoints: { server: { assets: ["server.cjs"] } } },
+        {
+          assets: ["server.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
       ).collectBuildFacts(),
     ).toThrow(
       'Bundler emittedFiles.client asset "chunks/foo.js" conflicts with "chunks/Foo.js"',
@@ -823,16 +805,12 @@ describe("webpack stats ownership", () => {
       {
         assets: ["server.cjs"],
         entrypoints: { server: { assets: ["server.cjs"] } },
-        chunks: [{ id: 1, files: ["server.cjs"] }],
-        modules: [{ name: "src/runtime.ts", chunks: [1] }],
       },
       {
-        assets: ["page-server.cjs", "chunks/lazy.cjs"],
+        assets: ["page-server.cjs"],
         entrypoints: {
           "page-server": { assets: ["page-server.cjs"] },
         },
-        chunks: [{ id: 1, files: ["page-server.cjs"] }],
-        modules: [{ name: "src/build-page.ts", chunks: [1] }],
       },
       "server-build",
     );
@@ -842,11 +820,6 @@ describe("webpack stats ownership", () => {
       server: { assets: ["server.cjs"] },
       "page-server": { assets: ["page-server.cjs"] },
     });
-    expect(merged.chunks).toEqual([
-      { id: 1, files: ["server.cjs"] },
-      { id: "server-build:1", files: ["page-server.cjs"] },
-    ]);
-
     const plan: BuildPlan = {
       version: 1,
       buildId: "mixed-server-roots",
@@ -889,16 +862,36 @@ describe("webpack stats ownership", () => {
       undefined,
       merged,
     ).collectBuildFacts();
-    expect(facts.serverModules).toEqual([
+    expect(facts.serverEntryAssets).toEqual({
+      server: { js: ["server.cjs"], css: [] },
+      "page-server": { js: ["page-server.cjs"], css: [] },
+    });
+    expect(facts.emittedFiles?.server).toEqual(["server.cjs", "stats.json"]);
+    expect(facts).not.toHaveProperty("serverModules");
+
+    const unownedBuildChunk = webpackAdapterTesting.mergeWebpackStats(
       {
-        moduleId: "src/runtime.ts",
-        assets: { js: ["server.cjs"], css: [] },
+        assets: ["server.cjs"],
+        entrypoints: { server: { assets: ["server.cjs"] } },
       },
       {
-        moduleId: "src/build-page.ts",
-        assets: { js: ["page-server.cjs"], css: [] },
+        assets: ["page-server.cjs", "chunks/lazy.cjs"],
+        entrypoints: {
+          "page-server": { assets: ["page-server.cjs"] },
+        },
       },
-    ]);
+      "server-build",
+    );
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        undefined,
+        unownedBuildChunk,
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Webpack build-only server stats emitted unowned JavaScript asset "chunks/lazy.cjs"',
+    );
   });
 
   it("does not overwrite a stats.json symbolic link", async () => {
@@ -1586,9 +1579,11 @@ describe("webpack build-only memory modules", () => {
     await expect(loadB()).resolves.toEqual({ source: "b" });
   });
 
-  buildIt("loads webpack-generated dynamic chunks from memory", async () => {
-    const cwd = await createFixture({
-      "src/a/entry.ts": `
+  buildIt(
+    "inlines webpack dynamic imports into self-contained entries",
+    async () => {
+      const cwd = await createFixture({
+        "src/a/entry.ts": `
         export async function load() {
           const value = await import(
             /* webpackChunkName: "chunks/a/lazy" */ "./lazy"
@@ -1596,8 +1591,8 @@ describe("webpack build-only memory modules", () => {
           return value.default;
         }
       `,
-      "src/a/lazy.ts": 'export default "a";',
-      "src/b/entry.ts": `
+        "src/a/lazy.ts": 'export default "a";',
+        "src/b/entry.ts": `
         export async function load() {
           const value = await import(
             /* webpackChunkName: "chunks/b/lazy" */ "./lazy"
@@ -1605,71 +1600,76 @@ describe("webpack build-only memory modules", () => {
           return value.default;
         }
       `,
-      "src/b/lazy.ts": 'export default "b";',
-    });
-    const config = resolveConfig<WebpackConfig>({});
-    const plan: BuildPlan = {
-      version: 1,
-      buildId: "memory-chunks",
-      mode: "development",
-      distDir: "dist",
-      output: {
-        clientDir: "dist/client",
-        serverDir: "dist/server",
-      },
-      entries: [
-        {
-          name: "renderer-a",
-          import: "./src/a/entry.ts",
-          environment: "server",
-          runtime: "node",
-          kind: "page-server",
-          phase: "build",
-          owner: { pageId: "a" },
+        "src/b/lazy.ts": 'export default "b";',
+      });
+      const config = resolveConfig<WebpackConfig>({});
+      const plan: BuildPlan = {
+        version: 1,
+        buildId: "memory-chunks",
+        mode: "development",
+        distDir: "dist",
+        output: {
+          clientDir: "dist/client",
+          serverDir: "dist/server",
         },
-        {
-          name: "renderer-b",
-          import: "./src/b/entry.ts",
-          environment: "server",
-          runtime: "node",
-          kind: "page-server",
-          phase: "build",
-          owner: { pageId: "b" },
+        entries: [
+          {
+            name: "renderer-a",
+            import: "./src/a/entry.ts",
+            environment: "server",
+            runtime: "node",
+            kind: "page-server",
+            phase: "build",
+            owner: { pageId: "a" },
+          },
+          {
+            name: "renderer-b",
+            import: "./src/b/entry.ts",
+            environment: "server",
+            runtime: "node",
+            kind: "page-server",
+            phase: "build",
+            owner: { pageId: "b" },
+          },
+        ],
+        html: [],
+        server: {},
+        runtime: {
+          publicPath: "/",
+          server: { basePath: "/__evjs", fn: "__evjs/fn" },
         },
-      ],
-      html: [],
-      server: {},
-      runtime: {
-        publicPath: "/",
-        server: { basePath: "/__evjs", fn: "__evjs/fn" },
-      },
-      dev: {
-        clientRoutes: [],
-        serverRequestRoutePaths: [],
-        serverRenderedPagePaths: [],
-        hasPpr: false,
-      },
-    };
+        dev: {
+          clientRoutes: [],
+          serverRequestRoutePaths: [],
+          serverRenderedPagePaths: [],
+          hasPpr: false,
+        },
+      };
 
-    const facts = await webpackAdapter.build({
-      config,
-      cwd,
-      plan,
-      hooks: [],
-    });
-    const loadModule = facts.loadServerModule;
-    expect(loadModule).toBeTypeOf("function");
-    const rendererA = (await loadModule?.("renderer-a.cjs")) as {
-      load(): Promise<string>;
-    };
-    const rendererB = (await loadModule?.("renderer-b.cjs")) as {
-      load(): Promise<string>;
-    };
+      const facts = await webpackAdapter.build({
+        config,
+        cwd,
+        plan,
+        hooks: [],
+      });
+      const loadModule = facts.loadServerModule;
+      expect(loadModule).toBeTypeOf("function");
+      const rendererA = (await loadModule?.("renderer-a.cjs")) as {
+        load(): Promise<string>;
+      };
+      const rendererB = (await loadModule?.("renderer-b.cjs")) as {
+        load(): Promise<string>;
+      };
 
-    await expect(rendererA.load()).resolves.toBe("a");
-    await expect(rendererB.load()).resolves.toBe("b");
-    expect(facts.emittedFiles?.server).toBeUndefined();
-  });
+      await expect(rendererA.load()).resolves.toBe("a");
+      await expect(rendererB.load()).resolves.toBe("b");
+      expect(facts.serverEntryAssets).toEqual({
+        "renderer-a": { js: ["renderer-a.cjs"], css: [] },
+        "renderer-b": { js: ["renderer-b.cjs"], css: [] },
+      });
+      expect(facts.emittedFiles?.server).toBeUndefined();
+    },
+  );
 });
 
 describe("webpackAdapter build", () => {

@@ -1,10 +1,12 @@
 import type {
   AssetGroup,
-  BuildOutputServerModule,
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
-import { assertPortableRelativeBrowserArtifactPath } from "@evjs/shared/manifest";
+import {
+  assertPortableRelativeBrowserArtifactPath,
+  assertServerRelativeArtifactPath,
+} from "@evjs/shared/manifest";
 import type {
   DefaultBundlerConfig,
   ResolvedFrameworkConfig,
@@ -24,14 +26,30 @@ export interface BundlerBuildFacts {
    */
   emittedFiles?: BundlerEmittedFiles;
   clientEntryAssets?: Record<string, AssetGroup>;
+  /** Assets keyed by the exact server BuildPlan entry name. */
   serverEntryAssets?: Record<string, AssetGroup>;
-  serverEntry?: string;
-  serverAssets?: AssetGroup;
-  serverModules?: BuildOutputServerModule[];
   loadServerModule?: (asset: string) => Promise<unknown>;
   rscManifests?: {
     clientReferenceManifest?: Record<string, unknown>;
   };
+}
+
+const REMOVED_SERVER_FACT_FIELDS = [
+  "serverEntry",
+  "serverAssets",
+  "serverModules",
+] as const;
+
+/** Reject removed server-fact aliases before Core silently drops them. */
+export function assertBundlerBuildFactsContract(
+  facts: BundlerBuildFacts,
+): void {
+  for (const field of REMOVED_SERVER_FACT_FIELDS) {
+    if (!Object.hasOwn(facts, field)) continue;
+    throw new Error(
+      `[evjs] Bundler build facts.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
+    );
+  }
 }
 
 /** Whether Core committed a development facts snapshot to canonical output. */
@@ -78,6 +96,75 @@ export function resolveBundlerClientEntryAssets(
       ),
     };
   }
+  return resolved;
+}
+
+/**
+ * Resolve server entrypoint facts by exact BuildPlan identity. Unlike client
+ * entrypoints, server entries never use an adapter-native sole-entry fallback.
+ */
+export function resolveBundlerServerEntryAssets(
+  plan: BuildPlan,
+  available: Record<string, AssetGroup>,
+  source: string,
+): Record<string, AssetGroup> {
+  const planned = plan.entries.filter(
+    (entry) => entry.environment === "server",
+  );
+  const plannedNames = new Set(planned.map((entry) => entry.name));
+  const resolved: Record<string, AssetGroup> = {};
+
+  for (const entry of planned) {
+    const assets = available[entry.name];
+    if (!assets) {
+      const names = Object.keys(available)
+        .map((name) => JSON.stringify(name))
+        .join(", ");
+      throw new Error(
+        `[evjs] ${source} do not identify server BuildPlan entrypoint "${entry.name}" exactly; found entrypoints ${names || "<none>"}.`,
+      );
+    }
+    if (
+      typeof assets !== "object" ||
+      !Array.isArray(assets.js) ||
+      !Array.isArray(assets.css)
+    ) {
+      throw new Error(
+        `[evjs] ${source} entrypoint "${entry.name}" must provide an AssetGroup with JavaScript and CSS arrays.`,
+      );
+    }
+    if (assets.js.length !== 1) {
+      throw new Error(
+        `[evjs] ${source} entrypoint "${entry.name}" must emit exactly one self-contained JavaScript asset; found ${assets.js.length}.`,
+      );
+    }
+    resolved[entry.name] = {
+      js: assets.js.map((asset, index) =>
+        assertServerRelativeArtifactPath(
+          asset,
+          `${source} entrypoint "${entry.name}" JavaScript asset[${index}]`,
+        ),
+      ),
+      css: assets.css.map((asset, index) =>
+        assertServerRelativeArtifactPath(
+          asset,
+          `${source} entrypoint "${entry.name}" CSS asset[${index}]`,
+        ),
+      ),
+    };
+  }
+
+  const unexpected = Object.keys(available).filter(
+    (name) => !plannedNames.has(name),
+  );
+  if (unexpected.length > 0) {
+    throw new Error(
+      `[evjs] ${source} contain unplanned server entrypoints: ${unexpected
+        .map((name) => JSON.stringify(name))
+        .join(", ")}.`,
+    );
+  }
+
   return resolved;
 }
 

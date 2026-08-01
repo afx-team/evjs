@@ -1,11 +1,13 @@
 import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
 import {
+  assertBundlerBuildFactsContract,
   type BundlerCapabilities,
   getBundlerBuildCapabilityGaps,
   getBundlerDevCapabilityGaps,
   preflightBundlerBuild,
   preflightBundlerDevUpdate,
+  resolveBundlerServerEntryAssets,
 } from "../src/_internal/build/bundler.js";
 
 const noCapabilities: BundlerCapabilities = {
@@ -31,6 +33,39 @@ const allCapabilities: BundlerCapabilities = {
 };
 
 describe("bundler capability preflight", () => {
+  it.each([
+    "serverEntry",
+    "serverAssets",
+    "serverModules",
+  ] as const)("rejects removed %s build facts", (field) => {
+    const facts: Record<string, unknown> = { [field]: {} };
+    expect(() => assertBundlerBuildFactsContract(facts)).toThrow(
+      `[evjs] Bundler build facts.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
+    );
+  });
+
+  it("requires exact server BuildPlan entry names", () => {
+    const plan = {
+      entries: [
+        {
+          name: "server",
+          environment: "server",
+          kind: "server-runtime",
+        },
+      ],
+    } as unknown as BuildPlan;
+
+    expect(() =>
+      resolveBundlerServerEntryAssets(
+        plan,
+        { main: { js: ["server.js"], css: [] } },
+        "Test stats",
+      ),
+    ).toThrow(
+      '[evjs] Test stats do not identify server BuildPlan entrypoint "server" exactly; found entrypoints "main".',
+    );
+  });
+
   it("derives server, RSC, and PPR build requirements from plan entries", () => {
     const plan = {
       entries: [

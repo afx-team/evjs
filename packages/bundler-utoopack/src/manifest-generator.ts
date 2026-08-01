@@ -7,28 +7,19 @@ import {
   type ResolvedBuildOutputPaths,
   resolveBuildOutputPaths,
   resolveBundlerClientEntryAssets,
+  resolveBundlerServerEntryAssets,
 } from "@evjs/ev/_internal/build";
-import type {
-  AssetGroup,
-  BuildOutputServerModule,
-  BuildPlan,
+import type { AssetGroup, BuildPlan } from "@evjs/shared/manifest";
+import {
+  assertBuildOutputLinkInputClientAssets,
+  assertServerRelativeArtifactPath,
 } from "@evjs/shared/manifest";
-import { assertBuildOutputLinkInputClientAssets } from "@evjs/shared/manifest";
-
-const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
-
-interface UtoopackStatsModule {
-  name?: string;
-  id?: string | number;
-  chunks?: Array<string | number>;
-}
 
 type UtoopackStatsAsset = string | { name?: string };
 
 interface UtoopackStatsLike {
   assets?: UtoopackStatsAsset[];
   entrypoints?: Record<string, { assets?: UtoopackStatsAsset[] }>;
-  modules?: UtoopackStatsModule[];
 }
 
 function normalizeAssetName(name: string | undefined): string | undefined {
@@ -50,39 +41,6 @@ function dedupeAssets(assets: AssetGroup): AssetGroup {
   };
 }
 
-function normalizeModuleId(
-  value: string | number | undefined,
-): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return value
-    .replace(/^\[project\]\//, "")
-    .replace(/^\.\//, "")
-    .replace(/\s+\[(?:server|client)\]\s+\(.+\)$/, "");
-}
-
-function assetsFromChunks(
-  chunks: Array<string | number> | undefined,
-  fallback: AssetGroup,
-): AssetGroup {
-  const assets = emptyAssets();
-
-  for (const chunk of chunks ?? []) {
-    if (typeof chunk !== "string") continue;
-    const name = normalizeAssetName(chunk);
-    if (name?.endsWith(".js")) {
-      assets.js.push(name);
-    } else if (name?.endsWith(".css")) {
-      assets.css.push(name);
-    }
-  }
-
-  const deduped = dedupeAssets(assets);
-  if (deduped.js.length > 0 || deduped.css.length > 0) {
-    return deduped;
-  }
-  return fallback;
-}
-
 function readEntrypointAssets(
   stats: UtoopackStatsLike,
 ): Record<string, AssetGroup> {
@@ -92,7 +50,7 @@ function readEntrypointAssets(
     const assets = emptyAssets();
     for (const asset of entry.assets ?? []) {
       const assetName = normalizeAssetName(readStatsAssetName(asset));
-      if (assetName?.endsWith(".js")) {
+      if (assetName && isJavaScriptAsset(assetName)) {
         assets.js.push(assetName);
       } else if (assetName?.endsWith(".css")) {
         assets.css.push(assetName);
@@ -105,35 +63,13 @@ function readEntrypointAssets(
   return byName;
 }
 
-function collectServerModules(
-  modules: UtoopackStatsModule[] | undefined,
-  fallbackAssets: AssetGroup,
-): BuildOutputServerModule[] {
-  const result: BuildOutputServerModule[] = [];
-
-  for (const mod of modules ?? []) {
-    const moduleId = normalizeModuleId(mod.id) ?? normalizeModuleId(mod.name);
-    if (!moduleId) continue;
-
-    result.push({
-      moduleId,
-      assets: assetsFromChunks(mod.chunks, fallbackAssets),
-    });
-  }
-
-  return result;
-}
-
 export class UtoopackManifestGenerator {
   private outputPaths: ResolvedBuildOutputPaths;
   private plan: BuildPlan;
   private clientEntryAssets: Record<string, AssetGroup> = {};
   private serverEntryAssets: Record<string, AssetGroup> = {};
   private clientEmittedFiles: string[] | undefined;
-  private serverEntry: string | undefined;
-  private serverAssets: AssetGroup = EMPTY_ASSETS;
   private serverEmittedFiles: string[] | undefined;
-  private serverModules: BuildOutputServerModule[] = [];
 
   constructor(cwd: string, plan: BuildPlan) {
     this.outputPaths = resolveBuildOutputPaths(cwd, plan);
@@ -180,21 +116,18 @@ export class UtoopackManifestGenerator {
   }
 
   async loadServerStats() {
-    this.serverEntry = undefined;
     this.serverEntryAssets = {};
-    this.serverAssets = EMPTY_ASSETS;
     this.serverEmittedFiles = undefined;
-    this.serverModules = [];
 
-    const serverRuntimeEntry = this.plan.entries.find(
-      (entry) => entry.kind === "server-runtime",
+    const serverEntries = this.plan.entries.filter(
+      (entry) => entry.environment === "server",
     );
-    if (!serverRuntimeEntry) return;
+    if (serverEntries.length === 0) return;
 
     const statsPath = path.join(this.outputPaths.serverDir, "stats.json");
     if (!fs.existsSync(statsPath)) {
       throw new Error(
-        `[evjs] Utoopack did not emit server stats for BuildPlan entry "${serverRuntimeEntry.name}" at "${formatStatsPath(this.outputPaths.rootDir, statsPath)}". The server entry cannot be inferred safely from arbitrary JavaScript files.`,
+        `[evjs] Utoopack did not emit server stats for BuildPlan ${formatEntryList(serverEntries)} at "${formatStatsPath(this.outputPaths.rootDir, statsPath)}". Server entries cannot be inferred safely from arbitrary JavaScript files.`,
       );
     }
 
@@ -204,7 +137,7 @@ export class UtoopackManifestGenerator {
       value = JSON.parse(statsStr);
     } catch (error) {
       throw new Error(
-        `[evjs] Failed to read Utoopack server stats for BuildPlan entry "${serverRuntimeEntry.name}" at "${formatStatsPath(this.outputPaths.rootDir, statsPath)}".`,
+        `[evjs] Failed to read Utoopack server stats for BuildPlan ${formatEntryList(serverEntries)} at "${formatStatsPath(this.outputPaths.rootDir, statsPath)}".`,
         { cause: error },
       );
     }
@@ -222,22 +155,16 @@ export class UtoopackManifestGenerator {
         { cause: error },
       );
     }
-    this.serverEntryAssets = byName;
-    const selectedEntrypoint = selectServerEntrypoint(
+    this.serverEntryAssets = resolveBundlerServerEntryAssets(
+      this.plan,
       byName,
-      serverRuntimeEntry.name,
+      "Utoopack server stats",
     );
-    const entryAssets = selectedEntrypoint.assets;
-    const serverEntry = selectServerJavaScriptAsset(
-      selectedEntrypoint.name,
-      serverRuntimeEntry.name,
-      entryAssets,
+    assertExactServerJavaScriptInventory(
+      stats.assets,
+      Object.values(this.serverEntryAssets).flatMap((assets) => assets.js),
     );
-
-    this.serverAssets = entryAssets;
-    this.serverEntry = serverEntry;
     this.serverEmittedFiles = readEmittedFiles(stats);
-    this.serverModules = collectServerModules(stats.modules, this.serverAssets);
   }
 
   async collectBuildFacts(): Promise<BundlerBuildFacts> {
@@ -254,11 +181,8 @@ export class UtoopackManifestGenerator {
 
     const facts: BundlerBuildFacts = {
       ...(Object.keys(emittedFiles).length > 0 ? { emittedFiles } : {}),
-      clientEntryAssets: this.clientEntryAssets,
-      serverEntryAssets: this.serverEntryAssets,
-      serverEntry: this.serverEntry,
-      serverAssets: this.serverAssets,
-      serverModules: this.serverModules,
+      clientEntryAssets: cloneEntryAssets(this.clientEntryAssets),
+      serverEntryAssets: cloneEntryAssets(this.serverEntryAssets),
     };
     assertBundlerEmittedFiles(facts.emittedFiles);
     assertBuildOutputLinkInputClientAssets({
@@ -311,9 +235,6 @@ function assertUtoopackStats(
       `${source}.entrypoints.${name}.assets`,
     );
   }
-  if (value.modules !== undefined && !Array.isArray(value.modules)) {
-    throw new Error(`[evjs] ${source}.modules must be an array.`);
-  }
   return value as UtoopackStatsLike;
 }
 
@@ -338,34 +259,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function selectServerEntrypoint(
-  byName: Record<string, AssetGroup>,
-  expectedName: string,
-): { name: string; assets: AssetGroup } {
-  const exact = byName[expectedName];
-  if (exact) return { name: expectedName, assets: exact };
-
-  const entries = Object.entries(byName);
-  if (entries.length === 1) {
-    const [entry] = entries;
-    if (entry) return { name: entry[0], assets: entry[1] };
-  }
-  throw new Error(
-    `[evjs] Utoopack server stats do not identify BuildPlan entrypoint "${expectedName}" uniquely; found entrypoints ${entries.length > 0 ? entries.map(([name]) => JSON.stringify(name)).join(", ") : "<none>"}.`,
-  );
-}
-
-function selectServerJavaScriptAsset(
-  statsEntryName: string,
-  _expectedName: string,
-  assets: AssetGroup,
-): string {
-  if (assets.js.length === 1) return assets.js[0] as string;
-  throw new Error(
-    `[evjs] Utoopack server entrypoint "${statsEntryName}" must emit exactly one self-contained JavaScript entry asset; found ${assets.js.length}.`,
-  );
-}
-
 function readEmittedFiles(stats: {
   assets?: UtoopackStatsAsset[];
 }): string[] | undefined {
@@ -387,5 +280,57 @@ function readEmittedFiles(stats: {
 }
 
 function includeAdapterStatsFile(files: string[]): string[] {
-  return files.includes("stats.json") ? files : [...files, "stats.json"];
+  return files.includes("stats.json") ? [...files] : [...files, "stats.json"];
+}
+
+function cloneEntryAssets(
+  entries: Record<string, AssetGroup>,
+): Record<string, AssetGroup> {
+  return Object.fromEntries(
+    Object.entries(entries).map(([name, assets]) => [
+      name,
+      { js: [...assets.js], css: [...assets.css] },
+    ]),
+  );
+}
+
+function assertExactServerJavaScriptInventory(
+  assets: UtoopackStatsAsset[] | undefined,
+  ownedJavaScript: readonly string[],
+): void {
+  if (assets === undefined) {
+    if (ownedJavaScript.length === 0) return;
+    throw new Error(
+      `[evjs] Utoopack server stats must provide a complete emitted asset inventory for ${ownedJavaScript.length} server entry asset(s).`,
+    );
+  }
+  const emittedJavaScript = new Set<string>();
+  for (const asset of assets) {
+    const rawName = readStatsAssetName(asset);
+    const name = normalizeAssetName(rawName);
+    if (!name || !isJavaScriptAsset(name)) continue;
+    emittedJavaScript.add(
+      assertServerRelativeArtifactPath(
+        name,
+        `Utoopack server stats JavaScript asset ${JSON.stringify(rawName)}`,
+      ),
+    );
+  }
+  const owned = new Set(ownedJavaScript);
+  for (const asset of owned) {
+    if (emittedJavaScript.has(asset)) continue;
+    throw new Error(
+      `[evjs] Utoopack server stats are missing exact server entry JavaScript asset "${asset}" from the complete emitted inventory.`,
+    );
+  }
+  for (const asset of emittedJavaScript) {
+    if (owned.has(asset)) continue;
+    throw new Error(
+      `[evjs] Utoopack server stats emitted unowned JavaScript asset "${asset}". Every server entry must be self-contained in its exact entry asset.`,
+    );
+  }
+}
+
+function isJavaScriptAsset(name: string): boolean {
+  return /\.(?:cjs|mjs|js)$/.test(name);
 }
