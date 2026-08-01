@@ -56,6 +56,11 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
+- **Complete server runtime outputs** — Linked manifests and deployment
+  projections now reject routed SSG without a static Document and require one
+  canonical self-contained runtime entry for request-time SSR, PPR, RSC,
+  server Functions, API Routes, runtime renderers, and runtime assets. Pure CSR
+  and fully materialized SSG output remain runtime-free.
 - **Fail-closed plugin validation** — Application and Page plugin validators
   now accept only documented synchronous results. Promise-like and unsupported
   return values fail with explicit contract diagnostics instead of silently

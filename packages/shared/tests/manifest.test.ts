@@ -54,6 +54,45 @@ function createMinimalBuildOutput(): BuildOutput {
   };
 }
 
+function createRuntimeFreeBuildOutput(): BuildOutput {
+  return {
+    ...createMinimalBuildOutput(),
+    server: {
+      assets: { js: [], css: [] },
+      functions: {},
+      routes: [],
+    },
+  };
+}
+
+function createRuntimeFreeSsgOutput(withDocument = true): BuildOutput {
+  const output = createRuntimeFreeBuildOutput();
+  output.pages.report = {
+    assets: { js: [], css: [] },
+    ...(withDocument ? { document: { fileName: "report.html" } } : {}),
+    render: "ssg",
+    rendering: {
+      component: "server",
+      html: "static",
+      prerender: "full",
+      streaming: false,
+      hydrate: "none",
+    },
+    path: "/report",
+    routeId: "report",
+  };
+  output.routes.push({ id: "report", path: "/report", pageId: "report" });
+  output.server.renderers = {
+    "report-server": {
+      kind: "page-server",
+      phase: "build",
+      owner: { pageId: "report", routeId: "report" },
+      assets: { js: ["report-server.js"], css: [] },
+    },
+  };
+  return output;
+}
+
 function createServerRuntimeEntry(): BuildPlan["entries"][number] {
   return {
     name: "server",
@@ -378,6 +417,102 @@ describe("assertFrameworkManifestShape", () => {
     expect(() =>
       assertFrameworkManifestShape(createMinimalBuildOutput(), "manifest"),
     ).not.toThrow();
+  });
+
+  it("allows runtime-free CSR and static SSG output", () => {
+    const csr = createRuntimeFreeBuildOutput();
+    csr.pages.home = {
+      assets: { js: ["home.js"], css: [] },
+      document: { fileName: "home.html" },
+      render: "csr",
+      rendering: {
+        component: "client",
+        html: "client",
+        streaming: false,
+        hydrate: "load",
+      },
+      path: "/home",
+      routeId: "home",
+    };
+    csr.routes.push({ id: "home", path: "/home", pageId: "home" });
+    expect(() => assertFrameworkManifestShape(csr, "CSR output")).not.toThrow();
+
+    const ssg = createRuntimeFreeSsgOutput();
+    expect(() => assertFrameworkManifestShape(ssg, "SSG output")).not.toThrow();
+  });
+
+  it("rejects routed SSG Pages without a static Document", () => {
+    const runtimeFree = createRuntimeFreeSsgOutput(false);
+    const withRuntime = createRuntimeFreeSsgOutput(false);
+    withRuntime.server.entry = "server.js";
+    withRuntime.server.assets.js.push("server.js");
+
+    for (const [source, output] of [
+      ["runtime-free SSG output", runtimeFree],
+      ["server-backed SSG output", withRuntime],
+    ] as const) {
+      expect(() => assertFrameworkManifestShape(output, source)).toThrow(
+        `${source}.pages.report.document is required because ${source}.routes[0] publishes SSG Page "report"`,
+      );
+    }
+  });
+
+  it("requires a runtime entry for server runtime assets", () => {
+    const javascript = createRuntimeFreeBuildOutput();
+    javascript.server.assets.js.push("server.js");
+    expect(() =>
+      assertFrameworkManifestShape(javascript, "JavaScript runtime output"),
+    ).toThrow(
+      "JavaScript runtime output.server.entry is required because server runtime assets are present",
+    );
+
+    const css = createRuntimeFreeBuildOutput();
+    css.server.assets.css.push("server.css");
+    expect(() =>
+      assertFrameworkManifestShape(css, "CSS runtime output"),
+    ).toThrow(
+      "CSS runtime output.server.entry is required because server runtime assets are present",
+    );
+  });
+
+  it("requires a runtime entry for server Functions", () => {
+    const serverFunction = createRuntimeFreeBuildOutput();
+    serverFunction.server.functions.work = {
+      exportName: "work",
+      assets: { js: [], css: [] },
+    };
+    expect(() =>
+      assertFrameworkManifestShape(serverFunction, "function output"),
+    ).toThrow(
+      "function output.server.entry is required because server Functions are present",
+    );
+  });
+
+  it("requires a runtime entry for request-time renderers", () => {
+    const output = createRuntimeFreeBuildOutput();
+    output.server.renderers = {
+      runtime: {
+        kind: "page-server",
+        owner: {},
+        assets: { js: [], css: [] },
+      },
+    };
+
+    expect(() =>
+      assertFrameworkManifestShape(output, "runtime renderer output"),
+    ).toThrow(
+      "runtime renderer output.server.entry is required because a request-time server renderer is present",
+    );
+  });
+
+  it("requires one self-contained JavaScript artifact for the runtime entry", () => {
+    const multipleEntries = createMinimalBuildOutput();
+    multipleEntries.server.assets.js.push("server-chunk.js");
+    expect(() =>
+      assertFrameworkManifestShape(multipleEntries, "multiple entry output"),
+    ).toThrow(
+      "multiple entry output.server.assets.js must declare exactly one self-contained JavaScript artifact",
+    );
   });
 
   it("rejects ambiguous runtime path encodings at the manifest boundary", () => {
@@ -2030,7 +2165,8 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...pageServerReferenceManifest,
           server: {
-            assets: { js: [], css: [] },
+            entry: "server.js",
+            assets: { js: ["server.js"], css: [] },
             renderers: {
               "dashboard-route-server": {
                 kind: "page-server",
@@ -2129,7 +2265,8 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...createMinimalBuildOutput(),
           server: {
-            assets: { js: [], css: [] },
+            entry: "server.js",
+            assets: { js: ["server.js"], css: [] },
             functions: {
               "fn:refund": {
                 module: "./src/api/orders.server.ts",
@@ -3061,7 +3198,7 @@ describe("linkBuildOutput", () => {
           id: "snapshot",
           component: "./src/pages/snapshot/page.tsx",
           html: "./index.html",
-          render: "ssg",
+          render: "ssr",
           hydrate: "load",
         },
       },
@@ -3784,6 +3921,192 @@ describe("linkBuildOutput", () => {
     });
   });
 
+  it("rejects every request-time capability when the plan omits its server runtime", () => {
+    const createRuntimeFreeGraph = (
+      overrides: Partial<LinkerFixture> = {},
+    ): LinkerFixture => ({
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      ...overrides,
+    });
+    const createRuntimeFreePlan = (options: {
+      entries?: BuildPlan["entries"];
+      html?: BuildPlan["html"];
+      renderers?: BuildPlan["server"]["renderers"];
+      runtime?: Partial<NonNullable<BuildPlan["runtime"]["server"]>>;
+    }): TestBuildPlan => ({
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: options.entries ?? [],
+      html: options.html ?? [],
+      server: options.renderers ? { renderers: options.renderers } : {},
+      runtime: createRuntimePlan(options.runtime),
+    });
+    const createPageCapabilityInput = (options: {
+      id: string;
+      page: Omit<LinkerPageFixture, "id" | "component" | "html">;
+      rendererKind: NonNullable<
+        BuildPlan["server"]["renderers"]
+      >[number]["kind"];
+      rendererPhase?: BuildPlan["entries"][number]["phase"];
+      runtime?: Partial<NonNullable<BuildPlan["runtime"]["server"]>>;
+      staticDocument?: boolean;
+    }): Parameters<typeof linkBuildOutput>[0] => {
+      const component = `./src/${options.id}.tsx`;
+      const staticDocument = options.staticDocument !== false;
+      const renderer = {
+        name: `${options.id}-${options.rendererKind}`,
+        import: component,
+        kind: options.rendererKind,
+        owner: { pageId: options.id },
+        ...(options.rendererPhase ? { phase: options.rendererPhase } : {}),
+      };
+      return {
+        graph: createRuntimeFreeGraph({
+          apps: staticDocument
+            ? {}
+            : {
+                default: {
+                  id: "default",
+                  entry: "./src/main.tsx",
+                  html: "./index.html",
+                },
+              },
+          pages: {
+            [options.id]: {
+              id: options.id,
+              component,
+              html: "./index.html",
+              ...options.page,
+            },
+          },
+          routes: [
+            {
+              id: options.id,
+              path: `/${options.id}`,
+              pageId: options.id,
+              ...(staticDocument ? {} : { appId: "default" }),
+            },
+          ],
+        }),
+        plan: createRuntimeFreePlan({
+          entries: [
+            {
+              ...renderer,
+              environment: "server",
+              runtime: "node",
+            },
+          ],
+          html: [
+            {
+              id: staticDocument ? options.id : "index",
+              template: "./index.html",
+              fileName: staticDocument ? `${options.id}.html` : "index.html",
+              owner: staticDocument
+                ? { pageId: options.id }
+                : { appId: "default" },
+            },
+          ],
+          renderers: [renderer],
+          runtime: options.runtime,
+        }),
+        serverEntryAssets: {
+          [renderer.name]: { js: [`${renderer.name}.js`], css: [] },
+        },
+      };
+    };
+    const expectMissingRuntime = (
+      label: string,
+      reason: string,
+      input: Parameters<typeof linkBuildOutput>[0],
+    ) => {
+      expect(() => linkBuildOutput(input), label).toThrow(
+        `linked BuildOutput.server.entry is required because ${reason}`,
+      );
+    };
+
+    expectMissingRuntime(
+      "SSR",
+      "an SSR Page is present",
+      createPageCapabilityInput({
+        id: "dashboard",
+        page: { render: "ssr" },
+        rendererKind: "page-server",
+      }),
+    );
+
+    expectMissingRuntime("server Function", "server Functions are present", {
+      graph: createRuntimeFreeGraph({
+        serverFunctions: [
+          { id: "work", module: "./src/work.ts", exportName: "work" },
+        ],
+      }),
+      plan: createRuntimeFreePlan({}),
+    });
+
+    expectMissingRuntime("API Route", "server request Routes are present", {
+      graph: createRuntimeFreeGraph({
+        serverRoutes: [
+          {
+            id: "health",
+            module: "./src/health.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
+      }),
+      plan: createRuntimeFreePlan({}),
+    });
+
+    expectMissingRuntime(
+      "PPR",
+      "a PPR Page is present",
+      createPageCapabilityInput({
+        id: "campaign",
+        page: {
+          render: "ssr",
+          prerender: { partial: true },
+          ppr: { delivery: "merge", regions: {} },
+        },
+        rendererKind: "ppr-shell",
+        runtime: { ppr: "__evjs/ppr" },
+      }),
+    );
+
+    expectMissingRuntime(
+      "RSC",
+      "an RSC Page is present",
+      createPageCapabilityInput({
+        id: "insights",
+        page: { render: "ssr", componentModel: "rsc" },
+        rendererKind: "rsc-page",
+        runtime: { rsc: "__evjs/rsc" },
+      }),
+    );
+
+    expect(() =>
+      linkBuildOutput(
+        createPageCapabilityInput({
+          id: "report",
+          page: { render: "ssg" },
+          rendererKind: "page-server",
+          rendererPhase: "build",
+          staticDocument: false,
+        }),
+      ),
+    ).toThrow(
+      'linked BuildOutput.pages.report.document is required because linked BuildOutput.routes[0] publishes SSG Page "report"',
+    );
+  });
+
   it("isolates AssetGroups projected to distinct server owners", () => {
     const graph: LinkerFixture = {
       version: 1,
@@ -4362,10 +4685,10 @@ describe("createPublicManifest", () => {
         },
         settlement: {
           assets: { js: [], css: ["settlement-server.css"] },
-          render: "ssg",
+          render: "ssr",
           rendering: {
             component: "server",
-            html: "static",
+            html: "server",
             prerender: "full",
             streaming: false,
             hydrate: "none",
@@ -4424,6 +4747,14 @@ describe("createPublicManifest", () => {
             kind: "rsc-page",
             owner: { pageId: "insights" },
             assets: { js: ["insights-rsc.js"], css: ["insights.css"] },
+          },
+          "settlement-server": {
+            kind: "page-server",
+            owner: { pageId: "settlement", routeId: "settlement" },
+            assets: {
+              js: ["settlement-server.js"],
+              css: ["settlement-server.css"],
+            },
           },
         },
         functions: {
@@ -4859,6 +5190,24 @@ describe("createPublicManifest", () => {
 });
 
 describe("createDeploymentMetadata", () => {
+  it("rejects request-time output without a canonical server runtime entry", () => {
+    const output = createRuntimeFreeBuildOutput();
+    output.server.routes.push({
+      path: "/health",
+      methods: ["GET"],
+      assets: { js: [], css: [] },
+    });
+
+    expect(() => createDeploymentMetadata(output)).toThrow(
+      "BuildOutput.server.entry is required because server request Routes are present",
+    );
+    expect(() =>
+      createDeploymentMetadata(createRuntimeFreeSsgOutput(false)),
+    ).toThrow(
+      'BuildOutput.pages.report.document is required because BuildOutput.routes[0] publishes SSG Page "report"',
+    );
+  });
+
   it("rejects lossy or unsafe plugin-owned metadata", () => {
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
@@ -4980,6 +5329,18 @@ describe("createDeploymentMetadata", () => {
 });
 
 describe("createServerManifest", () => {
+  it("rejects request-time output without a canonical server runtime entry", () => {
+    const output = createRuntimeFreeBuildOutput();
+    output.server.functions.work = {
+      exportName: "work",
+      assets: { js: [], css: [] },
+    };
+
+    expect(() => createServerManifest(output)).toThrow(
+      "BuildOutput.server.entry is required because server Functions are present",
+    );
+  });
+
   it("projects BuildOutput into the server manifest shape", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
