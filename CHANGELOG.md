@@ -56,6 +56,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
+- **Fail-closed plugin validation** — Application and Page plugin validators
+  now accept only documented synchronous results. Promise-like and unsupported
+  return values fail with explicit contract diagnostics instead of silently
+  enabling invalid configuration.
 - **PPR cache origin isolation** — Request-time PPR region cache keys now
   include the source URL origin, preventing one hostname from reusing another
   hostname's cached region response when a server instance hosts multiple

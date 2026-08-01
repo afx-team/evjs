@@ -1042,13 +1042,24 @@ function resolvePluginContract(
         schema ? clonePluginConfigObject(value, source) : value,
       );
   const validation = validate?.(resolved, context);
+  if (isPromiseLike(validation)) {
+    // Validation is deliberately synchronous because configuration resolution
+    // cannot suspend midway through graph analysis. Observe a rejected thenable
+    // before reporting the contract violation so it cannot surface later as an
+    // unrelated unhandled rejection.
+    void Promise.resolve(validation).catch(() => {});
+    throw new Error(`[evjs] ${source} validate() must complete synchronously.`);
+  }
+  if (validation === undefined || validation === true) return resolved;
   if (validation === false) {
     throw new Error(`[evjs] ${source} was rejected by the plugin.`);
   }
   if (typeof validation === "string") {
     throw new Error(`[evjs] ${source} is invalid: ${validation}`);
   }
-  return resolved;
+  throw new Error(
+    `[evjs] ${source} validate() must return true, false, a string message, or undefined.`,
+  );
 }
 
 function getRuntimeApplicationSetting(

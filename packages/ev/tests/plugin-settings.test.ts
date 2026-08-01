@@ -704,6 +704,39 @@ describe("definePlugin and pluginConfig", () => {
       },
     ]);
   });
+
+  it.each([
+    "Application",
+    "Page",
+  ] as const)("fails closed for invalid %s validation results", async (owner) => {
+    expect(() => resolveValidationResult(owner, () => undefined)).not.toThrow();
+    expect(() => resolveValidationResult(owner, () => true)).not.toThrow();
+    expect(() => resolveValidationResult(owner, () => false)).toThrow(
+      "was rejected by the plugin",
+    );
+    expect(() => resolveValidationResult(owner, () => "blocked")).toThrow(
+      "is invalid: blocked",
+    );
+
+    for (const invalid of [null, 1, { rejected: true }]) {
+      expect(() => resolveValidationResult(owner, () => invalid)).toThrow(
+        "validate() must return true, false, a string message, or undefined",
+      );
+    }
+
+    expect(() => resolveValidationResult(owner, async () => false)).toThrow(
+      "validate() must complete synchronously",
+    );
+    expect(() =>
+      resolveValidationResult(owner, async () => {
+        throw new Error("asynchronous validation failed");
+      }),
+    ).toThrow("validate() must complete synchronously");
+
+    // Let both async functions settle. The resolver must already have attached
+    // rejection handling to the rejected result above.
+    await Promise.resolve();
+  });
 });
 
 describe("Application and Page enablement", () => {
@@ -1293,6 +1326,36 @@ function resolveInstalled(plugin: Plugin) {
   const config = resolveConfig({ plugins: [plugin] });
   const registry = collectPluginSettingsRegistry(config.plugins);
   return resolvePluginSettingsState(config, registry);
+}
+
+function resolveValidationResult(
+  owner: "Application" | "Page",
+  validate: () => unknown,
+): void {
+  const contract = pluginConfig({
+    defaults: { value: 1 },
+    validate: validate as never,
+  });
+  if (owner === "Application") {
+    resolveInstalled(
+      definePlugin({
+        id: "@company/application-validation-result",
+        application: contract,
+      })(),
+    );
+    return;
+  }
+
+  const installed = resolveInstalled(
+    definePlugin({
+      id: "@company/page-validation-result",
+      key: "page-validation-result",
+      page: contract,
+    })(),
+  );
+  applyPluginSettings(createSpaGraph(), installed.registry, {
+    applicationSettings: installed.applicationSettings,
+  });
 }
 
 function createPageConfig(plugins: unknown = {}): ResolvedPageFileConfig {
