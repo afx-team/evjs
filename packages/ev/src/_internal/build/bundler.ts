@@ -74,14 +74,14 @@ export function resolveBundlerClientEntryAssets(
   const resolved: Record<string, AssetGroup> = {};
 
   for (const entry of planned) {
-    const assets = available[entry.name] ?? soleFallback?.[1];
+    const assets = getOwn(available, entry.name) ?? soleFallback?.[1];
     if (!assets) {
       const names = rawEntries.map(([name]) => JSON.stringify(name)).join(", ");
       throw new Error(
         `[evjs] ${source} do not identify client BuildPlan entrypoint "${entry.name}" uniquely; found entrypoints ${names || "<none>"}.`,
       );
     }
-    resolved[entry.name] = {
+    defineRecordValue(resolved, entry.name, {
       js: assets.js.map((asset, index) =>
         assertPortableRelativeBrowserArtifactPath(
           asset,
@@ -94,7 +94,7 @@ export function resolveBundlerClientEntryAssets(
           `${source} entrypoint "${entry.name}" CSS asset[${index}]`,
         ),
       ),
-    };
+    });
   }
   return resolved;
 }
@@ -115,7 +115,7 @@ export function resolveBundlerServerEntryAssets(
   const resolved: Record<string, AssetGroup> = {};
 
   for (const entry of planned) {
-    const assets = available[entry.name];
+    const assets = getOwn(available, entry.name);
     if (!assets) {
       const names = Object.keys(available)
         .map((name) => JSON.stringify(name))
@@ -138,7 +138,7 @@ export function resolveBundlerServerEntryAssets(
         `[evjs] ${source} entrypoint "${entry.name}" must emit exactly one self-contained JavaScript asset; found ${assets.js.length}.`,
       );
     }
-    resolved[entry.name] = {
+    defineRecordValue(resolved, entry.name, {
       js: assets.js.map((asset, index) =>
         assertServerRelativeArtifactPath(
           asset,
@@ -151,7 +151,7 @@ export function resolveBundlerServerEntryAssets(
           `${source} entrypoint "${entry.name}" CSS asset[${index}]`,
         ),
       ),
-    };
+    });
   }
 
   const unexpected = Object.keys(available).filter(
@@ -166,6 +166,26 @@ export function resolveBundlerServerEntryAssets(
   }
 
   return resolved;
+}
+
+function getOwn<T>(
+  record: Readonly<Record<string, T>>,
+  key: string,
+): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+function defineRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {

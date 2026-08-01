@@ -366,7 +366,100 @@ function embedClientRuntime(
   body.appendChild(script);
 }
 
+function createPrototypeEntryPlan(
+  entryName: string,
+  environment: "client" | "server",
+): BuildPlan {
+  return {
+    version: 1,
+    buildId: `prototype-entry-${environment}`,
+    mode: "production",
+    distDir: "dist",
+    output: {
+      clientDir: "dist/client",
+      serverDir: "dist/server",
+    },
+    entries: [
+      environment === "client"
+        ? {
+            name: entryName,
+            import: "./src/client.ts",
+            environment,
+            runtime: "browser",
+            kind: "app-client",
+          }
+        : {
+            name: entryName,
+            import: "./src/server.ts",
+            environment,
+            runtime: "node",
+            kind: "server-runtime",
+          },
+    ],
+    html: [],
+    server: environment === "server" ? { entry: "./src/server.ts" } : {},
+    runtime: {
+      publicPath: "/",
+      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+    },
+    dev: {
+      clientRoutes: [],
+      serverRequestRoutePaths: [],
+      serverRenderedPagePaths: [],
+      hasPpr: false,
+    },
+  };
+}
+
 describe("webpack stats ownership", () => {
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped stats entrypoint %s", (entryName) => {
+    const clientAsset = `${entryName}.js`;
+    const clientFacts = new WebpackManifestGenerator(
+      process.cwd(),
+      createPrototypeEntryPlan(entryName, "client"),
+      {
+        entrypoints: Object.fromEntries([
+          [entryName, { assets: [clientAsset] }],
+        ]),
+      },
+    ).collectBuildFacts();
+    const serverAsset = `${entryName}.cjs`;
+    const serverFacts = new WebpackManifestGenerator(
+      process.cwd(),
+      createPrototypeEntryPlan(entryName, "server"),
+      undefined,
+      {
+        assets: [serverAsset],
+        entrypoints: Object.fromEntries([
+          [entryName, { assets: [serverAsset] }],
+        ]),
+      },
+    ).collectBuildFacts();
+
+    expect(Object.getPrototypeOf(clientFacts.clientEntryAssets)).toBe(
+      Object.prototype,
+    );
+    expect(Object.hasOwn(clientFacts.clientEntryAssets ?? {}, entryName)).toBe(
+      true,
+    );
+    expect(Reflect.get(clientFacts.clientEntryAssets ?? {}, entryName)).toEqual(
+      { js: [clientAsset], css: [] },
+    );
+    expect(Object.getPrototypeOf(serverFacts.serverEntryAssets)).toBe(
+      Object.prototype,
+    );
+    expect(Object.hasOwn(serverFacts.serverEntryAssets ?? {}, entryName)).toBe(
+      true,
+    );
+    expect(Reflect.get(serverFacts.serverEntryAssets ?? {}, entryName)).toEqual(
+      { js: [serverAsset], css: [] },
+    );
+  });
+
   it("bypasses only BuildPlan-owned routes and runtime endpoints", () => {
     const config = resolveConfig<WebpackConfig>({
       server: {

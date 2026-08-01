@@ -69,7 +69,106 @@ function linkTestManifest(
   });
 }
 
+function createPrototypeEntryPlan(
+  entryName: string,
+  environment: "client" | "server",
+): BuildPlan {
+  return {
+    version: 1,
+    buildId: `prototype-entry-${environment}`,
+    mode: "production",
+    distDir: "dist",
+    output: {
+      clientDir: "dist/client",
+      serverDir: "dist/server",
+    },
+    entries: [
+      environment === "client"
+        ? {
+            name: entryName,
+            import: "./src/client.ts",
+            environment,
+            runtime: "browser",
+            kind: "app-client",
+          }
+        : {
+            name: entryName,
+            import: "./src/server.ts",
+            environment,
+            runtime: "node",
+            kind: "server-runtime",
+          },
+    ],
+    html: [],
+    server: environment === "server" ? { entry: "./src/server.ts" } : {},
+    runtime: {
+      publicPath: "/",
+      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+    },
+    dev: {
+      clientRoutes: [],
+      serverRequestRoutePaths: [],
+      serverRenderedPagePaths: [],
+      hasPpr: false,
+    },
+  };
+}
+
 describe("UtoopackManifestGenerator", () => {
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped stats entrypoint %s", async (entryName) => {
+    const cwd = await makeProject();
+    const clientAsset = `${entryName}.js`;
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stats.json"),
+      JSON.stringify({
+        entrypoints: Object.fromEntries([
+          [entryName, { assets: [clientAsset] }],
+        ]),
+      }),
+    );
+    const clientFacts = await new UtoopackManifestGenerator(
+      cwd,
+      createPrototypeEntryPlan(entryName, "client"),
+    ).build();
+    const serverAsset = `${entryName}.js`;
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        assets: [serverAsset],
+        entrypoints: Object.fromEntries([
+          [entryName, { assets: [serverAsset] }],
+        ]),
+      }),
+    );
+    const serverFacts = await new UtoopackManifestGenerator(
+      cwd,
+      createPrototypeEntryPlan(entryName, "server"),
+    ).build();
+
+    expect(Object.getPrototypeOf(clientFacts.clientEntryAssets)).toBe(
+      Object.prototype,
+    );
+    expect(Object.hasOwn(clientFacts.clientEntryAssets ?? {}, entryName)).toBe(
+      true,
+    );
+    expect(Reflect.get(clientFacts.clientEntryAssets ?? {}, entryName)).toEqual(
+      { js: [clientAsset], css: [] },
+    );
+    expect(Object.getPrototypeOf(serverFacts.serverEntryAssets)).toBe(
+      Object.prototype,
+    );
+    expect(Object.hasOwn(serverFacts.serverEntryAssets ?? {}, entryName)).toBe(
+      true,
+    );
+    expect(Reflect.get(serverFacts.serverEntryAssets ?? {}, entryName)).toEqual(
+      { js: [serverAsset], css: [] },
+    );
+  });
+
   it("fails when client stats are missing for a client BuildPlan entry", async () => {
     const cwd = await makeProject();
     await fs.promises.rm(path.join(cwd, "dist/client/stats.json"));

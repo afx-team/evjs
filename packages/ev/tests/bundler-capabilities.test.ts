@@ -7,6 +7,7 @@ import {
   getBundlerDevCapabilityGaps,
   preflightBundlerBuild,
   preflightBundlerDevUpdate,
+  resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
 } from "../src/_internal/build/bundler.js";
 
@@ -64,6 +65,50 @@ describe("bundler capability preflight", () => {
     ).toThrow(
       '[evjs] Test stats do not identify server BuildPlan entrypoint "server" exactly; found entrypoints "main".',
     );
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the own prototype-shaped entry name %s in bundler facts", (entryName) => {
+    const assets = { js: [`${entryName}.js`], css: [] };
+    const available = Object.fromEntries([[entryName, assets]]);
+
+    for (const environment of ["client", "server"] as const) {
+      const plan = {
+        entries: [{ name: entryName, environment }],
+      } as unknown as BuildPlan;
+      const resolved =
+        environment === "client"
+          ? resolveBundlerClientEntryAssets(plan, available, "Test stats")
+          : resolveBundlerServerEntryAssets(plan, available, "Test stats");
+
+      expect(Object.getPrototypeOf(resolved)).toBe(Object.prototype);
+      expect(Object.hasOwn(resolved, entryName)).toBe(true);
+      expect(Reflect.get(resolved, entryName)).toEqual(assets);
+    }
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("does not resolve inherited entry assets for %s", (entryName) => {
+    const inherited = Object.create(
+      Object.fromEntries([[entryName, { js: [`${entryName}.js`], css: [] }]]),
+    ) as Record<string, { js: string[]; css: string[] }>;
+
+    for (const environment of ["client", "server"] as const) {
+      const plan = {
+        entries: [{ name: entryName, environment }],
+      } as unknown as BuildPlan;
+      expect(() =>
+        environment === "client"
+          ? resolveBundlerClientEntryAssets(plan, inherited, "Test stats")
+          : resolveBundlerServerEntryAssets(plan, inherited, "Test stats"),
+      ).toThrow(`BuildPlan entrypoint "${entryName}"`);
+    }
   });
 
   it("derives server, RSC, and PPR build requirements from plan entries", () => {

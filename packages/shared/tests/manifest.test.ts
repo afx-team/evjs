@@ -2959,6 +2959,127 @@ describe("assertFrameworkManifestShape", () => {
 });
 
 describe("linkBuildOutput", () => {
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped BuildPlan entry name %s", (entryName) => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+
+    for (const environment of ["client", "server"] as const) {
+      const plan: TestBuildPlan = {
+        version: 1,
+        buildId: `prototype-entry-${environment}`,
+        mode: "production",
+        distDir: "dist",
+        output: { clientDir: "dist/client", serverDir: "dist/server" },
+        entries: [
+          environment === "client"
+            ? {
+                name: entryName,
+                import: "./src/client.ts",
+                environment,
+                runtime: "browser",
+                kind: "app-client",
+              }
+            : {
+                name: entryName,
+                import: "./src/server.ts",
+                environment,
+                runtime: "node",
+                kind: "server-runtime",
+              },
+        ],
+        html: [],
+        server: environment === "server" ? { entry: "./src/server.ts" } : {},
+        runtime: createRuntimePlan(),
+      };
+      const assets = Object.fromEntries([
+        [entryName, { js: [`${entryName}.js`], css: [] }],
+      ]);
+      const output = linkBuildOutput({
+        graph,
+        plan,
+        ...(environment === "client"
+          ? { clientEntryAssets: assets }
+          : { serverEntryAssets: assets }),
+      });
+
+      expect(Object.getPrototypeOf(output.assets)).toBe(Object.prototype);
+      expect(Object.hasOwn(output.assets, entryName)).toBe(true);
+      expect(Reflect.get(output.assets, entryName)).toEqual(
+        Reflect.get(assets, entryName),
+      );
+    }
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("rejects inherited BuildPlan entry facts for %s", (entryName) => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const inheritedAssets = Object.create(
+      Object.fromEntries([[entryName, { js: [`${entryName}.js`], css: [] }]]),
+    ) as Record<string, { js: string[]; css: string[] }>;
+
+    for (const environment of ["client", "server"] as const) {
+      const plan: TestBuildPlan = {
+        version: 1,
+        buildId: `inherited-entry-${environment}`,
+        mode: "production",
+        distDir: "dist",
+        output: { clientDir: "dist/client", serverDir: "dist/server" },
+        entries: [
+          environment === "client"
+            ? {
+                name: entryName,
+                import: "./src/client.ts",
+                environment,
+                runtime: "browser",
+                kind: "app-client",
+              }
+            : {
+                name: entryName,
+                import: "./src/server.ts",
+                environment,
+                runtime: "node",
+                kind: "server-runtime",
+              },
+        ],
+        html: [],
+        server: environment === "server" ? { entry: "./src/server.ts" } : {},
+        runtime: createRuntimePlan(),
+      };
+
+      expect(() =>
+        linkBuildOutput({
+          graph,
+          plan,
+          ...(environment === "client"
+            ? { clientEntryAssets: inheritedAssets }
+            : { serverEntryAssets: inheritedAssets }),
+        }),
+      ).toThrow(`BuildPlan entry "${entryName}"`);
+    }
+  });
+
   it("keeps route-derived CSR pages out of the v1 runtime manifest", () => {
     const graph: LinkerFixture = {
       version: 1,

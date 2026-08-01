@@ -96,7 +96,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const clientAssetsForEntry = (entry: BuildEntry) =>
     cloneAssetGroup(resolvedClientEntryAssets.get(entry.name) ?? EMPTY_ASSETS);
   const serverAssetsForEntry = (entry: BuildEntry) => {
-    const assets = serverEntryAssets[entry.name];
+    const assets = getOwn(serverEntryAssets, entry.name);
     if (!assets) {
       throw new Error(
         `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
@@ -153,10 +153,13 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
 
   const entryAssets: Record<string, AssetGroup> = {};
   for (const entry of input.plan.entries) {
-    entryAssets[entry.name] =
+    defineRecordValue(
+      entryAssets,
+      entry.name,
       entry.environment === "client"
         ? clientAssetsForEntry(entry)
-        : serverAssetsForEntry(entry);
+        : serverAssetsForEntry(entry),
+    );
   }
 
   const apps = Object.fromEntries(
@@ -365,7 +368,7 @@ function resolveClientEntryAssets(
   const claimedFiles: Array<{ entryName: string; fileName: string }> = [];
 
   for (const entry of plannedEntries) {
-    const assets = facts[entry.name];
+    const assets = getOwn(facts, entry.name);
     if (!assets) {
       const available = Object.keys(facts)
         .map((name) => `"${name}"`)
@@ -611,7 +614,7 @@ function assertBuildOutputLinkInputServerArtifacts(
     }
   }
   for (const entry of plannedServerEntries.values()) {
-    const assets = serverEntryAssets[entry.name];
+    const assets = getOwn(serverEntryAssets, entry.name);
     if (!assets) {
       throw new Error(
         `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
@@ -1136,6 +1139,26 @@ function cloneAssetGroup(assets: AssetGroup): AssetGroup {
     js: [...assets.js],
     css: [...assets.css],
   };
+}
+
+function getOwn<T>(
+  record: Readonly<Record<string, T>>,
+  key: string,
+): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+function defineRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function pruneUndefined<T extends Record<string, unknown>>(value: T): T {

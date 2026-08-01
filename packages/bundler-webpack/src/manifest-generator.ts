@@ -219,7 +219,7 @@ function readEntrypointAssets(
       }
     }
 
-    byName[name] = dedupeAssets(assets);
+    defineRecordValue(byName, name, dedupeAssets(assets));
   }
 
   return byName;
@@ -261,13 +261,35 @@ function assertSelfContainedWebpackServerEntries(
   assertExactServerJavaScriptInventory(
     "Webpack runtime server stats",
     stats?.assets,
-    runtimeEntries.flatMap((entry) => entryAssets[entry.name]?.js ?? []),
+    runtimeEntries.flatMap(
+      (entry) => getOwn(entryAssets, entry.name)?.js ?? [],
+    ),
   );
   assertExactServerJavaScriptInventory(
     "Webpack build-only server stats",
     stats?.buildOnlyAssets,
-    buildEntries.flatMap((entry) => entryAssets[entry.name]?.js ?? []),
+    buildEntries.flatMap((entry) => getOwn(entryAssets, entry.name)?.js ?? []),
   );
+}
+
+function getOwn<T>(
+  record: Readonly<Record<string, T>>,
+  key: string,
+): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+function defineRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function assertExactServerJavaScriptInventory(

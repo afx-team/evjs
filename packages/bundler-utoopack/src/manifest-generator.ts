@@ -57,7 +57,7 @@ function readEntrypointAssets(
       }
     }
 
-    byName[name] = dedupeAssets(assets);
+    defineRecordValue(byName, name, dedupeAssets(assets));
   }
 
   return byName;
@@ -292,6 +292,19 @@ function cloneEntryAssets(
       { js: [...assets.js], css: [...assets.css] },
     ]),
   );
+}
+
+function defineRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function assertExactServerJavaScriptInventory(
