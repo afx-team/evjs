@@ -70,7 +70,9 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   only after the selected state is stable. Failed updates restore generated IR,
   generated types, plugin state, and canonical framework output before the
   previous generation resumes; shutdown also cancels outstanding compiler-stat
-  polling.
+  polling. When Webpack invalidates an in-flight watch compilation before its
+  terminal hooks run, evjs discards its stale build facts so the replacement
+  compilation can publish the selected generation.
 - **Strict static config reload closure** — Config and Page-config loading now
   observes missing candidates, `require.resolve()` targets, package maps, and
   transitive project-local imports before evaluation. Unreadable sources,

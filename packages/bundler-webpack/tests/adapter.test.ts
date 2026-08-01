@@ -2913,6 +2913,178 @@ describe("webpackAdapter dev", () => {
   });
 
   devIt(
+    "publishes a candidate after superseding an invalidated transition compile",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/home/page.tsx": `
+          import { createElement } from "react";
+
+          export default function Home() {
+            return createElement("h1", null, "Home");
+          }
+        `,
+        "src/pages/home/page.config.ts": 'export default { render: "ssr" };',
+      });
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        dev: { port },
+        routing: { mode: "mpa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = await materializeTestPlan({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan: createBuildPlan(config, analysis.graph, {
+          mode: "development",
+        }),
+      });
+
+      let clientCompiler: Compiler | undefined;
+      let observeTransitionRuns = false;
+      let transitionWatchRuns = 0;
+      let blockNextClientMake = false;
+      let markBlockedClientMake!: () => void;
+      const blockedClientMake = new Promise<void>((resolve) => {
+        markBlockedClientMake = resolve;
+      });
+      let releaseBlockedClientMake!: () => void;
+      const blockedClientMakeGate = new Promise<void>((resolve) => {
+        releaseBlockedClientMake = resolve;
+      });
+      const blockTransitionCompilePlugin = {
+        apply(compiler: Compiler) {
+          if (compiler.options.name !== "client") return;
+          clientCompiler = compiler;
+          compiler.hooks.watchRun.tap("EvjsTestTransitionCompileRuns", () => {
+            if (observeTransitionRuns) transitionWatchRuns += 1;
+          });
+          compiler.hooks.make.tapPromise(
+            "EvjsTestBlockTransitionCompile",
+            async () => {
+              if (!blockNextClientMake) return;
+              blockNextClientMake = false;
+              markBlockedClientMake();
+              await blockedClientMakeGate;
+            },
+          );
+        },
+      };
+      const hooks: PluginHooks<WebpackConfig>[] = [
+        {
+          bundlerConfig(bundlerConfig) {
+            const configs = Array.isArray(bundlerConfig)
+              ? bundlerConfig
+              : [bundlerConfig];
+            const clientConfig = configs.find(
+              (webpackConfig) => webpackConfig.name === "client",
+            );
+            if (!clientConfig) throw new Error("Expected client config.");
+            clientConfig.plugins = [
+              ...(clientConfig.plugins ?? []),
+              blockTransitionCompilePlugin,
+            ];
+          },
+        },
+      ];
+      const onBuildOutput = vi.fn();
+      const onServerBundleReady = vi.fn();
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks,
+        onBuildOutput,
+        onServerBundleReady,
+      });
+
+      const controller = await webpackAdapter.dev({
+        config,
+        cwd,
+        generation: createTestDevGeneration(),
+        plan,
+        hooks,
+        callbacks: framework.callbacks,
+      });
+      let resumePromise: Promise<void> | undefined;
+      try {
+        onBuildOutput.mockClear();
+        onServerBundleReady.mockClear();
+        const nextGraph = structuredClone(analysis.graph);
+        const page = nextGraph.pages.home;
+        if (!page) throw new Error("Expected home Page.");
+        page.metadata = { title: "Updated home" };
+        const updateOptions = await createTestDevUpdateOptions(
+          controller,
+          config,
+        );
+
+        observeTransitionRuns = true;
+        blockNextClientMake = true;
+        const nextPlan = await materializeTestPlan({
+          config,
+          cwd,
+          graph: nextGraph,
+          plan: createBuildPlan(config, nextGraph, {
+            mode: "development",
+          }),
+        });
+        const update = diffBuildPlan(plan, nextPlan, "config");
+
+        framework.update(nextGraph, nextPlan);
+        await controller?.updatePlan(update, updateOptions);
+        const watching = clientCompiler?.watching;
+        if (!watching) throw new Error("Expected client compiler watching.");
+        watching.invalidate();
+        await blockedClientMake;
+
+        await updateOptions.transition.accept();
+        let resumeSettled = false;
+        const selectedResume = Promise.resolve(
+          updateOptions.transition.resume(),
+        );
+        resumePromise = selectedResume;
+        const observedResume = selectedResume.then(
+          () => {
+            resumeSettled = true;
+          },
+          () => {
+            resumeSettled = true;
+          },
+        );
+        releaseBlockedClientMake();
+
+        await waitForCondition(
+          () => resumeSettled,
+          "Webpack did not replace the invalidated transition compile.",
+          5_000,
+        );
+        await observedResume;
+        await selectedResume;
+        await updateOptions.transition.prepareFinalize();
+        updateOptions.transition.finalize();
+
+        expect(transitionWatchRuns).toBeGreaterThanOrEqual(2);
+        expect(update.generatedChanged).toBe(true);
+        expect(updateOptions.activate).toHaveBeenCalledTimes(1);
+        expect(onBuildOutput).toHaveBeenCalledTimes(1);
+        expect(onBuildOutput.mock.calls[0]?.[0].pages.home?.metadata).toEqual({
+          title: "Updated home",
+        });
+        expect(onServerBundleReady).toHaveBeenCalledTimes(1);
+      } finally {
+        releaseBlockedClientMake();
+        await controller?.close?.();
+        await resumePromise?.catch(() => {});
+      }
+    },
+  );
+
+  devIt(
     "refreshes the server runtime after page metadata-only plan updates",
     async () => {
       const port = await getAvailablePort();

@@ -73,6 +73,8 @@ interface WebpackDevStatsReservation {
   readonly buildState: WebpackDevBuildState | undefined;
   readonly recoverable: boolean;
   readonly sessionGeneration: number;
+  /** Child compilers that have started in this terminal-stats cycle. */
+  readonly startedCompilers: WeakSet<Compiler>;
   snapshot?: WebpackDevStatsSnapshot;
   complete(snapshot: WebpackDevStatsSnapshot | undefined): void;
 }
@@ -563,9 +565,22 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
     sessionGeneration: number,
     compiler: Compiler | MultiCompiler,
   ): void {
-    const reserve = () => {
+    const reserve = (startedCompiler: Compiler) => {
       if (sessionGeneration !== this.startGeneration) return;
-      if (this.statsReservations.has(kind)) return;
+      const existing = this.statsReservations.get(kind);
+      if (existing) {
+        if (!existing.startedCompilers.has(startedCompiler)) {
+          existing.startedCompilers.add(startedCompiler);
+          return;
+        }
+        // Webpack skips done/afterDone when an in-flight watch compile is
+        // invalidated, then starts the same child compiler again. Retire that
+        // unterminated reservation so the replacement compile can carry the
+        // selected generation instead of inheriting staging ownership. A
+        // MultiCompiler aggregate waits for this replacement child result, so
+        // the abandoned pass cannot later finalize the new reservation.
+        this.supersedeStatsReservation(kind, existing);
+      }
       let buildState = this.pendingPlanTransition
         ? this.transitionBuildState
         : this.buildState;
@@ -587,12 +602,13 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
           publication.primaryKinds.add(kind);
         }
       }
-      this.reserveStatsWork(
+      const reservation = this.reserveStatsWork(
         kind,
         sessionGeneration,
         buildState,
         Boolean(this.pendingPlanTransition && buildState),
       );
+      reservation.startedCompilers.add(startedCompiler);
     };
     compiler.hooks.run.tap("EvjsWebpackDevGeneration", reserve);
     compiler.hooks.watchRun.tap("EvjsWebpackDevGeneration", reserve);
@@ -664,6 +680,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
       buildState,
       recoverable,
       sessionGeneration,
+      startedCompilers: new WeakSet(),
       complete,
     };
     this.statsReservations.set(kind, reservation);
@@ -685,6 +702,19 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
       logger.error`Failed to process webpack ${kind} dev build: ${error}`;
     });
     return reservation;
+  }
+
+  private supersedeStatsReservation(
+    kind: "client" | "server",
+    reservation: WebpackDevStatsReservation,
+  ): void {
+    if (this.statsReservations.get(kind) !== reservation) return;
+    this.statsReservations.delete(kind);
+    reservation.complete(undefined);
+    const publication = this.pendingPublication;
+    if (publication && publication.buildState === reservation.buildState) {
+      publication.primaryKinds.delete(kind);
+    }
   }
 
   private captureStatsReservation(
