@@ -19,6 +19,7 @@ import {
   createStaticDeploymentFiles,
   edgeDeploymentAdapter,
   nodeDeploymentAdapter,
+  type StaticDeploymentCompatibility,
   staticDeploymentAdapter,
 } from "../src/deployment/index.js";
 import type { PluginContext, PluginHooks } from "../src/plugin/index.js";
@@ -670,6 +671,11 @@ describe("createDeploymentArtifact", () => {
       unsupportedCapabilities: [],
     });
     expect(files.artifact.metadata?.static).toEqual(files.compatibility);
+    expect(files.artifact.metadata?.static).not.toBe(files.compatibility);
+    expect(
+      (files.artifact.metadata?.static as StaticDeploymentCompatibility)
+        .unsupportedCapabilities,
+    ).not.toBe(files.compatibility.unsupportedCapabilities);
     expect(files.redirects).toBe(
       [
         "/orders/:orderId /index.html 200",

@@ -8,6 +8,10 @@
  */
 
 import {
+  readOptionalStaticJsonObjectProperty,
+  type StaticJsonObject,
+} from "../_internal/static-json.js";
+import {
   BUILD_IDENTIFIER_DESCRIPTION,
   isBuildIdentifier,
 } from "../build-identifier.js";
@@ -408,7 +412,7 @@ export interface BuildOutput {
   routes: RouteOutput[];
   server: ServerOutput;
   rsc?: RscOutput;
-  deployment?: Record<string, unknown>;
+  deployment?: StaticJsonObject;
 }
 
 /**
@@ -597,7 +601,7 @@ export interface DeploymentMetadata {
   documents: DeploymentDocumentOutput[];
   routes: DeploymentRouteOutput[];
   server: DeploymentServerOutput;
-  metadata?: Record<string, unknown>;
+  metadata?: StaticJsonObject;
 }
 
 export type DeploymentDocumentOutput =
@@ -879,6 +883,11 @@ export function assertFrameworkManifestShape(
     );
   }
   if (requireServer) {
+    readOptionalStaticJsonObjectProperty(
+      value,
+      "deployment",
+      `${source}.deployment`,
+    );
     assertBuildOutputServerArtifacts(value as unknown as BuildOutput, source);
   }
 }
@@ -2443,6 +2452,10 @@ function formatManifestPathnameError(
   }
 }
 
+export type {
+  StaticJsonObject,
+  StaticJsonValue,
+} from "../_internal/static-json.js";
 export {
   assertPortableRelativeArtifactPath,
   assertPortableRelativeBrowserArtifactPath,

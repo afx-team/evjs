@@ -4,6 +4,10 @@
  * plugins, and deployment helpers.
  */
 
+import {
+  cloneStaticJsonValue,
+  readOptionalStaticJsonObjectProperty,
+} from "../_internal/static-json.js";
 import { pageRoutePathShapeFromPath } from "../page-route-data.js";
 import {
   assertPortableRelativeBrowserArtifactPath,
@@ -872,10 +876,15 @@ export function createDeploymentMetadata(
   const assets = includeAssets
     ? clonePublicAssetRecord(output.assets, publicAssetFiles)
     : undefined;
+  const metadata = readOptionalStaticJsonObjectProperty(
+    output,
+    "deployment",
+    "BuildOutput.deployment",
+  );
   return pruneUndefined({
     version: 1 as const,
     buildId: output.buildId,
-    paths: output.paths,
+    paths: { ...output.paths },
     publicPath: output.publicPath,
     assets: assets && hasAssetRecordEntries(assets) ? assets : undefined,
     documents: createDeploymentDocuments(output, includeAssets),
@@ -883,7 +892,7 @@ export function createDeploymentMetadata(
     server: pruneUndefined({
       entry: output.server.entry,
     }),
-    metadata: output.deployment,
+    metadata: metadata ? cloneStaticJsonValue(metadata) : undefined,
   }) as DeploymentMetadata;
 }
 
@@ -1120,7 +1129,9 @@ function hasAssetRecordEntries(assets: Record<string, AssetGroup>): boolean {
 }
 
 function optionalAssetGroup(assets: AssetGroup): AssetGroup | undefined {
-  return assets.js.length > 0 || assets.css.length > 0 ? assets : undefined;
+  return assets.js.length > 0 || assets.css.length > 0
+    ? cloneAssetGroup(assets)
+    : undefined;
 }
 
 function collectPublicAssetFiles(output: BuildOutput): Set<string> {

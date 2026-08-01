@@ -3394,6 +3394,49 @@ describe("build", () => {
     );
   });
 
+  it("validates deployment metadata after each buildOutput hook", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    const invalidMetadata: Plugin<Record<string, never>> = {
+      name: "invalid-deployment-metadata",
+      setup() {
+        return {
+          buildOutput(output) {
+            events.push("invalid");
+            output.deployment = { serialize() {} } as never;
+          },
+        };
+      },
+    };
+    const laterPlugin: Plugin<Record<string, never>> = {
+      name: "later-output-hook",
+      setup() {
+        return {
+          buildOutput() {
+            events.push("later");
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [invalidMetadata, laterPlugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "BuildOutput after buildOutput hooks.deployment.serialize must be JSON-serializable",
+    );
+    expect(events).toEqual(["invalid"]);
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
+      false,
+    );
+  });
+
   it("allows buildOutput hooks to adjust every nested AssetGroup and deployment", async () => {
     const cwd = await createProject();
     await writeFile(

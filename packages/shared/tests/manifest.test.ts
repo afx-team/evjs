@@ -4858,6 +4858,127 @@ describe("createPublicManifest", () => {
   });
 });
 
+describe("createDeploymentMetadata", () => {
+  it("rejects lossy or unsafe plugin-owned metadata", () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const getter = {};
+    Object.defineProperty(getter, "value", {
+      enumerable: true,
+      get() {
+        return "hidden";
+      },
+    });
+    const unsafeKey = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(unsafeKey, "__proto__", {
+      enumerable: true,
+      value: "unsafe",
+      writable: true,
+    });
+
+    const cases: Array<[label: string, metadata: unknown, error: string]> = [
+      ["function", { handler() {} }, "must be JSON-serializable"],
+      ["bigint", { value: 1n }, "must be JSON-serializable"],
+      ["non-finite number", { value: Number.NaN }, "finite numbers"],
+      ["negative zero", { value: -0 }, "must not contain negative zero"],
+      ["cycle", cycle, "must not contain cycles"],
+      ["getter", getter, "enumerable own data property"],
+      ["unsafe key", unsafeKey, "is not a safe config field"],
+    ];
+
+    for (const [label, metadata, error] of cases) {
+      const output = createMinimalBuildOutput();
+      output.deployment = metadata as BuildOutput["deployment"];
+      expect(
+        () => assertFrameworkManifestShape(output, `${label} BuildOutput`),
+        label,
+      ).toThrow(error);
+      expect(() => createDeploymentMetadata(output), label).toThrow(error);
+    }
+  });
+
+  it("rejects a deployment metadata accessor without invoking it", () => {
+    const output = createMinimalBuildOutput();
+    let invoked = false;
+    Object.defineProperty(output, "deployment", {
+      enumerable: true,
+      get() {
+        invoked = true;
+        return { platform: "test" };
+      },
+    });
+
+    expect(() => assertFrameworkManifestShape(output, "BuildOutput")).toThrow(
+      "BuildOutput.deployment must be an enumerable own data property",
+    );
+    expect(() => createDeploymentMetadata(output)).toThrow(
+      "BuildOutput.deployment must be an enumerable own data property",
+    );
+    expect(invoked).toBe(false);
+  });
+
+  it("clones deployment metadata without invoking inherited toJSON", () => {
+    const output = createMinimalBuildOutput();
+    let invoked = false;
+    const channels = ["stable"];
+    Object.setPrototypeOf(channels, {
+      toJSON() {
+        invoked = true;
+        return ["replaced"];
+      },
+    });
+    output.deployment = { channels };
+
+    const metadata = createDeploymentMetadata(output);
+
+    expect(invoked).toBe(false);
+    expect(metadata.metadata).toEqual({ channels: ["stable"] });
+  });
+
+  it("returns projections isolated from the linked BuildOutput and each other", () => {
+    const output = createMinimalBuildOutput();
+    output.deployment = {
+      platform: "test",
+      nested: { region: "primary" },
+    };
+    output.apps.default = {
+      assets: { js: ["app.js"], css: ["app.css"] },
+      document: { fileName: "index.html" },
+    };
+
+    const first = createDeploymentMetadata(output);
+    const second = createDeploymentMetadata(output);
+    first.paths.rootDir = "changed";
+    first.documents[0]?.assets?.js.push("changed.js");
+    const firstMetadata = first.metadata as Record<string, unknown>;
+    (firstMetadata.nested as Record<string, unknown>).region = "changed";
+
+    expect(output.paths.rootDir).toBe("dist");
+    expect(output.apps.default.assets.js).toEqual(["app.js"]);
+    expect(output.deployment).toEqual({
+      platform: "test",
+      nested: { region: "primary" },
+    });
+    expect(second.paths.rootDir).toBe("dist");
+    expect(second.documents[0]?.assets?.js).toEqual(["app.js"]);
+    expect(second.metadata).toEqual({
+      platform: "test",
+      nested: { region: "primary" },
+    });
+
+    output.paths.rootDir = "source-changed";
+    output.apps.default.assets.js.push("source-changed.js");
+    (output.deployment.nested as Record<string, unknown>).region =
+      "source-changed";
+    expect(second.paths.rootDir).toBe("dist");
+    expect(second.documents[0]?.assets?.js).toEqual(["app.js"]);
+    expect(second.metadata).toEqual({
+      platform: "test",
+      nested: { region: "primary" },
+    });
+  });
+});
+
 describe("createServerManifest", () => {
   it("projects BuildOutput into the server manifest shape", () => {
     const output: BuildOutput = {

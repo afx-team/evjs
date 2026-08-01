@@ -27,6 +27,11 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   canonical output. `onBuildFacts()` now returns `"published"` or `"discarded"`;
   adapters may acknowledge compiler facts and signal server readiness only
   after publication.
+- **Static deployment metadata** — Plugin-owned `BuildOutput.deployment` values
+  must be plain, losslessly JSON-serializable objects. Functions, accessors,
+  non-finite numbers, negative zero, unsafe keys, sparse arrays, and cycles are
+  rejected before output publication; each deployment projection is now an
+  isolated snapshot.
 
 ### ✨ Improvements
 

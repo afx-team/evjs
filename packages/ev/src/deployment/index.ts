@@ -13,6 +13,7 @@ import type {
   DeploymentMetadata,
   DeploymentRouteOutput,
   DeploymentServerOutput,
+  StaticJsonObject,
 } from "@evjs/shared/manifest";
 import {
   collectBuildOutputServerJavaScriptArtifacts,
@@ -114,7 +115,7 @@ export type StaticDeploymentUnsupportedCapability =
   | "ppr-pages"
   | "rsc-pages";
 
-export interface StaticDeploymentCompatibility {
+export interface StaticDeploymentCompatibility extends StaticJsonObject {
   complete: boolean;
   unsupportedCapabilities: StaticDeploymentUnsupportedCapability[];
 }
@@ -387,7 +388,7 @@ export function createStaticDeploymentFiles(
   });
   artifact.metadata = {
     ...(artifact.metadata ?? {}),
-    static: compatibility,
+    static: cloneStaticDeploymentCompatibility(compatibility),
   };
 
   return {
@@ -396,6 +397,15 @@ export function createStaticDeploymentFiles(
     redirectsFileName,
     redirects: createStaticRedirects(output, compatibility),
     compatibility,
+  };
+}
+
+function cloneStaticDeploymentCompatibility(
+  compatibility: StaticDeploymentCompatibility,
+): StaticDeploymentCompatibility {
+  return {
+    complete: compatibility.complete,
+    unsupportedCapabilities: [...compatibility.unsupportedCapabilities],
   };
 }
 

@@ -86,8 +86,12 @@ adapter 无法安全地原地替换配置，更新会 fail-closed 并明确提�
 
 ## Build Output 所有权
 
-`buildOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。其他
-`BuildOutput` 字段仍由 framework 持有，包括：
+`buildOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。
+`deployment` 必须是可无损 JSON 序列化的普通对象。函数、访问器、非有限数值、负零、
+不安全 key、稀疏数组和循环引用会在引入它们的 hook 执行后立即被拒绝，后续 output
+hook 与发布阶段都不会继续执行。
+
+其他 `BuildOutput` 字段仍由 framework 持有，包括：
 
 - build id、输出路径和 public path；
 - runtime endpoint 与 transport；

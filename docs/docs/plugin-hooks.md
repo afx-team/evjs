@@ -94,7 +94,12 @@ restart diagnostic instead of continuing with mixed or stale state.
 ## Build Output Ownership
 
 `buildOutput()` may adjust only linked `AssetGroup` contents and `deployment`
-metadata. Every other `BuildOutput` field remains framework-owned, including:
+metadata. `deployment` must be a plain, losslessly JSON-serializable object.
+Functions, accessors, non-finite numbers, negative zero, unsafe keys, sparse
+arrays, and cycles are rejected immediately after the hook that introduced
+them, before later output hooks or publication run.
+
+Every other `BuildOutput` field remains framework-owned, including:
 
 - the build id, output paths, and public path;
 - runtime endpoints and transport;

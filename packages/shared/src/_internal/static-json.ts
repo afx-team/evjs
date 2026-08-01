@@ -6,7 +6,12 @@ export type StaticJsonValue =
   | number
   | string
   | readonly StaticJsonValue[]
-  | { readonly [key: string]: StaticJsonValue };
+  | StaticJsonObject;
+
+/** A plain, losslessly JSON-serializable object with safe property keys. */
+export type StaticJsonObject = {
+  readonly [key: string]: StaticJsonValue;
+};
 
 /**
  * Validate values that cross evjs static configuration and graph boundaries.
@@ -30,6 +35,11 @@ export function assertStaticJsonValue(
       return;
     }
     if (typeof current === "number") {
+      if (Object.is(current, -0)) {
+        throw new Error(
+          `[evjs] ${source}${suffix} must not contain negative zero.`,
+        );
+      }
       if (Number.isFinite(current)) return;
       throw new Error(`[evjs] ${source}${suffix} must contain finite numbers.`);
     }
@@ -67,8 +77,76 @@ export function assertStaticJsonValue(
   visit(value, "");
 }
 
+/** Read and validate an optional static-JSON object without invoking accessors. */
+export function readOptionalStaticJsonObjectProperty(
+  owner: object,
+  key: string,
+  source: string,
+): StaticJsonObject | undefined {
+  const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+  if (!descriptor) {
+    if (key in owner) {
+      throw new Error(`[evjs] ${source} must be an own data property.`);
+    }
+    return undefined;
+  }
+  if (!descriptor.enumerable || !("value" in descriptor)) {
+    throw new Error(
+      `[evjs] ${source} must be an enumerable own data property.`,
+    );
+  }
+  if (descriptor.value === undefined) return undefined;
+  if (!isPlainStaticJsonObject(descriptor.value)) {
+    throw new Error(`[evjs] ${source} must be a plain object.`);
+  }
+  assertStaticJsonValue(descriptor.value, source);
+  return descriptor.value;
+}
+
 export function cloneStaticJsonValue<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  assertStaticJsonValue(value, "static JSON value");
+  return cloneValidatedStaticJsonValue(value) as T;
+}
+
+function cloneValidatedStaticJsonValue(
+  value: StaticJsonValue,
+): StaticJsonValue {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    const clone: StaticJsonValue[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      clone.push(
+        cloneValidatedStaticJsonValue(
+          readValidatedStaticJsonProperty(value, String(index)),
+        ),
+      );
+    }
+    return clone;
+  }
+
+  const clone: Record<string, StaticJsonValue> = {};
+  for (const key of Object.keys(value)) {
+    Object.defineProperty(clone, key, {
+      configurable: true,
+      enumerable: true,
+      value: cloneValidatedStaticJsonValue(
+        readValidatedStaticJsonProperty(value, key),
+      ),
+      writable: true,
+    });
+  }
+  return clone;
+}
+
+function readValidatedStaticJsonProperty(
+  owner: object,
+  key: string,
+): StaticJsonValue {
+  const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+  if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+    throw new Error("[evjs] Static JSON value changed while being cloned.");
+  }
+  return descriptor.value as StaticJsonValue;
 }
 
 export function deepFreezeStaticJsonValue<T>(value: T): T {

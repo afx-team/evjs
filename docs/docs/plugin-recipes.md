@@ -29,7 +29,8 @@ export const deployMetadata = definePlugin({
 
 `buildOutput()` can change only linked `AssetGroup` contents and `deployment`
 metadata. See [Build Output Ownership](./plugin-hooks#build-output-ownership)
-for the framework-owned fields.
+for the framework-owned fields. Deployment metadata must contain only plain,
+losslessly JSON-serializable values; evjs validates it after every output hook.
 
 ## Add Per-Page Metadata
 
