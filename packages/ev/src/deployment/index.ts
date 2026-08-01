@@ -23,7 +23,10 @@ import {
   type DeploymentOutputReservation,
   declareDeploymentOutputReservations,
 } from "../_internal/build/deployment-output-reservations.js";
-import { createFrameworkRuntime } from "../_internal/build/framework-runtime.js";
+import {
+  createFrameworkRuntime,
+  serializeFrameworkRuntimeExpression,
+} from "../_internal/build/framework-runtime.js";
 import {
   assertPortableRelativeArtifactPath,
   FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
@@ -707,7 +710,7 @@ const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
 const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};
 const staticFallback = ${JSON.stringify(staticFallback ?? "")};
 const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};
-globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(frameworkRuntime, null, 2)};
+globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${serializeFrameworkRuntimeExpression(frameworkRuntime)};
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
   const mod = await import(pathToFileURL(resolveServerArtifact(asset)).href);
   return normalizeServerModule(mod);
@@ -916,7 +919,7 @@ function createEdgeWorkerModule(
   return [
     `const serverAssetPrefix = ${JSON.stringify(serverAssetPrefix)};`,
     `const serverArtifacts = new Set(${JSON.stringify(serverArtifacts)});`,
-    `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(frameworkRuntime, null, 2)};`,
+    `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${serializeFrameworkRuntimeExpression(frameworkRuntime)};`,
     "globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {",
     "  return normalizeServerModule(await import(resolveServerArtifact(asset)));",
     "};",

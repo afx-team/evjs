@@ -56,6 +56,9 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
+- **Preserve generated runtime record keys** — Dev, Node, and Edge bootstraps
+  now deserialize framework runtime JSON instead of emitting an object literal,
+  preserving own prototype-shaped identifiers such as `__proto__`.
 - **Complete server runtime outputs** — Linked manifests and deployment
   projections now reject routed SSG without a static Document and require one
   canonical self-contained runtime entry for request-time SSR, PPR, RSC,

@@ -76,7 +76,10 @@ import {
   linkAndEmitBuildOutput,
   validateHtmlTemplates,
 } from "./framework-output.js";
-import type { createFrameworkRuntime } from "./framework-runtime.js";
+import {
+  type createFrameworkRuntime,
+  serializeFrameworkRuntimeExpression,
+} from "./framework-runtime.js";
 import { GENERATED_IR_DIR } from "./generated-contributions.js";
 import type { createCoreGraph } from "./graph/index.js";
 import {
@@ -1501,7 +1504,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
           `(async () => {`,
           `const path = require("node:path");`,
           `const { pathToFileURL } = require("node:url");`,
-          `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(state.frameworkRuntime, null, 2)};`,
+          `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${serializeFrameworkRuntimeExpression(state.frameworkRuntime)};`,
           `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
           `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,
           `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,

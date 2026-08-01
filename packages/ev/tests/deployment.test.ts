@@ -260,6 +260,9 @@ describe("createDeploymentArtifact", () => {
       defaultPort: 8080,
       includeAssets: false,
     });
+    if (!files.serverModule) {
+      throw new Error("Expected the Node deployment server module.");
+    }
 
     expect(files.artifactFileName).toBe("deployment.node.json");
     expect(files.serverFileName).toBe("server.mjs");
@@ -270,7 +273,9 @@ describe("createDeploymentArtifact", () => {
     expect(files.serverModule).toContain(
       "globalThis.__EVJS_FRAMEWORK_RUNTIME__ =",
     );
-    expect(files.serverModule).toContain('"buildId": "build-1"');
+    expect(evaluateGeneratedFrameworkRuntime(files.serverModule).buildId).toBe(
+      "build-1",
+    );
     expect(files.serverModule).not.toContain('"renderers"');
     expect(files.serverModule).not.toContain("readJsonIfExists");
     expect(files.serverModule).toContain(
@@ -296,6 +301,23 @@ describe("createDeploymentArtifact", () => {
     );
     expect(files.serverModule).toContain("PORT");
     expect(files.serverModule).toContain("8080");
+  });
+
+  it("preserves __proto__ Page ids in generated Node and Edge runtimes", () => {
+    const output = createPrototypePageDeploymentOutput();
+    const nodeModule = createNodeDeploymentFiles(output).serverModule;
+    const edgeModule = createEdgeDeploymentFiles(output).workerModule;
+
+    expect(nodeModule).toBeDefined();
+    expect(edgeModule).toBeDefined();
+    for (const source of [nodeModule, edgeModule]) {
+      const runtime = evaluateGeneratedFrameworkRuntime(source ?? "");
+      expect(Object.hasOwn(runtime.routing.pages, "__proto__")).toBe(true);
+      expect(runtime.routing.pages.__proto__).toMatchObject({
+        path: "/__proto__",
+        routeId: "__proto__",
+      });
+    }
   });
 
   it("rejects deployment file paths and cross-platform file aliases", () => {
@@ -1599,6 +1621,22 @@ function evaluateGeneratedRouteMatcher(source: string): GeneratedRouteMatcher {
   ) as GeneratedRouteMatcher;
 }
 
+function evaluateGeneratedFrameworkRuntime(source: string): {
+  buildId: string;
+  routing: { pages: Record<string, unknown> };
+} {
+  const prefix = "globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ";
+  const start = source.indexOf(prefix);
+  const end = source.indexOf(";\n", start);
+  if (start < 0 || end < 0) {
+    throw new Error("Generated framework runtime was not found.");
+  }
+  return vm.runInNewContext(source.slice(start + prefix.length, end)) as {
+    buildId: string;
+    routing: { pages: Record<string, unknown> };
+  };
+}
+
 function extractGeneratedStringArray(source: string, name: string): string[] {
   const prefix = `const ${name} = `;
   const start = source.indexOf(prefix);
@@ -1765,4 +1803,38 @@ function createServerDeploymentOutput(paths: {
       ],
     },
   };
+}
+
+function createPrototypePageDeploymentOutput(): BuildOutput {
+  const output = createServerDeploymentOutput({
+    rootDir: "dist",
+    publicDir: "dist/client",
+    serverDir: "dist/server",
+  });
+  output.apps = {};
+  output.pages = Object.fromEntries([
+    [
+      "__proto__",
+      {
+        assets: { js: [], css: [] },
+        render: "ssr",
+        rendering: {
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "none",
+        },
+        path: "/__proto__",
+        routeId: "__proto__",
+      },
+    ],
+  ]);
+  output.routes = [
+    {
+      id: "__proto__",
+      path: "/__proto__",
+      pageId: "__proto__",
+    },
+  ];
+  return output;
 }
