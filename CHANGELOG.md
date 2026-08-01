@@ -62,7 +62,9 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   resources, the affected watcher set falls back to explicit dependency polling
   and later watcher sets stay in polling mode; permission and unknown watcher
   failures terminate the session after running cleanup instead of leaving dev
-  running with incomplete coverage.
+  running with incomplete coverage. Repeated native notifications for the same
+  dependency snapshot are coalesced without dropping later file revisions or a
+  stronger config-reload requirement.
 - **Transactional dev updates** — Framework plan changes now reserve an adapter
   generation before writing candidate `.ev` input and publish fresh build facts
   only after the selected state is stable. Failed updates restore generated IR,

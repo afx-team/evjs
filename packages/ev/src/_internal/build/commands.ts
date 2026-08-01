@@ -130,6 +130,35 @@ interface DevPluginExecutionSnapshot<TBundlerCfg> extends DevCycleTracker {
   readonly context: MutablePluginContext<TBundlerCfg>;
 }
 
+interface ScheduledDevChangeSnapshot {
+  forceConfigReload: boolean;
+  snapshot: string;
+}
+
+/** Record one observed dependency state and report whether it needs an update. */
+export function recordDevChangeSnapshot(
+  previousChanges: Map<string, ScheduledDevChangeSnapshot>,
+  file: string,
+  snapshot: string | undefined,
+  forceConfigReload: boolean,
+): boolean {
+  if (snapshot === undefined) {
+    previousChanges.delete(file);
+    return true;
+  }
+  const previous = previousChanges.get(file);
+  // A candidate watcher may upgrade the same file state from a route
+  // invalidation to a required config reload; that stronger retry stays.
+  if (
+    previous?.snapshot === snapshot &&
+    (previous.forceConfigReload || !forceConfigReload)
+  ) {
+    return false;
+  }
+  previousChanges.set(file, { forceConfigReload, snapshot });
+  return true;
+}
+
 interface DevFrameworkOutputTransaction {
   beginCycle(): (() => void) | undefined;
   capture(): Promise<void>;
@@ -1396,6 +1425,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let candidateDependencyWatcher: CandidateWatchGeneration | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const pendingDevChanges = new Set<string>();
+  const lastScheduledDevChanges = new Map<string, ScheduledDevChangeSnapshot>();
   let pendingForcedConfigReload = false;
   let devSessionEnding = false;
   const expectedApiExits = new WeakSet<ApiProcess>();
@@ -2624,11 +2654,27 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       const devWatchReconcileFrom = captureDevDependencyWatchPlan();
       const candidateWatchReconcileFrom = captureCandidateDependencyWatchPlan();
       if (devWatchFailed) return;
+      const changedSnapshotPlans = [
+        devWatchReconcileFrom,
+        candidateWatchReconcileFrom,
+      ].filter((plan): plan is PreparedWatchFilesPlan => Boolean(plan));
+      const changedFilesWithNewSnapshots = changedFiles.filter((file) => {
+        const snapshot = changedSnapshotPlans
+          .find((plan) => plan.baselineSnapshots.has(file))
+          ?.baselineSnapshots.get(file);
+        return recordDevChangeSnapshot(
+          lastScheduledDevChanges,
+          file,
+          snapshot,
+          shouldForceConfigReload,
+        );
+      });
+      if (changedFilesWithNewSnapshots.length === 0) return;
       devUpdateQueue = devUpdateQueue
         .catch(() => {})
         .then(() =>
           handleDevDependencyChange(
-            changedFiles,
+            changedFilesWithNewSnapshots,
             shouldForceConfigReload,
             devWatchReconcileFrom,
             candidateWatchReconcileFrom,
@@ -2644,6 +2690,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     devSessionEnding = true;
     if (debounceTimer) clearTimeout(debounceTimer);
     pendingDevChanges.clear();
+    lastScheduledDevChanges.clear();
     pendingForcedConfigReload = false;
     onPluginWatchFileAdded = undefined;
     onBundlerConfigWatchFileAdded = undefined;

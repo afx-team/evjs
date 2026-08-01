@@ -31,6 +31,7 @@ import {
   build,
   dev,
   prepareFrameworkBuild,
+  recordDevChangeSnapshot,
 } from "../src/_internal/build/commands.js";
 import { loadConfigFile } from "../src/_internal/build/config-module.js";
 import { materializeFrameworkIR } from "../src/_internal/build/generated-contributions.js";
@@ -7451,6 +7452,32 @@ describe("build", () => {
 });
 
 describe("dev", () => {
+  it("retains stronger config reloads for an unchanged file snapshot", () => {
+    const previous = new Map<
+      string,
+      { forceConfigReload: boolean; snapshot: string }
+    >();
+
+    expect(recordDevChangeSnapshot(previous, "config.ts", "first", false)).toBe(
+      true,
+    );
+    expect(recordDevChangeSnapshot(previous, "config.ts", "first", false)).toBe(
+      false,
+    );
+    expect(recordDevChangeSnapshot(previous, "config.ts", "first", true)).toBe(
+      true,
+    );
+    expect(recordDevChangeSnapshot(previous, "config.ts", "first", false)).toBe(
+      false,
+    );
+    expect(
+      recordDevChangeSnapshot(previous, "config.ts", "second", false),
+    ).toBe(true);
+    expect(
+      recordDevChangeSnapshot(previous, "unknown.ts", undefined, false),
+    ).toBe(true);
+  });
+
   it("rejects a duplicate dev run before starting a second bundler", async () => {
     const cwd = await createProject();
     let starts = 0;
@@ -8945,7 +8972,7 @@ describe("dev", () => {
     expect(events).toEqual(["bundler.dev"]);
   });
 
-  it("keeps an unchanged physical watch plan across filesystem events", async () => {
+  it("keeps the watch plan and coalesces duplicate file snapshots", async () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "plugin-data.json");
     await writeFile(dependency, "initial", "utf-8");
@@ -9054,6 +9081,11 @@ describe("dev", () => {
       await writeFile(dependency, "first", "utf-8");
       firstDependencyWatcher.listener("change", path.basename(dependency));
       await waitForEvent(events, "update.done:1");
+
+      firstDependencyWatcher.listener("change", path.basename(dependency));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(updateCount).toBe(1);
+      expect(contributionCount).toBe(2);
 
       expect(records).toHaveLength(initialWatcherCount);
       expect(
@@ -9482,6 +9514,7 @@ describe("dev", () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
     const events: string[] = [];
 
     function createOutputPlugin(
@@ -9583,8 +9616,8 @@ describe("dev", () => {
         routing: { mode: "mpa" },
         plugins: [createOutputPlugin("candidate")],
       };
-      await new Promise((resolve) => setTimeout(resolve, 100));
       await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
       await expect(
         Promise.race([
           running,
@@ -9604,6 +9637,7 @@ describe("dev", () => {
         process.emit("SIGINT");
         await running.catch(() => {});
       }
+      controlledWatch.restore();
     }
 
     expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
@@ -9636,6 +9670,7 @@ describe("dev", () => {
     );
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
     const events: string[] = [];
     const stopCapturingRollback = captureFrameworkWarning(
       events,
@@ -9742,8 +9777,8 @@ describe("dev", () => {
         routing: { mode: "mpa" },
         plugins: [createOutputPlugin("candidate")],
       };
-      await new Promise((resolve) => setTimeout(resolve, 100));
       await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
       await waitForEvent(events, "candidate-rolled-back");
 
       expect(initialHtml).toBeDefined();
@@ -9781,6 +9816,7 @@ describe("dev", () => {
         process.emit("SIGINT");
         await running.catch(() => {});
       }
+      controlledWatch.restore();
       stopCapturingRollback();
     }
 
@@ -9892,6 +9928,7 @@ describe("dev", () => {
     );
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
     const events: string[] = [];
     const stopCapturingRollback = captureFrameworkWarning(
       events,
@@ -10010,8 +10047,8 @@ describe("dev", () => {
         routing: { mode: "mpa" },
         plugins: [createOutputPlugin("candidate", true)],
       };
-      await new Promise((resolve) => setTimeout(resolve, 100));
       await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
       await waitForEvent(events, "candidate-rolled-back");
 
       expect(initialMetadata).toBeDefined();
@@ -10049,6 +10086,7 @@ describe("dev", () => {
         process.emit("SIGINT");
         await running.catch(() => {});
       }
+      controlledWatch.restore();
       stopCapturingRollback();
     }
 
