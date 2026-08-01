@@ -56,6 +56,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
+- **PPR cache origin isolation** — Request-time PPR region cache keys now
+  include the source URL origin, preventing one hostname from reusing another
+  hostname's cached region response when a server instance hosts multiple
+  origins.
 - **Resilient dev dependency watching** — Framework dependencies in the same
   directory share one native watcher, and project-local config imports remain
   part of the reload closure. When the operating system exhausts native watcher

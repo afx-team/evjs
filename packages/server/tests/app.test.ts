@@ -2936,6 +2936,60 @@ describe("createApp", () => {
     expect(renderCount).toBe(1);
   });
 
+  it("isolates cached PPR regions by request origin", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default(ctx: ServerRenderContext) {
+                  renderCount += 1;
+                  return `<p>${new URL(ctx.request.url).origin}</p>`;
+                },
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const tenantA = await app.request(
+      "https://tenant-a.test/__evjs/ppr/dashboard/inventory",
+    );
+    const tenantB = await app.request(
+      "https://tenant-b.test/__evjs/ppr/dashboard/inventory",
+    );
+    const tenantAHit = await app.request(
+      "https://tenant-a.test/__evjs/ppr/dashboard/inventory",
+    );
+
+    expect(tenantA.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await tenantA.text()).toBe("<p>https://tenant-a.test</p>");
+    expect(tenantB.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await tenantB.text()).toBe("<p>https://tenant-b.test</p>");
+    expect(tenantAHit.headers.get("x-evjs-cache")).toBe("HIT");
+    expect(await tenantAHit.text()).toBe("<p>https://tenant-a.test</p>");
+    expect(renderCount).toBe(2);
+  });
+
   it("uses a custom PPR region cache when provided", async () => {
     const manifest = createManifest();
     manifest.routing.pages.dashboard.ppr = {

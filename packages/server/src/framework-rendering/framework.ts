@@ -2292,7 +2292,13 @@ function createPprRegionCacheKey(
   match: PprRegionMatch,
 ): string {
   const url = new URL(match.pageUrl ?? request.url, request.url);
-  return `${match.pageId}:${match.regionId}:${normalizeRoutePathname(url.pathname)}${url.search}`;
+  return JSON.stringify([
+    match.pageId,
+    match.regionId,
+    url.origin,
+    normalizeRoutePathname(url.pathname),
+    url.search,
+  ]);
 }
 
 async function readPprRegionCache(
