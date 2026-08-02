@@ -12711,6 +12711,7 @@ describe("dev", () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
     const events: string[] = [];
     const stopCapturingRollback = captureFrameworkWarning(
       events,
@@ -12784,6 +12785,7 @@ describe("dev", () => {
     try {
       await waitForEvent(events, "bundler.dev");
       await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
       await waitForEvent(events, "update:rolled-back");
       const emitOld = emitOldFacts;
       if (!emitOld) throw new Error("Expected an old-generation callback.");
@@ -12797,6 +12799,7 @@ describe("dev", () => {
         await running.catch(() => {});
       }
       stopCapturingRollback();
+      controlledWatch.restore();
     }
 
     expect(events).toEqual([
