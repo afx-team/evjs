@@ -29,21 +29,21 @@ import type {
 import { assertPluginId } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type {
-  ContributionContext,
   EmitApi,
   FrameworkApplicationEntryView,
   FrameworkApplicationView,
   FrameworkEntryOwner,
   FrameworkEntryView,
-  FrameworkIRView,
   FrameworkRouteView,
   FrameworkSlot,
   FrameworkSlotInput,
+  FrameworkView,
   GeneratedModuleRef,
   HtmlDocument,
   HtmlDocumentInfo,
   Plugin,
-  PluginContext,
+  PluginContributeContext,
+  PluginSetupContext,
 } from "../../plugin/index.js";
 import {
   createOriginalClientEntryFacadeSource,
@@ -152,7 +152,7 @@ interface MaterializeFrameworkIROptions<TBundlerCfg> {
   graph: CoreGraph;
   plan: BuildPlan;
   plugins: Plugin<TBundlerCfg>[];
-  pluginContext: PluginContext<TBundlerCfg>;
+  pluginContext: PluginSetupContext<TBundlerCfg>;
   write?: boolean;
 }
 
@@ -177,7 +177,7 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   });
 
   for (const plugin of options.plugins) {
-    if (!plugin.contributions) continue;
+    if (!plugin.contribute) continue;
     await collector.run(plugin);
   }
   collector.resolveModuleSources();
@@ -257,7 +257,7 @@ class ContributionCollector<TBundlerCfg> {
       config: ResolvedFrameworkConfig<TBundlerCfg>;
       graph: CoreGraph;
       plan: BuildPlan;
-      pluginContext: PluginContext<TBundlerCfg>;
+      pluginContext: PluginSetupContext<TBundlerCfg>;
     },
   ) {}
 
@@ -265,18 +265,18 @@ class ContributionCollector<TBundlerCfg> {
     const pluginId = plugin.id;
     assertPluginId(pluginId, "plugin id");
     const emit = this.createEmitApi(pluginId);
-    const context: ContributionContext<TBundlerCfg> = {
+    const context: PluginContributeContext<TBundlerCfg> = {
       ...this.options.pluginContext,
       mode: this.options.mode,
       command: this.options.command,
       cwd: this.options.cwd,
       config: createPluginConfigView(this.options.config),
-      framework: createFrameworkIRView(this.options.graph, this.options.plan),
+      framework: createFrameworkView(this.options.graph, this.options.plan),
       emit,
       slot: <K extends FrameworkSlotName>(name: K) =>
         this.createSlot(pluginId, name),
     };
-    await plugin.contributions?.(context);
+    await plugin.contribute?.(context);
   }
 
   resolveModuleSources(): void {
@@ -985,10 +985,10 @@ function createManifestView(plan: BuildPlan, graph: CoreGraph): unknown {
  * Callers can inspect semantic ownership and materialized entries but cannot
  * mutate framework IR.
  */
-export function createFrameworkIRView(
+export function createFrameworkView(
   graph: CoreGraph,
   plan: BuildPlan,
-): FrameworkIRView {
+): FrameworkView {
   const entries = plan.entries.map(createFrameworkEntryView);
   return deepFreeze({
     applications: createFrameworkApplicationViews(graph),
@@ -1013,9 +1013,7 @@ export function createFrameworkIRView(
   });
 }
 
-function createFrameworkRouteViews(
-  graph: CoreGraph,
-): FrameworkIRView["routes"] {
+function createFrameworkRouteViews(graph: CoreGraph): FrameworkView["routes"] {
   return graph.routes.map(
     (route): FrameworkRouteView => ({
       id: route.id,
@@ -1053,7 +1051,7 @@ function createCoreApplicationView(
 
 function createFrameworkPageView(
   page: CoreGraph["pages"][string],
-): FrameworkIRView["pages"][number] {
+): FrameworkView["pages"][number] {
   return {
     id: page.id,
     applicationId: page.applicationId,
@@ -1063,7 +1061,7 @@ function createFrameworkPageView(
       provider: page.source.provider,
       ...(page.source.config ? { config: page.source.config } : {}),
     },
-    plugins: cloneJson(page.plugins),
+    plugins: createFrameworkPagePluginSettingsView(page.plugins),
     render: page.render,
     ...(page.componentModel ? { componentModel: page.componentModel } : {}),
     ...(page.hydrate ? { hydrate: page.hydrate } : {}),
@@ -1072,6 +1070,18 @@ function createFrameworkPageView(
     ...(page.metadata ? { metadata: cloneJson(page.metadata) } : {}),
     provenance: cloneJson(page.provenance),
   };
+}
+
+function createFrameworkPagePluginSettingsView(
+  settings: CoreGraph["pages"][string]["plugins"],
+): FrameworkView["pages"][number]["plugins"] {
+  return Object.fromEntries(
+    Object.entries(settings).map(([id, setting]) =>
+      setting.enabled
+        ? [id, { enabled: true, options: cloneJson(setting.options) }]
+        : [id, { enabled: false }],
+    ),
+  );
 }
 
 function createFrameworkEntryView(entry: BuildEntry): FrameworkEntryView {

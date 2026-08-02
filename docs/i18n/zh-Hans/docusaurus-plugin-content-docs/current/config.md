@@ -164,7 +164,7 @@ export default defineConfig({
 `null` 或 `undefined`；运行时会忽略这些非活跃项。可能进入 falsy 分支的条目不保证
 安装，因此不会向 Page config 暴露 plugin id。Page 合同有 defaults，且插件与
 Application options 需要保持启用、但每个 Page 必须显式 opt in 时，使用
-`plugin.forPages(config)`。
+`plugin.forPages(options)`。
 
 插件合同允许时，Application 配置可以包含类型安全的可执行选项或显式模块引用。
 不要把 secret 放进插件会投影到 generated file 或浏览器 runtime 的值中。
@@ -325,8 +325,8 @@ export default defineConfig({
 });
 ```
 
-Config 与 plugin setup 完成后，解析出的输出路径归 BuildPlan 持有。Adapter 使用
-这些路径执行 cleanup、写入产物、生成 stats 与 manifest；`bundlerConfig()` hook
+Plugin `configure()` 与 `setup()` 完成后，解析出的输出路径归 BuildPlan 持有。Adapter 使用
+这些路径执行 cleanup、写入产物、生成 stats 与 manifest；`configureBundler()` hook
 不能覆盖 framework 持有的 client 或 server 输出路径。
 
 `output.crossOriginLoading` 接受 `false`、`"anonymous"` 或
@@ -349,8 +349,8 @@ export default defineConfig({
 
 通过 `plugins` 安装插件，通常写成
 `pluginFactory(applicationConfig)`。插件可以声明独立 Page 合同，其 canonical `id`
-会出现在相邻 `page.config.ts` 中。同一个 Plugin descriptor 承载 config、setup、
-contributions 与 lifecycle hooks。参见[插件](./plugins)。
+会出现在相邻 `page.config.ts` 中。同一个 Plugin descriptor 承载 `configure()`、
+`setup()`、`contribute()` 与 lifecycle hooks。参见[插件](./plugins)。
 
 ### Bundler
 

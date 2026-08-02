@@ -20,7 +20,7 @@ import {
   SERVER_FUNCTION_TRANSFORM_RUNTIME,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
-import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
+import type { ConfigureBundlerContext, PluginHooks } from "@evjs/ev/plugin";
 import { pageRoutePathToRegExp } from "@evjs/shared";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
@@ -189,12 +189,15 @@ export async function createUtoopackConfig(
   };
   const outputTemplateExpectation =
     snapshotUtoopackOutputTemplates(utoopackConfig);
-  const frameworkEntryNames = utoopackConfig.entry.flatMap((entry) =>
-    entry.name ? [entry.name] : [],
-  );
+  const frameworkClientEntries = plan.entries
+    .filter((entry) => entry.environment === "client")
+    .map(({ import: entryImport, name }) => ({
+      import: entryImport,
+      name,
+    }));
 
   // Run plugin bundler hooks
-  const ctx: BundlerCtx<ConfigComplete> = {
+  const ctx: ConfigureBundlerContext<ConfigComplete> = {
     mode: isProduction ? "production" : "development",
     command: isProduction ? "build" : "dev",
     cwd,
@@ -206,8 +209,9 @@ export async function createUtoopackConfig(
   };
 
   for (const h of hooks) {
-    if (h.bundlerConfig) {
-      await h.bundlerConfig(utoopackConfig, ctx);
+    if (h.configureBundler) {
+      await h.configureBundler(utoopackConfig, ctx);
+      assertUtoopackServerEntryMatchesPlan(utoopackConfig, finalServerEntry);
       assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
         requireServerOutput: finalServerEntry !== undefined,
       });
@@ -215,11 +219,12 @@ export async function createUtoopackConfig(
         utoopackConfig,
         outputTemplateExpectation,
       );
-      assertUtoopackArtifactNames(utoopackConfig, frameworkEntryNames);
+      assertUtoopackArtifactIdentity(utoopackConfig, frameworkClientEntries);
       await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
     }
   }
 
+  assertUtoopackServerEntryMatchesPlan(utoopackConfig, finalServerEntry);
   assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
     requireServerOutput: finalServerEntry !== undefined,
   });
@@ -227,7 +232,7 @@ export async function createUtoopackConfig(
     utoopackConfig,
     outputTemplateExpectation,
   );
-  assertUtoopackArtifactNames(utoopackConfig, frameworkEntryNames);
+  assertUtoopackArtifactIdentity(utoopackConfig, frameworkClientEntries);
   await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
   if (
@@ -241,6 +246,22 @@ export async function createUtoopackConfig(
   }
 
   return utoopackConfig;
+}
+
+function assertUtoopackServerEntryMatchesPlan(
+  config: ConfigComplete,
+  expected: string | undefined,
+): void {
+  const actual = config.server?.entry;
+  if (actual === expected) return;
+
+  throw new Error(
+    `[evjs] Utoopack server.entry ${formatUtoopackServerEntry(actual)} must remain the exact framework-owned BuildPlan server.entry ${formatUtoopackServerEntry(expected)}. configureBundler hooks cannot override the framework server entry.`,
+  );
+}
+
+function formatUtoopackServerEntry(value: string | undefined): string {
+  return value === undefined ? "<missing>" : JSON.stringify(value);
 }
 
 const UTOOPACK_CLIENT_OUTPUT_TEMPLATE_FIELDS = [
@@ -303,7 +324,7 @@ function assertUtoopackOutputTemplatesMatchFramework(
   if (!expectation.server) {
     if (config.server) {
       throw new Error(
-        "[evjs] Utoopack bundlerConfig hooks cannot add a server build that is not owned by the active BuildPlan.",
+        "[evjs] Utoopack configureBundler hooks cannot add a server build that is not owned by the active BuildPlan.",
       );
     }
     return;
@@ -324,7 +345,7 @@ function assertUtoopackOutputTemplate(
 ): void {
   if (Object.is(actual, expected)) return;
   throw new Error(
-    `[evjs] ${field} ${formatUtoopackOutputTemplate(actual)} must remain the framework-owned template ${formatUtoopackOutputTemplate(expected)}. bundlerConfig hooks cannot override framework output file templates.`,
+    `[evjs] ${field} ${formatUtoopackOutputTemplate(actual)} must remain the framework-owned template ${formatUtoopackOutputTemplate(expected)}. configureBundler hooks cannot override framework output file templates.`,
   );
 }
 
@@ -332,13 +353,13 @@ function formatUtoopackOutputTemplate(value: unknown): string {
   return value === undefined ? "<unset>" : JSON.stringify(value);
 }
 
-function assertUtoopackArtifactNames(
+function assertUtoopackArtifactIdentity(
   config: ConfigComplete,
-  frameworkEntryNames: string[],
+  frameworkEntries: ReadonlyArray<{ import: string; name: string }>,
 ): void {
   if (!Array.isArray(config.entry)) {
     throw new Error(
-      "[evjs] Utoopack bundlerConfig hooks must preserve the static entry list so framework entry names can be validated.",
+      "[evjs] Utoopack configureBundler hooks must preserve the static entry list so framework entry names can be validated.",
     );
   }
 
@@ -346,16 +367,51 @@ function assertUtoopackArtifactNames(
     typeof entry.name === "string" ? [entry.name] : [],
   );
   assertPortableUtoopackNames(namedEntries, "Utoopack entry");
-  for (const expectedName of frameworkEntryNames) {
-    const matches = namedEntries.filter((name) => name === expectedName);
+  const frameworkEntryNames = new Set(
+    frameworkEntries.map((entry) => entry.name),
+  );
+  for (const expected of frameworkEntries) {
+    const matches = config.entry.filter(
+      (entry) => entry.name === expected.name,
+    );
     if (matches.length === 1) continue;
     throw new Error(
-      `[evjs] Utoopack bundlerConfig hooks must preserve framework entry name "${expectedName}" exactly once; found ${matches.length}.`,
+      `[evjs] Utoopack configureBundler hooks must preserve framework entry name "${expected.name}" exactly once; found ${matches.length}.`,
+    );
+  }
+
+  const unexpected = config.entry.filter(
+    (entry) =>
+      typeof entry.name !== "string" || !frameworkEntryNames.has(entry.name),
+  );
+  if (unexpected.length > 0) {
+    throw new Error(
+      `[evjs] Utoopack configureBundler hooks cannot add unplanned client entries: ${unexpected
+        .map((entry) =>
+          typeof entry.name === "string"
+            ? JSON.stringify(entry.name)
+            : "<unnamed>",
+        )
+        .join(", ")}. Client entries are owned by the active BuildPlan.`,
+    );
+  }
+
+  for (const expected of frameworkEntries) {
+    const actual = config.entry.find((entry) => entry.name === expected.name);
+    if (actual?.import === expected.import) continue;
+    throw new Error(
+      `[evjs] Utoopack entry "${expected.name}" import ${formatUtoopackEntryImport(actual?.import)} must remain the exact framework-owned BuildPlan import ${JSON.stringify(expected.import)}. configureBundler hooks cannot override framework entry imports.`,
     );
   }
 
   const splitChunkNames = Object.keys(config.optimization?.splitChunks ?? {});
   assertPortableUtoopackNames(splitChunkNames, "Utoopack split chunk");
+}
+
+function formatUtoopackEntryImport(value: unknown): string {
+  return value === undefined
+    ? "<missing>"
+    : (JSON.stringify(value) ?? String(value));
 }
 
 function assertPortableUtoopackNames(names: string[], field: string): void {

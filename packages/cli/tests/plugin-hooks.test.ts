@@ -1,10 +1,11 @@
 import type { BundlerAdapter } from "@evjs/ev/_internal/build";
 import { resolveConfig } from "@evjs/ev/config";
 import type {
+  BeforeBuildContext,
   BuildResult,
   Plugin,
-  PluginContext,
   PluginHooks,
+  PluginSetupContext,
 } from "@evjs/ev/plugin";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { createDeploymentMetadata } from "@evjs/shared/manifest";
@@ -21,7 +22,7 @@ import { describe, expect, it } from "vitest";
 // Re-implement private functions for isolated testing.
 async function collectPluginHooks(
   plugins: Plugin[],
-  ctx: PluginContext,
+  ctx: PluginSetupContext,
 ): Promise<PluginHooks[]> {
   const allHooks: PluginHooks[] = [];
   for (const plugin of plugins) {
@@ -33,32 +34,40 @@ async function collectPluginHooks(
   return allHooks;
 }
 
-async function runBuildStartHooks(
+async function runBeforeBuildHooks(
   hooks: PluginHooks[],
-  ctx: PluginContext = CTX,
+  ctx: BeforeBuildContext = BEFORE_BUILD_CTX,
 ): Promise<void> {
   for (const h of hooks) {
-    if (h.buildStart) await h.buildStart(ctx);
+    if (h.beforeBuild) await h.beforeBuild(ctx);
   }
 }
 
-async function runBuildEndHooks(
+async function runAfterBuildHooks(
   hooks: PluginHooks[],
   result: BuildResult,
 ): Promise<void> {
   for (const h of hooks) {
-    if (h.buildEnd) await h.buildEnd(result);
+    if (h.afterBuild) await h.afterBuild(result);
   }
 }
 
 const TEST_CONFIG = resolveConfig({});
-const CTX: PluginContext = {
+const CTX: PluginSetupContext = {
   mode: "production",
   command: "build",
   cwd: process.cwd(),
   config: TEST_CONFIG,
   logger: getLogger(["evjs", "test"]),
   addWatchFile() {},
+};
+const BEFORE_BUILD_CTX: BeforeBuildContext = {
+  mode: CTX.mode,
+  command: CTX.command,
+  cwd: CTX.cwd,
+  config: CTX.config,
+  logger: CTX.logger,
+  isRebuild: false,
 };
 const TEST_OUTPUT: BuildOutput = {
   version: 1,
@@ -156,7 +165,7 @@ describe("plugin setup edge cases", () => {
     const plugins: Plugin[] = [
       { id: "no-setup" },
       { id: "void-setup", setup: () => undefined },
-      { id: "real", setup: () => ({ buildStart: () => {} }) },
+      { id: "real", setup: () => ({ beforeBuild: () => {} }) },
     ];
     const hooks = await collectPluginHooks(plugins, CTX);
     expect(hooks).toHaveLength(1);
@@ -170,14 +179,14 @@ describe("plugin setup edge cases", () => {
         async setup() {
           await new Promise((r) => setTimeout(r, 10));
           order.push("slow-setup-done");
-          return { buildStart: () => {} };
+          return { beforeBuild: () => {} };
         },
       },
       {
         id: "fast",
         setup() {
           order.push("fast-setup-done");
-          return { buildStart: () => {} };
+          return { beforeBuild: () => {} };
         },
       },
     ];
@@ -192,19 +201,19 @@ describe("async hook sequencing", () => {
     const order: number[] = [];
     const hooks: PluginHooks[] = [
       {
-        async buildStart() {
+        async beforeBuild() {
           await new Promise((r) => setTimeout(r, 20));
           order.push(1);
         },
       },
       {
-        buildStart() {
+        beforeBuild() {
           order.push(2);
         },
       },
     ];
 
-    await runBuildStartHooks(hooks);
+    await runBeforeBuildHooks(hooks);
     // If hooks ran in parallel, 2 would appear before 1
     expect(order).toEqual([1, 2]);
   });
@@ -216,7 +225,7 @@ describe("isRebuild flag (dev-mode simulation)", () => {
 
     const hooks: PluginHooks[] = [
       {
-        buildEnd(r) {
+        afterBuild(r) {
           results.push({
             isRebuild: r.isRebuild,
             jsCount: r.output.assets.main.js.length,
@@ -226,9 +235,9 @@ describe("isRebuild flag (dev-mode simulation)", () => {
     ];
 
     // Initial build
-    await runBuildEndHooks(hooks, createTestBuildResult(TEST_OUTPUT, false));
+    await runAfterBuildHooks(hooks, createTestBuildResult(TEST_OUTPUT, false));
     // Hot rebuild in dev mode
-    await runBuildEndHooks(hooks, createTestBuildResult(TEST_OUTPUT, true));
+    await runAfterBuildHooks(hooks, createTestBuildResult(TEST_OUTPUT, true));
 
     expect(results[0].isRebuild).toBe(false);
     expect(results[1].isRebuild).toBe(true);
@@ -244,10 +253,10 @@ describe("closure-based shared state between hooks", () => {
       setup(ctx) {
         let t0 = 0;
         return {
-          buildStart() {
+          beforeBuild() {
             t0 = 100; // simulated Date.now()
           },
-          buildEnd(result) {
+          afterBuild(result) {
             reported = {
               mode: ctx.mode,
               elapsed: 200 - t0, // simulated
@@ -259,8 +268,8 @@ describe("closure-based shared state between hooks", () => {
     };
 
     const hooks = await collectPluginHooks([analyticsPlugin], CTX);
-    await runBuildStartHooks(hooks);
-    await runBuildEndHooks(
+    await runBeforeBuildHooks(hooks);
+    await runAfterBuildHooks(
       hooks,
       createTestBuildResult(
         {

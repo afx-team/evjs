@@ -4,12 +4,12 @@ Use `definePlugin()` from `@evjs/ev/plugin` to declare a stable plugin identity,
 typed configuration contracts, and the framework stages the plugin extends.
 Applications consume the returned factory through `config.plugins`.
 
-The authoring model has three layers: `pluginConfig()` declares plugin-owned
-Application or Page data, descriptor methods such as `config()` and
-`contributions()` participate in framework planning, and `setup()` returns
+The authoring model has three layers: `pluginOptions()` declares plugin-owned
+Application or Page data, descriptor methods such as `configure()` and
+`contribute()` participate in framework planning, and `setup()` returns
 imperative lifecycle hooks. A behavior should live in only one layer.
 These are responsibility layers rather than adjacent time blocks:
-`config()` runs before `setup()`, while contributions run later during graph
+`configure()` runs before `setup()`, while `contribute()` runs later during graph
 planning. Descriptor methods never belong in the object returned by `setup()`,
 and lifecycle hooks never belong on the descriptor.
 
@@ -23,7 +23,7 @@ export const buildTimer = definePlugin({
   setup() {
     const start = Date.now();
     return {
-      buildEnd({ output }) {
+      afterBuild({ output }) {
         console.log(`Build ${output.buildId} finished in ${Date.now() - start}ms`);
       },
     };
@@ -53,7 +53,7 @@ configuration bag.
 One descriptor can declare two independent contracts:
 
 ```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
 type AnalyticsApplicationConfig = {
   endpoint: string;
@@ -67,13 +67,13 @@ type AnalyticsPageConfig = {
 export const analytics = definePlugin({
   id: "analytics",
 
-  application: pluginConfig<AnalyticsApplicationConfig>({
+  application: pluginOptions<AnalyticsApplicationConfig>({
     validate(value) {
       return value.endpoint.startsWith("/") || "endpoint must start with /";
     },
   }),
 
-  page: pluginConfig<AnalyticsPageConfig>({
+  page: pluginOptions<AnalyticsPageConfig>({
     defaults: { channel: "web" },
     validate(value) {
       return value.channel.length > 0 || "channel must not be empty";
@@ -85,7 +85,7 @@ export const analytics = definePlugin({
     console.log(ctx.options.endpoint);
   },
 
-  contributions(ctx) {
+  contribute(ctx) {
     // Only enabled Pages appear in ctx.pages.
     for (const { page, options } of ctx.pages) {
       console.log(page.id, options.channel);
@@ -108,15 +108,15 @@ Page-configurable plugins in the tuple passed directly to `defineConfig()`. See
 Application and Page values never merge with each other. Within either
 contract, authored fields are deeply merged over that contract's defaults
 before validation. `setup()` receives only
-`ctx.options`; `contributions()` receives that setting plus the
+`ctx.options`; `contribute()` receives that setting plus the
 enabled `ctx.pages`, whose entries expose `{ page, options }`. Use
 `contributePage()` as the per-enabled-Page alternative; it exposes
 `ctx.options`, `ctx.page`, and `ctx.pageOptions` directly.
 
 ## Contracts, Defaults, and Validation
 
-`pluginConfig<T>()` declares a required object. Passing
-`pluginConfig<T>({ defaults, validate?, schemaVersion? })` makes the contract
+`pluginOptions<T>()` declares a required object. Passing
+`pluginOptions<T>({ defaults, validate?, schemaVersion? })` makes the contract
 defaultable.
 
 Defaults may be an object or a synchronous function of the Application/Page
@@ -127,9 +127,9 @@ non-plain objects are atomic values and are replaced as a whole.
 `false` or an error message, or throw.
 
 At the start of each config pipeline, evjs resolves every installed plugin's
-Application contract exactly once. `config()`, `setup()`, and contribution
+Application contract exactly once. `configure()`, `setup()`, and contribution
 methods share that snapshot. A context-derived `routingMode` therefore reflects
-the authored mode before `config()` runs; read the later method's `ctx.config`
+the authored mode before `configure()` runs; read the later method's `ctx.config`
 when the final resolved framework mode matters.
 
 Page omission is determined by whether the Page contract has defaults and, for
@@ -144,8 +144,8 @@ defaults and validation.
 Standard Schema libraries can infer input and output types directly:
 
 ```ts
-application: pluginConfig(applicationSchema),
-page: pluginConfig(pageSchema, {
+application: pluginOptions(applicationSchema),
+page: pluginOptions(pageSchema, {
   defaults: { channel: "web" },
 }),
 ```
@@ -186,7 +186,7 @@ Document effects from enabled Pages during graph analysis and emit them through
 
 ## Modify Framework Configuration Early
 
-Use `config()` for framework configuration that must be visible before
+Use `configure()` for framework configuration that must be visible before
 framework defaults, route discovery, dev proxy setup, or runtime path
 derivation. Return a config object, or return `undefined` after mutating the
 received working copy in place. evjs isolates that copy from the caller and
@@ -207,14 +207,14 @@ the same resolver as user config before `setup()` or bundling runs.
 ```ts
 import { defineConfig } from "@evjs/ev";
 import { merge } from "@evjs/ev/config";
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
 const serverBasePath = definePlugin({
   id: "server-base-path",
-  application: pluginConfig({
+  application: pluginOptions({
     defaults: { basePath: "/_framework" },
   }),
-  config(config, ctx) {
+  configure(config, ctx) {
     merge(config, {
       server: {
         basePath: ctx.options.basePath,
@@ -229,11 +229,11 @@ export default defineConfig({
 });
 ```
 
-Do not use `bundlerConfig()` for framework protocol paths. Server functions,
+Do not use `configureBundler()` for framework protocol paths. Server functions,
 PPR, and RSC endpoints are derived from `server.basePath`.
 
-After `config()` finishes, every later `ctx.config` is typed as a deeply
-read-only view of the resolved framework config. `bundlerConfig()` may mutate
+After `configure()` finishes, every later `ctx.config` is typed as a deeply
+read-only view of the resolved framework config. `configureBundler()` may mutate
 only its explicit bundler-config argument. Plugin authors should keep framework
 configuration changes in this one validated phase.
 
@@ -249,6 +249,14 @@ The setup context provides `mode`, `command`, `cwd`, resolved `config`,
 `logger`, `addWatchFile()`, and the typed Application `ctx.options` declared by
 the descriptor. Continue with [Plugin Hooks](./plugin-hooks) for lifecycle
 order and hook-specific contracts.
+
+Public context names follow their stages: `PluginConfigureContext`,
+`PluginSetupContext`, `PluginContributeContext`, `ConfigureBundlerContext`,
+`BeforeBuildContext`, `TransformOutputContext`, `TransformHtmlContext`, and
+`DisposeContext`. Contribution code reads the normalized `FrameworkView` from
+`ctx.framework`. Plugin option helpers expose `PluginOptionsContract`,
+`PluginOptionsDefinition`, and `PluginOptionsContext`; internal factory
+inference types are not part of the public authoring API.
 
 ## Installation and Execution Modes
 
@@ -269,15 +277,15 @@ Required Application options stay required in either available factory form.
 
 | Need | API |
 |---|---|
-| Change framework config before discovery | `config()` |
+| Change framework config before discovery | `configure()` |
 | Allocate shared state | `setup()` |
 | Run build lifecycle behavior | Hooks returned by `setup()` |
-| Generate modules or attach structured behavior | `contributions()` or `contributePage()` |
-| Compile a custom file type or tune optimization | `bundlerConfig()` |
+| Generate modules or attach structured behavior | `contribute()` or `contributePage()` |
+| Compile a custom file type or tune optimization | `configureBundler()` |
 | Rewrite a parsed HTML document | `transformHtml()` |
-| Adjust linked assets or deployment metadata before projection | `buildOutput()` |
-| Write final external artifacts after output stabilizes | `buildEnd()` |
+| Adjust linked assets or deployment metadata before projection | `transformOutput()` |
+| Write final external artifacts after output stabilizes | `afterBuild()` |
 
-Keep `contributions()` deterministic and free of external side effects. evjs
+Keep `contribute()` deterministic and free of external side effects. evjs
 may evaluate it again when contributed source aliases change the framework
 graph.

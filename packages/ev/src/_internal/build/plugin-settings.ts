@@ -8,12 +8,12 @@ import type {
 } from "@evjs/shared/manifest";
 import { assertCoreGraph } from "@evjs/shared/manifest";
 import type { ResolvedConfig } from "../../config/index.js";
-import type { ResolvedPagePluginConfigInput } from "../../config/plugins.js";
+import type { ResolvedPagePluginOptionsInput } from "../../config/plugins.js";
 import {
   createPluginApplicationSettingContext,
   type DefinedPluginDeclaration,
   getDefinedPluginDeclaration,
-  type PluginSettingContext,
+  type PluginOptionsContext,
   resolveDefinedPluginApplicationSetting,
   resolveDefinedPluginPageSetting,
 } from "../../plugin/defined.js";
@@ -242,7 +242,7 @@ function resolvePageSettings(
 
 function assertPageConfiguredKeys(
   registry: PluginSettingsRegistry,
-  configured: Readonly<Record<string, ResolvedPagePluginConfigInput>>,
+  configured: Readonly<Record<string, ResolvedPagePluginOptionsInput>>,
   source: string | undefined,
   pageId: string,
 ): void {
@@ -255,7 +255,7 @@ function assertPageConfiguredKeys(
     }
     if (!entry.page) {
       throw new Error(
-        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${id}", but plugin "${entry.id}" does not declare Page configuration.`,
+        `[evjs] ${source ?? `Page "${pageId}"`} configures plugin "${id}", but plugin "${entry.id}" does not declare Page options.`,
       );
     }
   }
@@ -278,7 +278,7 @@ function graphApplicationContext(
   page: CoreGraph["pages"][string],
   application: CoreGraph["applications"][string] | undefined,
   configured: ResolvedPageFileConfig | undefined,
-): PluginSettingContext {
+): Extract<PluginOptionsContext, { readonly owner: "page" }> {
   return Object.freeze({
     owner: "page",
     applicationId: page.applicationId,
@@ -342,9 +342,10 @@ function cloneApplicationSettings(
 }
 
 function cloneSetting(setting: CorePagePluginSetting): CorePagePluginSetting {
+  if (!setting.enabled) return { enabled: false };
   return {
-    enabled: setting.enabled,
-    ...(setting.config ? { config: structuredClone(setting.config) } : {}),
+    enabled: true,
+    options: structuredClone(setting.options),
   };
 }
 

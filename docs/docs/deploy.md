@@ -211,7 +211,7 @@ CMD ["node", "dist/server.mjs"]
 
 ## Custom Deployment Plugins
 
-Deployment plugins can use `buildEnd({ deploymentMetadata })` to emit platform
+Deployment plugins can use `afterBuild({ deploymentMetadata })` to emit platform
 files. For platform-specific schema fields, wrap that metadata before writing
 files:
 
@@ -222,7 +222,7 @@ export const deployAdapter = definePlugin({
   id: "deploy-adapter",
   setup() {
     return {
-      buildEnd({ deploymentMetadata }) {
+      afterBuild({ deploymentMetadata }) {
         const artifact = {
           ...deploymentMetadata,
           platform: "custom",

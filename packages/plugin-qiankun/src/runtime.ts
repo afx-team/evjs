@@ -26,12 +26,11 @@ export type QiankunRouteProps = Record<string, unknown> & {
   lifeCycles?: QiankunLifeCycles;
 };
 
+/** Canonical app descriptor consumed by the public qiankun bridge. */
 export interface QiankunApp {
   name: string;
   entry: string;
-  credentials?: boolean;
   props?: QiankunAppProps;
-  [key: string]: unknown;
 }
 
 export interface QiankunMicroAppRoute {
@@ -56,8 +55,6 @@ export interface QiankunMasterOptions {
   apps?: QiankunApp[];
   /** Application-level route snapshot, typically supplied by a site platform. */
   routes?: QiankunRoute[];
-  /** Optional application identity field used by an external platform adapter. */
-  appNameKeyAlias?: string;
   /** Base path already owned by the master Application. */
   base?: string;
   /** History mode projected into mounted slave Applications. */
@@ -127,7 +124,6 @@ export interface QiankunRuntimePageDefinition {
 interface NormalizedQiankunMasterOptions {
   apps: QiankunApp[];
   routes: QiankunRoute[];
-  appNameKeyAlias?: string;
   base: string;
   history: QiankunHistoryType;
   settings: QiankunLoadSettings;
@@ -178,6 +174,25 @@ const qiankunLifecycleNames = [
   "beforeUnmount",
   "afterUnmount",
 ] as const;
+
+const qiankunMasterOptionFields = [
+  "apps",
+  "routes",
+  "base",
+  "history",
+  "settings",
+  "lifeCycles",
+  "prefetch",
+  "prefetchThreshold",
+] as const;
+const qiankunAppFields = ["name", "entry", "props"] as const;
+const qiankunMicroAppRouteFields = [
+  "path",
+  "microApp",
+  "mode",
+  "microAppProps",
+] as const;
+const qiankunRedirectRouteFields = ["path", "redirect"] as const;
 
 export function defineQiankunMasterResolver<T extends QiankunMasterResolver>(
   resolver: T,
@@ -385,6 +400,7 @@ function normalizeQiankunMasterOptions(
       "[evjs:plugin-qiankun] Master resolver must return an object.",
     );
   }
+  assertNoUnknownFields(value, qiankunMasterOptionFields, "options");
   const apps = value.apps ?? [];
   const routes = value.routes ?? [];
   if (!Array.isArray(apps)) {
@@ -405,6 +421,7 @@ function normalizeQiankunMasterOptions(
         `[evjs:plugin-qiankun] Master resolver apps[${index}] must be an object.`,
       );
     }
+    assertNoUnknownFields(app, qiankunAppFields, `apps[${index}]`);
     assertTrimmedString(app.name, `apps[${index}].name`);
     assertTrimmedString(app.entry, `apps[${index}].entry`);
     if (appNames.has(app.name)) {
@@ -413,11 +430,6 @@ function normalizeQiankunMasterOptions(
       );
     }
     appNames.add(app.name);
-    if (app.credentials !== undefined && typeof app.credentials !== "boolean") {
-      throw new Error(
-        `[evjs:plugin-qiankun] Master resolver apps[${index}].credentials must be a boolean.`,
-      );
-    }
     assertOptionalRecord(app.props, `apps[${index}].props`);
     if (isRecord(app.props)) {
       assertOptionalRecord(app.props.settings, `apps[${index}].props.settings`);
@@ -447,6 +459,11 @@ function normalizeQiankunMasterOptions(
       );
     }
     if (hasMicroApp) {
+      assertNoUnknownFields(
+        route,
+        qiankunMicroAppRouteFields,
+        `routes[${index}]`,
+      );
       assertTrimmedString(route.microApp, `routes[${index}].microApp`);
       if (
         route.mode !== undefined &&
@@ -472,13 +489,15 @@ function normalizeQiankunMasterOptions(
         );
       }
     } else {
+      assertNoUnknownFields(
+        route,
+        qiankunRedirectRouteFields,
+        `routes[${index}]`,
+      );
       assertTrimmedString(route.redirect, `routes[${index}].redirect`);
     }
   });
 
-  if (value.appNameKeyAlias !== undefined) {
-    assertTrimmedString(value.appNameKeyAlias, "appNameKeyAlias");
-  }
   const base = normalizeBase(value.base ?? "/", "base");
   const history = value.history ?? "browser";
   assertHistoryType(history, "history");
@@ -501,9 +520,6 @@ function normalizeQiankunMasterOptions(
     settings: value.settings ?? {},
     prefetchThreshold,
     prefetchState: { scheduled: false },
-    ...(value.appNameKeyAlias
-      ? { appNameKeyAlias: value.appNameKeyAlias }
-      : {}),
     ...(value.lifeCycles ? { lifeCycles: value.lifeCycles } : {}),
     ...(value.prefetch !== undefined ? { prefetch: value.prefetch } : {}),
   };
@@ -518,20 +534,12 @@ function resolveRouteApp(
   master: NormalizedQiankunMasterOptions,
   route: QiankunMicroAppRoute,
 ): QiankunApp {
-  const matches = master.apps.filter(
-    (app) =>
-      app.name === route.microApp ||
-      (master.appNameKeyAlias !== undefined &&
-        app[master.appNameKeyAlias] === route.microApp),
+  const app = master.apps.find(
+    (candidate) => candidate.name === route.microApp,
   );
-  if (matches.length === 1 && matches[0]) return matches[0];
-  if (matches.length === 0) {
-    throw new Error(
-      `[evjs:plugin-qiankun] Route "${route.path}" references unknown micro-app "${route.microApp}".`,
-    );
-  }
+  if (app) return app;
   throw new Error(
-    `[evjs:plugin-qiankun] Route "${route.path}" resolves micro-app "${route.microApp}" to multiple apps.`,
+    `[evjs:plugin-qiankun] Route "${route.path}" references unknown micro-app "${route.microApp}".`,
   );
 }
 
@@ -572,7 +580,6 @@ function createQiankunRouteComponent(
             ...appProps.settings,
             ...routeProps.settings,
           };
-          const fetch = createAppFetch(app, settings.fetch);
           microApp = qiankun.loadMicroApp(
             {
               name: app.name,
@@ -585,10 +592,7 @@ function createQiankunRouteComponent(
                 master.history,
               ),
             },
-            {
-              ...settings,
-              ...(fetch ? { fetch } : {}),
-            },
+            settings,
             mergeQiankunLifeCycles(master.lifeCycles, routeProps.lifeCycles),
           );
           microAppRef.current = microApp;
@@ -729,24 +733,6 @@ function toLifecycleArray(
 ): QiankunLifeCycle[] {
   if (!lifecycle) return [];
   return Array.isArray(lifecycle) ? lifecycle : [lifecycle];
-}
-
-function createAppFetch(
-  app: QiankunApp,
-  configuredFetch: typeof globalThis.fetch | undefined,
-): typeof globalThis.fetch | undefined {
-  if (!app.credentials) return configuredFetch;
-  const baseFetch = configuredFetch ?? globalThis.fetch;
-  if (typeof baseFetch !== "function") return undefined;
-  return (input, init) => {
-    const url = getFetchInputUrl(input);
-    if (url !== app.entry) return baseFetch(input, init);
-    return baseFetch(input, {
-      ...init,
-      mode: "cors",
-      credentials: "include",
-    });
-  };
 }
 
 /** @internal */
@@ -964,38 +950,8 @@ async function prefetchQiankunApps(
   const qiankun = await importQiankun();
   qiankun.prefetchApps?.(
     selected.map(({ name, entry }) => ({ name, entry })),
-    createPrefetchFetch(master, selected),
+    master.settings.fetch,
   );
-}
-
-function createPrefetchFetch(
-  master: NormalizedQiankunMasterOptions,
-  apps: QiankunApp[],
-): typeof globalThis.fetch | undefined {
-  const credentialEntries = new Set(
-    apps.filter((app) => app.credentials).map((app) => app.entry),
-  );
-  const baseFetch = master.settings.fetch ?? globalThis.fetch;
-  if (credentialEntries.size === 0 || typeof baseFetch !== "function") {
-    return master.settings.fetch;
-  }
-  return (input, init) => {
-    const url = getFetchInputUrl(input);
-    if (!credentialEntries.has(url)) return baseFetch(input, init);
-    return baseFetch(input, {
-      ...init,
-      mode: "cors",
-      credentials: "include",
-    });
-  };
-}
-
-function getFetchInputUrl(
-  input: Parameters<typeof globalThis.fetch>[0],
-): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.href;
-  return input.url;
 }
 
 async function importQiankun(): Promise<QiankunRuntimeModule> {
@@ -1199,6 +1155,20 @@ function assertOptionalRecord(value: unknown, label: string): void {
       `[evjs:plugin-qiankun] Master resolver ${label} must be an object.`,
     );
   }
+}
+
+function assertNoUnknownFields(
+  value: object,
+  allowedFields: readonly string[],
+  label: string,
+): void {
+  const unknownField = Object.keys(value).find(
+    (field) => !allowedFields.includes(field),
+  );
+  if (unknownField === undefined) return;
+  throw new Error(
+    `[evjs:plugin-qiankun] Master resolver ${label} contains unknown field "${unknownField}".`,
+  );
 }
 
 function assertLifeCycles(value: unknown, label: string): void {

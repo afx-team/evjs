@@ -9,8 +9,8 @@ import { createBuildResult } from "../src/_internal/build/build-result.js";
 import { createStaticPageDocumentOutput } from "../src/_internal/build/page-document-output.js";
 import {
   createLatePluginContext,
-  runBuildEndHooks,
-  runBuildOutputHooks,
+  runAfterBuildHooks,
+  runTransformOutputHooks,
 } from "../src/_internal/build/plugin-lifecycle.js";
 import {
   createDeploymentArtifact,
@@ -22,7 +22,7 @@ import {
   type StaticDeploymentCompatibility,
   staticDeploymentAdapter,
 } from "../src/deployment/index.js";
-import type { PluginContext, PluginHooks } from "../src/plugin/index.js";
+import type { PluginHooks, PluginSetupContext } from "../src/plugin/index.js";
 
 const tempDirs: string[] = [];
 const NFC_HANGUL_SYLLABLE = "\uac00";
@@ -47,10 +47,10 @@ describe("createDeploymentArtifact", () => {
       mode: "development",
       command: "dev",
       cwd: "/project",
-      config: {} as PluginContext["config"],
-      logger: {} as PluginContext["logger"],
+      config: {} as PluginSetupContext["config"],
+      logger: {} as PluginSetupContext["logger"],
       addWatchFile() {},
-    } satisfies PluginContext;
+    } satisfies PluginSetupContext;
 
     expect(createLatePluginContext(context)).not.toHaveProperty("addWatchFile");
   });
@@ -517,7 +517,7 @@ describe("createDeploymentArtifact", () => {
     }
   });
 
-  it("stops buildOutput hooks immediately after an invalid server artifact mutation", async () => {
+  it("stops transformOutput hooks immediately after an invalid server artifact mutation", async () => {
     const output = createServerDeploymentOutput({
       rootDir: "dist",
       publicDir: "dist/client",
@@ -526,12 +526,12 @@ describe("createDeploymentArtifact", () => {
     const events: string[] = [];
     const hooks: PluginHooks[] = [
       {
-        buildOutput(current) {
+        transformOutput(current) {
           current.server.assets.js = ["../../outside.js"];
         },
       },
       {
-        buildOutput() {
+        transformOutput() {
           events.push("second-hook");
         },
       },
@@ -540,20 +540,20 @@ describe("createDeploymentArtifact", () => {
       mode: "production",
       command: "build",
       cwd: "/project",
-      config: {} as PluginContext["config"],
-      logger: {} as PluginContext["logger"],
+      config: {} as PluginSetupContext["config"],
+      logger: {} as PluginSetupContext["logger"],
       addWatchFile() {},
-    } satisfies PluginContext;
+    } satisfies PluginSetupContext;
 
     await expect(
-      runBuildOutputHooks(hooks, output, pluginContext, () => {
+      runTransformOutputHooks(hooks, output, pluginContext, () => {
         assertFrameworkManifestShape(
           output,
-          "BuildOutput after buildOutput hooks",
+          "BuildOutput after transformOutput hooks",
         );
       }),
     ).rejects.toThrow(
-      "BuildOutput after buildOutput hooks.server.assets.js[0] must be a non-empty portable server-relative artifact path",
+      "BuildOutput after transformOutput hooks.server.assets.js[0] must be a non-empty portable server-relative artifact path",
     );
     expect(events).toEqual([]);
   });
@@ -1290,7 +1290,7 @@ describe("createDeploymentArtifact", () => {
     );
   });
 
-  it("isolates earlier buildEnd mutations from deployment adapters", async () => {
+  it("isolates earlier afterBuild mutations from deployment adapters", async () => {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-deploy-"));
     const outsideDir = `${rootDir}-poisoned-build-end`;
     tempDirs.push(rootDir, outsideDir);
@@ -1306,7 +1306,7 @@ describe("createDeploymentArtifact", () => {
       functionPath: string;
     }> = [];
     const mutator: PluginHooks = {
-      buildEnd(result) {
+      afterBuild(result) {
         const route = result.output.routes[0];
         if (!route) throw new Error("Expected one client Route.");
         result.output.paths.rootDir = outsideDir;
@@ -1318,7 +1318,7 @@ describe("createDeploymentArtifact", () => {
       },
     };
     const observer: PluginHooks = {
-      buildEnd(result) {
+      afterBuild(result) {
         observations.push({
           rootDir: result.output.paths.rootDir,
           routePath: result.output.routes[0]?.path,
@@ -1332,7 +1332,7 @@ describe("createDeploymentArtifact", () => {
     } as never);
     if (!adapterHooks) throw new Error("Expected deployment adapter hooks.");
 
-    await runBuildEndHooks(
+    await runAfterBuildHooks(
       [mutator, observer, adapterHooks],
       createBuildResult(output, false),
     );
@@ -1360,7 +1360,7 @@ describe("createDeploymentArtifact", () => {
     ).rejects.toThrow();
   });
 
-  it("preflights deployment adapter outputs before any buildEnd write", async () => {
+  it("preflights deployment adapter outputs before any afterBuild write", async () => {
     for (const [nodeFileName, edgeFileName] of [
       ["shared.json", "SHARED.JSON"],
       [`${NFC_HANGUL_SYLLABLE}.json`, `${NFD_HANGUL_SYLLABLE}.json`],
@@ -1374,8 +1374,8 @@ describe("createDeploymentArtifact", () => {
       });
       const events: string[] = [];
       const observer: PluginHooks = {
-        buildEnd() {
-          events.push("buildEnd");
+        afterBuild() {
+          events.push("afterBuild");
         },
       };
       const nodeHooks = await nodeDeploymentAdapter({
@@ -1389,7 +1389,7 @@ describe("createDeploymentArtifact", () => {
       }
 
       await expect(
-        runBuildEndHooks(
+        runAfterBuildHooks(
           [observer, nodeHooks, edgeHooks],
           createBuildResult(output, false),
         ),
@@ -1417,8 +1417,8 @@ describe("createDeploymentArtifact", () => {
     });
     const events: string[] = [];
     const observer: PluginHooks = {
-      buildEnd() {
-        events.push("buildEnd");
+      afterBuild() {
+        events.push("afterBuild");
       },
     };
     const nodeHooks = await nodeDeploymentAdapter({
@@ -1432,7 +1432,7 @@ describe("createDeploymentArtifact", () => {
     }
 
     await expect(
-      runBuildEndHooks(
+      runAfterBuildHooks(
         [observer, nodeHooks, staticHooks],
         createBuildResult(output, false),
       ),
@@ -1452,8 +1452,8 @@ describe("createDeploymentArtifact", () => {
     });
     const events: string[] = [];
     const observer: PluginHooks = {
-      buildEnd() {
-        events.push("buildEnd");
+      afterBuild() {
+        events.push("afterBuild");
       },
     };
     const staticHooks = await staticDeploymentAdapter({
@@ -1462,7 +1462,7 @@ describe("createDeploymentArtifact", () => {
     if (!staticHooks) throw new Error("Expected deployment adapter hooks.");
 
     await expect(
-      runBuildEndHooks(
+      runAfterBuildHooks(
         [observer, staticHooks],
         createBuildResult(output, false),
         {
@@ -1490,15 +1490,15 @@ describe("createDeploymentArtifact", () => {
       serverDir,
     });
 
-    await runDeploymentBuildEnd(
+    await runDeploymentAfterBuild(
       nodeDeploymentAdapter({ includeAssets: false }),
       output,
     );
-    await runDeploymentBuildEnd(
+    await runDeploymentAfterBuild(
       staticDeploymentAdapter({ includeAssets: false }),
       output,
     );
-    await runDeploymentBuildEnd(
+    await runDeploymentAfterBuild(
       edgeDeploymentAdapter({ includeAssets: false }),
       output,
     );
@@ -1548,7 +1548,7 @@ describe("createDeploymentArtifact", () => {
     });
 
     await expect(
-      runDeploymentBuildEnd(
+      runDeploymentAfterBuild(
         nodeDeploymentAdapter({ includeAssets: false }),
         output,
       ),
@@ -1572,9 +1572,9 @@ describe("createDeploymentArtifact", () => {
       serverDir: `${relativeRoot}/backend`,
     });
 
-    await runDeploymentBuildEnd(nodeDeploymentAdapter(), output, cwd);
-    await runDeploymentBuildEnd(staticDeploymentAdapter(), output, cwd);
-    await runDeploymentBuildEnd(edgeDeploymentAdapter(), output, cwd);
+    await runDeploymentAfterBuild(nodeDeploymentAdapter(), output, cwd);
+    await runDeploymentAfterBuild(staticDeploymentAdapter(), output, cwd);
+    await runDeploymentAfterBuild(edgeDeploymentAdapter(), output, cwd);
 
     await expect(
       fs.access(path.join(cwd, relativeRoot, "deployment.node.json")),
@@ -1591,7 +1591,7 @@ describe("createDeploymentArtifact", () => {
   });
 });
 
-async function runDeploymentBuildEnd(
+async function runDeploymentAfterBuild(
   plugin: ReturnType<typeof nodeDeploymentAdapter>,
   output: BuildOutput,
   cwd?: string,
@@ -1602,7 +1602,7 @@ async function runDeploymentBuildEnd(
       ? output.paths.rootDir
       : process.cwd());
   const hooks = await plugin.setup?.({ cwd: projectCwd } as never);
-  await hooks?.buildEnd?.(createBuildResult(output, false));
+  await hooks?.afterBuild?.(createBuildResult(output, false));
 }
 
 function extractGeneratedRouteMatcher(source: string): string {

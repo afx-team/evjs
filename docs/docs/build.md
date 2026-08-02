@@ -78,7 +78,7 @@ export default defineConfig({
 ```
 
 The finalized BuildPlan is the single source of truth for adapter cleanup,
-emitted assets, stats, and manifest paths. A plugin `bundlerConfig()` hook may
+emitted assets, stats, and manifest paths. A plugin `configureBundler()` hook may
 change supported low-level bundler settings, but it cannot override a
 framework-owned client or server output path.
 

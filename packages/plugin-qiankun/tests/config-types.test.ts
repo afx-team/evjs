@@ -9,7 +9,9 @@ import {
   type QiankunSlavePluginOptions,
 } from "../src/index.js";
 import type {
+  QiankunApp,
   QiankunHistoryOptions,
+  QiankunMasterOptions,
   QiankunRuntimePageDefinition,
 } from "../src/runtime.js";
 
@@ -37,6 +39,7 @@ describe("qiankun plugin config types", () => {
     expect(master.id).toBe("qiankun-master");
     expect("forPages" in evPluginQiankunMaster).toBe(false);
     expect(slave.id).toBe("qiankun-slave");
+    expect("forPages" in evPluginQiankunSlave).toBe(false);
     expect(configuredSlave.id).toBe("qiankun-slave");
     expectTypeOf<
       Exclude<Parameters<typeof evPluginQiankunSlave>[0], undefined>
@@ -47,6 +50,12 @@ describe("qiankun plugin config types", () => {
       evPluginQiankunMaster();
     };
     expect(assertInvalidMasterAuthoring).toBeTypeOf("function");
+
+    const assertNoSlavePageContract = () => {
+      // @ts-expect-error Application-only factories do not expose forPages().
+      evPluginQiankunSlave.forPages();
+    };
+    expect(assertNoSlavePageContract).toBeTypeOf("function");
   });
 
   it("installs unchanged in a webpack application config", () => {
@@ -82,5 +91,21 @@ describe("qiankun plugin config types", () => {
     expectTypeOf<QiankunRuntimePageDefinition["redirect"]>().toEqualTypeOf<
       { kind: "path"; path: string } | { kind: "url"; href: string } | undefined
     >();
+
+    const assertStandardAppIdentity = () => {
+      const app: QiankunApp = {
+        name: "catalog",
+        entry: "https://example.com/catalog/",
+        // @ts-expect-error Extra identity fields are not part of the canonical app shape.
+        externalId: "catalog-reference",
+      };
+      const options: QiankunMasterOptions = {
+        apps: [app],
+        // @ts-expect-error The public plugin only matches route.microApp to app.name.
+        appNameKeyAlias: "externalId",
+      };
+      return options;
+    };
+    expect(assertStandardAppIdentity).toBeTypeOf("function");
   });
 });

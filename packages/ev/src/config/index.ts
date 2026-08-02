@@ -25,23 +25,17 @@ import {
   assertSeparateFrameworkOutputDirectories,
 } from "../_internal/build/output-path-conventions.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
-import {
-  copyDefinedPluginRuntime,
-  isDefinedPluginRuntimePropertyKey,
-} from "../plugin/defined.js";
+import { copyDefinedPluginRuntime } from "../plugin/defined.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
-import type {
-  PagePluginConfigValues,
-  PagePluginConfigValuesCheck,
-} from "./plugins.js";
+import type { PagePluginOptions, PagePluginOptionsCheck } from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
 export type {
   ExtractInstalledPlugin,
   InstalledPluginRegistry,
-  PagePluginConfigValues,
-  PagePluginConfigValuesCheck,
+  PagePluginOptions,
+  PagePluginOptionsCheck,
 } from "./plugins.js";
 export type {
   StaticConfigCompatible,
@@ -205,7 +199,7 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    * Application-owned framework plugin installation.
    *
    * Plugins may extend framework behavior or modify bundler configuration,
-   * but their config hooks cannot change this list.
+   * but their configure hooks cannot change this list.
    */
   plugins?: readonly (Plugin<TBundlerCfg> | false | null | undefined)[];
 }
@@ -319,7 +313,7 @@ interface PageFileConfigBase extends PageMetadata {
   /** Enable React Server Components. Requires `render: "ssr"`. */
   readonly rsc?: true;
   /** Settings for plugins installed by `ev.config.ts`. */
-  readonly plugins?: PagePluginConfigValues;
+  readonly plugins?: PagePluginOptions;
   /**
    * Static HTML Document output owned by this Page.
    *
@@ -355,7 +349,7 @@ export type PageFileConfig = PageFileConfigBase & PageFileRenderingConfig;
 
 type PageFileConfigPluginCheck<TConfig extends PageFileConfig> =
   TConfig extends { readonly plugins: infer TPlugins }
-    ? { readonly plugins: PagePluginConfigValuesCheck<TPlugins> }
+    ? { readonly plugins: PagePluginOptionsCheck<TPlugins> }
     : unknown;
 
 export interface PageFileDocumentConfig {
@@ -541,14 +535,14 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "changeOrigin",
   "secure",
 ]);
-const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
+const PUBLIC_PLUGIN_KEYS = new Set([
   "id",
   "dependencies",
   "optionalDependencies",
   "enforce",
-  "config",
+  "configure",
   "setup",
-  "contributions",
+  "contribute",
 ]);
 const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
   "name",
@@ -722,7 +716,7 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   for (let index = 0; index < plugins.length; index++) {
     const plugin = plugins[index];
     if (plugin === false || plugin === null || plugin === undefined) continue;
-    const resolvedPlugin = resolvePluginConfig<TBundlerCfg>(plugin, index);
+    const resolvedPlugin = resolvePlugin<TBundlerCfg>(plugin, index);
     if (ids.has(resolvedPlugin.id)) {
       throw new Error(
         `[evjs] Duplicate plugin id "${resolvedPlugin.id}". Plugin ids must be globally unique.`,
@@ -734,22 +728,21 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   return resolved;
 }
 
-function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
+function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
   plugin: unknown,
   index: number,
 ): Plugin<TBundlerCfg> {
   const path = `plugins[${index}]`;
-  const pluginConfig = assertPlainConfigRecord(
+  const pluginDescriptor = assertPlainConfigRecord(
     plugin,
     path,
     "a plugin object",
-    isDefinedPluginRuntimePropertyKey,
   );
   assertKnownConfigKeys(
-    pluginConfig,
-    PUBLIC_PLUGIN_CONFIG_KEYS,
+    pluginDescriptor,
+    PUBLIC_PLUGIN_KEYS,
     path,
-    "id, dependencies, optionalDependencies, enforce, config, setup, or contributions",
+    "id, dependencies, optionalDependencies, enforce, configure, setup, or contribute",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -760,15 +753,15 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
     enforce: rawEnforce,
-    config: rawConfig,
+    configure: rawConfigure,
     setup: rawSetup,
-    contributions: rawContributions,
-  } = pluginConfig;
+    contribute: rawContribute,
+  } = pluginDescriptor;
 
-  if (rawConfig !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["config"]>>(
-      rawConfig,
-      `${path}.config`,
+  if (rawConfigure !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["configure"]>>(
+      rawConfigure,
+      `${path}.configure`,
     );
   }
   if (rawSetup !== undefined) {
@@ -777,10 +770,10 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       `${path}.setup`,
     );
   }
-  if (rawContributions !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["contributions"]>>(
-      rawContributions,
-      `${path}.contributions`,
+  if (rawContribute !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["contribute"]>>(
+      rawContribute,
+      `${path}.contribute`,
     );
   }
   assertPluginId(rawId, `${path}.id`);
@@ -822,11 +815,9 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
           enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
         }
       : {}),
-    ...(rawConfig !== undefined ? { config: rawConfig } : {}),
+    ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
-    ...(rawContributions !== undefined
-      ? { contributions: rawContributions }
-      : {}),
+    ...(rawContribute !== undefined ? { contribute: rawContribute } : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
   return Object.freeze(resolved);
@@ -1439,22 +1430,16 @@ function assertPlainConfigRecord(
   value: unknown,
   path: string,
   description: string,
-  allowPropertyKey?: (key: PropertyKey) => boolean,
 ): Record<string, unknown> {
   if (isPlainConfigRecord(value)) {
-    assertEnumerableStringOwnKeys(value, path, allowPropertyKey);
+    assertEnumerableStringOwnKeys(value, path);
     return value;
   }
   throw new Error(`[evjs] ${path} must be ${description}.`);
 }
 
-function assertEnumerableStringOwnKeys(
-  value: object,
-  path: string,
-  allowPropertyKey?: (key: PropertyKey) => boolean,
-): void {
+function assertEnumerableStringOwnKeys(value: object, path: string): void {
   for (const key of Reflect.ownKeys(value)) {
-    if (allowPropertyKey?.(key)) continue;
     if (typeof key !== "string") {
       throw new Error(`[evjs] ${path} must not contain symbol fields.`);
     }

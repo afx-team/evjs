@@ -3,10 +3,16 @@ import {
   collectPluginHooks,
   createLatePluginContext,
   createPluginConfigView,
-  runBuildStartHooks,
+  runAfterBuildHooks,
+  runBeforeBuildHooks,
 } from "../src/_internal/build/plugin-lifecycle.js";
 import { resolveConfig } from "../src/config/index.js";
-import type { Plugin, PluginContext } from "../src/plugin/index.js";
+import type {
+  BuildResult,
+  Plugin,
+  PluginHooks,
+  PluginSetupContext,
+} from "../src/plugin/index.js";
 
 describe("collectPluginHooks", () => {
   it("retires the setup context before disposing a partial plugin snapshot", async () => {
@@ -16,12 +22,12 @@ describe("collectPluginHooks", () => {
       mode: "development",
       command: "dev",
       cwd: "/project",
-      config: {} as PluginContext["config"],
-      logger: {} as PluginContext["logger"],
+      config: {} as PluginSetupContext["config"],
+      logger: {} as PluginSetupContext["logger"],
       addWatchFile(file: string) {
         if (!retired) events.push(`watch:${file}`);
       },
-    } satisfies PluginContext;
+    } satisfies PluginSetupContext;
     const plugins: Plugin[] = [
       {
         id: "first",
@@ -59,6 +65,99 @@ describe("collectPluginHooks", () => {
     ]);
   });
 
+  it("disposes the failing plugin when another returned hook is invalid", async () => {
+    const events: string[] = [];
+    const context = {
+      mode: "development",
+      command: "dev",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+    const plugin: Plugin = {
+      id: "invalid-hooks",
+      setup() {
+        return {
+          unknownHook() {},
+          dispose() {
+            events.push("dispose");
+          },
+        } as never;
+      },
+    };
+
+    await expect(
+      collectPluginHooks([plugin], context, () => {
+        events.push("beforeRollback");
+      }),
+    ).rejects.toThrow(
+      'Plugin "invalid-hooks" setup hook returned unknown hook "unknownHook"',
+    );
+
+    expect(events).toEqual(["beforeRollback", "dispose"]);
+  });
+
+  it("does not read an accessor dispose hook while rolling back invalid setup", async () => {
+    let getterWasCalled = false;
+    const setupResult = {};
+    Object.defineProperty(setupResult, "dispose", {
+      enumerable: true,
+      get() {
+        getterWasCalled = true;
+        return () => {};
+      },
+    });
+    const plugin: Plugin = {
+      id: "accessor-dispose",
+      setup() {
+        return setupResult as never;
+      },
+    };
+    const context = {
+      mode: "production",
+      command: "build",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await expect(collectPluginHooks([plugin], context)).rejects.toThrow(
+      'setup hook returned "dispose" must be an enumerable own data property',
+    );
+    expect(getterWasCalled).toBe(false);
+  });
+
+  it("does not invoke a non-function dispose value while rolling back invalid setup", async () => {
+    const events: string[] = [];
+    const plugin: Plugin = {
+      id: "invalid-dispose",
+      setup() {
+        return {
+          dispose: {
+            call() {
+              events.push("invalid dispose");
+            },
+          },
+        } as never;
+      },
+    };
+    const context = {
+      mode: "production",
+      command: "build",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await expect(collectPluginHooks([plugin], context)).rejects.toThrow(
+      "setup hook returned dispose must be a function",
+    );
+    expect(events).toEqual([]);
+  });
+
   it("exposes one isolated frozen config view to setup and lifecycle hooks", async () => {
     const observedConfigs: unknown[] = [];
     const pathRewrite = (requestPath: string) => requestPath;
@@ -81,7 +180,7 @@ describe("collectPluginHooks", () => {
           (ctx.config.server as { basePath: string }).basePath = "/mutated";
         }).toThrow(TypeError);
         return {
-          buildStart(buildContext) {
+          beforeBuild(buildContext) {
             observedConfigs.push(buildContext.config);
             expect(() => {
               (buildContext.config.plugins as Plugin[]).push({
@@ -111,12 +210,12 @@ describe("collectPluginHooks", () => {
       command: "build",
       cwd: "/project",
       config,
-      logger: {} as PluginContext["logger"],
+      logger: {} as PluginSetupContext["logger"],
       addWatchFile() {},
-    } satisfies PluginContext;
+    } satisfies PluginSetupContext;
 
     const hooks = await collectPluginHooks(config.plugins, context);
-    await runBuildStartHooks(hooks, context);
+    await runBeforeBuildHooks(hooks, context, false);
     observedConfigs.push(createLatePluginContext(context).config);
 
     expect(observedConfigs).toHaveLength(3);
@@ -142,5 +241,20 @@ describe("collectPluginHooks", () => {
     expect(() => createPluginConfigView(config)).toThrow(
       "[evjs] Resolved plugin context config.server.basePath must be a data property, not an accessor.",
     );
+  });
+});
+
+describe("runAfterBuildHooks", () => {
+  it("invokes afterBuild as a method on its hooks object", async () => {
+    let observedThis: unknown;
+    const hook: PluginHooks = {
+      afterBuild() {
+        observedThis = this;
+      },
+    };
+
+    await runAfterBuildHooks([hook], {} as BuildResult);
+
+    expect(observedThis).toBe(hook);
   });
 });

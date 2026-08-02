@@ -96,23 +96,31 @@ sequenceDiagram
   participant Shared as @evjs/shared/manifest
 
   CLI->>EV: load config and select bundler
-  EV->>Plugin: config() and resolve typed Application settings
-  EV->>Plugin: setup() and buildStart()
-  EV->>EV: create CoreGraph, resolve Page settings, and derive BuildPlan
-  EV->>Plugin: contributions(framework view)
+  EV->>Plugin: configure() and resolve typed Application settings
+  EV->>Plugin: setup()
+  EV->>EV: create CoreGraph and resolve Page settings
+  EV->>Plugin: contribute(FrameworkView)
+  EV->>EV: derive BuildPlan
   EV->>EV: materialize .ev IR
-  EV->>Plugin: bundlerConfig()
+  EV->>Plugin: configureBundler()
   EV->>Bundler: build(BuildPlan)
-  Bundler-->>EV: BundlerBuildFacts
+  Bundler-->>EV: fresh BundlerBuildFacts
+  EV->>Plugin: beforeBuild()
   EV->>Shared: link BuildOutput
-  EV->>Plugin: buildOutput()
-  EV->>EV: emit deployment metadata and HTML
-  EV->>Plugin: transformHtml() and buildEnd()
+  EV->>Plugin: transformOutput()
+  EV->>Plugin: transformHtml()
+  EV->>EV: publish canonical output
+  EV->>Plugin: afterBuild()
 ```
 
-`buildOutput()` may change asset-group contents and add plugin deployment
+`transformOutput()` may change asset-group contents and add plugin deployment
 metadata, but graph identity, runtime paths, routes, output paths, and owner
 relationships remain framework-owned.
+
+`beforeBuild()` runs only after fresh bundler facts exist and immediately
+before evjs links/publishes canonical output; it is paired with `afterBuild()`
+for successful initial and rebuild output cycles. `prepare` and `inspect` do
+not trigger either hook.
 
 ## Generated IR
 

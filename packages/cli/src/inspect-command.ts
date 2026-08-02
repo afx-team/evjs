@@ -24,10 +24,7 @@ export async function runInspectCommand(
   const config = await loadConfig<DefaultBundlerConfig>(cwd);
   const result = await inspectFrameworkBuild<DefaultBundlerConfig>(
     config ?? undefined,
-    {
-      cwd,
-      runLifecycleHooks: false,
-    },
+    { cwd },
   );
 
   return {

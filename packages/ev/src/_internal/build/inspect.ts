@@ -12,7 +12,7 @@ import {
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
-import type { CliFlags, PluginContext } from "../../plugin/index.js";
+import type { CliFlags, PluginSetupContext } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import {
   type BundlerAdapter,
@@ -36,8 +36,7 @@ import type { PageRouteDiscovery } from "./page-routes.js";
 import {
   collectPluginHooks,
   orderPluginsByDependencies,
-  runBuildStartHooks,
-  runConfigHooks,
+  runConfigureHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
 import { resolvePluginSettingsState } from "./plugin-settings.js";
@@ -53,7 +52,6 @@ export interface InspectFrameworkBuildOptions<
   mode?: "development" | "production";
   command?: "dev" | "build";
   bundler?: BundlerAdapter<TBundlerCfg>;
-  runLifecycleHooks?: boolean;
 }
 
 export interface InspectDiagnostic {
@@ -164,7 +162,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   const diagnostics: InspectDiagnostic[] = [];
   let pageRouteDiscovery: PageRouteDiscovery | undefined;
 
-  const configuredConfig = await runConfigHooks(userConfig, {
+  const configuredConfig = await runConfigureHooks(userConfig, {
     mode,
     command,
     cwd,
@@ -249,7 +247,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   });
   const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
-  const pluginContext: PluginContext<TBundlerCfg> = {
+  const pluginContext: PluginSetupContext<TBundlerCfg> = {
     mode,
     command,
     cwd,
@@ -269,9 +267,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   try {
-    if (options.runLifecycleHooks === true) {
-      await runBuildStartHooks(hooks, pluginContext);
-    }
     try {
       validateHtmlTemplates(cwd, config);
     } catch (err) {

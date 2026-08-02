@@ -6,7 +6,7 @@
 
 ## 添加 Deployment Metadata
 
-Deployment adapter 需要 plugin-owned metadata 时，使用 `buildOutput()`：
+Deployment adapter 需要 plugin-owned metadata 时，使用 `transformOutput()`：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -15,7 +15,7 @@ export const deployMetadata = definePlugin({
   id: "deploy-metadata",
   setup() {
     return {
-      buildOutput(output) {
+      transformOutput(output) {
         output.deployment = {
           platform: "custom",
           builtAt: new Date().toISOString(),
@@ -26,7 +26,7 @@ export const deployMetadata = definePlugin({
 });
 ```
 
-`buildOutput()` 只能修改 linked `AssetGroup` 内容与 `deployment` metadata。框架持有
+`transformOutput()` 只能修改 linked `AssetGroup` 内容与 `deployment` metadata。框架持有
 字段见[插件 Hooks](./plugin-hooks)中的 Build Output 所有权说明。Deployment metadata
 只能包含普通、可无损 JSON 序列化的值；evjs 会在每个 output hook 后进行校验。
 

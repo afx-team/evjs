@@ -48,7 +48,7 @@ import type {
   HtmlDocument,
   Plugin,
 } from "../src/plugin/index.js";
-import { definePlugin, pluginConfig } from "../src/plugin/index.js";
+import { definePlugin, pluginOptions } from "../src/plugin/index.js";
 
 const repoRoot = path.resolve(process.cwd(), "../..");
 const generatedRouteTypesSource = [
@@ -75,7 +75,7 @@ const fullBundlerCapabilities = {
   },
 } as const;
 const BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR =
-  "[evjs] buildOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.";
+  "[evjs] transformOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.";
 
 type TestDevTransitionOutcome = "accept" | "rollback";
 
@@ -667,7 +667,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createSpaProject();
     const prepared = await prepareFrameworkBuild(
       { routing: { mode: "spa" } },
-      { cwd, runLifecycleHooks: false },
+      { cwd },
     );
 
     try {
@@ -746,7 +746,7 @@ describe("prepareFrameworkBuild", () => {
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "prepare-core",
-      config(config, ctx) {
+      configure(config, ctx) {
         events.push(`config:${ctx.command}`);
         return config;
       },
@@ -755,8 +755,8 @@ describe("prepareFrameworkBuild", () => {
         ctx.addWatchFile("./framework-extra.json");
         events.push(`setup:${ctx.command}`);
         return {
-          buildStart() {
-            events.push("buildStart");
+          beforeBuild() {
+            events.push("beforeBuild");
           },
           dispose() {
             events.push("dispose");
@@ -781,17 +781,12 @@ describe("prepareFrameworkBuild", () => {
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
-    expect(events).toEqual(["config:build", "setup:build", "buildStart"]);
+    expect(events).toEqual(["config:build", "setup:build"]);
 
     await prepared.dispose();
     await prepared.dispose();
 
-    expect(events).toEqual([
-      "config:build",
-      "setup:build",
-      "buildStart",
-      "dispose",
-    ]);
+    expect(events).toEqual(["config:build", "setup:build", "dispose"]);
   });
 
   it("syncs one stable static-config bridge regardless of active plugins", async () => {
@@ -803,17 +798,17 @@ describe("prepareFrameworkBuild", () => {
     );
     const analytics = definePlugin({
       id: "analytics",
-      page: pluginConfig<{ channel: string }>(),
+      page: pluginOptions<{ channel: string }>(),
     });
     const access = definePlugin({
       id: "access",
-      page: pluginConfig<{ policy: string }>(),
+      page: pluginOptions<{ policy: string }>(),
     });
     const pluginTypesFile = path.join(cwd, "src/plugin-types.d.ts");
 
     const initial = await prepareFrameworkBuild(
       { plugins: [analytics(), access()] },
-      { cwd, runLifecycleHooks: false },
+      { cwd },
     );
     await initial.dispose();
     const initialTypes = await fs.promises.readFile(pluginTypesFile, "utf-8");
@@ -823,23 +818,20 @@ describe("prepareFrameworkBuild", () => {
 
     const narrowed = await prepareFrameworkBuild(
       { plugins: [analytics()] },
-      { cwd, runLifecycleHooks: false },
+      { cwd },
     );
     await narrowed.dispose();
     const narrowedTypes = await fs.promises.readFile(pluginTypesFile, "utf-8");
     expect(narrowedTypes).toBe(initialTypes);
 
-    const empty = await prepareFrameworkBuild(
-      {},
-      { cwd, runLifecycleHooks: false },
-    );
+    const empty = await prepareFrameworkBuild({}, { cwd });
     await empty.dispose();
     await expect(fs.promises.readFile(pluginTypesFile, "utf-8")).resolves.toBe(
       initialTypes,
     );
   });
 
-  it("exposes CLI flags to plugin setup and lifecycle hooks", async () => {
+  it("exposes CLI flags to setup without running beforeBuild during prepare", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
@@ -847,9 +839,9 @@ describe("prepareFrameworkBuild", () => {
       setup(ctx) {
         events.push(`setup:${ctx.flags?.mock}:${ctx.flags?.coverage}`);
         return {
-          buildStart(buildCtx) {
+          beforeBuild(buildCtx) {
             events.push(
-              `buildStart:${buildCtx.flags?.mock}:${buildCtx.flags?.coverage}`,
+              `beforeBuild:${buildCtx.flags?.mock}:${buildCtx.flags?.coverage}`,
             );
           },
         };
@@ -870,7 +862,7 @@ describe("prepareFrameworkBuild", () => {
       },
     );
 
-    expect(events).toEqual(["setup:true:true", "buildStart:true:true"]);
+    expect(events).toEqual(["setup:true:true"]);
   });
 
   it("rolls back earlier plugin setups when a later setup fails", async () => {
@@ -956,7 +948,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "generated-fixture",
-      contributions(ctx) {
+      contribute(ctx) {
         expect(Object.isFrozen(ctx.config)).toBe(true);
         expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
         expect(Object.isFrozen(ctx.config.plugins[0])).toBe(true);
@@ -1123,7 +1115,7 @@ describe("prepareFrameworkBuild", () => {
     const collidingIds = ["runtime", "runtime*`=)", "runtime{`{+"];
     const plugin: Plugin<Record<string, never>> = {
       id: "collision",
-      contributions(ctx) {
+      contribute(ctx) {
         for (const id of collidingIds) {
           ctx.emit.module({
             id,
@@ -1244,7 +1236,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "spa-page-wrappers",
-      contributions(ctx) {
+      contribute(ctx) {
         const first = ctx.emit.module({
           id: "first-wrapper",
           scope: { kind: "application" },
@@ -1423,7 +1415,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "all-runtime-page-wrappers",
-      contributions(ctx) {
+      contribute(ctx) {
         const first = ctx.emit.module({
           id: "first-wrapper",
           scope: { kind: "application" },
@@ -1581,7 +1573,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-page-wrapper-runtime",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.slot("page.wrapper").add({
           id: "server-wrapper",
           module: "./src/ServerWrapper.tsx",
@@ -1615,7 +1607,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "tmp-parity",
-      contributions(ctx) {
+      contribute(ctx) {
         const config = ctx.emit.data({
           id: "ctoken-config",
           scope: { kind: "application" },
@@ -1875,7 +1867,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-generated-data",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.emit.data({
           id: "payload",
           scope: { kind: "application" },
@@ -1911,7 +1903,7 @@ describe("prepareFrameworkBuild", () => {
     > = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "observe-semantic-pages",
-      contributions(ctx) {
+      contribute(ctx) {
         observedPages = ctx.framework.pages.map((page) => {
           return {
             id: page.id,
@@ -1992,7 +1984,7 @@ describe("prepareFrameworkBuild", () => {
     let observedClientEntries: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "observe-page-anchors",
-      contributions(ctx) {
+      contribute(ctx) {
         observedPages = ctx.framework.pages.map((page) => ({
           id: page.id,
           source: page.source,
@@ -2100,7 +2092,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-spa-page-entry",
-      contributions(ctx) {
+      contribute(ctx) {
         const pageModule = ctx.emit.module({
           id: "page-entry",
           scope: { kind: "page", pageId: "index" },
@@ -2139,7 +2131,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-spa-page-document",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.slot("html.tag").add({
           id: "page-meta",
           tag: "meta",
@@ -2174,7 +2166,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "mpa-application-target",
-      contributions(ctx) {
+      contribute(ctx) {
         const installer = ctx.emit.module({
           id: "installer",
           scope: { kind: "application" },
@@ -2236,7 +2228,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-client-entry-runtime",
-      contributions(ctx) {
+      contribute(ctx) {
         const installer = ctx.emit.module({
           id: "installer",
           scope: { kind: "application" },
@@ -2273,7 +2265,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "unknown-constructor-page",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.emit.module({
           id: "constructor-module",
           scope: { kind: "page", pageId: "constructor" },
@@ -2327,7 +2319,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "source-alias",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.slot("resolve.alias").add({
           id: "features",
           specifier: "@features",
@@ -2381,7 +2373,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "entry-wrapper",
-      contributions(ctx) {
+      contribute(ctx) {
         const entry = ctx.framework.getApplicationEntry();
         if (!entry) throw new Error("missing Application entry");
         const original = ctx.emit.entryFacade({
@@ -2460,7 +2452,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "server-contribution",
-      contributions(ctx) {
+      contribute(ctx) {
         const middleware = ctx.emit.module({
           id: "request-middleware",
           scope: { kind: "server" },
@@ -2541,7 +2533,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "duplicate-contributions",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.emit.module({
           id: "same",
           scope: { kind: "application" },
@@ -2573,7 +2565,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createSpaProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "stable-contributor",
-      contributions(ctx) {
+      contribute(ctx) {
         expect(Reflect.set(this, "id", "mutated-contributor")).toBe(false);
         const generated = ctx.emit.module({
           id: "runtime",
@@ -2625,7 +2617,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-contribution",
-      contributions(ctx) {
+      contribute(ctx) {
         const module = ctx.emit.module({
           id: "module",
           scope: { kind: "application" },
@@ -2746,6 +2738,50 @@ describe("build", () => {
     expect(events).toEqual(["setup", "dispose"]);
   });
 
+  it("does not run output-cycle hooks when bundling fails without fresh facts", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "failing-bundler",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        events.push("bundler.build");
+        throw new Error("compile failed");
+      },
+      async dev() {},
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [
+            {
+              id: "lifecycle-observer",
+              setup() {
+                events.push("setup");
+                return {
+                  beforeBuild() {
+                    events.push("beforeBuild");
+                  },
+                  afterBuild() {
+                    events.push("afterBuild");
+                  },
+                  dispose() {
+                    events.push("dispose");
+                  },
+                };
+              },
+            },
+          ],
+        },
+        { cwd, bundler },
+      ),
+    ).rejects.toThrow("compile failed");
+
+    expect(events).toEqual(["setup", "bundler.build", "dispose"]);
+  });
+
   it("runs framework orchestration around the injected bundler", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
@@ -2757,19 +2793,21 @@ describe("build", () => {
         expect(ctx.config.bundler?.name).toBe("mock");
         events.push(`setup:${ctx.mode}`);
         return {
-          buildStart() {
-            events.push("buildStart");
+          beforeBuild() {
+            events.push("beforeBuild");
           },
-          buildOutput(output) {
-            events.push(`buildOutput:${Object.keys(output.assets).join(",")}`);
+          transformOutput(output) {
+            events.push(
+              `transformOutput:${Object.keys(output.assets).join(",")}`,
+            );
             output.assets.main.css = ["main.patched.css"];
             output.apps.default.assets.js = ["main.patched.js"];
             output.deployment = { platform: "test" };
           },
-          buildEnd(result) {
+          afterBuild(result) {
             events.push(
               [
-                "buildEnd",
+                "afterBuild",
                 result.output.assets.main?.css[0],
                 result.output.apps.default.assets.js[0],
                 result.output.server.entry ?? "no-server",
@@ -2798,11 +2836,11 @@ describe("build", () => {
 
     expect(events).toEqual([
       "setup:production",
-      "buildStart",
       "bundler.build",
       "bundler.entries:main",
-      "buildOutput:main",
-      "buildEnd:main.patched.css:main.patched.js:no-server:test",
+      "beforeBuild",
+      "transformOutput:main",
+      "afterBuild:main.patched.css:main.patched.js:no-server:test",
       "dispose:production",
     ]);
     await expect(
@@ -2921,16 +2959,22 @@ describe("build", () => {
     );
   });
 
-  it("validates buildOutput hook mutations before emitting artifacts", async () => {
+  it("validates transformOutput hook mutations before emitting artifacts", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-output",
       setup() {
         return {
-          buildOutput(output) {
-            events.push("buildOutput");
+          beforeBuild() {
+            events.push("beforeBuild");
+          },
+          transformOutput(output) {
+            events.push("transformOutput");
             (output as { version: number }).version = 2;
+          },
+          afterBuild() {
+            events.push("afterBuild");
           },
           dispose() {
             events.push("dispose");
@@ -2958,20 +3002,21 @@ describe("build", () => {
     expect(events).toEqual([
       "bundler.build",
       "bundler.entries:main",
-      "buildOutput",
+      "beforeBuild",
+      "transformOutput",
       "dispose",
     ]);
   });
 
-  it("keeps CoreGraph Document identity immutable through buildOutput hooks", async () => {
+  it("keeps CoreGraph Document identity immutable through transformOutput hooks", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-document-output",
       setup() {
         return {
-          buildOutput(output) {
-            events.push("buildOutput");
+          transformOutput(output) {
+            events.push("transformOutput");
             const document = output.apps.default?.document;
             if (!document) throw new Error("Expected the SPA Document.");
             document.aliases = ["legacy.html"];
@@ -2996,7 +3041,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] buildOutput hooks cannot change Application "default" Document fileName or aliases.',
+      '[evjs] transformOutput hooks cannot change Application "default" Document fileName or aliases.',
     );
 
     expect(fs.existsSync(path.join(cwd, "dist/legacy.html"))).toBe(false);
@@ -3006,18 +3051,18 @@ describe("build", () => {
     expect(events).toEqual([
       "bundler.build",
       "bundler.entries:main",
-      "buildOutput",
+      "transformOutput",
       "dispose",
     ]);
   });
 
-  it("keeps CoreGraph Route identity immutable through buildOutput hooks", async () => {
+  it("keeps CoreGraph Route identity immutable through transformOutput hooks", async () => {
     const cwd = await createSpaProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-route-output",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             const route = output.routes[0];
             if (!route) throw new Error("Expected the root Route.");
             route.id = "renamed";
@@ -3036,17 +3081,17 @@ describe("build", () => {
         { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow(
-      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
+      "[evjs] transformOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
     );
   });
 
-  it("keeps CoreGraph Application identity immutable through buildOutput hooks", async () => {
+  it("keeps CoreGraph Application identity immutable through transformOutput hooks", async () => {
     const cwd = await createSpaProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-application-output",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             output.apps.extra = {
               assets: { js: [], css: [] },
             };
@@ -3065,11 +3110,11 @@ describe("build", () => {
         { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow(
-      "[evjs] buildOutput hooks cannot add, remove, or rename Applications.",
+      "[evjs] transformOutput hooks cannot add, remove, or rename Applications.",
     );
   });
 
-  it("keeps CoreGraph Page identity immutable through buildOutput hooks", async () => {
+  it("keeps CoreGraph Page identity immutable through transformOutput hooks", async () => {
     const cwd = await createSpaProject();
     await writeFile(
       path.join(cwd, "src/pages/page.config.ts"),
@@ -3080,7 +3125,7 @@ describe("build", () => {
       id: "invalid-page-output",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             const page = output.pages.index;
             if (!page) throw new Error("Expected the root Page.");
             output.pages.extra = {
@@ -3109,11 +3154,11 @@ describe("build", () => {
         { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow(
-      "[evjs] buildOutput hooks cannot add, remove, or rename Pages.",
+      "[evjs] transformOutput hooks cannot add, remove, or rename Pages.",
     );
   });
 
-  it("keeps CoreGraph Page and Route paths immutable through buildOutput hooks", async () => {
+  it("keeps CoreGraph Page and Route paths immutable through transformOutput hooks", async () => {
     const cwd = await createSpaProject();
     await writeFile(
       path.join(cwd, "src/pages/page.config.ts"),
@@ -3124,7 +3169,7 @@ describe("build", () => {
       id: "invalid-page-path-output",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             const page = output.pages.index;
             const route = output.routes[0];
             if (!page || !route) {
@@ -3147,11 +3192,11 @@ describe("build", () => {
         { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow(
-      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
+      "[evjs] transformOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
     );
   });
 
-  it("rejects buildOutput path mutation before writing outside the project", async () => {
+  it("rejects transformOutput path mutation before writing outside the project", async () => {
     const cwd = await createSpaProject();
     const outsideDir = path.join(
       path.dirname(cwd),
@@ -3161,7 +3206,7 @@ describe("build", () => {
       id: "invalid-output-path",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             output.paths.rootDir = path.relative(cwd, outsideDir);
           },
         };
@@ -3189,7 +3234,7 @@ describe("build", () => {
     }
   });
 
-  it("validates ownership after each buildOutput hook", async () => {
+  it("validates ownership after each transformOutput hook", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const plugins: Plugin<Record<string, never>>[] = [
@@ -3197,7 +3242,7 @@ describe("build", () => {
         id: "temporarily-mutates-runtime",
         setup() {
           return {
-            buildOutput(output) {
+            transformOutput(output) {
               events.push("mutate");
               output.runtime.server.fn = "temporary/fn";
             },
@@ -3208,7 +3253,7 @@ describe("build", () => {
         id: "observes-temporary-runtime",
         setup() {
           return {
-            buildOutput(output) {
+            transformOutput(output) {
               events.push("observe");
               output.deployment = { observedFn: output.runtime.server.fn };
             },
@@ -3219,7 +3264,7 @@ describe("build", () => {
         id: "restores-runtime",
         setup() {
           return {
-            buildOutput(output) {
+            transformOutput(output) {
               events.push("restore");
               output.runtime.server.fn = "__evjs/fn";
             },
@@ -3406,13 +3451,13 @@ describe("build", () => {
   ] satisfies Array<{
     label: string;
     mutate: (output: BuildOutput) => void;
-  }>)("rejects buildOutput $label mutation", async ({ mutate }) => {
+  }>)("rejects transformOutput $label mutation", async ({ mutate }) => {
     const cwd = await createServerOutputProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-output-semantics",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             mutate(output);
           },
         };
@@ -3434,14 +3479,14 @@ describe("build", () => {
     );
   });
 
-  it("validates deployment metadata after each buildOutput hook", async () => {
+  it("validates deployment metadata after each transformOutput hook", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const invalidMetadata: Plugin<Record<string, never>> = {
       id: "invalid-deployment-metadata",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             events.push("invalid");
             output.deployment = { serialize() {} } as never;
           },
@@ -3452,7 +3497,7 @@ describe("build", () => {
       id: "later-output-hook",
       setup() {
         return {
-          buildOutput() {
+          transformOutput() {
             events.push("later");
           },
         };
@@ -3469,7 +3514,7 @@ describe("build", () => {
         { cwd, bundler: createMockBundler([]) },
       ),
     ).rejects.toThrow(
-      "BuildOutput after buildOutput hooks.deployment.serialize must be JSON-serializable",
+      "BuildOutput after transformOutput hooks.deployment.serialize must be JSON-serializable",
     );
     expect(events).toEqual(["invalid"]);
     expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
@@ -3477,7 +3522,7 @@ describe("build", () => {
     );
   });
 
-  it("allows buildOutput hooks to adjust every nested AssetGroup and deployment", async () => {
+  it("allows transformOutput hooks to adjust every nested AssetGroup and deployment", async () => {
     const cwd = await createProject();
     await writeFile(
       path.join(cwd, "src/pages/ssr/page.tsx"),
@@ -3580,7 +3625,7 @@ describe("build", () => {
       id: "nested-asset-output",
       setup() {
         return {
-          buildOutput(output) {
+          transformOutput(output) {
             for (const [pageId, page] of Object.entries(output.pages)) {
               patchAssets(`page:${pageId}`, page.assets);
             }
@@ -3619,7 +3664,7 @@ describe("build", () => {
             }
             output.deployment = { nestedAssetsPatched: true };
           },
-          buildEnd(result) {
+          afterBuild(result) {
             linkedOutput = result.output;
           },
         };
@@ -3669,16 +3714,16 @@ describe("build", () => {
       id: "manifest-result",
       setup() {
         return {
-          buildStart() {
-            events.push("manifest:buildStart");
+          beforeBuild() {
+            events.push("manifest:beforeBuild");
           },
           transformHtml(doc: HtmlDocument, result: BuildResult) {
             events.push(`manifest:html:${firstClientJs(result)}`);
             doc.head?.appendChild(doc.createComment(" manifest html "));
           },
-          buildEnd(result: BuildResult) {
+          afterBuild(result: BuildResult) {
             events.push(
-              `manifest:buildEnd:${firstClientJs(result)}:${result.deploymentMetadata.server.entry ?? "none"}`,
+              `manifest:afterBuild:${firstClientJs(result)}:${result.deploymentMetadata.server.entry ?? "none"}`,
             );
           },
         };
@@ -3708,11 +3753,11 @@ describe("build", () => {
     expect(clientRuntime).not.toHaveProperty("assets");
     expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
     expect(events).toEqual([
-      "manifest:buildStart",
       "bundler.build",
       "bundler.entries:main",
+      "manifest:beforeBuild",
       "manifest:html:main.js",
-      "manifest:buildEnd:main.js:none",
+      "manifest:afterBuild:main.js:none",
     ]);
   });
 
@@ -3765,7 +3810,7 @@ describe("build", () => {
     let transformSawContribution = false;
     const plugin: Plugin<Record<string, never>> = {
       id: "html-contribution",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.slot("html.tag").add({
           id: "meta",
           tag: "meta",
@@ -3853,7 +3898,7 @@ describe("build", () => {
     let frameworkPageMetadata: unknown;
     const plugin: Plugin<Record<string, never>> = {
       id: "page-metadata-order",
-      contributions(ctx) {
+      contribute(ctx) {
         frameworkPageMetadata = ctx.framework.pages.find(
           (page) => page.id === "index",
         )?.metadata;
@@ -3878,7 +3923,7 @@ describe("build", () => {
             if (title) title.textContent = "Plugin title";
             description?.setAttribute("content", "Plugin description");
           },
-          buildEnd(result) {
+          afterBuild(result) {
             const routing = result.frameworkRuntime?.routing;
             runtimeMetadata =
               routing?.kind === "mpa"
@@ -3969,7 +4014,7 @@ describe("build", () => {
     const transformedFiles: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "server-document-shell",
-      contributions(ctx) {
+      contribute(ctx) {
         ctx.slot("html.tag").add({
           id: "server-document-contribution",
           target: { kind: "page", pageId: "dashboard" },
@@ -3990,7 +4035,7 @@ describe("build", () => {
             const title = doc.querySelector("title");
             if (title) title.textContent = "Plugin title";
           },
-          buildEnd(result) {
+          afterBuild(result) {
             frameworkRuntime = result.frameworkRuntime;
           },
         };
@@ -4143,7 +4188,7 @@ describe("build", () => {
 
     const prepared = await prepareFrameworkBuild(
       { routing: { mode: "spa" } },
-      { cwd, runLifecycleHooks: false },
+      { cwd },
     );
     try {
       const source = await fs.promises.readFile(
@@ -4172,7 +4217,7 @@ describe("build", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "page-scope",
-      contributions(ctx) {
+      contribute(ctx) {
         const homeEntry = ctx.emit.module({
           id: "home-entry",
           scope: { kind: "page", pageId: "home" },
@@ -4869,11 +4914,10 @@ describe("build", () => {
       "document-alias-observer",
       undefined,
       undefined,
-      undefined,
       Record<string, never>
     >({
       id: "document-alias-observer",
-      contributions(ctx) {
+      contribute(ctx) {
         frameworkAliases.push(
           ctx.framework.documents.find(
             (document) =>
@@ -5014,7 +5058,7 @@ describe("build", () => {
     ).resolves.toBe(userAuthoredSource);
   });
 
-  it("passes linked BuildOutput to buildEnd and emits deployment metadata", async () => {
+  it("passes linked BuildOutput to afterBuild and emits deployment metadata", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -5040,7 +5084,7 @@ describe("build", () => {
             id: "reads-memory-output",
             setup() {
               return {
-                buildEnd(result) {
+                afterBuild(result) {
                   events.push(result.output.apps.default.assets.js[0] ?? "");
                 },
               };
@@ -5090,7 +5134,7 @@ describe("build", () => {
             id: "captures-page-output",
             setup() {
               return {
-                buildEnd(result) {
+                afterBuild(result) {
                   linkedOutput = result.output;
                 },
               };
@@ -5160,7 +5204,7 @@ describe("build", () => {
             id: "records-raw-output",
             setup() {
               return {
-                buildEnd(result) {
+                afterBuild(result) {
                   linkedOutput = result.output;
                   rawOutputModules.push(
                     result.output.pages.dashboard.module?.type,
@@ -5286,7 +5330,7 @@ describe("build", () => {
       path.join(cwd, "dist/client/report/index.html"),
       "utf-8",
     );
-    const buildOutput = JSON.parse(
+    const transformOutput = JSON.parse(
       fs.readFileSync(path.join(cwd, "dist/deployment-metadata.json"), "utf-8"),
     );
 
@@ -5295,13 +5339,13 @@ describe("build", () => {
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
     expect(html).not.toContain("data-evjs-hydrate");
-    expect(buildOutput.server).toEqual({});
-    expect(buildOutput.documents).toContainEqual({
+    expect(transformOutput.server).toEqual({});
+    expect(transformOutput.documents).toContainEqual({
       kind: "page",
       id: "report",
       fileName: "report/index.html",
     });
-    expect(buildOutput.routes).toEqual([
+    expect(transformOutput.routes).toEqual([
       {
         kind: "static-page",
         path: "/report",
@@ -5615,7 +5659,7 @@ describe("build", () => {
 
     const plugin: Plugin<Record<string, never>> = {
       id: "sets-server-base-path",
-      config(config, ctx) {
+      configure(config, ctx) {
         events.push(`config:${ctx.mode}`);
         config.server = {
           ...(typeof config.server === "object" ? config.server : {}),
@@ -5652,7 +5696,7 @@ describe("build", () => {
 
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-dev-port",
-      config(config) {
+      configure(config) {
         events.push("config");
         config.dev = {
           ...config.dev,
@@ -5679,14 +5723,14 @@ describe("build", () => {
     expect(events).toEqual(["config"]);
   });
 
-  it("rejects invalid plugin config hook return values", async () => {
+  it("rejects invalid plugin configure hook return values", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-config-return",
-      config() {
+      configure() {
         events.push("config");
         return null as never;
       },
@@ -5704,7 +5748,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] Plugin "invalid-config-return" config hook must return a config object or undefined.',
+      '[evjs] Plugin "invalid-config-return" configure hook must return a config object or undefined.',
     );
     expect(events).toEqual(["config"]);
   });
@@ -5749,7 +5793,7 @@ describe("build", () => {
       setup() {
         events.push("setup");
         return {
-          buildStart: "start" as never,
+          beforeBuild: "start" as never,
         };
       },
     };
@@ -5766,7 +5810,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] Plugin "invalid-lifecycle-hook" setup hook returned buildStart must be a function.',
+      '[evjs] Plugin "invalid-lifecycle-hook" setup hook returned beforeBuild must be a function.',
     );
     expect(events).toEqual(["setup"]);
   });
@@ -5781,9 +5825,9 @@ describe("build", () => {
       setup() {
         events.push("setup");
         return {
-          buildstart() {},
-          buildStart() {
-            events.push("buildStart");
+          beforebuild() {},
+          beforeBuild() {
+            events.push("beforeBuild");
           },
         } as never;
       },
@@ -5801,7 +5845,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unsupported hook "buildstart". Use "buildStart" instead.',
+      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unsupported hook "beforebuild". Use "beforeBuild" instead.',
     );
     expect(events).toEqual(["setup"]);
   });
@@ -7128,25 +7172,25 @@ describe("build", () => {
     expect(events).toContain("bundler.build");
   });
 
-  it("orders plugin config and lifecycle hooks by dependencies", async () => {
+  it("orders plugin configure and lifecycle hooks by dependencies", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
     const pluginA: Plugin<Record<string, never>> = {
       id: "plugin-a",
-      config(config) {
+      configure(config) {
         events.push("config:a");
         return config;
       },
       setup() {
         events.push("setup:a");
         return {
-          buildStart() {
-            events.push("buildStart:a");
+          beforeBuild() {
+            events.push("beforeBuild:a");
           },
-          buildEnd() {
-            events.push("buildEnd:a");
+          afterBuild() {
+            events.push("afterBuild:a");
           },
         };
       },
@@ -7154,18 +7198,18 @@ describe("build", () => {
     const pluginB: Plugin<Record<string, never>> = {
       id: "plugin-b",
       dependencies: ["plugin-a"],
-      config(config) {
+      configure(config) {
         events.push("config:b");
         return config;
       },
       setup() {
         events.push("setup:b");
         return {
-          buildStart() {
-            events.push("buildStart:b");
+          beforeBuild() {
+            events.push("beforeBuild:b");
           },
-          buildEnd() {
-            events.push("buildEnd:b");
+          afterBuild() {
+            events.push("afterBuild:b");
           },
         };
       },
@@ -7187,12 +7231,12 @@ describe("build", () => {
       "config:b",
       "setup:a",
       "setup:b",
-      "buildStart:a",
-      "buildStart:b",
       "bundler.build",
       "bundler.entries:",
-      "buildEnd:a",
-      "buildEnd:b",
+      "beforeBuild:a",
+      "beforeBuild:b",
+      "afterBuild:a",
+      "afterBuild:b",
     ]);
   });
 
@@ -7457,7 +7501,7 @@ describe("build", () => {
           plugins: [
             {
               id: "",
-              config(config) {
+              configure(config) {
                 events.push("config");
                 return config;
               },
@@ -7607,10 +7651,20 @@ describe("dev", () => {
     ).rejects.toThrow("[evjs] options.bundler.build must be a function.");
   });
 
-  it("disposes plugins when dev initialization fails", async () => {
+  it("disposes plugins when initial beforeBuild fails after fresh facts", async () => {
     const cwd = await createProject();
     const events: string[] = [];
-    const bundler = createMockBundler(events);
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, generation }) {
+        events.push("bundler.dev");
+        await callbacks.onBuildFacts(generation, {}, { isRebuild: false });
+      },
+    };
 
     await expect(
       dev(
@@ -7621,7 +7675,7 @@ describe("dev", () => {
               id: "failing-start",
               setup() {
                 return {
-                  buildStart() {
+                  beforeBuild() {
                     throw new Error("start blocked");
                   },
                   dispose() {
@@ -7636,7 +7690,7 @@ describe("dev", () => {
       ),
     ).rejects.toThrow("start blocked");
 
-    expect(events).toEqual(["dispose"]);
+    expect(events).toEqual(["bundler.dev", "dispose"]);
   });
 
   it("continues dev cleanup when the bundler close hook fails", async () => {
@@ -7844,7 +7898,7 @@ describe("dev", () => {
     let contributionCalls = 0;
     const plugin: Plugin<Record<string, never>> = {
       id: "late-watch-registration-failure",
-      contributions(ctx) {
+      contribute(ctx) {
         contributionCalls += 1;
         if (contributionCalls > 1) ctx.addWatchFile(forbiddenPath);
       },
@@ -8187,7 +8241,7 @@ describe("dev", () => {
           setupCalls += 1;
           ctx.addWatchFile(pluginDataPath);
         },
-        contributions(ctx) {
+        contribute(ctx) {
           const value = fs.readFileSync(pluginDataPath, "utf-8");
           events.push(`contribution:${value}`);
           ctx.emit.data({
@@ -8294,7 +8348,7 @@ describe("dev", () => {
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
         id: "startup-paused-plugin-contributions",
-        async contributions(ctx) {
+        async contribute(ctx) {
           contributionCalls += 1;
           events.push(`contribution:${contributionCalls}`);
           if (contributionCalls === 1) {
@@ -8416,7 +8470,7 @@ describe("dev", () => {
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
         id: "startup-analysis-dependency-reconciliation",
-        async contributions(ctx) {
+        async contribute(ctx) {
           contributionCalls += 1;
           const source = fs.readFileSync(dependency, "utf-8");
           const value = source.includes("changed-during-startup")
@@ -9070,7 +9124,7 @@ describe("dev", () => {
                 },
               };
             },
-            contributions(context) {
+            contribute(context) {
               contributionCount += 1;
               events.push(`contribution:${contributionCount}`);
               context.emit.data({
@@ -9152,9 +9206,9 @@ describe("dev", () => {
     ]);
   });
 
-  it("runs buildEnd after initial dev output and rebuild output", async () => {
+  it("pairs beforeBuild and afterBuild with the same rebuild flag", async () => {
     const cwd = await createSpaProject();
-    const rebuildFlags: boolean[] = [];
+    const lifecycleEvents: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
       capabilities: fullBundlerCapabilities,
@@ -9187,8 +9241,11 @@ describe("dev", () => {
             id: "dev-build-end",
             setup() {
               return {
-                buildEnd(result) {
-                  rebuildFlags.push(result.isRebuild);
+                beforeBuild(ctx) {
+                  lifecycleEvents.push(`beforeBuild:${ctx.isRebuild}`);
+                },
+                afterBuild(result) {
+                  lifecycleEvents.push(`afterBuild:${result.isRebuild}`);
                 },
               };
             },
@@ -9198,10 +9255,15 @@ describe("dev", () => {
       { cwd, bundler },
     );
 
-    expect(rebuildFlags).toEqual([false, true]);
+    expect(lifecycleEvents).toEqual([
+      "beforeBuild:false",
+      "afterBuild:false",
+      "beforeBuild:true",
+      "afterBuild:true",
+    ]);
   });
 
-  it("restores framework-owned dev output when a candidate buildEnd hook fails", async () => {
+  it("restores framework-owned dev output when a candidate afterBuild hook fails", async () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
@@ -9210,16 +9272,16 @@ describe("dev", () => {
     const stopCapturingRollback = captureFrameworkWarning(
       events,
       "Unable to apply framework plan update without restart:",
-      "candidate buildEnd failed",
+      "candidate afterBuild failed",
       "candidate-rolled-back",
     );
 
     function createOutputPlugin(
       snapshot: "old" | "candidate",
-      failBuildEnd = false,
+      failAfterBuild = false,
     ): Plugin<Record<string, never>> {
       return {
-        id: "framework-output-build-end-rollback",
+        id: "framework-output-after-build-rollback",
         setup() {
           return {
             transformHtml(document) {
@@ -9227,10 +9289,10 @@ describe("dev", () => {
                 document.createComment(` snapshot:${snapshot} `),
               );
             },
-            buildEnd() {
-              events.push(`buildEnd:${snapshot}`);
-              if (failBuildEnd) {
-                throw new Error("candidate buildEnd failed");
+            afterBuild() {
+              events.push(`afterBuild:${snapshot}`);
+              if (failAfterBuild) {
+                throw new Error("candidate afterBuild failed");
               }
             },
           };
@@ -9263,7 +9325,9 @@ describe("dev", () => {
       },
       async dev({ addWatchFile, callbacks, generation, plan }) {
         addWatchFile?.(dependency);
-        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        await callbacks.onBuildFacts(generation, factsForPlan(plan), {
+          isRebuild: false,
+        });
         initialHtml = await fs.promises.readFile(htmlPath);
         initialMetadata = await fs.promises.readFile(metadataPath);
         events.push("initial-output");
@@ -9344,11 +9408,11 @@ describe("dev", () => {
     }
 
     expect(events).toEqual([
-      "buildEnd:old",
+      "afterBuild:old",
       "initial-output",
       "candidate-output",
-      "buildEnd:candidate",
-      "buildEnd:old",
+      "afterBuild:candidate",
+      "afterBuild:old",
       "candidate-rolled-back",
     ]);
   });
@@ -9414,7 +9478,9 @@ describe("dev", () => {
       },
       async dev({ addWatchFile, callbacks, generation, plan }) {
         addWatchFile?.(dependency);
-        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        await callbacks.onBuildFacts(generation, factsForPlan(plan), {
+          isRebuild: false,
+        });
         initialHtml = await fs.promises.readFile(htmlPath);
         initialMetadata = await fs.promises.readFile(metadataPath);
         initialGeneratedState = await readDirectorySnapshot(generatedRoot);
@@ -9587,7 +9653,9 @@ describe("dev", () => {
       },
       async dev({ addWatchFile, callbacks, generation, plan }) {
         addWatchFile?.(dependency);
-        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        await callbacks.onBuildFacts(generation, factsForPlan(plan), {
+          isRebuild: false,
+        });
         initialGeneratedState = await readDirectorySnapshot(generatedRoot);
         let selectedGeneration = generation;
         let selectedPlan = plan;
@@ -9717,8 +9785,8 @@ describe("dev", () => {
                 document.createComment(` snapshot:${snapshot} `),
               );
             },
-            buildEnd() {
-              events.push(`buildEnd:${snapshot}`);
+            afterBuild() {
+              events.push(`afterBuild:${snapshot}`);
             },
           };
         },
@@ -9751,7 +9819,9 @@ describe("dev", () => {
       },
       async dev({ addWatchFile, callbacks, generation, plan }) {
         addWatchFile?.(dependency);
-        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        await callbacks.onBuildFacts(generation, factsForPlan(plan), {
+          isRebuild: false,
+        });
         initialHtml = await fs.promises.readFile(htmlPath);
         initialMetadata = await fs.promises.readFile(metadataPath);
         events.push("initial-output");
@@ -9847,10 +9917,10 @@ describe("dev", () => {
     }
 
     expect(events).toEqual([
-      "buildEnd:old",
+      "afterBuild:old",
       "initial-output",
       "candidate-input-rejected",
-      "buildEnd:old",
+      "afterBuild:old",
       "candidate-rolled-back",
     ]);
   });
@@ -9877,14 +9947,14 @@ describe("dev", () => {
               },
             }
           : {};
-        await callbacks.onBuildFacts(generation, facts);
+        await callbacks.onBuildFacts(generation, facts, { isRebuild: false });
         const initialHtml = await fs.promises.readFile(htmlPath);
         const initialMetadata = await fs.promises.readFile(metadataPath);
         events.push("initial-output");
 
         await expect(
           callbacks.onBuildFacts(generation, facts, { isRebuild: true }),
-        ).rejects.toThrow("ordinary rebuild buildEnd failed");
+        ).rejects.toThrow("ordinary rebuild afterBuild failed");
         events.push("rebuild-rejected");
         await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
           initialHtml,
@@ -9915,11 +9985,11 @@ describe("dev", () => {
                     document.createComment(` cycle:${cycle} `),
                   );
                 },
-                buildEnd(result) {
+                afterBuild(result) {
                   const cycle = result.isRebuild ? "failed" : "initial";
-                  events.push(`buildEnd:${cycle}`);
+                  events.push(`afterBuild:${cycle}`);
                   if (result.isRebuild) {
-                    throw new Error("ordinary rebuild buildEnd failed");
+                    throw new Error("ordinary rebuild afterBuild failed");
                   }
                 },
               };
@@ -9932,10 +10002,10 @@ describe("dev", () => {
 
     expect(events).toEqual([
       "transform:initial",
-      "buildEnd:initial",
+      "afterBuild:initial",
       "initial-output",
       "transform:failed",
-      "buildEnd:failed",
+      "afterBuild:failed",
       "rebuild-rejected",
     ]);
   });
@@ -10013,7 +10083,9 @@ describe("dev", () => {
       },
       async dev({ addWatchFile, callbacks, generation, plan }) {
         addWatchFile?.(dependency);
-        await callbacks.onBuildFacts(generation, factsForPlan(plan));
+        await callbacks.onBuildFacts(generation, factsForPlan(plan), {
+          isRebuild: false,
+        });
         initialHtml = await fs.promises.readFile(htmlPath);
         initialMetadata = await fs.promises.readFile(metadataPath);
         events.push("initial-output");
@@ -10321,7 +10393,7 @@ describe("dev", () => {
         setupCount += 1;
         return {};
       },
-      contributions() {
+      contribute() {
         contributionCount += 1;
         events.push(`contribution:${contributionCount}`);
       },
@@ -11291,8 +11363,8 @@ describe("dev", () => {
             setup(ctx) {
               ctx.addWatchFile("./semantic-source.txt");
               return {
-                buildEnd(result) {
-                  events.push(`buildEnd:${result.isRebuild}`);
+                afterBuild(result) {
+                  events.push(`afterBuild:${result.isRebuild}`);
                 },
               };
             },
@@ -11319,10 +11391,10 @@ describe("dev", () => {
       "boundary:begin",
       "update:empty",
       "resume:accept",
-      "buildEnd:true",
+      "afterBuild:true",
       "facts:fresh",
       "transition:finalize",
-      "buildEnd:true",
+      "afterBuild:true",
       "facts:post-finalize:published",
     ]);
   });
@@ -11571,7 +11643,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("fails closed when a bundlerConfig watch dependency changes", async () => {
+  it("fails closed when a configureBundler watch dependency changes", async () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
@@ -11614,7 +11686,8 @@ describe("dev", () => {
       running,
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("bundlerConfig dependency update timed out")),
+          () =>
+            reject(new Error("configureBundler dependency update timed out")),
           devUpdateTimeoutMs,
         ),
       ),
@@ -11623,7 +11696,7 @@ describe("dev", () => {
     expect(events).toEqual(["bundler.dev", "update:true:0:0:0"]);
   });
 
-  it("uses the next plugin context for build facts emitted during a bundlerConfig reload", async () => {
+  it("uses the next plugin context for build facts emitted during a configureBundler reload", async () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
@@ -11638,7 +11711,7 @@ describe("dev", () => {
     });
     const plugin: Plugin<Record<string, never>> = {
       id: "reload-context",
-      async contributions(ctx) {
+      async contribute(ctx) {
         if (ctx.config.dev.proxy[0]?.target === "https://example.com") {
           markCandidateContributionStarted?.();
           await candidateContributionGate;
@@ -11648,9 +11721,9 @@ describe("dev", () => {
         const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
         events.push(`setup:${setupTarget}`);
         return {
-          buildOutput(_output, buildContext) {
+          transformOutput(_output, buildContext) {
             events.push(
-              `buildOutput:${setupTarget}:${buildContext.config.dev.proxy[0]?.target}`,
+              `transformOutput:${setupTarget}:${buildContext.config.dev.proxy[0]?.target}`,
             );
           },
           dispose() {
@@ -11742,7 +11815,8 @@ describe("dev", () => {
         running,
         new Promise((_, reject) =>
           setTimeout(
-            () => reject(new Error("bundlerConfig context update timed out")),
+            () =>
+              reject(new Error("configureBundler context update timed out")),
             devUpdateTimeoutMs,
           ),
         ),
@@ -11757,7 +11831,7 @@ describe("dev", () => {
       "setup:https://example.com",
       "boundary:discarded",
       "update:true",
-      "buildOutput:https://example.com:https://example.com",
+      "transformOutput:https://example.com:https://example.com",
       "candidate:fresh",
       "dispose:initial",
       "dispose:https://example.com",
@@ -11778,10 +11852,10 @@ describe("dev", () => {
         const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
         events.push(`setup:${snapshot}:${setupTarget}`);
         return {
-          buildOutput(_output, buildContext) {
+          transformOutput(_output, buildContext) {
             const buildTarget =
               buildContext.config.dev.proxy[0]?.target ?? "initial";
-            events.push(`buildOutput:${snapshot}:${buildTarget}`);
+            events.push(`transformOutput:${snapshot}:${buildTarget}`);
           },
           dispose(disposeContext) {
             const disposeTarget =
@@ -11917,7 +11991,7 @@ describe("dev", () => {
       "boundary:old-discarded",
       "boundary:candidate-discarded",
       "update:return",
-      "buildOutput:new:https://next.example",
+      "transformOutput:new:https://next.example",
       "candidate:fresh",
       "dispose:old:initial",
       "retired:discarded",
@@ -12098,21 +12172,23 @@ describe("dev", () => {
           setup(ctx) {
             const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
             return {
-              async buildOutput(_output, buildContext) {
+              async transformOutput(_output, buildContext) {
                 const buildTarget =
                   buildContext.config.dev.proxy[0]?.target ?? "initial";
                 events.push(
-                  `buildOutput:${id}:${snapshot}:start:${buildTarget}`,
+                  `transformOutput:${id}:${snapshot}:start:${buildTarget}`,
                 );
                 if (blockFirstOutput && !oldOutputBlocked) {
                   oldOutputBlocked = true;
                   markOldOutputStarted?.();
                   await oldOutputGate;
                 }
-                events.push(`buildOutput:${id}:${snapshot}:end:${buildTarget}`);
+                events.push(
+                  `transformOutput:${id}:${snapshot}:end:${buildTarget}`,
+                );
               },
-              buildEnd() {
-                events.push(`buildEnd:${id}:${snapshot}`);
+              afterBuild() {
+                events.push(`afterBuild:${id}:${snapshot}`);
               },
               transformHtml(document) {
                 events.push(`transformHtml:${id}:${snapshot}`);
@@ -12276,26 +12352,26 @@ describe("dev", () => {
 
       expect(events).toEqual([
         "bundler.dev",
-        "buildOutput:first:old:start:initial",
+        "transformOutput:first:old:start:initial",
         "boundary:waiting",
-        "buildOutput:first:old:end:initial",
-        "buildOutput:second:old:start:initial",
-        "buildOutput:second:old:end:initial",
+        "transformOutput:first:old:end:initial",
+        "transformOutput:second:old:start:initial",
+        "transformOutput:second:old:end:initial",
         "transformHtml:first:old",
         "transformHtml:second:old",
-        "buildEnd:first:old",
-        "buildEnd:second:old",
+        "afterBuild:first:old",
+        "afterBuild:second:old",
         "boundary:ready",
         "update",
         "next-cycle:fresh",
-        "buildOutput:first:new:start:https://next.example",
-        "buildOutput:first:new:end:https://next.example",
-        "buildOutput:second:new:start:https://next.example",
-        "buildOutput:second:new:end:https://next.example",
+        "transformOutput:first:new:start:https://next.example",
+        "transformOutput:first:new:end:https://next.example",
+        "transformOutput:second:new:start:https://next.example",
+        "transformOutput:second:new:end:https://next.example",
         "transformHtml:first:new",
         "transformHtml:second:new",
-        "buildEnd:first:new",
-        "buildEnd:second:new",
+        "afterBuild:first:new",
+        "afterBuild:second:new",
         "dispose:second:old:initial:initial",
         "dispose:first:old:initial:initial",
         "dispose:second:new:https://next.example:https://next.example",
@@ -12336,9 +12412,9 @@ describe("dev", () => {
         const setupTarget = ctx.config.dev.proxy[0]?.target ?? "initial";
         events.push(`setup:${setupTarget}`);
         return {
-          buildOutput(_output, buildContext) {
+          transformOutput(_output, buildContext) {
             events.push(
-              `buildOutput:${setupTarget}:${buildContext.config.dev.proxy[0]?.target}`,
+              `transformOutput:${setupTarget}:${buildContext.config.dev.proxy[0]?.target}`,
             );
           },
           async dispose(disposeContext) {
@@ -12456,7 +12532,7 @@ describe("dev", () => {
       "dispose:https://example.com:https://example.com:start",
       "boundary:discarded",
       "dispose:https://example.com:https://example.com:end",
-      "buildOutput:initial:undefined",
+      "transformOutput:initial:undefined",
       "rollback:fresh",
       "config-update-rolled-back",
       "dispose:initial:initial:start",
@@ -13064,7 +13140,7 @@ describe("dev", () => {
       "utf-8",
     );
 
-    const pageThemeConfig = pluginConfig<{ value: string }>();
+    const pageThemeConfig = pluginOptions<{ value: string }>();
     const plugin = definePlugin<
       "page-theme",
       undefined,
@@ -13176,7 +13252,7 @@ describe("dev", () => {
 
     const events: string[] = [];
     let resolutionCalls = 0;
-    const applicationConfig = pluginConfig<{ generation: number }>({
+    const applicationConfig = pluginOptions<{ generation: number }>({
       defaults() {
         resolutionCalls += 1;
         return { generation: resolutionCalls };
@@ -13184,7 +13260,6 @@ describe("dev", () => {
     });
     const plugin = definePlugin<
       "stable-application-plugin",
-      undefined,
       typeof applicationConfig,
       undefined,
       Record<string, never>
@@ -13200,7 +13275,7 @@ describe("dev", () => {
           },
         };
       },
-      contributions(ctx) {
+      contribute(ctx) {
         const value = ctx.options;
         events.push(`contribution:${value.generation}`);
       },
@@ -13277,7 +13352,7 @@ describe("dev", () => {
     let contributionCount = 0;
     let loadConfigCalls = 0;
     let resolutionCalls = 0;
-    const applicationConfig = pluginConfig<{ generation: number }>({
+    const applicationConfig = pluginOptions<{ generation: number }>({
       defaults() {
         resolutionCalls += 1;
         return { generation: resolutionCalls };
@@ -13285,7 +13360,6 @@ describe("dev", () => {
     });
     const plugin = definePlugin<
       "watched-application-plugin",
-      undefined,
       typeof applicationConfig,
       undefined,
       Record<string, never>
@@ -13302,7 +13376,7 @@ describe("dev", () => {
           },
         };
       },
-      contributions(ctx) {
+      contribute(ctx) {
         contributionCount += 1;
         const state = fs.existsSync(pluginDataPath)
           ? fs.readFileSync(pluginDataPath, "utf-8")
@@ -13385,7 +13459,7 @@ describe("dev", () => {
 
     const events: string[] = [];
     let resolutionCalls = 0;
-    const applicationConfig = pluginConfig<{ generation: number }>({
+    const applicationConfig = pluginOptions<{ generation: number }>({
       defaults() {
         resolutionCalls += 1;
         return { generation: resolutionCalls };
@@ -13393,7 +13467,6 @@ describe("dev", () => {
     });
     const plugin = definePlugin<
       "reload-application-plugin",
-      undefined,
       typeof applicationConfig,
       undefined,
       Record<string, never>
@@ -13409,7 +13482,7 @@ describe("dev", () => {
           },
         };
       },
-      contributions(ctx) {
+      contribute(ctx) {
         const value = ctx.options;
         events.push(`contribution:${value.generation}`);
       },
@@ -13489,7 +13562,7 @@ describe("dev", () => {
       "config-update-rolled-back",
     );
     let resolutionCalls = 0;
-    const applicationConfig = pluginConfig<{ generation: number }>({
+    const applicationConfig = pluginOptions<{ generation: number }>({
       defaults() {
         resolutionCalls += 1;
         return { generation: resolutionCalls };
@@ -13497,14 +13570,13 @@ describe("dev", () => {
     });
     const plugin = definePlugin<
       "transactional-config-plugin",
-      undefined,
       typeof applicationConfig,
       undefined,
       Record<string, never>
     >({
       id: "transactional-config-plugin",
       application: applicationConfig,
-      config(config, ctx) {
+      configure(config, ctx) {
         events.push(`config:${ctx.options.generation}`);
         config.server = {
           ...config.server,
@@ -13520,7 +13592,7 @@ describe("dev", () => {
           },
         };
       },
-      contributions(ctx) {
+      contribute(ctx) {
         events.push(`contribution:${ctx.options.generation}`);
       },
     })();
@@ -13983,7 +14055,9 @@ describe("dev", () => {
             [aboutEntry]: { js: [`${aboutEntry}.js`], css: [] },
           },
         };
-        await callbacks.onBuildFacts(currentGeneration, facts);
+        await callbacks.onBuildFacts(currentGeneration, facts, {
+          isRebuild: false,
+        });
         const aliasPath = path.resolve(
           cwd,
           plan.output.clientDir,
@@ -14053,7 +14127,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("runs staged same-id plugin hooks before applying a dev config update", async () => {
+  it("stages same-id plugins without running beforeBuild during config reload", async () => {
     const cwd = await createProject();
     await writeFile(
       path.join(cwd, "src/pages/home/page.tsx"),
@@ -14070,14 +14144,14 @@ describe("dev", () => {
     function createPlugin(label: string): Plugin<Record<string, never>> {
       return {
         id: "same-id-plugin",
-        contributions() {
+        contribute() {
           events.push(`contribution:${label}`);
         },
         setup() {
           events.push(`setup:${label}`);
           return {
-            buildStart() {
-              events.push(`buildStart:${label}`);
+            beforeBuild() {
+              events.push(`beforeBuild:${label}`);
             },
             dispose() {
               events.push(`dispose:${label}`);
@@ -14150,140 +14224,13 @@ describe("dev", () => {
 
     expect(events).toEqual([
       "setup:v1",
-      "buildStart:v1",
       "contribution:v1",
       "bundler.dev",
       "setup:v2",
-      "buildStart:v2",
       "contribution:v2",
       `update:${createPageClientBuildEntryName("orders")}`,
       "dispose:v1",
       "dispose:v2",
-    ]);
-  });
-
-  it("rolls back staged plugin hooks when reload buildStart fails", async () => {
-    const cwd = await createProject();
-    await writeFile(
-      path.join(cwd, "src/pages/home/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa' } };",
-      "utf-8",
-    );
-    await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
-    await writeFile(path.join(cwd, "new-watch.txt"), "new", "utf-8");
-    await writeFile(path.join(cwd, "retired-watch.txt"), "retired", "utf-8");
-
-    const events: string[] = [];
-    function createPlugin(
-      label: string,
-      watchFile: string,
-      failBuildStart = false,
-    ): Plugin<Record<string, never>> {
-      let contributionCount = 0;
-      return {
-        id: "same-id-plugin",
-        contributions() {
-          contributionCount += 1;
-          events.push(`contribution:${label}:${contributionCount}`);
-        },
-        setup(ctx) {
-          events.push(`setup:${label}`);
-          ctx.addWatchFile(`./${watchFile}`);
-          return {
-            buildStart() {
-              events.push(`buildStart:${label}`);
-              if (failBuildStart) {
-                throw new Error(`${label} buildStart blocked`);
-              }
-            },
-            dispose(disposeCtx) {
-              events.push(
-                `dispose:${label}:${disposeCtx.config.routing?.mode ?? "missing"}`,
-              );
-            },
-          };
-        },
-      };
-    }
-
-    const oldPlugin = createPlugin("old", "old-watch.txt");
-    const oldConfig: Config<Record<string, never>> = {
-      output: { client: "dist/client", server: "dist/server" },
-      routing: { mode: "mpa" },
-      plugins: [oldPlugin],
-    };
-    let currentConfig = oldConfig;
-    const bundler: BundlerAdapter<Record<string, never>> = {
-      name: "mock",
-      capabilities: fullBundlerCapabilities,
-      async build() {
-        return {};
-      },
-      async dev() {
-        events.push("bundler.dev");
-        return createTestDevController({
-          async updatePlan(update, options) {
-            expect(isEmptyBuildPlanUpdate(update)).toBe(true);
-            options.activate();
-          },
-        });
-      },
-    };
-    let loadCount = 0;
-    const running = dev(currentConfig, {
-      cwd,
-      bundler,
-      loadConfig() {
-        loadCount += 1;
-        events.push(`load:${loadCount}`);
-        return currentConfig;
-      },
-    });
-
-    await waitForEvent(events, "bundler.dev");
-    currentConfig = {
-      ...oldConfig,
-      routing: { mode: "mpa" },
-      plugins: [createPlugin("new", "new-watch.txt", true)],
-    };
-    await writeFile(
-      path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa' } }; // updated",
-      "utf-8",
-    );
-    await waitForEvent(events, "dispose:new:mpa", devUpdateTimeoutMs);
-
-    currentConfig = oldConfig;
-    await writeFile(path.join(cwd, "old-watch.txt"), "changed", "utf-8");
-    await waitForEvent(events, "contribution:old:2");
-    process.emit("SIGINT");
-
-    await Promise.race([
-      running,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("dev shutdown timed out")),
-          devUpdateTimeoutMs,
-        ),
-      ),
-    ]);
-
-    expect(events).toEqual([
-      "setup:old",
-      "buildStart:old",
-      "contribution:old:1",
-      "bundler.dev",
-      "load:1",
-      "setup:new",
-      "buildStart:new",
-      "dispose:new:mpa",
-      "contribution:old:2",
-      "dispose:old:mpa",
     ]);
   });
 
@@ -14530,7 +14477,7 @@ describe("dev", () => {
               },
             };
           },
-          contributions() {
+          contribute() {
             events.push(`contribution:${label}`);
           },
         };
@@ -14725,7 +14672,7 @@ describe("dev", () => {
       let contributionCount = 0;
       return {
         id: "same-id-plugin",
-        contributions() {
+        contribute() {
           contributionCount += 1;
           events.push(`contribution:${label}:${contributionCount}`);
         },

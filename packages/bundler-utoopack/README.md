@@ -38,7 +38,7 @@ const myUtoopackPlugin = definePlugin({
   id: "my-utoopack-plugin",
   setup() {
     return {
-      bundlerConfig: utoopack((config) => {
+      configureBundler: utoopack((config) => {
         // config is typed as ConfigComplete from @utoo/pack
         merge(config, {
           define: {

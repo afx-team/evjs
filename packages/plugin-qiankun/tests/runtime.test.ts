@@ -5,6 +5,7 @@ import {
   createQiankunSlaveLifecycles,
   defineQiankunMasterResolver,
   defineQiankunSlaveRuntime,
+  type QiankunMasterOptions,
   resolveQiankunSlaveBase,
   startQiankunMaster,
   unmountQiankunMicroAppAfterUpdates,
@@ -29,17 +30,17 @@ describe("@evjs/plugin-qiankun runtime", () => {
   it("installs runtime routes before starting the master Application", async () => {
     const calls: string[] = [];
     const updateRuntime = vi.fn(async () => calls.push("routes"));
+    const configuredFetch = vi.fn();
     const resolver = vi.fn(async () => ({
       apps: [
         {
           name: "console",
           entry: "https://example.com/console/",
-          platformId: "platform-console",
         },
       ],
-      routes: [{ path: "/console", microApp: "platform-console" }],
-      appNameKeyAlias: "platformId",
+      routes: [{ path: "/console", microApp: "console" }],
       prefetch: "all" as const,
+      settings: { fetch: configuredFetch },
     }));
     qiankun.prefetchApps.mockClear();
 
@@ -71,22 +72,20 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
     expect(qiankun.prefetchApps).toHaveBeenCalledWith(
       [{ name: "console", entry: "https://example.com/console/" }],
-      undefined,
+      configuredFetch,
     );
   });
 
-  it("projects prepend, match, alias, and redirect routes", () => {
+  it("projects prepend, match, and redirect routes", () => {
     const routes = createQiankunMasterRoutes({
       apps: [
         {
           name: "catalog",
           entry: "https://example.com/catalog/",
-          platformId: "catalog-id",
         },
       ],
-      appNameKeyAlias: "platformId",
       routes: [
-        { path: "/catalog", microApp: "catalog-id" },
+        { path: "/catalog", microApp: "catalog" },
         {
           path: "/catalog-exact",
           microApp: "catalog",
@@ -180,6 +179,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
     };
     expect(router.matchRoutes("/").length).toBeGreaterThan(1);
     expect(router.matchRoutes("/catalog").length).toBeGreaterThan(1);
+    expect(router.matchRoutes("/catalog/details").length).toBeGreaterThan(1);
   });
 
   it("does not render the master when the runtime overlay update fails", async () => {
@@ -242,6 +242,73 @@ describe("@evjs/plugin-qiankun runtime", () => {
         ],
       }),
     ).toThrow("routes[0].microAppProps.lifeCycles must be an object");
+  });
+
+  it("rejects unknown master, app, and route fields", () => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [],
+        appNameKeyAlias: "externalId",
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('options contains unknown field "appNameKeyAlias"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [
+          {
+            name: "catalog",
+            entry: "https://example.com/catalog/",
+            credentials: true,
+          },
+        ],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('apps[0] contains unknown field "credentials"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com/catalog/" }],
+        routes: [
+          {
+            path: "/catalog",
+            microApp: "catalog",
+            activeRule: "/catalog",
+          },
+        ],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('routes[0] contains unknown field "activeRule"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        routes: [{ path: "/legacy", redirect: "/", mode: "match" }],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('routes[0] contains unknown field "mode"');
+  });
+
+  it("keeps app props and route micro-app props extensible", () => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [
+          {
+            name: "catalog",
+            entry: "https://example.com/catalog/",
+            props: {
+              externalId: "catalog-reference",
+              credentials: "include",
+            },
+          },
+        ],
+        routes: [
+          {
+            path: "/catalog",
+            microApp: "catalog",
+            microAppProps: {
+              platformRouteId: "catalog-route",
+              requestScope: "catalog:read",
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
   });
 
   it("loads the slave entry once and remounts its app after unmount", async () => {

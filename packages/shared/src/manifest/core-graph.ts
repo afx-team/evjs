@@ -244,9 +244,12 @@ export interface CoreApplicationPluginSetting {
 
 export type CorePagePluginSettings = Record<string, CorePagePluginSetting>;
 
-export interface CorePagePluginSetting extends CoreApplicationPluginSetting {
-  config?: Record<string, StaticJsonValue>;
-}
+export type CorePagePluginSetting =
+  | { enabled: false; options?: never }
+  | {
+      enabled: true;
+      options: Record<string, StaticJsonValue>;
+    };
 
 export interface CoreNodeProvenance {
   producer: CoreProvenanceProducer;
@@ -512,6 +515,18 @@ function assertPluginSettingOwners(
     if (requirePageContract && !definition.page) {
       throw new Error(
         `[evjs] ${source} uses plugin id "${pluginId}", but that plugin does not declare a Page contract.`,
+      );
+    }
+    const setting = getOwn(settings, pluginId) as
+      | { enabled: boolean; options?: unknown }
+      | undefined;
+    if (
+      requirePageContract &&
+      setting?.enabled &&
+      setting.options === undefined
+    ) {
+      throw new Error(
+        `[evjs] ${source} plugin "${pluginId}" options are required when enabled.`,
       );
     }
   }
@@ -1506,7 +1521,7 @@ function assertClientRouteParentPattern(
 function assertPluginSettings(
   value: unknown,
   source: string,
-  allowConfig: boolean,
+  allowOptions: boolean,
 ): void {
   const settings = assertRecord(value, source);
   for (const [pluginId, valueSetting] of Object.entries(settings)) {
@@ -1516,15 +1531,20 @@ function assertPluginSettings(
       valueSetting,
       settingSource,
       ["enabled"],
-      allowConfig ? ["config"] : [],
+      allowOptions ? ["options"] : [],
     );
     if (typeof setting.enabled !== "boolean") {
       throw new Error(`[evjs] ${settingSource}.enabled must be a boolean.`);
     }
-    const config = getOwn(setting, "config");
-    if (config !== undefined) {
-      assertRecord(config, `${settingSource}.config`);
-      assertStaticJsonValue(config, `${settingSource}.config`);
+    const options = getOwn(setting, "options");
+    if (options !== undefined) {
+      if (!setting.enabled) {
+        throw new Error(
+          `[evjs] ${settingSource}.options must be omitted when enabled is false.`,
+        );
+      }
+      assertRecord(options, `${settingSource}.options`);
+      assertStaticJsonValue(options, `${settingSource}.options`);
     }
   }
 }
@@ -1579,7 +1599,7 @@ function assertPluginContract(
   }
 }
 
-/** Validate the canonical short id shared by plugin config, graph, and IR. */
+/** Validate the canonical short id shared by plugin options, graph, and IR. */
 export function assertPluginId(
   value: unknown,
   source = "plugin id",

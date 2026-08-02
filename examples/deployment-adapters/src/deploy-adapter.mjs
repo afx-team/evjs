@@ -7,7 +7,7 @@ export const deploymentExampleAdapter = definePlugin({
   id: "deployment-adapter",
   setup(ctx) {
     return {
-      buildOutput(output) {
+      transformOutput(output) {
         output.deployment = {
           ...(output.deployment ?? {}),
           deploymentAdaptersExample: {
@@ -32,7 +32,7 @@ export const deploymentExampleAdapter = definePlugin({
           `<meta name="evjs-deployment-example-html" content="${kind}:${id}">`,
         );
       },
-      buildEnd({ output }) {
+      afterBuild({ output }) {
         const artifactPath = path.join(
           ctx.cwd,
           output.paths.rootDir,

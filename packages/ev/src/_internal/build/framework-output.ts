@@ -12,8 +12,8 @@ import {
 import type { ResolvedConfig } from "../../config/index.js";
 import type {
   HtmlDocumentInfo,
-  PluginContext,
   PluginHooks,
+  PluginSetupContext,
 } from "../../plugin/index.js";
 import {
   assertBuildOutputOwnershipUnchanged,
@@ -26,7 +26,7 @@ import {
   type BundlerBuildFacts,
 } from "./bundler.js";
 import { assertFrameworkHtmlOutputsAvailable } from "./bundler-output-files.js";
-import { assertBuildEndDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
+import { assertAfterBuildDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 import { createFrameworkHtmlDocument } from "./framework-html-document.js";
 import {
   createClientRuntime,
@@ -42,7 +42,11 @@ import {
   snapshotOwnedOutputFile,
   writeOwnedOutputFile,
 } from "./owned-file-output.js";
-import { runBuildOutputHooks, runCleanupTasks } from "./plugin-lifecycle.js";
+import {
+  runBeforeBuildHooks,
+  runCleanupTasks,
+  runTransformOutputHooks,
+} from "./plugin-lifecycle.js";
 import {
   FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
   portableArtifactPathsConflict,
@@ -523,7 +527,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
   hooks: PluginHooks<TBundlerCfg>[],
-  pluginCtx: PluginContext<TBundlerCfg>,
+  pluginCtx: PluginSetupContext<TBundlerCfg>,
   output: BuildOutput,
   plan: BuildPlan,
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
@@ -798,10 +802,11 @@ function normalizeServerModule(mod: unknown): Record<string, unknown> {
 }
 
 /**
- * Complete the post-bundler control-plane phase. Bundler facts are linked to
- * graph and plan ownership, buildOutput hooks may adjust asset groups and
- * deployment metadata without changing that ownership, and request-time
- * Document shells are compiled before runtime projection.
+ * Complete the post-bundler control-plane phase. Fresh bundler facts are
+ * validated before beforeBuild hooks run, then linked to graph and plan
+ * ownership. transformOutput hooks may adjust asset groups and deployment
+ * metadata without changing that ownership, and request-time Document shells
+ * are compiled before runtime projection.
  *
  * The deployed runtime excludes build-only renderers; a separate build runtime
  * includes them for SSG emission. Deployment output reservations are validated
@@ -814,7 +819,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   config: ResolvedConfig<TBundlerCfg>;
   cwd: string;
   hooks: PluginHooks<TBundlerCfg>[];
-  pluginCtx: PluginContext<TBundlerCfg>;
+  pluginCtx: PluginSetupContext<TBundlerCfg>;
   isRebuild: boolean;
 }): Promise<{
   output: BuildOutput;
@@ -829,6 +834,11 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.plan,
     options.bundlerFacts.emittedFiles,
   );
+  await runBeforeBuildHooks(
+    options.hooks,
+    options.pluginCtx,
+    options.isRebuild,
+  );
   const output = structuredClone(
     linkBuildOutput({
       graph: options.graph,
@@ -842,9 +852,12 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   const ownership = snapshotBuildOutputOwnership(output);
   const assertBuildOutputHookResult = () => {
     assertBuildOutputOwnershipUnchanged(ownership, output);
-    assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
+    assertFrameworkManifestShape(
+      output,
+      "BuildOutput after transformOutput hooks",
+    );
   };
-  await runBuildOutputHooks(
+  await runTransformOutputHooks(
     options.hooks,
     output,
     options.pluginCtx,
@@ -869,7 +882,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     documentShells,
     includeBuildRenderers: true,
   });
-  assertBuildEndDeploymentOutputsAvailable(
+  assertAfterBuildDeploymentOutputsAvailable(
     options.hooks,
     createBuildResult(output, options.isRebuild, { frameworkRuntime }),
     { cwd: options.cwd, emittedFiles: options.bundlerFacts.emittedFiles },

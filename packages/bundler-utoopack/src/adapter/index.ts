@@ -69,9 +69,9 @@ async function generateDevArtifacts(
   onBuildFacts: (
     generation: BundlerDevGeneration,
     facts: BundlerBuildFacts,
-    options?: { isRebuild?: boolean },
+    options: { isRebuild: boolean },
   ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>,
-  options: { isRebuild?: boolean } = {},
+  options: { isRebuild: boolean },
   facts?: BundlerBuildFacts,
 ): Promise<BundlerBuildFactsDisposition> {
   logger.info`Generating development manifest and HTML...`;

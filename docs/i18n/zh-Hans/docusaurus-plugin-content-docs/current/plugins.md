@@ -71,11 +71,11 @@ Application 配置与 Page 配置是两份独立的类型合同：
 
 | 写法 | 结果 |
 |---|---|
-| `analytics(config)` | 安装并执行插件。Page 有 defaults 时，省略插件项会使用 defaults；否则该 Page 关闭。 |
-| `analytics.forPages(config)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
+| `analytics(options)` | 安装并执行插件。Page 有 defaults 时，省略插件项会使用 defaults；否则该 Page 关闭。 |
+| `analytics.forPages(options)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
 | `plugins` 中的 `false`、`null` 或 `undefined` | 条件式省略整个插件；不执行任何插件 hook。 |
-| `analytics(config)` 后 Page 省略插件项 | Page 合同有 defaults 时用 defaults 启用；否则关闭该 Page。 |
-| `analytics.forPages(config)` 后 Page 省略插件项 | 即使 Page 有 defaults，也关闭该 Page。 |
+| `analytics(options)` 后 Page 省略插件项 | Page 合同有 defaults 时用 defaults 启用；否则关闭该 Page。 |
+| `analytics.forPages(options)` 后 Page 省略插件项 | 即使 Page 有 defaults，也关闭该 Page。 |
 | `analytics: false` | 在该 Page 禁用。 |
 | `analytics: true` | 使用 Page `defaults` 启用；合同没有 defaults 时会报错。 |
 | `analytics: { ... }` | 将 object 合并到 Page defaults，校验后启用该 Page。 |

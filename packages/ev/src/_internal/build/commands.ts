@@ -21,8 +21,8 @@ import {
 import { createDefinedPluginApplicationSettingSnapshot } from "../../plugin/defined.js";
 import type {
   CliFlags,
-  PluginContext,
   PluginHooks,
+  PluginSetupContext,
 } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import { createBuildResult } from "./build-result.js";
@@ -98,10 +98,9 @@ import {
   hasSamePluginIdentity,
   orderPluginsByDependencies,
   rethrowAfterCleanup,
-  runBuildEndHooks,
-  runBuildStartHooks,
+  runAfterBuildHooks,
   runCleanupTasks,
-  runConfigHooks,
+  runConfigureHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
 import {
@@ -116,8 +115,8 @@ import {
 import { CANONICAL_SERVER_ROUTE_ROOT } from "./server-route-conventions.js";
 import { isInsideCwd } from "./utils.js";
 
-type MutablePluginContext<TBundlerCfg> = Omit<
-  PluginContext<TBundlerCfg>,
+type MutablePluginSetupContext<TBundlerCfg> = Omit<
+  PluginSetupContext<TBundlerCfg>,
   "config"
 > & {
   config: ResolvedFrameworkConfig<TBundlerCfg>;
@@ -130,7 +129,7 @@ interface DevCycleTracker {
 
 interface DevPluginExecutionSnapshot<TBundlerCfg> extends DevCycleTracker {
   readonly hooks: PluginHooks<TBundlerCfg>[];
-  readonly context: MutablePluginContext<TBundlerCfg>;
+  readonly context: MutablePluginSetupContext<TBundlerCfg>;
 }
 
 interface ScheduledDevChangeSnapshot {
@@ -260,7 +259,7 @@ function createDevFrameworkOutputTransaction(
 
 function createDevPluginExecutionSnapshot<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
-  context: MutablePluginContext<TBundlerCfg>,
+  context: MutablePluginSetupContext<TBundlerCfg>,
 ): DevPluginExecutionSnapshot<TBundlerCfg> {
   return {
     hooks: [...hooks],
@@ -390,7 +389,6 @@ export interface PrepareFrameworkBuildOptions<
   command?: "dev" | "build";
   bundler?: BundlerAdapter<TBundlerCfg>;
   requireBundler?: boolean;
-  runLifecycleHooks?: boolean;
 }
 
 export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
@@ -425,7 +423,7 @@ interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
   graph: CoreGraph;
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
-  pluginContext: PluginContext<TBundlerCfg>;
+  pluginContext: PluginSetupContext<TBundlerCfg>;
 }
 
 interface GeneratedDevStateSnapshot {
@@ -685,7 +683,7 @@ async function prepareInternalFrameworkBuild<
   }
   const mode = options.mode ?? expectedMode;
   const flags = options.flags;
-  const configuredConfig = await runConfigHooks(userConfig, {
+  const configuredConfig = await runConfigureHooks(userConfig, {
     mode,
     command,
     cwd,
@@ -730,7 +728,7 @@ async function prepareInternalFrameworkBuild<
   });
   const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
-  const pluginContext: MutablePluginContext<TBundlerCfg> = {
+  const pluginContext: MutablePluginSetupContext<TBundlerCfg> = {
     mode,
     command,
     cwd,
@@ -750,9 +748,6 @@ async function prepareInternalFrameworkBuild<
   };
 
   try {
-    if (options.runLifecycleHooks ?? true) {
-      await runBuildStartHooks(hooks, pluginContext);
-    }
     validateHtmlTemplates(cwd, config);
     const { analysis, plan } = await analyzeAndMaterializeFrameworkIR({
       cwd,
@@ -998,7 +993,7 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
           },
         })
       : userConfig;
-  const configuredConfig = await runConfigHooks(initialUserConfig, {
+  const configuredConfig = await runConfigureHooks(initialUserConfig, {
     mode: "development",
     command: "dev",
     cwd,
@@ -1191,7 +1186,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let retirePluginContext = () => {
     pluginContextRetired = true;
   };
-  let pluginCtx: MutablePluginContext<TBundlerCfg> = {
+  let pluginCtx: MutablePluginSetupContext<TBundlerCfg> = {
     mode: "development",
     command: "dev",
     cwd,
@@ -1234,7 +1229,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let activeAnalysis: Awaited<ReturnType<typeof createCoreGraph>>;
   let activePlan: BuildPlan;
   try {
-    await runBuildStartHooks(hooks, pluginCtx);
     validateHtmlTemplates(cwd, activeConfig);
     const configuredAnalysisDependencies =
       listConfiguredAnalysisWatchDependencies(cwd, activeConfig);
@@ -1576,7 +1570,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     onConfigDependency?: (file: string) => void,
   ) => {
     const nextConfiguredConfig = reloadConfiguredConfig
-      ? await runConfigHooks(
+      ? await runConfigureHooks(
           options?.loadConfig
             ? await options.loadConfig(cwd, {
                 onDependency(file) {
@@ -1664,7 +1658,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       nextPluginContextRetired = true;
     };
     let settlement: "committed" | "pending" | "rolled-back" = "pending";
-    const nextPluginCtx: MutablePluginContext<TBundlerCfg> = {
+    const nextPluginCtx: MutablePluginSetupContext<TBundlerCfg> = {
       ...pluginCtx,
       config: nextConfig,
       addWatchFile(file) {
@@ -1694,17 +1688,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       settlement = "rolled-back";
       retireNextPluginContext();
       throw error;
-    }
-    try {
-      await runBuildStartHooks(nextHooks, nextPluginCtx);
-    } catch (error) {
-      settlement = "rolled-back";
-      retireNextPluginContext();
-      return rethrowAfterCleanup(
-        error,
-        () => runDisposeHooks(nextHooks, nextPluginCtx),
-        "[evjs] Plugin reload buildStart failed and rollback also failed.",
-      );
     }
     const nextPluginExecution = createDevPluginExecutionSnapshot(
       nextHooks,
@@ -2455,7 +2438,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             ({
               ...pluginCtx,
               config: nextConfig,
-            } satisfies PluginContext<TBundlerCfg>),
+            } satisfies PluginSetupContext<TBundlerCfg>),
           pluginSettings: nextPluginSettings,
           applicationPluginSettings: nextApplicationPluginSettings,
           plan: { distDir: DEV_DIST_DIR },
@@ -2751,7 +2734,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             )}`;
           },
           async onBuildFacts(generation, bundlerFacts, options) {
-            const isRebuild = options?.isRebuild ?? false;
+            const { isRebuild } = options;
             const generationState =
               getBundlerGenerationStateForFacts(generation);
             if (!generationState) return "discarded";
@@ -2770,7 +2753,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
               return "discarded";
             }
             const cycleHooks = [...cyclePluginExecution.hooks];
-            const cyclePluginContext: PluginContext<TBundlerCfg> = {
+            const cyclePluginContext: PluginSetupContext<TBundlerCfg> = {
               ...cyclePluginExecution.context,
               config: cycleConfig,
             };
@@ -2794,7 +2777,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
                       pluginCtx: cyclePluginContext,
                       isRebuild,
                     });
-                  await runBuildEndHooks(
+                  await runAfterBuildHooks(
                     cycleHooks,
                     createBuildResult(output, isRebuild, { frameworkRuntime }),
                     { cwd, emittedFiles: bundlerFacts.emittedFiles },
@@ -2920,7 +2903,7 @@ async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
       isRebuild: false,
     });
 
-    await runBuildEndHooks(
+    await runAfterBuildHooks(
       prepared.hooks,
       createBuildResult(output, false, { frameworkRuntime }),
       { cwd, emittedFiles: bundlerFacts.emittedFiles },

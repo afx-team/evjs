@@ -10,83 +10,93 @@
 flowchart TB
   subgraph Configure["配置阶段"]
     AppOptions["解析类型安全的 Application options"]
-    Config["config(config, ctx.options)"]
+    Config["configure(config, ctx.options)"]
     Resolve["解析框架配置"]
     Setup["setup(ctx.options)"]
   end
 
   subgraph Plan["框架规划"]
-    BuildStart["buildStart()"]
     Graph["discover graph\nroutes + server functions"]
     PageSettings["解析 Page plugin settings"]
+    Contributions["contribute(ctx) / contributePage(ctx)\nmodules + slots"]
     BuildPlan["create BuildPlan"]
-    Contributions["contributions(ctx) / contributePage(ctx)\nmodules + slots"]
     IR["materialize .ev"]
   end
 
   subgraph Build["Bundling 和输出"]
-    BundlerConfig["bundlerConfig()"]
+    BundlerConfig["configureBundler()"]
     Bundler["bundler build"]
-    BuildOutput["buildOutput()"]
-    HTML["transformHtml()\nper document"]
-    BuildEnd["buildEnd()"]
+    Facts["fresh bundler facts"]
+    BuildStart["beforeBuild()"]
+    Link["link canonical BuildOutput"]
+    BuildOutput["transformOutput()"]
+    HTML["transformHtml() + emit"]
+    BuildEnd["afterBuild()"]
     Dispose["dispose()"]
   end
 
-  AppOptions --> Config --> Resolve --> Setup --> BuildStart --> Graph --> PageSettings --> BuildPlan
-  BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
-  Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
+  AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
+  BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
+  Link --> BuildOutput --> HTML --> BuildEnd
+  BuildEnd -. production end / server close / snapshot replacement .-> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class AppOptions,Config,Resolve,Setup config;
-  class BuildStart,Graph,PageSettings,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
+  class Graph,PageSettings,BuildPlan,Contributions,IR plan;
+  class BundlerConfig,Bundler,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
-通过 `definePlugin()` 创建插件时，类型安全的值在这些阶段保持扁平：config 与 setup
-使用 `ctx.options`；`contributions()` 使用 `ctx.options` 和
+通过 `definePlugin()` 创建插件时，类型安全的值在这些阶段保持扁平：configure 与 setup
+使用 `ctx.options`；`contribute()` 使用 `ctx.options` 和
 `ctx.pages[].options`；`contributePage()` 使用 `ctx.options` 与
 `ctx.pageOptions`。
 
 | Hook | 用途 |
 |------|------|
-| `buildStart(ctx)` | 路由发现前针对当前 session/config snapshot 的准备 |
-| `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
-| `buildOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
+| `configureBundler(config, ctx)` | 修改当前 bundler 配置 |
+| `beforeBuild(ctx)` | fresh bundler facts 就绪后、evjs 链接或发射 canonical output 前执行 |
+| `transformOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
-| `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
+| `afterBuild({ output, isRebuild })` | 构建后输出最终产物 |
 | `dispose(ctx)` | 清理资源 |
 
-先于这些 hooks 运行的 `config()` 与 `setup()` 合同见
+先于这些 hooks 运行的 `configure()` 与 `setup()` 合同见
 [插件开发](./plugin-authoring)。
 
 ## Rebuild 与 Watch 行为
 
-每个 `buildEnd()` hook 都会收到 canonical build result 的一份隔离快照。修改只在当前
+每个 `afterBuild()` hook 都会收到 canonical build result 的一份隔离快照。修改只在当前
 hook 内可见，不会改变后续 hook 或 deployment adapter 收到的输入。
 
-在 dev 中，首次 linked output 后会以 `isRebuild: false` 调用 `buildEnd()`，之后每次
-重新链接的构建都会以 `isRebuild: true` 调用。
+在 dev 中，初次输出的两个 hook 都收到 `isRebuild: false`；之后每次 evjs 可观测的
+output cycle 都收到 `isRebuild: true`，并按 `beforeBuild() → afterBuild()` 成对执行。
+`beforeBuild()` 表示 fresh bundler facts 已就绪、evjs 即将链接并发布 canonical output，
+并不是底层 bundler 的 compile-start 回调。
 
-`buildStart()` 并不是每次 rebuild 都与 `buildEnd()` 成对执行的 hook。它会在初始
-plugin/config snapshot 的 `setup()` 之后执行，也会在配置更新重新暂存该 snapshot 时
-执行；普通 graph rebuild 会复用已安装 hooks，不会再次调用它。
+如果 bundler 在产生 fresh facts 前失败，两者都不会执行。如果 `beforeBuild()`、链接、
+output transform、HTML 发射或发布失败，`afterBuild()` 不会执行。`prepare` 与 `inspect`
+只暂存 framework state、不发布 output，因此也不会触发这两个 hook。
 
-`setup()`、`buildStart()` 和 contribution context 提供 `addWatchFile()` 来注册 analysis
-依赖；晚期 output、HTML 与 dispose context 不提供它。文件变化时，框架复用已提交的
+每个 setup snapshot 的 `dispose()` 最多执行一次，并按 plugin 逆序运行。触发场景包括
+production build 结束、dev server 关闭、config reload 替换旧 snapshot，以及
+setup/初始化失败后的回滚；普通 dev rebuild 之后不会执行它。
+
+`setup()`、`contribute()` 和 `configureBundler()` context 提供 `addWatchFile()` 来注册
+analysis/config 依赖；`BeforeBuildContext` 明确不提供它，晚期 output、HTML 与 dispose
+context 也不提供。文件变化时，框架复用已提交的
 config、Application options 与 setup hooks，再重新执行 contributions 和 graph analysis。
-需要读取变化数据时，应在 `contributions()` 中读取，不要在 `setup()` 中缓存。
+需要读取变化数据时，应在 `contribute()` 中读取，不要在 `setup()` 中缓存。
 
-`bundlerConfig()` context 的 `addWatchFile()` 注册实际 bundler config 依赖。文件变化时，
+`configureBundler()` context 的 `addWatchFile()` 注册实际 bundler config 依赖。文件变化时，
 框架会先暂存一份完整的 config 与 plugin 快照，再应用对应的 plan update。如果所选
 adapter 无法安全地原地替换配置，更新会 fail-closed 并明确提示重启，不会继续使用混合
 或过期状态。
 
 ## Build Output 所有权
 
-`buildOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。
+`transformOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。
 `deployment` 必须是可无损 JSON 序列化的普通对象。函数、访问器、非有限数值、负零、
 不安全 key、稀疏数组和循环引用会在引入它们的 hook 执行后立即被拒绝，后续 output
 hook 与发布阶段都不会继续执行。
@@ -142,12 +152,12 @@ import type { HtmlDocument } from "@evjs/ev/plugin";
 
 ## 最终 Build Result
 
-`buildEnd()` 接收最终构建输出、framework runtime 与 canonical deployment metadata：
+`afterBuild()` 接收最终构建输出、framework runtime 与 canonical deployment metadata：
 
 ```ts
 setup() {
   return {
-    buildEnd({
+    afterBuild({
       output,
       frameworkRuntime,
       deploymentMetadata,
@@ -178,10 +188,16 @@ helper；每个 helper 只会在对应 adapter 下调用回调，并提供该 ad
 config 类型。
 
 最终 BuildPlan 始终是 framework runtime endpoint 与 output ownership 的事实源。
-`bundlerConfig()` hook 可以定制受支持的 loader、resolution、optimization 等底层
+`configureBundler()` hook 可以定制受支持的 loader、resolution、optimization 等底层
 setting，但不能覆盖 framework client/server 输出路径。即使关闭 recursive clean，
 adapter 也会在 hook 运行后按 BuildPlan 校验这些路径。Plugin 持有的 clean output
 同样必须位于 framework 持有的 `distDir` 内，且不能与 client/server output 重叠。
+
+Framework 持有的 client/server config 还必须在每个 hook 后保留完全一致的 entry
+集合，以及每个 entry 对应的 BuildPlan import。需要改变 framework 启动组合时，
+应使用 generated contributions。仅面向 webpack 的插件可以为独立产物增加一个
+单独命名的 config，但必须配置明确且可移植地不重叠的 `output.path`；仅大小写不同
+仍视为冲突。Utoopack 的单一 framework config 不允许增加额外 entry。
 
 Utoopack 示例：
 
@@ -193,7 +209,7 @@ export const yamlPlugin = definePlugin({
   id: "yaml-support",
   setup() {
     return {
-      bundlerConfig: utoopack((cfg) => {
+      configureBundler: utoopack((cfg) => {
         merge(cfg, {
           module: {
             rules: {
@@ -219,7 +235,7 @@ const webpackAlias = definePlugin({
   id: "webpack-alias",
   setup() {
     return {
-      bundlerConfig: webpack((config) => {
+      configureBundler: webpack((config) => {
         config.resolve ??= {};
         config.resolve.alias ??= {};
         config.resolve.alias["@app"] = "./src";

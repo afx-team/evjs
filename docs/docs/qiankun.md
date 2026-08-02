@@ -262,7 +262,7 @@ evPluginQiankunSlave({
 
 Path-like references are resolved from the project root before bundling.
 Package specifiers are resolved from project dependencies. From another
-plugin's `contributions()` hook, pass the opaque `GeneratedModuleRef` returned
+plugin's `contribute()` hook, pass the opaque `GeneratedModuleRef` returned
 by `ctx.emit.module()` directly to `contributeQiankunMaster()` or
 `contributeQiankunSlave()`.
 
@@ -281,11 +281,9 @@ type QiankunLifeCycles = import("qiankun").LifeCycles<
 interface QiankunApp {
   name: string;
   entry: string;
-  credentials?: boolean;
   props?: Record<string, unknown> & {
     settings?: QiankunLoadSettings;
   };
-  [key: string]: unknown;
 }
 
 type QiankunRoute =
@@ -306,7 +304,6 @@ type QiankunRoute =
 interface QiankunMasterOptions {
   apps?: QiankunApp[];
   routes?: QiankunRoute[];
-  appNameKeyAlias?: string;
   base?: string;
   history?: QiankunHistoryType;
   settings?: QiankunLoadSettings;
@@ -319,17 +316,19 @@ interface QiankunMasterOptions {
 `base` defaults to `/`, `history` defaults to `"browser"`, and a missing
 `mode` defaults to `"prepend"`. `settings` is shared by route-mounted
 applications. App and route settings layer over it, and route lifecycle hooks
-are composed after master lifecycle hooks. `credentials: true` applies CORS
-credentials when loading that app's entry.
+are composed after master lifecycle hooks. The public bridge does not add
+request policy or interpret platform-specific fields.
 
 `prefetch: "all"` prefetches every app after the master starts, while a string
 array prefetches the selected app names. `prefetch: true` waits for the first
 mounted app and then prefetches up to `prefetchThreshold` other apps; the
 threshold defaults to `5`.
 
-By default, `route.microApp` matches `app.name`. `appNameKeyAlias` can select
-another app identity field for a low-level adapter, but mapping organization
-DTOs into stable app identities remains the platform plugin's responsibility.
+`route.microApp` strictly matches `app.name`. Higher-level integrations must
+normalize external records into the canonical `{ name, entry }` shape before
+returning the snapshot. Unknown fields on the master, app, or route structure
+are rejected rather than ignored; extensible integration data belongs in
+`props` or `microAppProps`.
 
 The master passes the route-derived values through the slave lifecycle props:
 
@@ -421,7 +420,8 @@ export default defineConfig({
 });
 ```
 
-Point the resolver app entry at the proxied HTML:
+Point the resolver app entry at the proxied HTML. qiankun 3 expects an HTML
+entry URL rather than a `{ scripts, styles, html }` object:
 
 ```ts
 const slaveBase = "/__qiankun_slave";
@@ -446,144 +446,17 @@ root-relative JS/CSS URLs to relative URLs, so the same slave HTML can be
 consumed below a proxy prefix. Keep asset proxies in `dev.proxy`, not in
 `src/apis`; application request Routes should not proxy micro-frontend assets.
 
-## Composing A Tern Platform Plugin
+## Platform Composition
 
-An internal Tern plugin sits above the public bridge. The ownership boundary
-is:
+A higher-level integration plugin can reuse `contributeQiankunMaster()` or
+`contributeQiankunSlave()` from its `contribute()` method and the matching
+`createQiankun*Hooks()` helper from `setup()`. It must normalize external data
+before passing a resolver or runtime module to the public bridge and compose
+returned hooks with any additional lifecycle behavior it owns.
 
-- `@evjs/plugin-qiankun` owns entry wrapping, lifecycle integration, runtime
-  route components, base/history projection, and qiankun loading behavior.
-- The Tern plugin owns backend site DTOs, app-id adaptation, menus,
-  authorization, deployment metadata, environment conventions, and any
-  Tern-specific development services.
-- Business applications install the Tern factory. They do not also install the
-  standalone qiankun master/slave factory or repeat platform fields in Pages.
-
-The Tern plugin can reuse the public helpers from its own `definePlugin()`
-descriptor. A composed master uses both the contribution and hook helper:
-
-```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
-import {
-  contributeQiankunMaster,
-  createQiankunMasterHooks,
-} from "@evjs/plugin-qiankun";
-
-type TernMasterConfig = {
-  siteId: string;
-  externalQiankun?: boolean;
-};
-
-export const ternMaster = definePlugin({
-  id: "tern-master",
-  application: pluginConfig<TernMasterConfig>(),
-
-  setup() {
-    return createQiankunMasterHooks();
-  },
-
-  async contributions(ctx) {
-    const resolver = ctx.emit.module({
-      id: "tern-master-resolver",
-      scope: { kind: "application" },
-      // Private Tern code builds this source from its backend DTO contract.
-      source: buildTernResolverSource(ctx.options.siteId),
-    });
-
-    await contributeQiankunMaster(ctx, {
-      resolver,
-      ...(ctx.options.externalQiankun === undefined
-        ? {}
-        : { externalQiankun: ctx.options.externalQiankun }),
-    });
-  },
-});
-```
-
-`buildTernResolverSource()` in this outline is private Tern implementation, not
-an evjs API. Its generated module must default-export a
-`defineQiankunMasterResolver()` result and adapt the backend DTO into the public
-snapshot. For example, the adapter can map a backend application id to a stable
-`app.name`, then use that name in `route.microApp`:
-
-```ts
-const appNameByYuyanId = new Map(
-  site.apps.map((app) => [app.yuyanId, app.name] as const),
-);
-
-function requireAppName(yuyanId: string | undefined): string {
-  const name = appNameByYuyanId.get(yuyanId);
-  if (!name) throw new Error(`Unknown Tern application "${yuyanId}".`);
-  return name;
-}
-
-function adaptRoute(route: TernRoute) {
-  if (route.redirect) {
-    return { path: route.path, redirect: route.redirect };
-  }
-  return {
-    path: route.path,
-    microApp: requireAppName(route.microApp),
-    ...(route.mode ? { mode: route.mode } : {}),
-    microAppProps: normalizeTernMicroAppProps(route.microAppProps),
-  };
-}
-
-return {
-  apps: site.apps.map((app) => ({
-    name: app.name,
-    entry: app.entry,
-    props: app.props,
-  })),
-  routes: site.routes.map(adaptRoute),
-};
-```
-
-`normalizeTernMicroAppProps()` is likewise private adapter code: it removes or
-translates Tern-only settings before returning the public route shape. The
-adapter must validate missing identities before returning the snapshot.
-Menu hierarchy, permission filtering, deployment records, and similar fields
-remain Tern data; they are not fields of the open qiankun route contract.
-
-A composed slave reuses the matching hook and contribution helpers:
-
-```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
-import {
-  contributeQiankunSlave,
-  createQiankunSlaveHooks,
-} from "@evjs/plugin-qiankun";
-
-type TernSlaveConfig = {
-  name?: string;
-  externalQiankun?: boolean;
-};
-
-export const ternSlave = definePlugin({
-  id: "tern-slave",
-  application: pluginConfig<TernSlaveConfig>({ defaults: {} }),
-
-  setup(ctx) {
-    return createQiankunSlaveHooks(
-      ctx,
-      ctx.options.name === undefined ? {} : { name: ctx.options.name },
-    );
-  },
-
-  async contributions(ctx) {
-    await contributeQiankunSlave(ctx, {
-      ...(ctx.options.name === undefined ? {} : { name: ctx.options.name }),
-      ...(ctx.options.externalQiankun === undefined
-        ? {}
-        : { externalQiankun: ctx.options.externalQiankun }),
-    });
-  },
-});
-```
-
-If Tern also has lifecycle hooks with the same names, its implementation must
-invoke the returned qiankun hooks as part of its own composed hook rather than
-overwriting them.
+Applications install either the public master/slave factory or the higher-level
+integration factory, not both. Platform-specific configuration does not belong
+in Page config.
 
 ## Boundaries
 
@@ -601,9 +474,8 @@ overwriting them.
 
 It does not include:
 
-- backend site DTO protocols;
-- menus or authorization;
-- organization-specific deployment or release metadata;
+- external platform data protocols or identity mapping;
+- platform-specific runtime, deployment, or development policy;
 - automatic local development proxies;
 - Page-level qiankun settings;
 - canonical CoreGraph Pages, Routes, or Documents derived from resolver data;

@@ -436,9 +436,25 @@ describe("inspect", () => {
       "index.html": '<div id="app"></div>',
       "src/main.tsx": "console.log('app');",
     });
+    const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "inspect-contribution",
-      contributions(ctx) {
+      setup() {
+        events.push("setup");
+        return {
+          beforeBuild() {
+            events.push("beforeBuild");
+          },
+          afterBuild() {
+            events.push("afterBuild");
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+      contribute(ctx) {
+        events.push("contribute");
         const module = ctx.emit.module({
           id: "entry",
           scope: { kind: "application" },
@@ -476,6 +492,7 @@ describe("inspect", () => {
         }),
       ]),
     );
+    expect(events).toEqual(["setup", "contribute", "dispose"]);
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 

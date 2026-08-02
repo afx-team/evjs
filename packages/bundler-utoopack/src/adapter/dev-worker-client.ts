@@ -210,7 +210,7 @@ export function prepareUtoopackDevWorkerOptions(
     };
   } catch (error) {
     throw new Error(
-      "[evjs] Utoopack development config must be structured-cloneable so its process-owned server can run in an isolated, stoppable worker. Remove non-cloneable values contributed through bundlerConfig().",
+      "[evjs] Utoopack development config must be structured-cloneable so its process-owned server can run in an isolated, stoppable worker. Remove non-cloneable values contributed through configureBundler().",
       { cause: error },
     );
   }

@@ -17,7 +17,7 @@ const webpackCustomization = definePlugin({
   id: "webpack-customization",
   setup() {
     return {
-      bundlerConfig: webpack((configs) => {
+      configureBundler: webpack((configs) => {
         for (const cfg of configs) {
           cfg.resolve ??= {};
         }

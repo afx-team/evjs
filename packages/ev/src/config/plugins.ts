@@ -86,7 +86,7 @@ type InstalledPluginForId<TId extends InstalledPagePluginId> = Extract<
   { readonly id: TId }
 >;
 
-type PagePluginConfiguredValue<TPlugin> =
+type PagePluginOption<TPlugin> =
   DefinedPluginPageInput<TPlugin> extends never
     ? never
     :
@@ -94,16 +94,16 @@ type PagePluginConfiguredValue<TPlugin> =
         | StaticConfigCompatible<DefinedPluginPageInput<TPlugin>>
         | (DefinedPluginPageDefaultable<TPlugin> extends true ? true : never);
 
-type RegisteredPagePluginValues = {
-  readonly [TId in InstalledPagePluginId]?: PagePluginConfiguredValue<
+type RegisteredPagePluginOptions = {
+  readonly [TId in InstalledPagePluginId]?: PagePluginOption<
     InstalledPluginForId<TId>
   >;
 };
 
 /** Page-level settings for plugins installed by `ev.config.ts`. */
-export type PagePluginConfigValues = [InstalledPagePluginId] extends [never]
+export type PagePluginOptions = [InstalledPagePluginId] extends [never]
   ? Readonly<Record<string, never>>
-  : RegisteredPagePluginValues;
+  : RegisteredPagePluginOptions;
 
 type NormalizedStaticConfigPropertyKey<TKey extends PropertyKey> = TKey extends
   | string
@@ -144,43 +144,42 @@ type ExactStaticConfigValue<TActual, TExpected> = TExpected extends
         : never
       : never;
 
-type ExactPagePluginConfiguredValue<TActual, TExpected> =
-  TActual extends boolean
-    ? TActual extends TExpected
-      ? TActual
-      : never
-    : ExactStaticConfigValue<TActual, Exclude<TExpected, boolean>>;
+type ExactPagePluginOption<TActual, TExpected> = TActual extends boolean
+  ? TActual extends TExpected
+    ? TActual
+    : never
+  : ExactStaticConfigValue<TActual, Exclude<TExpected, boolean>>;
 
 /** Exact nested-value check used by the generic `definePageConfig()` helper. */
-export type PagePluginConfigValuesCheck<TActual> = TActual extends undefined
+export type PagePluginOptionsCheck<TActual> = TActual extends undefined
   ? undefined
   : TActual extends object
     ? {
         readonly [TKey in keyof TActual]: TKey extends InstalledPagePluginId
-          ? ExactPagePluginConfiguredValue<
+          ? ExactPagePluginOption<
               Exclude<TActual[TKey], undefined>,
-              Exclude<RegisteredPagePluginValues[TKey], undefined>
+              Exclude<RegisteredPagePluginOptions[TKey], undefined>
             >
           : never;
       }
     : never;
 
-export type ResolvedPagePluginConfigInput =
+export type ResolvedPagePluginOptionsInput =
   | boolean
   | Readonly<Record<string, StaticConfigValue>>;
 
 /** Validate and isolate the static plugin map read from `page.config.*`. */
-export function resolvePagePluginConfigValues(
+export function resolvePagePluginOptions(
   value: unknown,
   source: string,
-): Readonly<Record<string, ResolvedPagePluginConfigInput>> {
+): Readonly<Record<string, ResolvedPagePluginOptionsInput>> {
   if (value === undefined) return {};
   if (!isPlainStaticJsonObject(value)) {
     throw new Error(`[evjs] ${source} must be a plain object.`);
   }
   assertEnumerableStaticJsonProperties(value, source);
 
-  const resolved: Record<string, ResolvedPagePluginConfigInput> = {};
+  const resolved: Record<string, ResolvedPagePluginOptionsInput> = {};
   for (const [key, configured] of Object.entries(value)) {
     assertPluginId(key, `${source} key`);
     if (typeof configured === "boolean") {

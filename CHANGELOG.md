@@ -25,6 +25,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   snapshot and installs prepend, match, redirect, and micro-app route
   components before the first render. Resolver routes no longer require fixed
   containers, `activeRule`, or physical Pages at the mounted master paths.
+  Public apps use only canonical `name`/`entry` identity; alternate identity
+  fields and per-app credential rewriting are removed. Unknown master, app,
+  and route fields now fail instead of being ignored. Platform integrations
+  must normalize external records and provide request policy explicitly.
 - **Transactional bundler dev contract** — Persistent custom bundler adapters
   must reserve each framework update with `beginUpdate()`, activate the supplied
   generation at their serialized plan boundary, and resume either accepted or
@@ -39,11 +43,23 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   non-finite numbers, negative zero, unsafe keys, sparse arrays, and cycles are
   rejected before output publication; each deployment projection is now an
   isolated snapshot.
-- **Application-owned plugin installation** — Plugin `config()` hooks now
+- **Plugin authoring API reset** — `definePlugin()` now uses `pluginOptions()`,
+  `configure()`, `setup()`, `contribute()`, and `contributePage()`. Hooks
+  returned by `setup()` use `configureBundler()`, `beforeBuild()`,
+  `transformOutput()`, `transformHtml()`, `afterBuild()`, and `dispose()`.
+  Public context types follow those stage names, and contribution code reads
+  the normalized `FrameworkView`. The previous authoring names and internal
+  `DefinedPlugin*` inference types are no longer exported.
+- **Application-owned plugin installation** — Plugin `configure()` hooks now
   receive and return only framework configuration. They cannot add, remove,
   reorder, or replace `config.plugins`; the Application's original plugin
   installation remains authoritative across the complete lifecycle. Resolved
   plugin contexts receive one isolated, frozen framework-config view.
+- **Output-cycle build hooks** — `beforeBuild()` now runs after fresh bundler
+  facts arrive and before evjs links or emits canonical output. Successful
+  initial and rebuild cycles pair it with `afterBuild()` using the same
+  `isRebuild`; failures before publication and the `prepare`/`inspect` staging
+  paths do not call the pair.
 
 - **Canonical server entry assets** — Redundant `serverEntry`, `serverAssets`,
   and `serverModules` build facts are removed. Adapters must report every
@@ -88,6 +104,12 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   now accept only documented synchronous results. Promise-like and unsupported
   return values fail with explicit contract diagnostics instead of silently
   enabling invalid configuration.
+- **Preserve BuildPlan entry ownership** — Utoopack and webpack now validate
+  framework entry sets and exact imports after every `configureBundler()` hook.
+  Hooks can no longer replace canonical entry source or publish an unplanned
+  entry through a framework-owned client or server config. Independent webpack
+  configs require an explicit output path that cannot overlap framework output
+  under portable, case-insensitive path identity.
 - **PPR cache origin isolation** — Request-time PPR region cache keys now
   include the source URL origin, preventing one hostname from reusing another
   hostname's cached region response when a server instance hosts multiple

@@ -7,7 +7,7 @@ wrappers, middleware, HTML tags, and resolution changes, use
 
 ## Add Deployment Metadata
 
-Use `buildOutput()` when a deployment adapter needs plugin-owned metadata:
+Use `transformOutput()` when a deployment adapter needs plugin-owned metadata:
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -16,7 +16,7 @@ export const deployMetadata = definePlugin({
   id: "deploy-metadata",
   setup() {
     return {
-      buildOutput(output) {
+      transformOutput(output) {
         output.deployment = {
           platform: "custom",
           builtAt: new Date().toISOString(),
@@ -27,7 +27,7 @@ export const deployMetadata = definePlugin({
 });
 ```
 
-`buildOutput()` can change only linked `AssetGroup` contents and `deployment`
+`transformOutput()` can change only linked `AssetGroup` contents and `deployment`
 metadata. See [Build Output Ownership](./plugin-hooks#build-output-ownership)
 for the framework-owned fields. Deployment metadata must contain only plain,
 losslessly JSON-serializable values; evjs validates it after every output hook.

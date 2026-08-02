@@ -811,7 +811,7 @@ describe("explicit SPA route graph", () => {
           ],
         },
       },
-      { cwd, runLifecycleHooks: false },
+      { cwd },
     );
 
     try {

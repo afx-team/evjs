@@ -5,16 +5,17 @@ import { fileURLToPath } from "node:url";
 import { resolvePluginSettingsState } from "@evjs/ev/_internal/build";
 import { type ResolvedConfig, resolveConfig } from "@evjs/ev/config";
 import type {
-  ContributionContext,
+  ConfigureBundlerContext,
   EmitApi,
   FrameworkApplicationEntryMetadata,
   FrameworkEntryView,
-  FrameworkIRView,
   FrameworkSlotInput,
   FrameworkSlotName,
+  FrameworkView,
   GeneratedModuleRef,
   Plugin,
-  PluginContext,
+  PluginContributeContext,
+  PluginSetupContext,
 } from "@evjs/ev/plugin";
 import { DOMParser } from "domparser-rs";
 import { describe, expect, it } from "vitest";
@@ -58,7 +59,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const captured = createContributionCapture(cwd, {});
     const sourceDir = generatedModuleDir(cwd, "qiankun-master");
 
-    await plugin.contributions?.(captured.ctx);
+    await plugin.contribute?.(captured.ctx);
 
     expect(captured.watched).toEqual([
       path.join(cwd, "src/qiankun.master.ts"),
@@ -145,7 +146,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       createApplicationFramework("#root"),
     );
 
-    await plugin.contributions?.(captured.ctx);
+    await plugin.contribute?.(captured.ctx);
     const wrapper = captured.modules.find(
       (module) => module.id === "entry-wrapper",
     );
@@ -178,15 +179,15 @@ describe("@evjs/plugin-qiankun plugin", () => {
       '(window as unknown as Record<string, unknown>)["console"] = qiankunLifecycles',
     );
 
-    const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
-    const bundlerConfig: Record<string, unknown> = {
+    const hooks = await plugin.setup?.(createPluginSetupContext(cwd, [], {}));
+    const utoopackConfig: Record<string, unknown> = {
       entry: [{ name: "main", import: "./.ev/entries/main.ts" }],
     };
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
+    await hooks?.configureBundler?.(
+      utoopackConfig as never,
       createBundlerContext(cwd, "utoopack"),
     );
-    expect(bundlerConfig.entry).toEqual([
+    expect(utoopackConfig.entry).toEqual([
       { name: "main", import: "./.ev/entries/main.ts" },
     ]);
   });
@@ -219,10 +220,10 @@ describe("@evjs/plugin-qiankun plugin", () => {
       entry: { main: "./.ev/entries/main.ts" },
     };
     const hooks = await createQiankunSlaveHooks(
-      createPluginContext(cwd, [], {}),
+      createPluginSetupContext(cwd, [], {}),
       { name: "platform-slave" },
     );
-    await hooks.bundlerConfig?.(
+    await hooks.configureBundler?.(
       webpackConfig as never,
       createBundlerContext(cwd, "webpack"),
     );
@@ -250,18 +251,18 @@ describe("@evjs/plugin-qiankun plugin", () => {
     });
     const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(cwd, {});
-    await plugin.contributions?.(captured.ctx);
+    await plugin.contribute?.(captured.ctx);
 
-    const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
-    const bundlerConfig: Record<string, unknown> = {
+    const hooks = await plugin.setup?.(createPluginSetupContext(cwd, [], {}));
+    const webpackConfig: Record<string, unknown> = {
       entry: { main: "./.ev/entries/main.ts" },
     };
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
+    await hooks?.configureBundler?.(
+      webpackConfig as never,
       createBundlerContext(cwd, "webpack"),
     );
 
-    expect(bundlerConfig.entry).toEqual({
+    expect(webpackConfig.entry).toEqual({
       main: {
         import: "./.ev/entries/main.ts",
         library: { name: "console", type: "umd" },
@@ -276,8 +277,8 @@ describe("@evjs/plugin-qiankun plugin", () => {
     });
     const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(cwd, {});
-    await plugin.contributions?.(captured.ctx);
-    const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
+    await plugin.contribute?.(captured.ctx);
+    const hooks = await plugin.setup?.(createPluginSetupContext(cwd, [], {}));
     const doc = new DOMParser().parseFromString(
       '<!doctype html><html><head></head><body><script src="/main.js"></script></body></html>',
       "text/html",
@@ -306,7 +307,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       createApplicationFramework(),
     );
 
-    await plugin.contributions?.(captured.ctx);
+    await plugin.contribute?.(captured.ctx);
 
     const original = captured.modules.find(
       (module) => module.id === "original-entry",
@@ -342,7 +343,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
     const captured = createContributionCapture(cwd, {});
 
-    await plugin.contributions?.(captured.ctx);
+    await plugin.contribute?.(captured.ctx);
 
     expect(captured.slots).toContainEqual({
       name: "resolve.external",
@@ -365,17 +366,17 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
 
     await expect(
-      plugin.contributions?.(
+      plugin.contribute?.(
         createContributionCapture(cwd, {}, createMpaFramework()).ctx,
       ),
     ).rejects.toThrow("only supports a normalized SPA Application");
     await expect(
-      plugin.contributions?.(
+      plugin.contribute?.(
         createContributionCapture(cwd, {}, createMultipleAppFramework()).ctx,
       ),
     ).rejects.toThrow("requires exactly one normalized SPA Application");
     await expect(
-      plugin.contributions?.(
+      plugin.contribute?.(
         createContributionCapture(cwd, {}, createSpaFrameworkWithoutEntry())
           .ctx,
       ),
@@ -388,7 +389,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
 function createContributionCapture(
   cwd: string,
   config: Partial<ResolvedConfig>,
-  framework: FrameworkIRView = createApplicationFramework(),
+  framework: FrameworkView = createApplicationFramework(),
 ) {
   const watched: string[] = [];
   const modules: CapturedModule[] = [];
@@ -422,8 +423,8 @@ function createContributionCapture(
       return `virtual:${refs.get(ref) ?? "unknown"}`;
     },
   };
-  const ctx: ContributionContext = {
-    ...createPluginContext(cwd, watched, config),
+  const ctx: PluginContributeContext = {
+    ...createPluginSetupContext(cwd, watched, config),
     framework,
     emit,
     slot(name) {
@@ -475,11 +476,11 @@ async function createProject(files: Record<string, string>): Promise<string> {
   return cwd;
 }
 
-function createPluginContext(
+function createPluginSetupContext(
   cwd: string,
   watched: string[],
   config: Partial<ResolvedConfig>,
-): PluginContext {
+): PluginSetupContext {
   return {
     cwd,
     command: "build",
@@ -496,7 +497,10 @@ function createPluginContext(
   };
 }
 
-function createBundlerContext(cwd: string, bundlerName: string) {
+function createBundlerContext(
+  cwd: string,
+  bundlerName: string,
+): ConfigureBundlerContext {
   return {
     cwd,
     command: "build",
@@ -506,16 +510,16 @@ function createBundlerContext(cwd: string, bundlerName: string) {
     environment: "client",
     logger: {} as never,
     addWatchFile() {},
-  } as never;
+  };
 }
 
 function createFramework(
   entries: FrameworkEntryView[],
-  applications: FrameworkIRView["applications"],
-  pages: FrameworkIRView["pages"] = [],
-  routes: FrameworkIRView["routes"] = [],
-  documents: FrameworkIRView["documents"] = [],
-): FrameworkIRView {
+  applications: FrameworkView["applications"],
+  pages: FrameworkView["pages"] = [],
+  routes: FrameworkView["routes"] = [],
+  documents: FrameworkView["documents"] = [],
+): FrameworkView {
   return {
     applications,
     pages,
@@ -541,10 +545,10 @@ function createFramework(
             entry.owner?.applicationId === applicationId),
       );
     },
-  } satisfies FrameworkIRView;
+  } satisfies FrameworkView;
 }
 
-function createApplicationFramework(mount = "#app"): FrameworkIRView {
+function createApplicationFramework(mount = "#app"): FrameworkView {
   return createFramework(
     [
       {
@@ -627,7 +631,7 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
   );
 }
 
-function createMpaFramework(): FrameworkIRView {
+function createMpaFramework(): FrameworkView {
   return createFramework(
     [],
     [
@@ -663,7 +667,7 @@ function createMpaFramework(): FrameworkIRView {
   );
 }
 
-function createSpaFrameworkWithoutEntry(): FrameworkIRView {
+function createSpaFrameworkWithoutEntry(): FrameworkView {
   const framework = createApplicationFramework();
   return {
     ...framework,
@@ -677,7 +681,7 @@ function createSpaFrameworkWithoutEntry(): FrameworkIRView {
   };
 }
 
-function createMultipleAppFramework(): FrameworkIRView {
+function createMultipleAppFramework(): FrameworkView {
   return createFramework(
     [],
     [

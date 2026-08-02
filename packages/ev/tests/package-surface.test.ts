@@ -168,6 +168,7 @@ const generatedFrameworkArtifacts = [
   ".evjs",
   ".turbopack",
   "route-types.d.ts",
+  "plugin-types.d.ts",
 ] as const;
 
 const forbiddenPackageNames = [
@@ -188,7 +189,16 @@ const forbiddenBuildToolsLoadTimeImports = [
 ] as const;
 
 const forbiddenPluginAuthoringAliases = [
+  "BuildOutputContext",
+  "BuildStartContext",
+  "BundlerCtx",
   "ClientManifest",
+  "ContributionContext",
+  "DefinedPluginConfigContext",
+  "DefinedPluginContributionContext",
+  "DefinedPluginFactory",
+  "DefinedPluginInstance",
+  "DefinedPluginPageContributionContext",
   "EvBuildResult",
   "EvBundlerCtx",
   "EvDocument",
@@ -198,10 +208,27 @@ const forbiddenPluginAuthoringAliases = [
   "EvPluginContext",
   "EvPluginHooks",
   "FrameworkAppView",
+  "FrameworkIRView",
+  "HtmlTransformContext",
   "ManifestAssets",
   "PageManifestEntry",
+  "PluginConfigContext",
+  "PluginConfigContract",
+  "PluginConfigHookInput",
+  "PluginConfigOptions",
+  "PluginContext",
+  "PluginSettingContext",
   "RouteEntry",
   "ServerManifest",
+  "pluginConfig",
+] as const;
+
+const forbiddenPluginAuthoringFields = [
+  "buildEnd",
+  "buildOutput",
+  "buildStart",
+  "bundlerConfig",
+  "contributions",
 ] as const;
 
 const expectedBuildToolsRuntimeExports = [
@@ -534,13 +561,19 @@ describe("workspace package surface", () => {
   it("keeps plugin authoring types on one canonical public vocabulary", async () => {
     expect(Object.keys(pluginAuthoring).sort()).toEqual([
       "definePlugin",
-      "pluginConfig",
+      "pluginOptions",
     ]);
 
-    const pluginSource = await fs.readFile(
-      path.join(repoRoot, "packages/ev/src/plugin/index.ts"),
-      "utf-8",
-    );
+    const pluginSource = (
+      await Promise.all(
+        ["index.ts", "defined.ts"].map((file) =>
+          fs.readFile(
+            path.join(repoRoot, "packages/ev/src/plugin", file),
+            "utf-8",
+          ),
+        ),
+      )
+    ).join("\n");
 
     expect(pluginSource).not.toContain("BundlerAgnostic");
     expect(pluginSource).not.toContain("AnyPluginConfigContract");
@@ -550,6 +583,12 @@ describe("workspace package surface", () => {
         new RegExp(`\\b(?:class|const|function|interface|type)\\s+${alias}\\b`),
       );
     }
+    for (const field of forbiddenPluginAuthoringFields) {
+      expect(pluginSource).not.toMatch(new RegExp(`\\b${field}\\??\\s*:`));
+    }
+    expect(pluginSource).not.toMatch(
+      /\b(?:readonly\s+)?config\?:\s*(?:Defined)?PluginConfigureHook\b/,
+    );
   });
 
   it("keeps default bundler ownership in the CLI package", async () => {

@@ -83,11 +83,11 @@ means:
 
 | Authoring form | Result |
 |---|---|
-| `analytics(config)` | Install and execute the plugin. An omitted Page uses Page defaults when they exist; otherwise that Page is off. |
-| `analytics.forPages(config)` | For a Page contract with defaults, install and execute the plugin but require every Page to opt in explicitly. |
+| `analytics(options)` | Install and execute the plugin. An omitted Page uses Page defaults when they exist; otherwise that Page is off. |
+| `analytics.forPages(options)` | For a Page contract with defaults, install and execute the plugin but require every Page to opt in explicitly. |
 | `false`, `null`, or `undefined` in `plugins` | Omit the whole plugin conditionally; no plugin hook executes. |
-| Page plugin entry omitted after `analytics(config)` | Enable with Page defaults when the Page contract has defaults; otherwise disable that Page. |
-| Page plugin entry omitted after `analytics.forPages(config)` | Disable that Page, even when Page defaults exist. |
+| Page plugin entry omitted after `analytics(options)` | Enable with Page defaults when the Page contract has defaults; otherwise disable that Page. |
+| Page plugin entry omitted after `analytics.forPages(options)` | Disable that Page, even when Page defaults exist. |
 | `analytics: false` | Disable this Page. |
 | `analytics: true` | Enable this Page with Page `defaults`; rejected when no defaults exist. |
 | `analytics: { ... }` | Enable this Page after merging the object over Page defaults and validating it. |

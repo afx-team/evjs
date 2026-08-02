@@ -254,13 +254,16 @@ describe("UtoopackManifestGenerator", () => {
     );
   });
 
-  it("rejects a sole server stats entrypoint with a different name", async () => {
+  it("projects the sole native server runtime entrypoint onto its BuildPlan name", async () => {
     const cwd = await makeProject();
     await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
+        assets: [{ name: "index.12345678.js" }],
         entrypoints: {
-          runtime: { assets: [{ name: "runtime.js" }] },
+          "./index.12345678": {
+            assets: [{ name: "./index.12345678.js" }],
+          },
         },
       }),
     );
@@ -272,8 +275,32 @@ describe("UtoopackManifestGenerator", () => {
 
     await expect(
       new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).resolves.toMatchObject({
+      serverEntryAssets: {
+        server: { js: ["index.12345678.js"], css: [] },
+      },
+    });
+  });
+
+  it("rejects extra JavaScript emitted beside a native server runtime entry", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        assets: [{ name: "index.12345678.js" }, { name: "chunks/lazy.js" }],
+        entrypoints: {
+          "./index.12345678": {
+            assets: [{ name: "./index.12345678.js" }],
+          },
+        },
+      }),
+    );
+    const graph = createGraph({ cwd, routingMode: "spa", pages: [] });
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
     ).rejects.toThrow(
-      'Utoopack server stats do not identify server BuildPlan entrypoint "server" exactly; found entrypoints "runtime"',
+      'Utoopack server stats emitted unowned JavaScript asset "chunks/lazy.js"',
     );
   });
 

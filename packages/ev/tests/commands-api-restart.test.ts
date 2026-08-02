@@ -298,7 +298,7 @@ describe("dev API restart rollback", () => {
       },
       async dev({ callbacks, generation, plan }) {
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(generation, facts),
+          callbacks.onBuildFacts(generation, facts, { isRebuild: false }),
         );
         await callbacks.onServerBundleReady(generation);
       },
@@ -359,7 +359,9 @@ describe("dev API restart rollback", () => {
       async dev({ callbacks, generation, plan }) {
         let currentGeneration = generation;
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(currentGeneration, facts),
+          callbacks.onBuildFacts(currentGeneration, facts, {
+            isRebuild: false,
+          }),
         );
         await callbacks.onServerBundleReady(currentGeneration);
         events.push("initial-api-ready");

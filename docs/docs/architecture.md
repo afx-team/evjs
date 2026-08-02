@@ -102,18 +102,27 @@ sequenceDiagram
   participant Bundler as bundler adapter
 
   CLI->>Core: load config and select bundler
-  Core->>Plugin: config() and resolve Application settings
-  Core->>Plugin: setup() and buildStart()
-  Core->>Core: resolve Page settings and create CoreGraph/BuildPlan
-  Core->>Plugin: contributions(framework view)
+  Core->>Plugin: configure() and resolve Application settings
+  Core->>Plugin: setup()
+  Core->>Core: resolve Page settings and create CoreGraph
+  Core->>Plugin: contribute(FrameworkView)
+  Core->>Core: create BuildPlan
   Core->>Core: materialize .ev
-  Core->>Plugin: bundlerConfig()
+  Core->>Plugin: configureBundler()
   Core->>Bundler: build(BuildPlan)
-  Bundler-->>Core: build facts
+  Bundler-->>Core: fresh build facts
+  Core->>Plugin: beforeBuild()
   Core->>Core: link BuildOutput
-  Core->>Plugin: buildOutput()
-  Core->>Plugin: transformHtml() and buildEnd()
+  Core->>Plugin: transformOutput()
+  Core->>Plugin: transformHtml()
+  Core->>Core: publish canonical output
+  Core->>Plugin: afterBuild()
 ```
+
+`beforeBuild()` runs after fresh bundler facts arrive and before evjs links or
+emits canonical output. Successful initial and rebuild output cycles pair it
+with `afterBuild()` using the same `isRebuild`; `prepare` and `inspect` invoke
+neither hook.
 
 `ev prepare` stops after materializing the generated framework IR:
 

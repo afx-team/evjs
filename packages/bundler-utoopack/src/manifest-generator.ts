@@ -155,6 +155,7 @@ export class UtoopackManifestGenerator {
         { cause: error },
       );
     }
+    byName = projectNativeServerRuntimeEntrypoint(this.plan, byName);
     this.serverEntryAssets = resolveBundlerServerEntryAssets(
       this.plan,
       byName,
@@ -202,6 +203,41 @@ export class UtoopackManifestGenerator {
   }
 
   async close() {}
+}
+
+/**
+ * Utoopack's server API accepts one entry import but no entry name, so its
+ * stats expose that entry under a generated native name. Canonicalize only the
+ * one shape the adapter can identify without guessing: one planned runtime
+ * entry, owned by plan.server.entry, and one emitted stats entrypoint.
+ */
+function projectNativeServerRuntimeEntrypoint(
+  plan: BuildPlan,
+  available: Record<string, AssetGroup>,
+): Record<string, AssetGroup> {
+  const planned = plan.entries.filter(
+    (entry) => entry.environment === "server",
+  );
+  const entry = planned[0];
+  if (
+    planned.length !== 1 ||
+    !entry ||
+    entry.kind !== "server-runtime" ||
+    plan.server.entry !== entry.import ||
+    Object.hasOwn(available, entry.name)
+  ) {
+    return available;
+  }
+
+  const nativeEntrypoints = Object.entries(available);
+  if (nativeEntrypoints.length !== 1) return available;
+
+  const assets = nativeEntrypoints[0]?.[1];
+  if (!assets) return available;
+
+  const projected: Record<string, AssetGroup> = {};
+  defineRecordValue(projected, entry.name, assets);
+  return projected;
 }
 
 function formatStatsPath(rootDir: string, statsPath: string): string {

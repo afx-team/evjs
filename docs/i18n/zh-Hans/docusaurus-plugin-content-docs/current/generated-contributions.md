@@ -12,7 +12,7 @@ framework slot。
 Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
 并把它们挂到 framework slot 上。
 
-`contributions(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
+`contribute(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
 graph 时，evjs 可能会再次执行该 hook。
 
 这个定义刻意比任意临时文件系统更窄。插件不会随意向 `.ev` 写文件；插件声明 artifact
@@ -20,7 +20,7 @@ graph 时，evjs 可能会再次执行该 hook。
 
 ```mermaid
 flowchart TB
-  Hook["contributions(ctx)"]
+  Hook["contribute(ctx)"]
 
   subgraph Declare["插件声明"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -93,7 +93,7 @@ enablement；私有 factory 配置绝不会进入 CoreGraph。Page bag 可以包
 Page value。defined plugin 通常使用类型更窄的 `ctx.options` 与 `ctx.pages`；每个已启用
 Page 项都是 `{ page, options }`。逐 Page 的 `contributePage()` 使用
 `ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。内部 provenance 与
-解析结果会在 `contributions()` 物化 generated code 前可用。
+解析结果会在 `contribute()` 物化 generated code 前可用。
 
 Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
 id。因此 MPA 表现为一个拥有多个 Page/Document 的逻辑 Application，而不是互不关联的
@@ -118,7 +118,7 @@ import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
   id: "analytics",
-  contributions(ctx) {
+  contribute(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -145,7 +145,7 @@ export const analytics = definePlugin({
 `ctx.emit.entryFacade()`，不要重建 framework internal：
 
 ```ts
-contributions(ctx) {
+contribute(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -206,7 +206,7 @@ projection 时会失败。后声明的 contribution 包在先声明的 contribut
 route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
 ```ts
-contributions(ctx) {
+contribute(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",
@@ -254,11 +254,11 @@ Generated contributions 是 file-convention entry 组合，以及插件 entry/ru
 
 Contribution 层不替代插件生命周期：
 
-- 用 `config()` 处理 framework config 默认值或需要早期校验的配置。
+- 用 `configure()` 处理 framework config 默认值或需要早期校验的配置。
 - 用 `setup()` 初始化插件状态并返回 lifecycle hooks。
-- 用 `bundlerConfig()` 处理不由 slot 建模的底层 bundler 能力。
+- 用 `configureBundler()` 处理不由 slot 建模的底层 bundler 能力。
 - 用 `transformHtml()` 处理 AST 级 HTML 改写。
-- 用 `buildOutput()` 和 `buildEnd()` 处理部署 metadata 和最终文件。
+- 用 `transformOutput()` 和 `afterBuild()` 处理部署 metadata 和最终文件。
 
 这个拆分让 IR 保持可读，同时不假装所有插件能力都是 entry contribution。
 

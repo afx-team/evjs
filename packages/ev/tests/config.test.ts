@@ -8,7 +8,7 @@ import type {
   Config,
   ExtractInstalledPlugin,
   PageFileConfig,
-  PagePluginConfigValues,
+  PagePluginOptions,
 } from "../src/config/index.js";
 import {
   CONFIG_DEFAULTS,
@@ -24,7 +24,7 @@ import {
 import {
   definePlugin,
   type Plugin,
-  pluginConfig,
+  pluginOptions,
 } from "../src/plugin/index.js";
 
 interface TypedApplicationPluginConfig {
@@ -51,13 +51,13 @@ interface RequiredApplicationPluginConfig {
 
 const analyticsPlugin = definePlugin({
   id: "analytics",
-  application: pluginConfig<TypedApplicationPluginConfig>({
+  application: pluginOptions<TypedApplicationPluginConfig>({
     defaults: {
       endpoint: "/events",
       debug: false,
     },
   }),
-  page: pluginConfig<TypedPagePluginConfig>({
+  page: pluginOptions<TypedPagePluginConfig>({
     defaults: {
       channel: "default",
       enabled: true,
@@ -68,13 +68,13 @@ const installedAnalyticsPlugin = analyticsPlugin();
 
 const accessPlugin = definePlugin({
   id: "access",
-  page: pluginConfig<RequiredPagePluginConfig>(),
+  page: pluginOptions<RequiredPagePluginConfig>(),
 });
 const installedAccessPlugin = accessPlugin();
 
 const applicationOnlyPlugin = definePlugin({
   id: "application-only",
-  application: pluginConfig<RequiredApplicationPluginConfig>(),
+  application: pluginOptions<RequiredApplicationPluginConfig>(),
 });
 const installedApplicationOnlyPlugin = applicationOnlyPlugin({
   endpoint: "/events",
@@ -82,7 +82,7 @@ const installedApplicationOnlyPlugin = applicationOnlyPlugin({
 
 const inferredDefaultsPlugin = definePlugin({
   id: "inferred-defaults",
-  application: pluginConfig({
+  application: pluginOptions({
     defaults: { channel: "web" },
   }),
 });
@@ -90,7 +90,7 @@ const installedInferredDefaultsPlugin = inferredDefaultsPlugin({
   channel: "checkout",
 });
 
-const customBundlerPageConfig = pluginConfig<{ variant: "a" | "b" }>();
+const customBundlerPageConfig = pluginOptions<{ variant: "a" | "b" }>();
 const customBundlerPlugin = definePlugin<
   "custom-bundler",
   undefined,
@@ -104,7 +104,7 @@ const installedCustomBundlerPlugin = customBundlerPlugin();
 
 const ambientOnlyPlugin = definePlugin({
   id: "ambient-only",
-  page: pluginConfig({ defaults: { enabled: true } }),
+  page: pluginOptions({ defaults: { enabled: true } }),
 })();
 
 const installedEvConfig = defineConfig({
@@ -270,7 +270,7 @@ describe("config authoring", () => {
   });
 
   it("accepts Page plugin settings widened to the public config type", () => {
-    const plugins: PagePluginConfigValues = {
+    const plugins: PagePluginOptions = {
       analytics: false,
       access: { policy: "relaxed" },
     };
@@ -283,7 +283,7 @@ describe("config authoring", () => {
   it("accepts explicit and unioned undefined Page plugin maps", () => {
     const explicitUndefined = definePageConfig({ plugins: undefined });
     const defineWithOptionalPlugins = (
-      plugins: PagePluginConfigValues | undefined,
+      plugins: PagePluginOptions | undefined,
     ) => definePageConfig({ plugins });
     const unionedUndefined = defineWithOptionalPlugins(undefined);
 
@@ -439,21 +439,21 @@ describe("config authoring", () => {
     expect(assertInvalidAuthoring).toBeTypeOf("function");
   });
 
-  it("keeps plugin installation out of the config hook contract", () => {
+  it("keeps plugin installation out of the configure hook contract", () => {
     const factory = definePlugin({
       id: "framework-config-only",
-      config(config) {
-        // @ts-expect-error Config hook inputs do not expose plugin installation.
+      configure(config) {
+        // @ts-expect-error Configure hook inputs do not expose plugin installation.
         void config.plugins;
-        // @ts-expect-error Config hook inputs cannot assign plugin installation.
+        // @ts-expect-error Configure hook inputs cannot assign plugin installation.
         config.plugins = undefined;
         return config;
       },
     });
     const installedConfig: Config = { plugins: [] };
-    type ConfigHook = NonNullable<Plugin["config"]>;
-    // @ts-expect-error A full Application config cannot be returned from a plugin config hook.
-    const invalidReturnHook: ConfigHook = () => installedConfig;
+    type ConfigureHook = NonNullable<Plugin["configure"]>;
+    // @ts-expect-error A full Application config cannot be returned from a plugin configure hook.
+    const invalidReturnHook: ConfigureHook = () => installedConfig;
 
     expect(invalidReturnHook).toBeTypeOf("function");
     expect(factory()).toHaveProperty("id", "framework-config-only");
@@ -1176,7 +1176,7 @@ describe("resolveConfig", () => {
         plugins: [
           {
             id: "test-plugin",
-            buildStart() {},
+            beforeBuild() {},
           } as never,
         ],
       }),
@@ -1186,7 +1186,7 @@ describe("resolveConfig", () => {
         plugins: [
           {
             id: "test-plugin",
-            buildOutput() {},
+            transformOutput() {},
           } as never,
         ],
       }),

@@ -23,19 +23,6 @@ export {
   type ResolvedConfig,
   resolveConfig,
 } from "@evjs/ev/config";
-export type {
-  BuildResult,
-  BundlerCtx,
-  ContributionContext,
-  EmitApi,
-  FrameworkIRView,
-  FrameworkSlot,
-  FrameworkSlotInput,
-  GeneratedModuleRef,
-  Plugin,
-  PluginContext,
-  PluginHooks,
-} from "@evjs/ev/plugin";
 export { loadConfig } from "./load-config.js";
 
 export type DefaultBundlerConfig =

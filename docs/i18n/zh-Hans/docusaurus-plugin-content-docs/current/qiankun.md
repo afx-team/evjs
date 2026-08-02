@@ -249,7 +249,7 @@ evPluginQiankunSlave({
 ```
 
 路径类引用会先基于项目根目录解析，再进入 bundling。包名 specifier 按项目依赖正常
-解析。在另一个插件的 `contributions()` hook 中，可以把 `ctx.emit.module()`
+解析。在另一个插件的 `contribute()` hook 中，可以把 `ctx.emit.module()`
 返回的 opaque `GeneratedModuleRef` 直接传给 `contributeQiankunMaster()` 或
 `contributeQiankunSlave()`。
 
@@ -268,11 +268,9 @@ type QiankunLifeCycles = import("qiankun").LifeCycles<
 interface QiankunApp {
   name: string;
   entry: string;
-  credentials?: boolean;
   props?: Record<string, unknown> & {
     settings?: QiankunLoadSettings;
   };
-  [key: string]: unknown;
 }
 
 type QiankunRoute =
@@ -293,7 +291,6 @@ type QiankunRoute =
 interface QiankunMasterOptions {
   apps?: QiankunApp[];
   routes?: QiankunRoute[];
-  appNameKeyAlias?: string;
   base?: string;
   history?: QiankunHistoryType;
   settings?: QiankunLoadSettings;
@@ -306,16 +303,16 @@ interface QiankunMasterOptions {
 `base` 默认是 `/`，`history` 默认是 `"browser"`，缺省 `mode` 默认是
 `"prepend"`。`settings` 由 route-mounted Applications 共享。
 App 与 route settings 依次叠加在其上；route lifecycle hooks 会组合在 master
-lifecycle hooks 之后。`credentials: true` 会在加载该 app entry 时携带 CORS
-credentials。
+lifecycle hooks 之后。公共 bridge 不会附加请求策略，也不会解释平台私有字段。
 
 `prefetch: "all"` 在 master 启动后预取全部 app，字符串数组按 name 预取选中的 app。
 `prefetch: true` 会等首个 app 挂载后，再预取最多 `prefetchThreshold` 个其他 app；
 threshold 默认是 `5`。
 
-默认使用 `route.microApp` 匹配 `app.name`。`appNameKeyAlias` 可以为底层 adapter
-选择另一个 app 身份字段，但把组织内部 DTO 映射为稳定 app identity 仍是平台插件的
-职责。
+`route.microApp` 严格匹配 `app.name`。上层集成必须先把外部数据规范化为标准
+`{ name, entry }` 形态，再返回 snapshot。Master、app 或 route 结构上的未知字段
+会直接报错而不是被忽略；需要透传的集成数据应放在 `props` 或
+`microAppProps` 中。
 
 Master 通过 slave lifecycle props 传递 route 派生值：
 
@@ -430,139 +427,15 @@ export default async function resolveQiankunMaster() {
 改写为相对 URL，因此同一份 slave HTML 可以在代理前缀下被消费。微前端资产代理应
 放在 `dev.proxy`，而不是 `src/apis`；应用 request Route 不应代理微前端资产。
 
-## 组合 Tern 平台插件
+## 平台组合
 
-内网 Tern 插件位于公开 bridge 之上。职责边界是：
+上层集成插件可以在 `contribute()` 中复用 `contributeQiankunMaster()` 或
+`contributeQiankunSlave()`，并在 `setup()` 中复用对应的
+`createQiankun*Hooks()` helper。它必须先规范化外部数据，再把 resolver 或 runtime
+模块传给公共 bridge；若自身还有 lifecycle 行为，则需与 helper 返回的 hooks 组合。
 
-- `@evjs/plugin-qiankun` 持有 entry wrapping、lifecycle 集成、runtime route
-  component、base/history 投影和 qiankun 加载行为。
-- Tern 插件持有后台站点 DTO、app-id 适配、菜单、权限、部署 metadata、环境约定，
-  以及 Tern-specific 研发服务。
-- 业务应用只安装 Tern factory；不要再安装 standalone qiankun master/slave
-  factory，也不要在 Page 中重复平台字段。
-
-Tern 插件可以在自己的 `definePlugin()` descriptor 中复用公开 helper。组合后的
-master 同时使用 contribution 与 hook helper：
-
-```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
-import {
-  contributeQiankunMaster,
-  createQiankunMasterHooks,
-} from "@evjs/plugin-qiankun";
-
-type TernMasterConfig = {
-  siteId: string;
-  externalQiankun?: boolean;
-};
-
-export const ternMaster = definePlugin({
-  id: "tern-master",
-  application: pluginConfig<TernMasterConfig>(),
-
-  setup() {
-    return createQiankunMasterHooks();
-  },
-
-  async contributions(ctx) {
-    const resolver = ctx.emit.module({
-      id: "tern-master-resolver",
-      scope: { kind: "application" },
-      // Tern 私有代码根据自身后台 DTO 合同构造这段 source。
-      source: buildTernResolverSource(ctx.options.siteId),
-    });
-
-    await contributeQiankunMaster(ctx, {
-      resolver,
-      ...(ctx.options.externalQiankun === undefined
-        ? {}
-        : { externalQiankun: ctx.options.externalQiankun }),
-    });
-  },
-});
-```
-
-这里的 `buildTernResolverSource()` 是 Tern 私有实现，不是 evjs API。生成模块必须
-default-export `defineQiankunMasterResolver()` 的结果，并把后台 DTO 适配为公开
-snapshot。例如 adapter 可以把后台 application id 映射为稳定的 `app.name`，再在
-`route.microApp` 中使用该名称：
-
-```ts
-const appNameByYuyanId = new Map(
-  site.apps.map((app) => [app.yuyanId, app.name] as const),
-);
-
-function requireAppName(yuyanId: string | undefined): string {
-  const name = appNameByYuyanId.get(yuyanId);
-  if (!name) throw new Error(`Unknown Tern application "${yuyanId}".`);
-  return name;
-}
-
-function adaptRoute(route: TernRoute) {
-  if (route.redirect) {
-    return { path: route.path, redirect: route.redirect };
-  }
-  return {
-    path: route.path,
-    microApp: requireAppName(route.microApp),
-    ...(route.mode ? { mode: route.mode } : {}),
-    microAppProps: normalizeTernMicroAppProps(route.microAppProps),
-  };
-}
-
-return {
-  apps: site.apps.map((app) => ({
-    name: app.name,
-    entry: app.entry,
-    props: app.props,
-  })),
-  routes: site.routes.map(adaptRoute),
-};
-```
-
-`normalizeTernMicroAppProps()` 同样是 adapter 私有代码；它会在返回公开 route shape
-前移除或转换 Tern-only settings。Adapter 必须在返回 snapshot 前校验缺失的
-identity。菜单层级、权限过滤、部署记录等字段仍属于 Tern data，不是开放 qiankun
-route contract 的字段。
-
-组合后的 slave 复用对应的 hook 与 contribution helper：
-
-```ts
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
-import {
-  contributeQiankunSlave,
-  createQiankunSlaveHooks,
-} from "@evjs/plugin-qiankun";
-
-type TernSlaveConfig = {
-  name?: string;
-  externalQiankun?: boolean;
-};
-
-export const ternSlave = definePlugin({
-  id: "tern-slave",
-  application: pluginConfig<TernSlaveConfig>({ defaults: {} }),
-
-  setup(ctx) {
-    return createQiankunSlaveHooks(
-      ctx,
-      ctx.options.name === undefined ? {} : { name: ctx.options.name },
-    );
-  },
-
-  async contributions(ctx) {
-    await contributeQiankunSlave(ctx, {
-      ...(ctx.options.name === undefined ? {} : { name: ctx.options.name }),
-      ...(ctx.options.externalQiankun === undefined
-        ? {}
-        : { externalQiankun: ctx.options.externalQiankun }),
-    });
-  },
-});
-```
-
-如果 Tern 还持有同名 lifecycle hooks，其实现必须在自己的组合 hook 中调用返回的
-qiankun hooks，而不是覆盖它们。
+应用只安装公共 master/slave factory 或上层集成 factory 中的一种，不要同时安装。
+平台私有配置也不属于 Page config。
 
 ## 边界
 
@@ -580,9 +453,8 @@ qiankun hooks，而不是覆盖它们。
 
 它不包含：
 
-- 后台站点 DTO 协议；
-- 菜单或权限；
-- 组织内部部署或发布 metadata；
+- 外部平台数据协议或身份映射；
+- 平台私有 runtime、部署或研发策略；
 - 自动本地研发代理；
 - Page 级 qiankun settings；
 - 从 resolver data 派生的 canonical CoreGraph Page、Route 或 Document；

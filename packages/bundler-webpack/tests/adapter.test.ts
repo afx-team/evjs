@@ -233,7 +233,7 @@ function createFrameworkCallbacks(options: {
       async onBuildFacts(
         _generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
-        callbackOptions?: { isRebuild?: boolean },
+        callbackOptions: { isRebuild: boolean },
       ) {
         await emitFrameworkArtifacts({
           config: options.config,
@@ -243,7 +243,7 @@ function createFrameworkCallbacks(options: {
           hooks,
           facts,
           onBuildOutput: options.onBuildOutput,
-          isRebuild: callbackOptions?.isRebuild,
+          isRebuild: callbackOptions.isRebuild,
         });
         return "published" as const;
       },
@@ -1828,7 +1828,7 @@ describe("webpackAdapter build", () => {
           plan,
           hooks: [
             {
-              bundlerConfig(configs) {
+              configureBundler(configs) {
                 const items = Array.isArray(configs) ? configs : [configs];
                 const client = items.find((item) => item.name === "client");
                 if (client?.output) client.output.path = path.join(cwd, "src");
@@ -1870,7 +1870,7 @@ describe("webpackAdapter build", () => {
           plan,
           hooks: [
             {
-              bundlerConfig(configs) {
+              configureBundler(configs) {
                 const items = Array.isArray(configs) ? configs : [configs];
                 const client = items.find((item) => item.name === "client");
                 if (client?.output) {
@@ -2575,7 +2575,7 @@ describe("webpackAdapter dev", () => {
               logger: console as never,
               addWatchFile() {},
             },
-            isRebuild: options?.isRebuild ?? false,
+            isRebuild: options.isRebuild,
           });
           return "published" as const;
         },
@@ -2765,7 +2765,7 @@ describe("webpackAdapter dev", () => {
     };
     const hooks: PluginHooks<WebpackConfig>[] = [
       {
-        bundlerConfig(bundlerConfig) {
+        configureBundler(bundlerConfig) {
           const configs = Array.isArray(bundlerConfig)
             ? bundlerConfig
             : [bundlerConfig];
@@ -2795,11 +2795,11 @@ describe("webpackAdapter dev", () => {
       async onBuildFacts(
         generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
-        options?: { isRebuild?: boolean },
+        options: { isRebuild: boolean },
       ) {
         activeBuildFacts += 1;
         maxActiveBuildFacts = Math.max(maxActiveBuildFacts, activeBuildFacts);
-        rebuildFlags.push(options?.isRebuild ?? false);
+        rebuildFlags.push(options.isRebuild);
         try {
           await new Promise((resolve) => setTimeout(resolve, 100));
           return await framework.callbacks.onBuildFacts(
@@ -2941,7 +2941,7 @@ describe("webpackAdapter dev", () => {
     let failBundlerConfig = false;
     const hooks: PluginHooks<WebpackConfig>[] = [
       {
-        bundlerConfig() {
+        configureBundler() {
           if (failBundlerConfig) {
             throw new Error("html-only update should not rebuild webpack");
           }
@@ -3068,7 +3068,7 @@ describe("webpackAdapter dev", () => {
       };
       const hooks: PluginHooks<WebpackConfig>[] = [
         {
-          bundlerConfig(bundlerConfig) {
+          configureBundler(bundlerConfig) {
             const configs = Array.isArray(bundlerConfig)
               ? bundlerConfig
               : [bundlerConfig];
@@ -3342,7 +3342,7 @@ describe("webpackAdapter dev", () => {
     let failBundlerConfig = false;
     const hooks: PluginHooks<WebpackConfig>[] = [
       {
-        bundlerConfig() {
+        configureBundler() {
           if (failBundlerConfig) {
             throw new Error("forced update failure");
           }

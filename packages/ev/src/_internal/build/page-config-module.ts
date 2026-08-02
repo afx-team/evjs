@@ -19,8 +19,8 @@ import type {
   PageRouteDiscoveryMetadata,
 } from "../../config/index.js";
 import {
-  type ResolvedPagePluginConfigInput,
-  resolvePagePluginConfigValues,
+  type ResolvedPagePluginOptionsInput,
+  resolvePagePluginOptions,
 } from "../../config/plugins.js";
 import {
   clearStaticConfigModuleCache,
@@ -49,7 +49,7 @@ export interface ResolvedPageFileConfig {
   hydrate?: HydrationMode;
   prerender?: PrerenderConfig;
   metadata?: PageMetadata;
-  plugins: Readonly<Record<string, ResolvedPagePluginConfigInput>>;
+  plugins: Readonly<Record<string, ResolvedPagePluginOptionsInput>>;
   document?: ResolvedPageDocumentConfig;
 }
 
@@ -171,7 +171,7 @@ async function resolvePageConfigModule(
   const prerender = resolvePrerender(value.prerender, page);
   const componentModel = resolveComponentModel(value.rsc, page);
   const metadata = resolvePageMetadata(value, page);
-  const plugins = resolvePagePluginConfigValues(
+  const plugins = resolvePagePluginOptions(
     value.plugins,
     `Page "${page.pageId}" config "${page.configModule}" plugins`,
   );

@@ -658,7 +658,7 @@ describe("assertCoreGraph", () => {
       "plugin setting",
       (graph: CoreGraph) => {
         addPluginCatalogEntry(graph);
-        getPage(graph).plugins.example = { enabled: true };
+        getPage(graph).plugins.example = { enabled: true, options: {} };
         return getPage(graph).plugins.example;
       },
     ],
@@ -792,43 +792,67 @@ describe("assertCoreGraph", () => {
       enabled: true,
     };
     getPage(graph).plugins.example = {
-      enabled: false,
-      config: { channel: "checkout" },
+      enabled: true,
+      options: { channel: "checkout" },
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
   });
 
-  it("keeps private Application plugin config out of CoreGraph", () => {
+  it("rejects Page plugin options when the plugin is disabled", () => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
-    const setting = { enabled: true };
-    Reflect.set(setting, "config", { secret: "must-not-leak" });
-    getApplication(graph).plugins.example = setting;
+    const setting: CoreGraph["pages"][string]["plugins"][string] = {
+      enabled: false,
+    };
+    Reflect.set(setting, "options", { channel: "checkout" });
+    getPage(graph).plugins.example = setting as never;
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      "coreGraph.applications.default.plugins.example.config is not supported",
+      "coreGraph.pages.orders.plugins.example.options must be omitted when enabled is false",
     );
   });
 
-  it("accepts null-prototype plugin config objects", () => {
+  it("requires Page plugin options when the plugin is enabled", () => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
-    const config = Object.assign(Object.create(null) as object, {
+    getPage(graph).plugins.example = { enabled: true } as never;
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'for Page "orders" plugin "example" options are required when enabled',
+    );
+  });
+
+  it("keeps private Application plugin options out of CoreGraph", () => {
+    const graph = createValidGraph();
+    addPluginCatalogEntry(graph);
+    const setting = { enabled: true };
+    Reflect.set(setting, "options", { secret: "must-not-leak" });
+    getApplication(graph).plugins.example = setting;
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      "coreGraph.applications.default.plugins.example.options is not supported",
+    );
+  });
+
+  it("accepts null-prototype Page plugin options", () => {
+    const graph = createValidGraph();
+    addPluginCatalogEntry(graph);
+    const options = Object.assign(Object.create(null) as object, {
       enabled: true,
       nested: Object.assign(Object.create(null) as object, { mode: "safe" }),
     }) as Record<string, never>;
-    getPage(graph).plugins.example = { enabled: true, config };
+    getPage(graph).plugins.example = { enabled: true, options };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
   });
 
-  it("keeps plugin config fields open when values are static JSON", () => {
+  it("keeps Page plugin option fields open when values are static JSON", () => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
     getPage(graph).plugins.example = {
       enabled: true,
-      config: {
+      options: {
         arbitraryField: true,
         nested: { values: [1, "two", null] },
       },
@@ -841,21 +865,21 @@ describe("assertCoreGraph", () => {
     "__proto__",
     "constructor",
     "prototype",
-  ])('rejects unsafe plugin config key "%s"', (key) => {
+  ])('rejects unsafe Page plugin option key "%s"', (key) => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
-    const config = Object.create(null) as Record<string, unknown>;
-    Object.defineProperty(config, key, {
+    const options = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(options, key, {
       enumerable: true,
       value: true,
     });
     getPage(graph).plugins.example = {
       enabled: true,
-      config: config as Record<string, never>,
+      options: options as Record<string, never>,
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      `coreGraph.pages.orders.plugins.example.config.${key} is not a safe config field`,
+      `coreGraph.pages.orders.plugins.example.options.${key} is not a safe config field`,
     );
   });
 
@@ -868,12 +892,12 @@ describe("assertCoreGraph", () => {
     ["Date", new Date()],
     ["Map", new Map([["key", "value"]])],
     ["class instance", new (class PluginValue {})()],
-  ])("rejects non-static plugin config %s values", (_label, value) => {
+  ])("rejects non-static Page plugin option %s values", (_label, value) => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
     getPage(graph).plugins.example = {
       enabled: true,
-      config: { value } as never,
+      options: { value } as never,
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
@@ -881,14 +905,14 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("rejects cyclic plugin config values", () => {
+  it("rejects cyclic Page plugin option values", () => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
     getPage(graph).plugins.example = {
       enabled: true,
-      config: cycle as Record<string, never>,
+      options: cycle as Record<string, never>,
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
@@ -896,17 +920,17 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("rejects non-enumerable and accessor plugin config without invoking getters", () => {
+  it("rejects non-enumerable and accessor Page plugin options without invoking getters", () => {
     const nonEnumerableGraph = createValidGraph();
     addPluginCatalogEntry(nonEnumerableGraph);
-    const hiddenConfig = {};
-    Object.defineProperty(hiddenConfig, "hidden", {
+    const hiddenOptions = {};
+    Object.defineProperty(hiddenOptions, "hidden", {
       enumerable: false,
       value: true,
     });
     getPage(nonEnumerableGraph).plugins.example = {
       enabled: true,
-      config: hiddenConfig,
+      options: hiddenOptions,
     };
     expect(() => assertCoreGraph(nonEnumerableGraph, "coreGraph")).toThrow(
       "must be an enumerable own data property",
@@ -915,8 +939,8 @@ describe("assertCoreGraph", () => {
     const accessorGraph = createValidGraph();
     addPluginCatalogEntry(accessorGraph);
     let getterWasCalled = false;
-    const accessorConfig = {};
-    Object.defineProperty(accessorConfig, "computed", {
+    const accessorOptions = {};
+    Object.defineProperty(accessorOptions, "computed", {
       enumerable: true,
       get() {
         getterWasCalled = true;
@@ -925,7 +949,7 @@ describe("assertCoreGraph", () => {
     });
     getPage(accessorGraph).plugins.example = {
       enabled: true,
-      config: accessorConfig,
+      options: accessorOptions,
     };
     expect(() => assertCoreGraph(accessorGraph, "coreGraph")).toThrow(
       "must be an enumerable own data property",
@@ -933,15 +957,27 @@ describe("assertCoreGraph", () => {
     expect(getterWasCalled).toBe(false);
   });
 
-  it("requires plugin configs to be plain objects", () => {
+  it("requires Page plugin options to be plain objects", () => {
     const graph = createValidGraph();
     addPluginCatalogEntry(graph);
     const setting = { enabled: true };
-    Reflect.set(setting, "config", ["not", "an", "object"]);
-    getPage(graph).plugins.example = setting;
+    Reflect.set(setting, "options", ["not", "an", "object"]);
+    getPage(graph).plugins.example = setting as never;
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      "coreGraph.pages.orders.plugins.example.config must be a plain object",
+      "coreGraph.pages.orders.plugins.example.options must be a plain object",
+    );
+  });
+
+  it("rejects the removed Page plugin config field", () => {
+    const graph = createValidGraph();
+    addPluginCatalogEntry(graph);
+    const setting = { enabled: true };
+    Reflect.set(setting, "config", { channel: "legacy" });
+    getPage(graph).plugins.example = setting as never;
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      "coreGraph.pages.orders.plugins.example.config is not supported",
     );
   });
 
@@ -965,7 +1001,7 @@ describe("assertCoreGraph", () => {
 
   it("rejects settings for uninstalled plugins or plugins without a Page contract", () => {
     const graph = createValidGraph();
-    getPage(graph).plugins.example = { enabled: true };
+    getPage(graph).plugins.example = { enabled: true } as never;
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
       'uses plugin id "example", but that plugin is not installed',
@@ -1019,7 +1055,7 @@ describe("assertCoreGraph", () => {
     addPluginCatalogEntry(invalidSettingGraph);
     const setting = { enabled: true };
     Reflect.set(setting, "enabled", "yes");
-    getPage(invalidSettingGraph).plugins.example = setting;
+    getPage(invalidSettingGraph).plugins.example = setting as never;
     expect(() => assertCoreGraph(invalidSettingGraph, "coreGraph")).toThrow(
       "coreGraph.pages.orders.plugins.example.enabled must be a boolean",
     );

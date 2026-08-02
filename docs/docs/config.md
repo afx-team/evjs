@@ -175,7 +175,7 @@ is no second namespace, registration call, or configuration object to keep in
 sync. Conditional entries may use `false`, `null`, or `undefined`; inactive
 entries are omitted at runtime. Because they are not guaranteed to install,
 entries with a possible falsy branch do not expose plugin ids to Page config.
-When the Page contract has defaults, use `plugin.forPages(config)` to keep the
+When the Page contract has defaults, use `plugin.forPages(options)` to keep the
 plugin and its Application options active while every Page opts in explicitly.
 
 Application configuration may contain typed executable options or explicit
@@ -350,9 +350,9 @@ export default defineConfig({
 });
 ```
 
-After config and plugin setup finish, the BuildPlan owns the resolved output
+After plugin `configure()` and `setup()` finish, the BuildPlan owns the resolved output
 paths. Adapters use those paths for cleanup, emitted assets, stats, and
-manifests; `bundlerConfig()` hooks cannot override framework-owned client or
+manifests; `configureBundler()` hooks cannot override framework-owned client or
 server output paths.
 
 `output.crossOriginLoading` accepts `false`, `"anonymous"`, or
@@ -378,8 +378,8 @@ Install plugins through `plugins`, normally as
 `pluginFactory(applicationConfig)`. A plugin can declare an independent Page
 contract whose canonical `id` becomes available in adjacent `page.config.ts`
 files.
-The same Plugin descriptor owns config, setup, contributions, and lifecycle
-hooks. See [Plugins](./plugins).
+The same Plugin descriptor owns `configure()`, `setup()`, `contribute()`, and
+lifecycle hooks. See [Plugins](./plugins).
 
 ### Bundler
 

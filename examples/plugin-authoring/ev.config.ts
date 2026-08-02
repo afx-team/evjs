@@ -1,6 +1,6 @@
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { defineConfig } from "@evjs/ev";
-import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
 type ApplicationMetadata = {
   channel: string;
@@ -12,8 +12,8 @@ type PageMetadata = {
 
 const metadataPlugin = definePlugin({
   id: "metadata",
-  application: pluginConfig<ApplicationMetadata>({ schemaVersion: "1" }),
-  page: pluginConfig<PageMetadata>({
+  application: pluginOptions<ApplicationMetadata>({ schemaVersion: "1" }),
+  page: pluginOptions<PageMetadata>({
     schemaVersion: "1",
     defaults: { label: "Plugin authoring Page" },
   }),
@@ -23,7 +23,7 @@ const metadataPlugin = definePlugin({
       `[example-metadata-plugin] Application value: ${JSON.stringify(metadata)}`,
     );
   },
-  contributions(ctx) {
+  contribute(ctx) {
     for (const { page, options } of ctx.pages) {
       console.log(
         `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(options)}`,
@@ -34,7 +34,7 @@ const metadataPlugin = definePlugin({
 
 const txtPlugin = definePlugin({
   id: "txt",
-  config(config) {
+  configure(config) {
     config.server = {
       ...(typeof config.server === "object" ? config.server : {}),
       basePath: "/api",
@@ -45,20 +45,22 @@ const txtPlugin = definePlugin({
     console.log(`[example-txt-plugin] mode: ${ctx.mode}`);
 
     return {
-      buildStart() {
-        console.log("[example-txt-plugin] build starting...");
+      beforeBuild({ isRebuild }) {
+        console.log(
+          `[example-txt-plugin] ${isRebuild ? "rebuild" : "build"} output starting...`,
+        );
       },
 
       // Type-safe bundler config mutation via the utoopack helper.
       // This hook only runs when utoopack is the active bundler.
-      bundlerConfig: utoopack((cfg) => {
+      configureBundler: utoopack((cfg) => {
         // Add custom loaders or rules to utoopack
         merge(cfg, {
           module: { rules: { ".txt": { type: "raw" } } },
         });
       }),
 
-      buildEnd(result) {
+      afterBuild(result) {
         const appAssets = Object.values(result.output.apps);
         const pageAssets = Object.values(result.output.pages);
         const jsCount = [...appAssets, ...pageAssets].reduce(
@@ -87,10 +89,10 @@ const txtPlugin = definePlugin({
  * Example: evjs plugin system.
  *
  * Demonstrates common lifecycle hooks:
- * - `config`         — update framework config before defaults are resolved
- * - `bundlerConfig` — modify the underlying bundler config (type-safe via utoopack() helper)
- * - `buildStart`    — run logic before compilation begins
- * - `buildEnd`      — run logic after compilation completes
+ * - `configure`      — update framework config before defaults are resolved
+ * - `configureBundler` — modify the underlying bundler config (type-safe via utoopack() helper)
+ * - `beforeBuild`   — run after fresh bundler facts, before canonical output
+ * - `afterBuild`    — run after canonical output is published
  * - `transformHtml` — modify the output HTML document after asset injection
  */
 export default defineConfig({

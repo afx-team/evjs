@@ -24,7 +24,8 @@ loaded by the plugin through the framework-managed SPA entry.
 npm run dev
 ```
 
-Run the slave example on port `3001` to see `/catalog` mount its root Page. The
-master example uses `dev.proxy` to serve the slave dev assets under
+Run the slave example on port `3001` to see `/catalog` mount its root Page and
+`/catalog/details` mount its local details Page. The master example uses
+`dev.proxy` to serve the slave dev assets under
 `/__qiankun_slave/*` during local development, keeping proxy concerns out of
 application API routes.

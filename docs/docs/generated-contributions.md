@@ -14,7 +14,7 @@ A contribution is a declarative unit in the framework IR. It can produce
 generated artifacts, link those artifacts together, and attach them to
 framework slots.
 
-Keep `contributions(ctx)` deterministic and free of external side effects.
+Keep `contribute(ctx)` deterministic and free of external side effects.
 evjs may evaluate it again when contributed source aliases change the
 framework graph.
 
@@ -24,7 +24,7 @@ relationships. evjs then materializes the final `.ev` tree and manifest.
 
 ```mermaid
 flowchart TB
-  Hook["contributions(ctx)"]
+  Hook["contribute(ctx)"]
 
   subgraph Declare["Plugin declarations"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -100,7 +100,7 @@ defined plugin normally uses its narrower `ctx.options` and `ctx.pages` views;
 each enabled Page entry is `{ page, options }`. The per-Page
 `contributePage()` form receives `ctx.pageOptions`. These flat fields preserve
 the descriptor's inferred types. Internal provenance and resolved settings are
-available before `contributions()` materializes generated code.
+available before `contribute()` materializes generated code.
 
 The Application view also exposes its `root`, `routingMode`, and owned Page,
 Route, and Document ids. An MPA therefore appears as one logical Application
@@ -127,7 +127,7 @@ import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
   id: "analytics",
-  contributions(ctx) {
+  contribute(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -154,7 +154,7 @@ When a plugin replaces an entry but still needs the original framework facade,
 use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
 
 ```ts
-contributions(ctx) {
+contribute(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -218,7 +218,7 @@ wrap earlier contributions; route layouts and wrappers remain outside plugin
 Page wrappers.
 
 ```ts
-contributions(ctx) {
+contribute(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",
@@ -273,11 +273,11 @@ remain responsible only for transformations of real source modules.
 
 The contribution layer does not replace plugin lifecycles:
 
-- Use `config()` for framework config defaults or validation-sensitive config.
+- Use `configure()` for framework config defaults or validation-sensitive config.
 - Use `setup()` to allocate plugin state and return lifecycle hooks.
-- Use `bundlerConfig()` for low-level bundler features not modeled as slots.
+- Use `configureBundler()` for low-level bundler features not modeled as slots.
 - Use `transformHtml()` for AST-level HTML rewrites.
-- Use `buildOutput()` and `buildEnd()` for deployment metadata and final files.
+- Use `transformOutput()` and `afterBuild()` for deployment metadata and final files.
 
 This split keeps the IR readable without pretending every plugin capability is
 an entry contribution.

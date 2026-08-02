@@ -4,7 +4,7 @@ import type {
   CoreApplicationPluginSettings,
 } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
-import type { PluginContext } from "../../plugin/index.js";
+import type { PluginSetupContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
 import { materializeFrameworkIR } from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
@@ -21,7 +21,7 @@ export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   mode: "development" | "production";
   command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
-  pluginContext: PluginContext<TBundlerCfg>;
+  pluginContext: PluginSetupContext<TBundlerCfg>;
   pluginSettings: PluginSettingsRegistry;
   applicationPluginSettings: CoreApplicationPluginSettings;
   plan?: CreateBuildPlanOptions;

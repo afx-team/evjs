@@ -94,18 +94,26 @@ sequenceDiagram
   participant Bundler as bundler adapter
 
   CLI->>Core: 加载配置并选择 bundler
-  Core->>Plugin: config() 并解析 Application setting
-  Core->>Plugin: setup() 与 buildStart()
-  Core->>Core: 解析 Page setting 并创建 CoreGraph/BuildPlan
-  Core->>Plugin: contributions(framework view)
+  Core->>Plugin: configure() 并解析 Application setting
+  Core->>Plugin: setup()
+  Core->>Core: 解析 Page setting 并创建 CoreGraph
+  Core->>Plugin: contribute(FrameworkView)
+  Core->>Core: 创建 BuildPlan
   Core->>Core: 物化 .ev
-  Core->>Plugin: bundlerConfig()
+  Core->>Plugin: configureBundler()
   Core->>Bundler: build(BuildPlan)
-  Bundler-->>Core: build facts
+  Bundler-->>Core: fresh build facts
+  Core->>Plugin: beforeBuild()
   Core->>Core: link BuildOutput
-  Core->>Plugin: buildOutput()
-  Core->>Plugin: transformHtml() 与 buildEnd()
+  Core->>Plugin: transformOutput()
+  Core->>Plugin: transformHtml()
+  Core->>Core: 发布 canonical output
+  Core->>Plugin: afterBuild()
 ```
+
+`beforeBuild()` 在 fresh bundler facts 到达后、evjs 链接或发射 canonical output 前
+执行。成功的初次输出与 rebuild output cycle 会用相同 `isRebuild` 与 `afterBuild()`
+配对；`prepare` 与 `inspect` 都不会触发这两个 hook。
 
 `ev prepare` 在物化 generated framework IR 后停止：
 

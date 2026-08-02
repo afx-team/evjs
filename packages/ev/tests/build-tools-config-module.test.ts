@@ -422,14 +422,14 @@ describe("loadConfigFile", () => {
     const cwd = await createFixture({
       "ev.config.ts": `
         import { defineConfig } from "@evjs/ev";
-        import { definePlugin, pluginConfig } from "@evjs/ev/plugin";
+        import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
         const analytics = definePlugin({
           id: "analytics",
-          application: pluginConfig({
+          application: pluginOptions({
             defaults: { channel: "web" },
           }),
-          page: pluginConfig({
+          page: pluginOptions({
             defaults: { channel: "page" },
           }),
           setup(context) {

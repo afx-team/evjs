@@ -222,15 +222,16 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
     onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
     /**
      * Called by the bundler adapter after a dev compile has fresh build facts.
-     * The ev orchestrator owns framework output linking, plugin output hooks,
-     * manifest emission, and HTML emission. Adapters may acknowledge facts or
-     * notify server readiness only after `published`; `discarded` facts were
-     * not consumed and must be retried from fresh compiler state.
+     * The ev orchestrator owns beforeBuild, framework output linking,
+     * transformOutput, manifest emission, and HTML emission. Adapters may
+     * acknowledge facts or notify server readiness only after `published`;
+     * `discarded` facts were not consumed and must be retried from fresh
+     * compiler state.
      */
     onBuildFacts: (
       generation: BundlerDevGeneration,
       facts: BundlerBuildFacts,
-      options?: { isRebuild?: boolean },
+      options: { readonly isRebuild: boolean },
     ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>;
     /** Notify the framework that this generation's server bundle is ready. */
     onServerBundleReady: (
@@ -243,7 +244,7 @@ export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
   /** The resolved config that produced the next plan. */
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   /**
-   * True when framework config or a `bundlerConfig()` dependency changed and
+   * True when framework config or a `configureBundler()` dependency changed and
    * the adapter must refresh its effective bundler configuration.
    */
   configChanged: boolean;

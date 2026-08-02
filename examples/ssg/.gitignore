@@ -2,3 +2,4 @@
 .evjs
 .turbopack
 route-types.d.ts
+plugin-types.d.ts

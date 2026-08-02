@@ -73,7 +73,7 @@ export default defineConfig({
 ```
 
 最终 BuildPlan 是 adapter cleanup、产物写入、stats 与 manifest 路径的唯一事实源。
-Plugin `bundlerConfig()` hook 可以修改受支持的底层 bundler setting，但不能覆盖
+Plugin `configureBundler()` hook 可以修改受支持的底层 bundler setting，但不能覆盖
 framework 持有的 client 或 server 输出路径。
 
 Bundler server fact 使用 `serverEntryAssets`，并以每个 server BuildPlan entry 的
