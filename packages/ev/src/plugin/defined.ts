@@ -743,14 +743,17 @@ interface DefinedPluginApplicationBinding {
   applicationSetting: RuntimePluginSetting | undefined;
 }
 
+const DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION = 3;
+
 interface DefinedPluginRuntimeRegistry {
-  readonly version: 3;
+  readonly schemaVersion: typeof DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION;
   readonly runtimeByPlugin: WeakMap<object, DefinedPluginRuntime>;
   readonly bindingByPlugin: WeakMap<object, DefinedPluginApplicationBinding>;
 }
 
-const DEFINED_PLUGIN_RUNTIME_REGISTRY = Symbol.for(
-  "@evjs/ev/defined-plugin-runtime-registry/v3",
+// Keep one identity across module copies; schemaVersion guards its layout.
+const DEFINED_PLUGIN_RUNTIME_REGISTRY_SYMBOL = Symbol.for(
+  "@evjs/ev/defined-plugin-runtime-registry",
 );
 const definedPluginRuntimeRegistry = getDefinedPluginRuntimeRegistry();
 
@@ -1014,29 +1017,31 @@ export function shareDefinedPluginApplicationBinding(
 }
 
 function getDefinedPluginRuntimeRegistry(): DefinedPluginRuntimeRegistry {
-  const existing = Reflect.get(globalThis, DEFINED_PLUGIN_RUNTIME_REGISTRY) as
-    | DefinedPluginRuntimeRegistry
-    | undefined;
+  const existing = Reflect.get(
+    globalThis,
+    DEFINED_PLUGIN_RUNTIME_REGISTRY_SYMBOL,
+  ) as DefinedPluginRuntimeRegistry | undefined;
   if (existing !== undefined) {
     if (
-      existing.version !== 3 ||
+      existing.schemaVersion !==
+        DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION ||
       !Object.isFrozen(existing) ||
       !(existing.runtimeByPlugin instanceof WeakMap) ||
       !(existing.bindingByPlugin instanceof WeakMap)
     ) {
       throw new Error(
-        "[evjs] Defined plugin runtime registry v3 is incompatible.",
+        `[evjs] Defined plugin runtime registry schema v${DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION} is incompatible.`,
       );
     }
     return existing;
   }
 
   const registry: DefinedPluginRuntimeRegistry = Object.freeze({
-    version: 3,
+    schemaVersion: DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION,
     runtimeByPlugin: new WeakMap<object, DefinedPluginRuntime>(),
     bindingByPlugin: new WeakMap<object, DefinedPluginApplicationBinding>(),
   });
-  Object.defineProperty(globalThis, DEFINED_PLUGIN_RUNTIME_REGISTRY, {
+  Object.defineProperty(globalThis, DEFINED_PLUGIN_RUNTIME_REGISTRY_SYMBOL, {
     configurable: false,
     enumerable: false,
     value: registry,

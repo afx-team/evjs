@@ -144,16 +144,16 @@ describe("plugin settings registry", () => {
     expect(assertNoPageOnlyMode).toBeTypeOf("function");
   });
 
-  it("shares immutable defined-plugin state through the versioned registry", () => {
+  it("shares immutable defined-plugin state through the global registry", () => {
     const plugin = definePlugin({
       id: "identity-guard",
       page: pluginOptions({ defaults: {} }),
     })();
     const registry = Reflect.get(
       globalThis,
-      Symbol.for("@evjs/ev/defined-plugin-runtime-registry/v3"),
+      Symbol.for("@evjs/ev/defined-plugin-runtime-registry"),
     ) as {
-      readonly version: 3;
+      readonly schemaVersion: 3;
       readonly runtimeByPlugin: WeakMap<object, { readonly id: string }>;
       readonly bindingByPlugin: WeakMap<
         object,
@@ -166,7 +166,7 @@ describe("plugin settings registry", () => {
     expect(Reflect.set(runtime as object, "id", "mutated-runtime")).toBe(false);
     expect(plugin.id).toBe("identity-guard");
     expect(runtime?.id).toBe("identity-guard");
-    expect(registry.version).toBe(3);
+    expect(registry.schemaVersion).toBe(3);
     expect(Object.isFrozen(registry)).toBe(true);
     expect(Object.isFrozen(runtime)).toBe(true);
 
