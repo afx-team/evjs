@@ -97,7 +97,7 @@ sequenceDiagram
   Core->>Plugin: configure() 并解析 Application setting
   Core->>Plugin: setup()
   Core->>Core: 解析 Page setting 并创建 CoreGraph
-  Core->>Plugin: contribute(FrameworkView)
+  Core->>Plugin: emitIR(FrameworkView)
   Core->>Core: 创建 BuildPlan
   Core->>Core: 物化 .ev
   Core->>Plugin: configureBundler()

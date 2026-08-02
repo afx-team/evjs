@@ -25,12 +25,8 @@ export interface TransformOptions {
  * URLs and browser-facing origins live in config/manifest runtime fields.
  */
 export const SERVER_FUNCTION_TRANSFORM_RUNTIME = {
-  /** Module path for generated server-side function registrations. */
-  serverModule: "@evjs/ev/_internal/server/server-functions",
   /** Module path for generated client-side server reference stubs. */
   clientModule: "@evjs/ev/_internal/client/server-functions",
-  /** Server-side function registration (RSC convention). */
-  registerServerReference: "registerServerReference",
   /** Client-side server reference factory (RSC convention). */
   createServerReference: "createServerReference",
 } as const;

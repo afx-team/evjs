@@ -43,7 +43,7 @@ the final manifest.
 
 Use `ev prepare` to generate `.ev/` without writing `dist`, and use
 `ev inspect --json` when you want a preflight report without writing generated
-files. Plugin authors should use `contribute()` for generated modules and
+files. Plugin authors should use `emitIR()` for generated modules and
 entry/runtime/HTML/resolution slots; keep loaders for real bundler transforms.
 
 ## 🏗️ Packages

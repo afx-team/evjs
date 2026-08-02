@@ -171,9 +171,11 @@ export async function createUtoopackConfig(
                 ? "[name].[contenthash:8].js"
                 : "[name].js",
             },
+            // The generated server entry registers every discovered export in
+            // its app-owned registry. Utoopack only owns client proxy stubs;
+            // do not restore the former process-global server registrar.
             function: {
               clientProxy: SERVER_FUNCTION_TRANSFORM_RUNTIME.clientModule,
-              serverRegister: SERVER_FUNCTION_TRANSFORM_RUNTIME.serverModule,
             },
           },
         }
@@ -197,7 +199,7 @@ export async function createUtoopackConfig(
     }));
 
   // Run plugin bundler hooks
-  const ctx: ConfigureBundlerContext<ConfigComplete> = {
+  const ctx: ConfigureBundlerContext<ConfigComplete> = Object.freeze({
     mode: isProduction ? "production" : "development",
     command: isProduction ? "build" : "dev",
     cwd,
@@ -206,7 +208,7 @@ export async function createUtoopackConfig(
     environment: finalServerEntry ? "mixed" : "client",
     logger,
     addWatchFile: addWatchFile ?? missingFrameworkWatchCollector,
-  };
+  });
 
   for (const h of hooks) {
     if (h.configureBundler) {
@@ -282,6 +284,10 @@ type UtoopackServerOutputTemplateField =
   (typeof UTOOPACK_SERVER_OUTPUT_TEMPLATE_FIELDS)[number];
 
 interface UtoopackOutputTemplateExpectation {
+  mode: unknown;
+  clean: unknown;
+  publicPath: unknown;
+  crossOriginLoading: unknown;
   client: Record<UtoopackClientOutputTemplateField, unknown>;
   server?: Record<UtoopackServerOutputTemplateField, unknown>;
 }
@@ -290,6 +296,10 @@ function snapshotUtoopackOutputTemplates(
   config: ConfigComplete,
 ): UtoopackOutputTemplateExpectation {
   return {
+    mode: config.mode,
+    clean: config.output?.clean,
+    publicPath: config.output?.publicPath,
+    crossOriginLoading: config.output?.crossOriginLoading,
     client: Object.fromEntries(
       UTOOPACK_CLIENT_OUTPUT_TEMPLATE_FIELDS.map((field) => [
         field,
@@ -313,6 +323,22 @@ function assertUtoopackOutputTemplatesMatchFramework(
   config: ConfigComplete,
   expectation: UtoopackOutputTemplateExpectation,
 ): void {
+  assertUtoopackFrameworkField("mode", config.mode, expectation.mode);
+  assertUtoopackFrameworkField(
+    "output.clean",
+    config.output?.clean,
+    expectation.clean,
+  );
+  assertUtoopackFrameworkField(
+    "output.publicPath",
+    config.output?.publicPath,
+    expectation.publicPath,
+  );
+  assertUtoopackFrameworkField(
+    "output.crossOriginLoading",
+    config.output?.crossOriginLoading,
+    expectation.crossOriginLoading,
+  );
   for (const field of UTOOPACK_CLIENT_OUTPUT_TEMPLATE_FIELDS) {
     assertUtoopackOutputTemplate(
       `Utoopack output.${field}`,
@@ -336,6 +362,17 @@ function assertUtoopackOutputTemplatesMatchFramework(
       expectation.server[field],
     );
   }
+}
+
+function assertUtoopackFrameworkField(
+  field: string,
+  actual: unknown,
+  expected: unknown,
+): void {
+  if (Object.is(actual, expected)) return;
+  throw new Error(
+    `[evjs] Utoopack ${field} ${formatUtoopackOutputTemplate(actual)} must remain the framework-owned value ${formatUtoopackOutputTemplate(expected)}. configureBundler hooks cannot override framework runtime identity.`,
+  );
 }
 
 function assertUtoopackOutputTemplate(

@@ -11,6 +11,12 @@ describe("server function ID helpers", () => {
   it("accepts non-empty IDs without surrounding whitespace", () => {
     expect(isServerFunctionId("mod:getUser")).toBe(true);
     expect(isServerFunctionId("hash-123")).toBe(true);
+    for (const id of ["__proto__", "constructor", "toString"]) {
+      expect(isServerFunctionId(id)).toBe(true);
+      expect(() =>
+        assertServerFunctionId(id, "createServerReference()"),
+      ).not.toThrow();
+    }
     expect(() =>
       assertServerFunctionId("mod:getUser", "createServerReference()"),
     ).not.toThrow();

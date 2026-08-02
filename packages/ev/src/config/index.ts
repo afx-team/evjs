@@ -542,7 +542,7 @@ const PUBLIC_PLUGIN_KEYS = new Set([
   "enforce",
   "configure",
   "setup",
-  "contribute",
+  "emitIR",
 ]);
 const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
   "name",
@@ -742,7 +742,7 @@ function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
     pluginDescriptor,
     PUBLIC_PLUGIN_KEYS,
     path,
-    "id, dependencies, optionalDependencies, enforce, configure, setup, or contribute",
+    "id, dependencies, optionalDependencies, enforce, configure, setup, or emitIR",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -755,7 +755,7 @@ function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
     enforce: rawEnforce,
     configure: rawConfigure,
     setup: rawSetup,
-    contribute: rawContribute,
+    emitIR: rawEmitIR,
   } = pluginDescriptor;
 
   if (rawConfigure !== undefined) {
@@ -770,10 +770,10 @@ function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
       `${path}.setup`,
     );
   }
-  if (rawContribute !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["contribute"]>>(
-      rawContribute,
-      `${path}.contribute`,
+  if (rawEmitIR !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["emitIR"]>>(
+      rawEmitIR,
+      `${path}.emitIR`,
     );
   }
   assertPluginId(rawId, `${path}.id`);
@@ -817,7 +817,7 @@ function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
       : {}),
     ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
-    ...(rawContribute !== undefined ? { contribute: rawContribute } : {}),
+    ...(rawEmitIR !== undefined ? { emitIR: rawEmitIR } : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
   return Object.freeze(resolved);

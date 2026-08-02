@@ -44,7 +44,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   rejected before output publication; each deployment projection is now an
   isolated snapshot.
 - **Plugin authoring API reset** — `definePlugin()` now uses `pluginOptions()`,
-  `configure()`, `setup()`, `contribute()`, and `contributePage()`. Hooks
+  `configure()`, `setup()`, `emitIR()`, and `emitPageIR()`. Hooks
   returned by `setup()` use `configureBundler()`, `beforeBuild()`,
   `transformOutput()`, `transformHtml()`, `afterBuild()`, and `dispose()`.
   Public context types follow those stage names, and contribution code reads
@@ -60,6 +60,12 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   initial and rebuild cycles pair it with `afterBuild()` using the same
   `isRebuild`; failures before publication and the `prepare`/`inspect` staging
   paths do not call the pair.
+- **Application-owned Server Functions** — `createServerFunctionRegistry()`
+  now owns registration and dispatch for one `createApp()` instance. Generated
+  server entries explicitly register discovered exports in that registry;
+  server transforms no longer mutate a process-global registry. The global
+  `registerServerReference()` and `dispatch()` exports and their internal
+  registration subpaths are removed.
 
 - **Canonical server entry assets** — Redundant `serverEntry`, `serverAssets`,
   and `serverModules` build facts are removed. Adapters must report every

@@ -5,8 +5,8 @@
  * - @evjs/server/node
  * - @evjs/server/fetch
  *
- * Framework-generated server function registrations use:
- * - @evjs/server/internal/server-functions
+ * Server function implementations are owned by an explicit application
+ * registry created with `createServerFunctionRegistry()`.
  */
 
 export { ServerError } from "@evjs/shared";
@@ -69,8 +69,6 @@ export type {
   DispatchResult,
   DispatchSuccess,
   ServerFn,
+  ServerFunctionRegistry,
 } from "./server-functions/index.js";
-export {
-  dispatch,
-  registerServerReference,
-} from "./server-functions/index.js";
+export { createServerFunctionRegistry } from "./server-functions/index.js";

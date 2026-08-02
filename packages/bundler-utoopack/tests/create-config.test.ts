@@ -149,7 +149,7 @@ describe("createUtoopackConfig", () => {
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
       id: "generated-alias",
-      contribute(ctx) {
+      emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
           scope: { kind: "application" },
@@ -655,6 +655,12 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.server?.entry).toBe("./.ev/entries/server.ts");
+    expect(utoopackConfig.server?.function).toEqual({
+      clientProxy: "@evjs/ev/_internal/client/server-functions",
+    });
+    expect(utoopackConfig.server?.function).not.toHaveProperty(
+      "serverRegister",
+    );
   });
 
   it("does not add SPA history fallback for MPA builds", async () => {
@@ -824,8 +830,7 @@ describe("createUtoopackConfig", () => {
         {
           async configureBundler(cfg, ctx) {
             await Promise.resolve();
-            cfg.output ??= {};
-            cfg.output.publicPath = "runtime";
+            cfg.define = { ...cfg.define, __PLUGIN_ASYNC__: "true" };
             ctx.addWatchFile("./utoopack-plugin.config.ts");
             expect(ctx.bundlerName).toBe("utoopack");
             expect(ctx.environment).toBe("client");
@@ -842,7 +847,7 @@ describe("createUtoopackConfig", () => {
       (file) => watchedFiles.push(file),
     );
 
-    expect(utoopackConfig.output?.publicPath).toBe("runtime");
+    expect(utoopackConfig.define?.__PLUGIN_ASYNC__).toBe("true");
     expect(watchedFiles).toEqual(["./utoopack-plugin.config.ts"]);
     expect(config.plugins).toEqual([]);
   });
@@ -933,6 +938,58 @@ describe("createUtoopackConfig", () => {
       '[evjs] Utoopack output.filename "../../escape.js" must remain the framework-owned template "[name].js".',
     );
     expect(events).toEqual(["mutate"]);
+  });
+
+  it("preserves framework runtime identity after configureBundler hooks", async () => {
+    const cases: Array<{
+      expected: string;
+      mutate(config: ConfigComplete): void;
+    }> = [
+      {
+        expected:
+          'Utoopack mode "production" must remain the framework-owned value "development"',
+        mutate(config) {
+          config.mode = "production";
+        },
+      },
+      {
+        expected:
+          "Utoopack output.clean false must remain the framework-owned value true",
+        mutate(config) {
+          if (config.output) config.output.clean = false;
+        },
+      },
+      {
+        expected:
+          'Utoopack output.publicPath "/plugin/" must remain the framework-owned value "auto"',
+        mutate(config) {
+          if (config.output) config.output.publicPath = "/plugin/";
+        },
+      },
+      {
+        expected:
+          'Utoopack output.crossOriginLoading "use-credentials" must remain the framework-owned value "anonymous"',
+        mutate(config) {
+          if (config.output) {
+            config.output.crossOriginLoading = "use-credentials";
+          }
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const config = createResolvedConfig();
+      const plan = await createPlan(config);
+      await expect(
+        createUtoopackConfig(config, plan, process.cwd(), [
+          {
+            configureBundler(utoopackConfig) {
+              testCase.mutate(utoopackConfig);
+            },
+          },
+        ]),
+      ).rejects.toThrow(testCase.expected);
+    }
   });
 
   it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {

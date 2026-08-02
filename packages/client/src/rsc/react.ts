@@ -101,12 +101,18 @@ export interface RscDebugPayloadMountOptions {
   mount: string | Element;
 }
 
-const rootByMountPoint = new WeakMap<Element, Root>();
+interface MountedReactRoot {
+  ownerToken: symbol;
+  root: Root;
+}
+
+const rootByMountPoint = new WeakMap<Element, MountedReactRoot>();
 
 export function createReactPageModule(
   options: ReactPageMountOptions,
 ): AppModule {
   assertReactPageMountOptions(options, "createReactPageModule()");
+  const ownerToken = Symbol("ReactPageModule");
 
   return {
     mount(mountPoint, ctx) {
@@ -115,6 +121,7 @@ export function createReactPageModule(
         mountPoint,
         options.component,
         resolvePageProps(options, ctx),
+        ownerToken,
         options.route,
       );
     },
@@ -122,13 +129,25 @@ export function createReactPageModule(
       if (options.hydrate === "none") return;
       const props = resolvePageProps(options, ctx);
       if (shouldHydrate(options)) {
-        hydrateReactRoot(mountPoint, options.component, props, options.route);
+        hydrateReactRoot(
+          mountPoint,
+          options.component,
+          props,
+          ownerToken,
+          options.route,
+        );
         return;
       }
-      mountReactRoot(mountPoint, options.component, props, options.route);
+      mountReactRoot(
+        mountPoint,
+        options.component,
+        props,
+        ownerToken,
+        options.route,
+      );
     },
     unmount(mountPoint) {
-      unmountMountedReactRoot(mountPoint);
+      unmountOwnedReactRoot(mountPoint, ownerToken);
     },
   };
 }
@@ -137,6 +156,7 @@ function mountReactRoot(
   mountPoint: Element,
   component: ReactComponentExport,
   props: Record<string, unknown>,
+  ownerToken: symbol,
   route?: ReactPageRouteContext,
 ) {
   unmountMountedReactRoot(mountPoint);
@@ -156,13 +176,14 @@ function mountReactRoot(
       `[evjs] React page root.render failed${formatErrorDetail(error)}`,
     );
   }
-  rootByMountPoint.set(mountPoint, root);
+  rootByMountPoint.set(mountPoint, { ownerToken, root });
 }
 
 function hydrateReactRoot(
   mountPoint: Element,
   component: ReactComponentExport,
   props: Record<string, unknown>,
+  ownerToken: symbol,
   route?: ReactPageRouteContext,
 ): void {
   unmountMountedReactRoot(mountPoint);
@@ -177,20 +198,26 @@ function hydrateReactRoot(
       `[evjs] React page hydrateRoot failed${formatErrorDetail(error)}`,
     );
   }
-  rootByMountPoint.set(mountPoint, root);
+  rootByMountPoint.set(mountPoint, { ownerToken, root });
 }
 
 function unmountMountedReactRoot(mountPoint: Element): void {
-  const root = rootByMountPoint.get(mountPoint);
-  if (!root) return;
+  const mounted = rootByMountPoint.get(mountPoint);
+  if (!mounted) return;
   rootByMountPoint.delete(mountPoint);
   try {
-    root.unmount();
+    mounted.root.unmount();
   } catch (error) {
     throw new Error(
       `[evjs] React page root.unmount failed${formatErrorDetail(error)}`,
     );
   }
+}
+
+function unmountOwnedReactRoot(mountPoint: Element, ownerToken: symbol): void {
+  const mounted = rootByMountPoint.get(mountPoint);
+  if (mounted?.ownerToken !== ownerToken) return;
+  unmountMountedReactRoot(mountPoint);
 }
 
 function tryUnmountReactRoot(root: Root): void {
@@ -312,6 +339,14 @@ function assertReactPageString(value: unknown, path: string): void {
 export async function fetchRscFlight(
   options: RscFlightFetchOptions,
 ): Promise<Response> {
+  return fetchRscFlightWithSignal(options);
+}
+
+/** @internal Used by the RSC mount runtime to cancel superseded requests. */
+export async function fetchRscFlightWithSignal(
+  options: RscFlightFetchOptions,
+  signal?: AbortSignal,
+): Promise<Response> {
   assertRscFlightFetchOptions(options);
   const endpoint = getClientRuntimeServer(options.runtime)?.rsc;
   if (!endpoint) {
@@ -327,7 +362,7 @@ export async function fetchRscFlight(
 
   const transport = resolveClientRuntimeTransport(options.runtime);
   const requestUrl = resolveRscFlightUrl(endpoint, options, transport);
-  const requestInit = resolveRscFlightRequestInit(transport);
+  const requestInit = resolveRscFlightRequestInit(transport, signal);
   let response: unknown;
   try {
     response =
@@ -356,20 +391,26 @@ export function assertRscFlightFetchOptions(
 
 function resolveRscFlightRequestInit(
   transport: ClientRuntimeTransport | undefined,
+  signal?: AbortSignal,
 ): RequestInit | undefined {
-  if (!transport) return undefined;
+  if (!transport && !signal) return undefined;
 
   const init: RequestInit = {};
-  if (transport.credentials !== undefined) {
+  if (transport?.credentials !== undefined) {
     init.credentials = transport.credentials;
   }
 
-  const headers = new Headers(transport.headers);
+  const headers = new Headers(transport?.headers);
   if ([...headers.keys()].length > 0) {
     init.headers = headers;
   }
+  if (signal) {
+    init.signal = signal;
+  }
 
-  return init.credentials !== undefined || init.headers !== undefined
+  return init.credentials !== undefined ||
+    init.headers !== undefined ||
+    init.signal !== undefined
     ? init
     : undefined;
 }

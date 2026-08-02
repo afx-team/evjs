@@ -14,7 +14,7 @@ A contribution is a declarative unit in the framework IR. It can produce
 generated artifacts, link those artifacts together, and attach them to
 framework slots.
 
-Keep `contribute(ctx)` deterministic and free of external side effects.
+Keep `emitIR(ctx)` deterministic and free of external side effects.
 evjs may evaluate it again when contributed source aliases change the
 framework graph.
 
@@ -24,7 +24,7 @@ relationships. evjs then materializes the final `.ev` tree and manifest.
 
 ```mermaid
 flowchart TB
-  Hook["contribute(ctx)"]
+  Hook["emitIR(ctx)"]
 
   subgraph Declare["Plugin declarations"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -98,9 +98,12 @@ Application bag contains enablement only; private factory configuration never
 enters CoreGraph. Page bags may contain the validated static Page value. A
 defined plugin normally uses its narrower `ctx.options` and `ctx.pages` views;
 each enabled Page entry is `{ page, options }`. The per-Page
-`contributePage()` form receives `ctx.pageOptions`. These flat fields preserve
-the descriptor's inferred types. Internal provenance and resolved settings are
-available before `contribute()` materializes generated code.
+`emitPageIR()` form receives `ctx.pageOptions`. These flat fields preserve
+the descriptor's inferred types. Its `ctx.emit` and `ctx.slot()` identities are
+automatically scoped to the current Page, so a plugin can reuse a local id such
+as `runtime` on every Page without manually prefixing `ctx.page.id`. Internal
+provenance and resolved settings are
+available before `emitIR()` materializes generated code.
 
 The Application view also exposes its `root`, `routingMode`, and owned Page,
 Route, and Document ids. An MPA therefore appears as one logical Application
@@ -120,6 +123,9 @@ artifacts together. The returned specifier is valid only inside generated
 source. Application source should not import `.ev` paths or
 `evjs:generated/*` specifiers.
 
+Contribution ids are local to the plugin (and, in `emitPageIR()`, to the
+current Page). The `@evjs/` prefix is reserved for framework namespacing.
+
 Generated modules use opaque refs instead of exposing filesystem paths:
 
 ```ts
@@ -127,7 +133,7 @@ import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
   id: "analytics",
-  contribute(ctx) {
+  emitIR(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -154,7 +160,7 @@ When a plugin replaces an entry but still needs the original framework facade,
 use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
 
 ```ts
-contribute(ctx) {
+emitIR(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -218,7 +224,7 @@ wrap earlier contributions; route layouts and wrappers remain outside plugin
 Page wrappers.
 
 ```ts
-contribute(ctx) {
+emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",

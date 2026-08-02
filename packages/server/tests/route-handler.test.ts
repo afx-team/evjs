@@ -14,9 +14,17 @@ async function fetch(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
+  return fetchRoutes([handler], path, init);
+}
+
+async function fetchRoutes(
+  handlers: ReturnType<typeof createRoute>[],
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
   const url = `http://localhost${path}`;
   const req = new Request(url, init);
-  const app = createApp({ routes: [handler] });
+  const app = createApp({ routes: handlers });
   return app.fetch(req);
 }
 
@@ -182,6 +190,79 @@ describe("createRoute", () => {
     const res = await fetch(handler, "/api/users/42");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: "42" });
+  });
+
+  it.each([
+    ["dynamic route first", false],
+    ["static route first", true],
+  ])("uses the most-specific route as the method owner with the %s", async (_description, staticFirst) => {
+    const dynamic = createRoute("/api/items/:id", {
+      GET: async (_req, ctx) =>
+        Response.json({ route: "dynamic", id: ctx.req.param("id") }),
+      POST: async (_req, ctx) =>
+        Response.json({ route: "dynamic", id: ctx.req.param("id") }),
+    });
+    const staticRoute = createRoute("/api/items/special", {
+      GET: async () => Response.json({ route: "static" }),
+    });
+    const routes = staticFirst
+      ? [staticRoute, dynamic]
+      : [dynamic, staticRoute];
+
+    const staticGet = await fetchRoutes(routes, "/api/items/special");
+    expect(staticGet.status).toBe(200);
+    await expect(staticGet.json()).resolves.toEqual({ route: "static" });
+
+    const staticPost = await fetchRoutes(routes, "/api/items/special", {
+      method: "POST",
+    });
+    expect(staticPost.status).toBe(405);
+    expect(staticPost.headers.get("Allow")).toBe("GET, OPTIONS, HEAD");
+    await expect(staticPost.text()).resolves.toBe("Method Not Allowed");
+
+    const staticOptions = await fetchRoutes(routes, "/api/items/special", {
+      method: "OPTIONS",
+    });
+    expect(staticOptions.status).toBe(204);
+    expect(staticOptions.headers.get("Allow")).toBe("GET, OPTIONS, HEAD");
+
+    const dynamicPost = await fetchRoutes(routes, "/api/items/42", {
+      method: "POST",
+    });
+    expect(dynamicPost.status).toBe(200);
+    await expect(dynamicPost.json()).resolves.toEqual({
+      route: "dynamic",
+      id: "42",
+    });
+
+    const dynamicDelete = await fetchRoutes(routes, "/api/items/42", {
+      method: "DELETE",
+    });
+    expect(dynamicDelete.status).toBe(405);
+    expect(dynamicDelete.headers.get("Allow")).toBe("GET, POST, OPTIONS, HEAD");
+  });
+
+  it("orders Hono wildcard routes after static routes", async () => {
+    const wildcard = createRoute("/api/*", {
+      GET: async () => Response.json({ route: "wildcard" }),
+    });
+    const staticRoute = createRoute("/api/items", {
+      GET: async () => Response.json({ route: "static" }),
+    });
+
+    const staticResponse = await fetchRoutes(
+      [wildcard, staticRoute],
+      "/api/items",
+    );
+    await expect(staticResponse.json()).resolves.toEqual({ route: "static" });
+
+    const wildcardResponse = await fetchRoutes(
+      [staticRoute, wildcard],
+      "/api/other",
+    );
+    await expect(wildcardResponse.json()).resolves.toEqual({
+      route: "wildcard",
+    });
   });
 
   it("returns 405 for undefined methods", async () => {

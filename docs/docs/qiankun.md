@@ -262,9 +262,9 @@ evPluginQiankunSlave({
 
 Path-like references are resolved from the project root before bundling.
 Package specifiers are resolved from project dependencies. From another
-plugin's `contribute()` hook, pass the opaque `GeneratedModuleRef` returned
-by `ctx.emit.module()` directly to `contributeQiankunMaster()` or
-`contributeQiankunSlave()`.
+plugin's `emitIR()` hook, pass the opaque `GeneratedModuleRef` returned
+by `ctx.emit.module()` directly to `emitQiankunMasterIR()` or
+`emitQiankunSlaveIR()`.
 
 ## Runtime Shape
 
@@ -448,8 +448,8 @@ consumed below a proxy prefix. Keep asset proxies in `dev.proxy`, not in
 
 ## Platform Composition
 
-A higher-level integration plugin can reuse `contributeQiankunMaster()` or
-`contributeQiankunSlave()` from its `contribute()` method and the matching
+A higher-level integration plugin can reuse `emitQiankunMasterIR()` or
+`emitQiankunSlaveIR()` from its `emitIR()` method and the matching
 `createQiankun*Hooks()` helper from `setup()`. It must normalize external data
 before passing a resolver or runtime module to the public bridge and compose
 returned hooks with any additional lifecycle behavior it owns.

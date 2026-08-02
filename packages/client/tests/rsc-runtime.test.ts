@@ -11,6 +11,9 @@ import type { ClientRuntime } from "../src/shared/runtime-config.js";
 const calls: string[] = [];
 const rootElements: unknown[] = [];
 let createRootFailure: Error | undefined;
+let createFromFetchImplementation:
+  | ((response: Promise<Response>, options?: unknown) => unknown)
+  | undefined;
 let hydrateRootFailure: Error | undefined;
 let renderFailure: Error | undefined;
 let unmountFailure: Error | undefined;
@@ -18,6 +21,9 @@ let unmountFailure: Error | undefined;
 vi.mock("react-server-dom-webpack/client", () => ({
   createFromFetch(response: Promise<Response>, options?: unknown) {
     calls.push("createFromFetch");
+    if (createFromFetchImplementation) {
+      return createFromFetchImplementation(response, options);
+    }
     return {
       type: "rsc-model",
       response,
@@ -58,6 +64,7 @@ vi.mock("react-dom/client", () => ({
 afterEach(() => {
   rootElements.length = 0;
   createRootFailure = undefined;
+  createFromFetchImplementation = undefined;
   hydrateRootFailure = undefined;
   renderFailure = undefined;
   unmountFailure = undefined;
@@ -234,6 +241,123 @@ describe("React RSC runtime", () => {
     ]);
   });
 
+  it("keeps a newer RSC mount when an older model resolves last", async () => {
+    calls.length = 0;
+    const mount = {} as Element;
+    const firstModel = createDeferred<unknown>();
+    const secondModel = createDeferred<unknown>();
+    const models = [firstModel, secondModel];
+    const requestSignals: Array<AbortSignal | null | undefined> = [];
+    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      requestSignals.push(args[1]?.signal);
+      return createFlightResponse();
+    });
+    createFromFetchImplementation = () => models.shift()?.promise;
+
+    const firstMount = mountReactRscPage({
+      runtime: createRuntime(),
+      pageId: "first",
+      mount,
+      hydrate: false,
+      fetch: fetchMock,
+    });
+    await waitForCreateFromFetchCalls(1);
+    const secondMount = mountReactRscPage({
+      runtime: createRuntime(),
+      pageId: "second",
+      mount,
+      hydrate: false,
+      fetch: fetchMock,
+    });
+    await waitForCreateFromFetchCalls(2);
+
+    const second = { type: "second-model" };
+    secondModel.resolve(second);
+    await expect(secondMount).resolves.toBe(second);
+    expect(rootElements).toEqual([second]);
+    expect(requestSignals[0]?.aborted).toBe(true);
+    expect(requestSignals[1]?.aborted).toBe(false);
+
+    firstModel.resolve({ type: "first-model" });
+    await expect(firstMount).resolves.toBeUndefined();
+    expect(rootElements).toEqual([second]);
+    expect(calls).toEqual([
+      "createFromFetch",
+      "createFromFetch",
+      "createRoot",
+      "render",
+    ]);
+
+    unmountReactRscPage(mount);
+    expect(requestSignals[1]?.aborted).toBe(true);
+  });
+
+  it("does not mount an RSC model that resolves after unmount", async () => {
+    calls.length = 0;
+    const mount = {} as Element;
+    const model = createDeferred<unknown>();
+    let requestSignal: AbortSignal | null | undefined;
+    createFromFetchImplementation = () => model.promise;
+
+    const pendingMount = mountReactRscPage({
+      runtime: createRuntime(),
+      pageId: "insights",
+      mount,
+      hydrate: false,
+      fetch: async (...args: Parameters<typeof fetch>) => {
+        requestSignal = args[1]?.signal;
+        return createFlightResponse();
+      },
+    });
+    await waitForCreateFromFetchCalls(1);
+
+    unmountReactRscPage(mount);
+    expect(requestSignal?.aborted).toBe(true);
+    model.resolve({ type: "late-model" });
+
+    await expect(pendingMount).resolves.toBeUndefined();
+    expect(calls).toEqual(["createFromFetch"]);
+    expect(rootElements).toEqual([]);
+  });
+
+  it("reports model failures only for the current RSC mount generation", async () => {
+    calls.length = 0;
+    const mount = {} as Element;
+    const firstModel = createDeferred<unknown>();
+    const secondModel = createDeferred<unknown>();
+    const models = [firstModel, secondModel];
+    const requestSignals: Array<AbortSignal | null | undefined> = [];
+    createFromFetchImplementation = () => models.shift()?.promise;
+    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      requestSignals.push(args[1]?.signal);
+      return createFlightResponse();
+    });
+
+    const firstMount = mountReactRscPage({
+      runtime: createRuntime(),
+      pageId: "first",
+      mount,
+      fetch: fetchMock,
+    });
+    await waitForCreateFromFetchCalls(1);
+    const secondMount = mountReactRscPage({
+      runtime: createRuntime(),
+      pageId: "second",
+      mount,
+      fetch: fetchMock,
+    });
+    await waitForCreateFromFetchCalls(2);
+
+    firstModel.reject(new Error("stale model failed"));
+    await expect(firstMount).resolves.toBeUndefined();
+    expect(requestSignals[0]?.aborted).toBe(true);
+
+    secondModel.reject(new Error("current model failed"));
+    await expect(secondMount).rejects.toThrow("current model failed");
+    expect(requestSignals[1]?.aborted).toBe(true);
+    expect(calls).toEqual(["createFromFetch", "createFromFetch"]);
+  });
+
   it("reports RSC React DOM root failures with evjs errors", async () => {
     const mount = {} as Element;
 
@@ -408,6 +532,7 @@ describe("React RSC runtime", () => {
     expect(calls).toEqual(["createFromFetch", "hydrateRoot"]);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.com/__evjs/rsc?page=insights&url=%2Finsights",
+      { signal: expect.any(AbortSignal) },
     );
     expect(rootElements[0]).toMatchObject({
       options: {
@@ -485,6 +610,7 @@ describe("React RSC runtime", () => {
     expect(calls).toEqual(["createFromFetch", "hydrateRoot"]);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.com/__evjs/rsc?page=insights&url=%2Finsights",
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -866,6 +992,28 @@ function createRuntime(): ClientRuntime {
 function createFlightResponse(body = "flight"): Response {
   return new Response(body, {
     headers: { "Content-Type": "text/x-component" },
+  });
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  reject(error: unknown): void;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function waitForCreateFromFetchCalls(count: number): Promise<void> {
+  await vi.waitFor(() => {
+    expect(calls.filter((call) => call === "createFromFetch")).toHaveLength(
+      count,
+    );
   });
 }
 

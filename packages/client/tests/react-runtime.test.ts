@@ -134,6 +134,51 @@ describe("createReactPageModule", () => {
     ]);
   });
 
+  it("does not let a stale page module unmount a newer root owner", async () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    const mountPoint = {} as Element;
+    const first = createReactPageModule({
+      component: Component,
+      render: "csr",
+      hydrate: "load",
+    });
+    const second = createReactPageModule({
+      component: Component,
+      render: "csr",
+      hydrate: "load",
+    });
+
+    await first.mount?.(mountPoint, {} as never);
+    await second.mount?.(mountPoint, {} as never);
+    expect(calls).toEqual([
+      "createRoot",
+      "render",
+      "unmount",
+      "createRoot",
+      "render",
+    ]);
+
+    await first.unmount?.(mountPoint, {} as never);
+    expect(calls).toEqual([
+      "createRoot",
+      "render",
+      "unmount",
+      "createRoot",
+      "render",
+    ]);
+
+    await second.unmount?.(mountPoint, {} as never);
+    expect(calls).toEqual([
+      "createRoot",
+      "render",
+      "unmount",
+      "createRoot",
+      "render",
+      "unmount",
+    ]);
+  });
+
   it("reports React page root failures with evjs errors", async () => {
     const mountPoint = {} as Element;
     const mod = createReactPageModule({

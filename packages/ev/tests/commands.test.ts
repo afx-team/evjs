@@ -41,6 +41,7 @@ import {
   PAGE_ROUTE_TYPES_USAGE_HINT,
 } from "../src/_internal/build/page-route-types.js";
 import type { Config } from "../src/config/index.js";
+import { staticDeploymentAdapter } from "../src/deployment/index.js";
 import type {
   BuildResult,
   FrameworkPageView,
@@ -263,6 +264,19 @@ function installControlledFsWatch() {
         ) {
           record.listener("change", path.basename(file));
         }
+      }
+    },
+    async dispatchTreeChange(file: string): Promise<void> {
+      const isActiveAncestor = (record: (typeof records)[number]) => {
+        if (record.watcher.close.mock.calls.length > 0) return false;
+        const relative = path.relative(record.target, file);
+        return !relative.startsWith("..") && !path.isAbsolute(relative);
+      };
+      await vi.waitFor(() => expect(records.some(isActiveAncestor)).toBe(true));
+      for (const record of records) {
+        if (!isActiveAncestor(record)) continue;
+        const relative = path.relative(record.target, file);
+        record.listener("rename", relative || path.basename(file));
       }
     },
     restore() {
@@ -831,6 +845,105 @@ describe("prepareFrameworkBuild", () => {
     );
   });
 
+  it("preserves the previous generated IR when a candidate write fails", async () => {
+    const cwd = await createSpaProject();
+    const initial = await prepareFrameworkBuild(
+      { routing: { mode: "spa" } },
+      { cwd },
+    );
+    await initial.dispose();
+    const generatedRoot = path.join(cwd, ".ev");
+    const initialSnapshot = await readDirectorySnapshot(generatedRoot);
+    const originalWriteFile = fsPromises.writeFile.bind(fsPromises);
+    let injectedFailure = false;
+    const writeSpy = vi
+      .spyOn(fsPromises, "writeFile")
+      .mockImplementation((async (
+        ...args: Parameters<typeof fsPromises.writeFile>
+      ) => {
+        const file = path.resolve(String(args[0]));
+        if (
+          !injectedFailure &&
+          file.includes(`${path.sep}.ev-candidate-`) &&
+          file.endsWith(path.join("framework", "build-plan.json"))
+        ) {
+          injectedFailure = true;
+          throw Object.assign(
+            new Error("injected generated IR write failure"),
+            {
+              code: "EIO",
+            },
+          );
+        }
+        return originalWriteFile(...args);
+      }) as typeof fsPromises.writeFile);
+
+    try {
+      await expect(
+        prepareFrameworkBuild({ routing: { mode: "spa" } }, { cwd }),
+      ).rejects.toThrow("injected generated IR write failure");
+    } finally {
+      writeSpy.mockRestore();
+    }
+
+    expect(injectedFailure).toBe(true);
+    expect(await readDirectorySnapshot(generatedRoot)).toEqual(initialSnapshot);
+    expect(
+      (await fs.promises.readdir(cwd)).filter(
+        (entry) =>
+          entry.startsWith(".ev-candidate-") ||
+          entry.startsWith(".ev-previous-"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("restores the previous generated IR when publication fails", async () => {
+    const cwd = await createSpaProject();
+    const initial = await prepareFrameworkBuild(
+      { routing: { mode: "spa" } },
+      { cwd },
+    );
+    await initial.dispose();
+    const generatedRoot = path.join(cwd, ".ev");
+    const initialSnapshot = await readDirectorySnapshot(generatedRoot);
+    const originalRename = fsPromises.rename.bind(fsPromises);
+    let injectedFailure = false;
+    const renameSpy = vi.spyOn(fsPromises, "rename").mockImplementation((async (
+      ...args: Parameters<typeof fsPromises.rename>
+    ) => {
+      const source = path.resolve(String(args[0]));
+      if (
+        !injectedFailure &&
+        path.basename(source).startsWith(".ev-candidate-")
+      ) {
+        injectedFailure = true;
+        throw Object.assign(
+          new Error("injected generated IR publication failure"),
+          { code: "EIO" },
+        );
+      }
+      return originalRename(...args);
+    }) as typeof fsPromises.rename);
+
+    try {
+      await expect(
+        prepareFrameworkBuild({ routing: { mode: "spa" } }, { cwd }),
+      ).rejects.toThrow("injected generated IR publication failure");
+    } finally {
+      renameSpy.mockRestore();
+    }
+
+    expect(injectedFailure).toBe(true);
+    expect(await readDirectorySnapshot(generatedRoot)).toEqual(initialSnapshot);
+    expect(
+      (await fs.promises.readdir(cwd)).filter(
+        (entry) =>
+          entry.startsWith(".ev-candidate-") ||
+          entry.startsWith(".ev-previous-"),
+      ),
+    ).toEqual([]);
+  });
+
   it("exposes CLI flags to setup without running beforeBuild during prepare", async () => {
     const cwd = await createProject();
     const events: string[] = [];
@@ -863,6 +976,210 @@ describe("prepareFrameworkBuild", () => {
     );
 
     expect(events).toEqual(["setup:true:true"]);
+  });
+
+  it("keeps one immutable CLI flag snapshot for the complete plugin lifecycle", async () => {
+    const cwd = await createProject();
+    const flags = { feature: ["initial"] };
+    const events: string[] = [];
+    const readFeature = (value: unknown) =>
+      Array.isArray(value) ? value.join(",") : String(value);
+    const plugin: Plugin<Record<string, never>> = {
+      id: "stable-cli-flags",
+      configure(_config, context) {
+        events.push(`configure:${readFeature(context.flags?.feature)}`);
+      },
+      setup(context) {
+        events.push(`setup:${readFeature(context.flags?.feature)}`);
+        return {
+          dispose(disposeContext) {
+            events.push(
+              `dispose:${readFeature(disposeContext.flags?.feature)}`,
+            );
+          },
+        };
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+      },
+      { cwd, flags },
+    );
+    flags.feature.push("caller-mutation");
+    await prepared.dispose();
+
+    expect(events).toEqual([
+      "configure:initial",
+      "setup:initial",
+      "dispose:initial",
+    ]);
+    expect(flags.feature).toEqual(["initial", "caller-mutation"]);
+  });
+
+  it("reuses the initial CLI flag snapshot across dev config reloads", async () => {
+    const cwd = await createSpaProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    const flags = { feature: ["initial"] };
+    const events: string[] = [];
+
+    function readFeature(value: unknown): string {
+      return Array.isArray(value) ? value.join(",") : String(value);
+    }
+
+    function createFlagsPlugin(
+      snapshot: "old" | "candidate",
+    ): Plugin<Record<string, never>> {
+      return {
+        id: "stable-dev-cli-flags",
+        configure(_config, context) {
+          events.push(
+            `configure:${snapshot}:${readFeature(context.flags?.feature)}`,
+          );
+        },
+        setup(context) {
+          events.push(
+            `setup:${snapshot}:${readFeature(context.flags?.feature)}`,
+          );
+          return {
+            dispose(disposeContext) {
+              events.push(
+                `dispose:${snapshot}:${readFeature(disposeContext.flags?.feature)}`,
+              );
+            },
+          };
+        },
+      };
+    }
+
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+      plugins: [createFlagsPlugin("old")],
+    };
+    let currentConfig = oldConfig;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "stable-dev-cli-flags",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            events.push("update");
+          },
+        });
+      },
+    };
+    const running = dev(oldConfig, {
+      cwd,
+      bundler,
+      flags,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "bundler.dev");
+      flags.feature.push("caller-mutation");
+      currentConfig = {
+        ...oldConfig,
+        plugins: [createFlagsPlugin("candidate")],
+      };
+      await writeFile(configPath, "export default { changed: true };", "utf-8");
+      await controlledWatch.dispatchFileChange(configPath);
+      await waitForEvent(events, "dispose:old:initial");
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      controlledWatch.restore();
+    }
+
+    expect(events).toEqual([
+      "configure:old:initial",
+      "setup:old:initial",
+      "bundler.dev",
+      "configure:candidate:initial",
+      "setup:candidate:initial",
+      "update",
+      "dispose:old:initial",
+      "dispose:candidate:initial",
+    ]);
+    expect(flags.feature).toEqual(["initial", "caller-mutation"]);
+  });
+
+  it("isolates one plugin instance across concurrent project preparations", async () => {
+    const spaCwd = await createSpaProject();
+    const mpaCwd = await createSpaProject();
+    const configuredModes = new Map<string, "spa" | "mpa">();
+    const setupModes = new Map<string, "spa" | "mpa">();
+    let configureArrivals = 0;
+    let releaseConfigureHooks: (() => void) | undefined;
+    const configureHooksReady = new Promise<void>((resolve) => {
+      releaseConfigureHooks = resolve;
+    });
+    const contextual = definePlugin({
+      id: "concurrent-project-context",
+      application: pluginOptions<{ routingMode: "spa" | "mpa" }>({
+        defaults(context) {
+          return { routingMode: context.routingMode };
+        },
+      }),
+      async configure(_config, context) {
+        configuredModes.set(context.cwd, context.options.routingMode);
+        configureArrivals++;
+        if (configureArrivals === 2) releaseConfigureHooks?.();
+        await configureHooksReady;
+      },
+      setup(context) {
+        setupModes.set(context.cwd, context.options.routingMode);
+      },
+    });
+    const plugin = contextual();
+
+    const [spaPrepared, mpaPrepared] = await Promise.all([
+      prepareFrameworkBuild(
+        { routing: { mode: "spa" }, plugins: [plugin] },
+        { cwd: spaCwd },
+      ),
+      prepareFrameworkBuild(
+        { routing: { mode: "mpa" }, plugins: [plugin] },
+        { cwd: mpaCwd },
+      ),
+    ]);
+
+    try {
+      expect(configuredModes).toEqual(
+        new Map([
+          [spaCwd, "spa"],
+          [mpaCwd, "mpa"],
+        ]),
+      );
+      expect(setupModes).toEqual(configuredModes);
+    } finally {
+      await Promise.all([spaPrepared.dispose(), mpaPrepared.dispose()]);
+    }
   });
 
   it("rolls back earlier plugin setups when a later setup fails", async () => {
@@ -946,9 +1263,12 @@ describe("prepareFrameworkBuild", () => {
       "export default function Page() { return null; }",
       "utf-8",
     );
+    let emittedPageId: string | undefined;
     const plugin: Plugin<Record<string, never>> = {
       id: "generated-fixture",
-      contribute(ctx) {
+      emitIR(ctx) {
+        expect(Object.isFrozen(ctx)).toBe(true);
+        expect(Object.isFrozen(ctx.emit)).toBe(true);
         expect(Object.isFrozen(ctx.config)).toBe(true);
         expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
         expect(Object.isFrozen(ctx.config.plugins[0])).toBe(true);
@@ -969,6 +1289,20 @@ describe("prepareFrameworkBuild", () => {
           scope: { kind: "application" },
           source: "export const value = 1;",
         });
+        emittedPageId = ctx.framework.pages[0]?.id;
+        if (!emittedPageId) throw new Error("Expected one framework Page.");
+        const pageScope: { kind: "page"; pageId: string } = {
+          kind: "page",
+          pageId: emittedPageId,
+        };
+        const pageData = ctx.emit.data({
+          id: "page-data",
+          scope: pageScope,
+          value: { enabled: true },
+        });
+        expect(Object.isFrozen(pageData)).toBe(true);
+        expect(Reflect.set(pageData as object, "key", "mutated")).toBe(false);
+        pageScope.pageId = "mutated-after-emit";
         const entryCode = ctx.emit.module({
           id: "entry-code",
           scope: { kind: "application" },
@@ -978,7 +1312,9 @@ describe("prepareFrameworkBuild", () => {
               "window.__evGeneratedValue = value;",
             ].join("\n"),
         });
-        ctx.slot("client.entry").add({
+        const clientEntrySlot = ctx.slot("client.entry");
+        expect(Object.isFrozen(clientEntrySlot)).toBe(true);
+        clientEntrySlot.add({
           id: "entry-import",
           module: runtime,
           position: "before-main",
@@ -1016,6 +1352,9 @@ describe("prepareFrameworkBuild", () => {
     const entryCodeModule = manifest.generated?.modules.find(
       (module) => module.id === "entry-code",
     );
+    const pageDataModule = manifest.generated?.modules.find(
+      (module) => module.id === "page-data",
+    );
     const entry = manifest.generated?.entries.find(
       (item) => item.name === "main",
     );
@@ -1039,6 +1378,10 @@ describe("prepareFrameworkBuild", () => {
     expect(runtimeModule?.specifier).toBe(
       "evjs:generated/generated-fixture/runtime",
     );
+    expect(pageDataModule?.scope).toEqual({
+      kind: "page",
+      pageId: emittedPageId,
+    });
     expect(manifest.graph).toMatchObject({ rootDir: cwd });
     expect(frameworkGraph.graph.rootDir).toBe(cwd);
     expect(frameworkPlan.plan.entries[0]?.import).toBe("./.ev/entries/main.ts");
@@ -1115,7 +1458,7 @@ describe("prepareFrameworkBuild", () => {
     const collidingIds = ["runtime", "runtime*`=)", "runtime{`{+"];
     const plugin: Plugin<Record<string, never>> = {
       id: "collision",
-      contribute(ctx) {
+      emitIR(ctx) {
         for (const id of collidingIds) {
           ctx.emit.module({
             id,
@@ -1236,7 +1579,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "spa-page-wrappers",
-      contribute(ctx) {
+      emitIR(ctx) {
         const first = ctx.emit.module({
           id: "first-wrapper",
           scope: { kind: "application" },
@@ -1415,7 +1758,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "all-runtime-page-wrappers",
-      contribute(ctx) {
+      emitIR(ctx) {
         const first = ctx.emit.module({
           id: "first-wrapper",
           scope: { kind: "application" },
@@ -1573,7 +1916,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-page-wrapper-runtime",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.slot("page.wrapper").add({
           id: "server-wrapper",
           module: "./src/ServerWrapper.tsx",
@@ -1607,7 +1950,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "tmp-parity",
-      contribute(ctx) {
+      emitIR(ctx) {
         const config = ctx.emit.data({
           id: "ctoken-config",
           scope: { kind: "application" },
@@ -1867,7 +2210,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-generated-data",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.emit.data({
           id: "payload",
           scope: { kind: "application" },
@@ -1903,7 +2246,7 @@ describe("prepareFrameworkBuild", () => {
     > = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "observe-semantic-pages",
-      contribute(ctx) {
+      emitIR(ctx) {
         observedPages = ctx.framework.pages.map((page) => {
           return {
             id: page.id,
@@ -1984,7 +2327,7 @@ describe("prepareFrameworkBuild", () => {
     let observedClientEntries: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "observe-page-anchors",
-      contribute(ctx) {
+      emitIR(ctx) {
         observedPages = ctx.framework.pages.map((page) => ({
           id: page.id,
           source: page.source,
@@ -2092,7 +2435,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-spa-page-entry",
-      contribute(ctx) {
+      emitIR(ctx) {
         const pageModule = ctx.emit.module({
           id: "page-entry",
           scope: { kind: "page", pageId: "index" },
@@ -2131,7 +2474,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-spa-page-document",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.slot("html.tag").add({
           id: "page-meta",
           tag: "meta",
@@ -2166,7 +2509,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "mpa-application-target",
-      contribute(ctx) {
+      emitIR(ctx) {
         const installer = ctx.emit.module({
           id: "installer",
           scope: { kind: "application" },
@@ -2228,7 +2571,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-client-entry-runtime",
-      contribute(ctx) {
+      emitIR(ctx) {
         const installer = ctx.emit.module({
           id: "installer",
           scope: { kind: "application" },
@@ -2265,7 +2608,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "unknown-constructor-page",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.emit.module({
           id: "constructor-module",
           scope: { kind: "page", pageId: "constructor" },
@@ -2319,7 +2662,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "source-alias",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.slot("resolve.alias").add({
           id: "features",
           specifier: "@features",
@@ -2360,6 +2703,26 @@ describe("prepareFrameworkBuild", () => {
         }),
       ]),
     );
+    const serverEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/server.ts"),
+      "utf-8",
+    );
+    for (const serverFunction of generatedGraph.graph.serverFunctions) {
+      expect(serverEntry).toContain(
+        `serverFunctions.register(${JSON.stringify(serverFunction.id)},`,
+      );
+      expect(serverEntry).toContain(
+        `[${JSON.stringify(serverFunction.exportName)}]`,
+      );
+    }
+    expect(serverEntry).toContain("createServerFunctionRegistry()");
+    expect(
+      serverEntry.match(/import \* as serverFunctionModule\d+ from/g),
+    ).toHaveLength(2);
+    expect(serverEntry).toContain(
+      "createApp({ middlewares, routes, serverFunctions,",
+    );
+    expect(serverEntry).not.toContain("registerServerReference");
     await prepared.dispose();
   });
 
@@ -2373,7 +2736,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "entry-wrapper",
-      contribute(ctx) {
+      emitIR(ctx) {
         const entry = ctx.framework.getApplicationEntry();
         if (!entry) throw new Error("missing Application entry");
         const original = ctx.emit.entryFacade({
@@ -2452,7 +2815,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "server-contribution",
-      contribute(ctx) {
+      emitIR(ctx) {
         const middleware = ctx.emit.module({
           id: "request-middleware",
           scope: { kind: "server" },
@@ -2533,7 +2896,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "duplicate-contributions",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.emit.module({
           id: "same",
           scope: { kind: "application" },
@@ -2565,7 +2928,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createSpaProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "stable-contributor",
-      contribute(ctx) {
+      emitIR(ctx) {
         expect(Reflect.set(this, "id", "mutated-contributor")).toBe(false);
         const generated = ctx.emit.module({
           id: "runtime",
@@ -2617,7 +2980,7 @@ describe("prepareFrameworkBuild", () => {
     const cwd = await createProject();
     const plugin: Plugin<Record<string, never>> = {
       id: "invalid-contribution",
-      contribute(ctx) {
+      emitIR(ctx) {
         const module = ctx.emit.module({
           id: "module",
           scope: { kind: "application" },
@@ -2851,6 +3214,165 @@ describe("build", () => {
     ).resolves.toContain('"platform": "test"');
   });
 
+  it("publishes production framework output transactionally", async () => {
+    const cwd = await createProject();
+    for (const pageId of ["alpha", "beta"]) {
+      await writeFile(
+        path.join(cwd, `src/pages/${pageId}/page.tsx`),
+        `export default function ${pageId}() { return null; }`,
+        "utf-8",
+      );
+    }
+
+    const distDir = path.join(cwd, "dist");
+    const clientDir = path.join(distDir, "client");
+    const bundlerAsset = path.join(clientDir, "bundler.js");
+    let buildNumber = 0;
+    let failCompile = false;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "transactional-production-output",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        buildNumber += 1;
+        const buildRoot = path.resolve(cwd, plan.distDir);
+        const buildClientDir = path.resolve(cwd, plan.output.clientDir);
+        await fs.promises.rm(buildRoot, { recursive: true, force: true });
+        await writeFile(
+          path.join(buildClientDir, "bundler.js"),
+          `bundler:${buildNumber}`,
+          "utf-8",
+        );
+        const clientEntryAssets = Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "client")
+            .map((entry) => [
+              entry.name,
+              { js: [`${entry.name}.${buildNumber}.js`], css: [] },
+            ]),
+        );
+        for (const asset of Object.values(clientEntryAssets).flatMap(
+          (assets) => assets.js,
+        )) {
+          await writeFile(
+            path.join(buildClientDir, asset),
+            `asset:${buildNumber}:${asset}`,
+            "utf-8",
+          );
+        }
+        if (failCompile) {
+          throw new Error("injected bundler compile failure");
+        }
+        return {
+          clientEntryAssets,
+          emittedFiles: {
+            client: [
+              "bundler.js",
+              ...Object.values(clientEntryAssets).flatMap(
+                (assets) => assets.js,
+              ),
+            ],
+          },
+        };
+      },
+      async dev() {},
+    };
+    function releasePlugin(
+      release: "old" | "next",
+      failure?: "output" | "afterBuild",
+    ): Plugin<Record<string, never>> {
+      return {
+        id: "transactional-production-output",
+        setup() {
+          let htmlTransforms = 0;
+          return {
+            transformOutput(output) {
+              output.deployment = { release };
+            },
+            transformHtml(document) {
+              htmlTransforms += 1;
+              document.body?.appendChild(
+                document.createComment(` release:${release} `),
+              );
+              if (failure === "output" && htmlTransforms === 2) {
+                throw new Error("injected framework output failure");
+              }
+            },
+            afterBuild() {
+              if (failure === "afterBuild") {
+                throw new Error("injected afterBuild failure");
+              }
+            },
+          };
+        },
+      };
+    }
+    const config = (
+      release: "old" | "next",
+      failure?: "output" | "afterBuild",
+    ): Config<Record<string, never>> => ({
+      output: { client: "dist/client", server: "dist/server" },
+      plugins: [releasePlugin(release, failure)],
+      routing: { mode: "mpa" },
+    });
+
+    await build(config("old"), { cwd, bundler });
+    const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    const htmlPaths = ["alpha", "beta"].map((pageId) =>
+      path.join(clientDir, pageId, "index.html"),
+    );
+    const previousDist = await readDirectorySnapshot(distDir);
+
+    failCompile = true;
+    await expect(build(config("next"), { cwd, bundler })).rejects.toThrow(
+      "injected bundler compile failure",
+    );
+    failCompile = false;
+    expect(await readDirectorySnapshot(distDir)).toEqual(previousDist);
+
+    await expect(
+      build(config("next", "output"), { cwd, bundler }),
+    ).rejects.toThrow("injected framework output failure");
+    expect(await readDirectorySnapshot(distDir)).toEqual(previousDist);
+
+    await build(config("next"), { cwd, bundler });
+    const nextMetadata = await fs.promises.readFile(metadataPath, "utf-8");
+    expect(nextMetadata).toContain('"release": "next"');
+    expect(JSON.parse(nextMetadata).paths).toEqual({
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    });
+    expect(nextMetadata).not.toContain(".candidate");
+    for (const htmlPath of htmlPaths) {
+      const html = await fs.promises.readFile(htmlPath, "utf-8");
+      expect(html).toContain("release:next");
+      expect(html).not.toContain("release:old");
+    }
+    await expect(fs.promises.readFile(bundlerAsset, "utf-8")).resolves.toBe(
+      "bundler:4",
+    );
+    expect(
+      Object.keys(await readDirectorySnapshot(clientDir)).some((file) =>
+        file.endsWith(".4.js"),
+      ),
+    ).toBe(true);
+
+    await expect(
+      build(config("old", "afterBuild"), { cwd, bundler }),
+    ).rejects.toThrow("injected afterBuild failure");
+    await expect(
+      fs.promises.readFile(metadataPath, "utf-8"),
+    ).resolves.toContain('"release": "old"');
+    for (const htmlPath of htmlPaths) {
+      const html = await fs.promises.readFile(htmlPath, "utf-8");
+      expect(html).toContain("release:old");
+      expect(html).not.toContain("release:next");
+    }
+    await expect(fs.promises.readFile(bundlerAsset, "utf-8")).resolves.toBe(
+      "bundler:5",
+    );
+  });
+
   it("rejects framework HTML that overlaps the bundler output inventory", async () => {
     const cwd = await createSpaProject();
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -2956,6 +3478,40 @@ describe("build", () => {
     );
     await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe(
       "outside",
+    );
+    const unexpectedDist = await fs.promises.lstat(path.join(cwd, "dist"));
+    expect(unexpectedDist.isSymbolicLink()).toBe(true);
+  });
+
+  it("preserves a canonical dist tree created while production output is staged", async () => {
+    const cwd = await createSpaProject();
+    const canonicalRoot = path.join(cwd, "dist");
+    const sentinel = path.join(canonicalRoot, "concurrent-sentinel.txt");
+    const baseBundler = createMockBundler([]);
+    const buildMock = baseBundler.build;
+    if (!buildMock) throw new Error("Expected mock build implementation.");
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      ...baseBundler,
+      async build(context) {
+        const facts = await buildMock(context);
+        await writeFile(sentinel, "concurrent", "utf-8");
+        return facts;
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler },
+      ),
+    ).rejects.toThrow(
+      "plan.distDir changed while production output was being staged",
+    );
+    await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe(
+      "concurrent",
     );
   });
 
@@ -3810,7 +4366,7 @@ describe("build", () => {
     let transformSawContribution = false;
     const plugin: Plugin<Record<string, never>> = {
       id: "html-contribution",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.slot("html.tag").add({
           id: "meta",
           tag: "meta",
@@ -3898,7 +4454,7 @@ describe("build", () => {
     let frameworkPageMetadata: unknown;
     const plugin: Plugin<Record<string, never>> = {
       id: "page-metadata-order",
-      contribute(ctx) {
+      emitIR(ctx) {
         frameworkPageMetadata = ctx.framework.pages.find(
           (page) => page.id === "index",
         )?.metadata;
@@ -4014,7 +4570,7 @@ describe("build", () => {
     const transformedFiles: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "server-document-shell",
-      contribute(ctx) {
+      emitIR(ctx) {
         ctx.slot("html.tag").add({
           id: "server-document-contribution",
           target: { kind: "page", pageId: "dashboard" },
@@ -4217,7 +4773,7 @@ describe("build", () => {
     );
     const plugin: Plugin<Record<string, never>> = {
       id: "page-scope",
-      contribute(ctx) {
+      emitIR(ctx) {
         const homeEntry = ctx.emit.module({
           id: "home-entry",
           scope: { kind: "page", pageId: "home" },
@@ -4917,7 +5473,7 @@ describe("build", () => {
       Record<string, never>
     >({
       id: "document-alias-observer",
-      contribute(ctx) {
+      emitIR(ctx) {
         frameworkAliases.push(
           ctx.framework.documents.find(
             (document) =>
@@ -5562,7 +6118,7 @@ describe("build", () => {
     expect(applicationHtml).toContain('src="/main.js"');
   });
 
-  it("removes stale framework HTML while preserving replaced and unrelated files", async () => {
+  it("replaces the production dist tree while preserving current bundler HTML", async () => {
     const cwd = await createProject();
     let bundlerOwnedFile: string | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -5579,7 +6135,7 @@ describe("build", () => {
         );
         if (bundlerOwnedFile) {
           await writeFile(
-            path.join(cwd, "dist/client", bundlerOwnedFile),
+            path.join(cwd, plan.output.clientDir, bundlerOwnedFile),
             "bundler replacement",
             "utf-8",
           );
@@ -5646,10 +6202,8 @@ describe("build", () => {
     );
 
     expect(fs.readFileSync(reportHtml, "utf-8")).toBe("bundler replacement");
-    expect(fs.readFileSync(archiveHtml, "utf-8")).toContain(
-      "plugin replacement",
-    );
-    expect(fs.readFileSync(unrelatedHtml, "utf-8")).toContain("manual");
+    expect(fs.existsSync(archiveHtml)).toBe(false);
+    expect(fs.existsSync(unrelatedHtml)).toBe(false);
   });
 
   it("runs plugin config hooks before resolving config", async () => {
@@ -7898,7 +8452,7 @@ describe("dev", () => {
     let contributionCalls = 0;
     const plugin: Plugin<Record<string, never>> = {
       id: "late-watch-registration-failure",
-      contribute(ctx) {
+      emitIR(ctx) {
         contributionCalls += 1;
         if (contributionCalls > 1) ctx.addWatchFile(forbiddenPath);
       },
@@ -8241,7 +8795,7 @@ describe("dev", () => {
           setupCalls += 1;
           ctx.addWatchFile(pluginDataPath);
         },
-        contribute(ctx) {
+        emitIR(ctx) {
           const value = fs.readFileSync(pluginDataPath, "utf-8");
           events.push(`contribution:${value}`);
           ctx.emit.data({
@@ -8348,7 +8902,7 @@ describe("dev", () => {
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
         id: "startup-paused-plugin-contributions",
-        async contribute(ctx) {
+        async emitIR(ctx) {
           contributionCalls += 1;
           events.push(`contribution:${contributionCalls}`);
           if (contributionCalls === 1) {
@@ -8470,7 +9024,7 @@ describe("dev", () => {
       let loadConfigCalls = 0;
       const plugin: Plugin<Record<string, never>> = {
         id: "startup-analysis-dependency-reconciliation",
-        async contribute(ctx) {
+        async emitIR(ctx) {
           contributionCalls += 1;
           const source = fs.readFileSync(dependency, "utf-8");
           const value = source.includes("changed-during-startup")
@@ -9124,7 +9678,7 @@ describe("dev", () => {
                 },
               };
             },
-            contribute(context) {
+            emitIR(context) {
               contributionCount += 1;
               events.push(`contribution:${contributionCount}`);
               context.emit.data({
@@ -9263,35 +9817,43 @@ describe("dev", () => {
     ]);
   });
 
-  it("restores framework-owned dev output when a candidate afterBuild hook fails", async () => {
+  it("keeps a committed dev candidate when afterBuild fails", async () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
     const controlledWatch = installControlledFsWatch();
     const events: string[] = [];
-    const stopCapturingRollback = captureFrameworkWarning(
-      events,
-      "Unable to apply framework plan update without restart:",
-      "candidate afterBuild failed",
-      "candidate-rolled-back",
-    );
 
-    function createOutputPlugin(
+    function createReleasePlugin(
       snapshot: "old" | "candidate",
-      failAfterBuild = false,
     ): Plugin<Record<string, never>> {
       return {
-        id: "framework-output-after-build-rollback",
+        id: "framework-output-after-build-release",
         setup() {
           return {
+            transformOutput(output) {
+              output.deployment = { snapshot };
+            },
             transformHtml(document) {
               document.body?.appendChild(
                 document.createComment(` snapshot:${snapshot} `),
               );
             },
+          };
+        },
+      };
+    }
+
+    function createFailingPlugin(
+      snapshot: "old" | "candidate",
+    ): Plugin<Record<string, never>> {
+      return {
+        id: "framework-output-after-build-failure",
+        setup() {
+          return {
             afterBuild() {
               events.push(`afterBuild:${snapshot}`);
-              if (failAfterBuild) {
+              if (snapshot === "candidate") {
                 throw new Error("candidate afterBuild failed");
               }
             },
@@ -9303,13 +9865,19 @@ describe("dev", () => {
     const oldConfig: Config<Record<string, never>> = {
       output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "spa" },
-      plugins: [createOutputPlugin("old")],
+      plugins: [
+        createReleasePlugin("old"),
+        staticDeploymentAdapter(),
+        createFailingPlugin("old"),
+      ],
     };
     let currentConfig = oldConfig;
-    let initialHtml: Buffer | undefined;
-    let initialMetadata: Buffer | undefined;
     const htmlPath = path.join(cwd, "dist/client/index.html");
     const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
+    const deploymentArtifactPath = path.join(
+      cwd,
+      "dist/client/deployment.static.json",
+    );
     const factsForPlan = (plan: BuildPlan): BundlerBuildFacts => ({
       clientEntryAssets: Object.fromEntries(
         plan.entries
@@ -9328,8 +9896,6 @@ describe("dev", () => {
         await callbacks.onBuildFacts(generation, factsForPlan(plan), {
           isRebuild: false,
         });
-        initialHtml = await fs.promises.readFile(htmlPath);
-        initialMetadata = await fs.promises.readFile(metadataPath);
         events.push("initial-output");
         let selectedPlan = plan;
         let selectedGeneration = generation;
@@ -9343,11 +9909,7 @@ describe("dev", () => {
             },
           },
           {
-            async onResume(outcome) {
-              if (outcome === "rollback") {
-                selectedPlan = plan;
-                selectedGeneration = generation;
-              }
+            async onResume() {
               await callbacks.onBuildFacts(
                 selectedGeneration,
                 factsForPlan(selectedPlan),
@@ -9379,32 +9941,47 @@ describe("dev", () => {
       await waitForEvent(events, "initial-output");
       currentConfig = {
         ...oldConfig,
-        plugins: [createOutputPlugin("candidate", true)],
+        plugins: [
+          createReleasePlugin("candidate"),
+          staticDeploymentAdapter(),
+          createFailingPlugin("candidate"),
+        ],
       };
       await writeFile(dependency, '{"mode":"candidate"}', "utf-8");
       await controlledWatch.dispatchFileChange(dependency);
-      await waitForEvent(events, "candidate-rolled-back");
+      await expect(
+        Promise.race([
+          running,
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("candidate afterBuild timeout")),
+              devUpdateTimeoutMs,
+            ),
+          ),
+        ]),
+      ).rejects.toThrow("candidate afterBuild failed");
 
-      expect(initialHtml).toBeDefined();
-      expect(initialMetadata).toBeDefined();
-      await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
-        initialHtml,
+      await expect(fs.promises.readFile(htmlPath, "utf-8")).resolves.toContain(
+        "snapshot:candidate",
       );
-      await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
-        initialMetadata,
-      );
-      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
-        "snapshot:old",
-      );
-      process.emit("SIGINT");
-      await running;
+      await expect(
+        fs.promises.readFile(metadataPath, "utf-8"),
+      ).resolves.toContain('"snapshot": "candidate"');
+      await expect(
+        fs.promises.readFile(deploymentArtifactPath, "utf-8"),
+      ).resolves.toContain('"snapshot": "candidate"');
+      expect(events).toEqual([
+        "afterBuild:old",
+        "initial-output",
+        "candidate-output",
+        "afterBuild:candidate",
+      ]);
     } finally {
       if (!settled) {
         process.emit("SIGINT");
         await running.catch(() => {});
       }
       controlledWatch.restore();
-      stopCapturingRollback();
     }
 
     expect(events).toEqual([
@@ -9412,8 +9989,6 @@ describe("dev", () => {
       "initial-output",
       "candidate-output",
       "afterBuild:candidate",
-      "afterBuild:old",
-      "candidate-rolled-back",
     ]);
   });
 
@@ -9925,7 +10500,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("restores framework-owned output when an ordinary dev rebuild fails", async () => {
+  it("keeps published framework output when an ordinary dev afterBuild hook fails", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
     const htmlPath = path.join(cwd, "dist/client/index.html");
@@ -9956,14 +10531,17 @@ describe("dev", () => {
           callbacks.onBuildFacts(generation, facts, { isRebuild: true }),
         ).rejects.toThrow("ordinary rebuild afterBuild failed");
         events.push("rebuild-rejected");
-        await expect(fs.promises.readFile(htmlPath)).resolves.toEqual(
+        await expect(fs.promises.readFile(htmlPath)).resolves.not.toEqual(
           initialHtml,
         );
-        await expect(fs.promises.readFile(metadataPath)).resolves.toEqual(
+        await expect(fs.promises.readFile(metadataPath)).resolves.not.toEqual(
           initialMetadata,
         );
         expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
-          "cycle:initial",
+          "cycle:failed",
+        );
+        expect(await fs.promises.readFile(metadataPath, "utf-8")).toContain(
+          '"cycle": "failed"',
         );
         process.emit("SIGINT");
       },
@@ -9977,9 +10555,16 @@ describe("dev", () => {
           {
             id: "framework-output-rebuild-rollback",
             setup() {
+              let cycle = "initial";
               return {
+                beforeBuild(context) {
+                  cycle = context.isRebuild ? "failed" : "initial";
+                },
+                transformOutput(output) {
+                  output.deployment = { cycle };
+                },
                 transformHtml(document, context) {
-                  const cycle = context.isRebuild ? "failed" : "initial";
+                  cycle = context.isRebuild ? "failed" : "initial";
                   events.push(`transform:${cycle}`);
                   document.body?.appendChild(
                     document.createComment(` cycle:${cycle} `),
@@ -10393,7 +10978,7 @@ describe("dev", () => {
         setupCount += 1;
         return {};
       },
-      contribute() {
+      emitIR() {
         contributionCount += 1;
         events.push(`contribution:${contributionCount}`);
       },
@@ -10744,6 +11329,106 @@ describe("dev", () => {
         await running.catch(() => undefined);
       }
       stopCapturingFailures();
+    }
+  });
+
+  it("does not apply a queued Page update after dev shutdown starts", async () => {
+    const cwd = await createSpaProject();
+    const pageDirectory = path.join(cwd, "src/pages/catalog/details");
+    const pageConfig = path.join(pageDirectory, "page.config.ts");
+    const controlledWatch = installControlledFsWatch();
+    const events: string[] = [];
+    let updateCount = 0;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "queued-page-update-shutdown",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        const appEntry = plan.entries.find(
+          (entry) => entry.metadata?.type === "pages-app",
+        );
+        recordPagesAppRoutes("initial", appEntry?.metadata, events);
+        return createTestDevController({
+          async updatePlan(update, options) {
+            options.activate();
+            const nextAppEntry = update.next.entries.find(
+              (entry) => entry.metadata?.type === "pages-app",
+            );
+            if (nextAppEntry?.metadata?.type !== "pages-app") return;
+            if (
+              !nextAppEntry.metadata.routes.some(
+                (route) => route.path === "/catalog/details",
+              )
+            ) {
+              return;
+            }
+            updateCount++;
+            events.push(`added-page:${updateCount}`);
+            if (updateCount !== 1) return;
+
+            await writeFile(
+              pageConfig,
+              'export default { title: "Queued update" };',
+              "utf-8",
+            );
+            await controlledWatch.dispatchTreeChange(pageConfig);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            process.emit("SIGINT");
+          },
+        });
+      },
+    };
+
+    let running: Promise<void> | undefined;
+    let settled = false;
+    try {
+      running = dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler },
+      );
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await waitForEvent(events, "initial:/");
+      await writeFile(
+        path.join(pageDirectory, "page.tsx"),
+        "export default function Details() { return null; }",
+        "utf-8",
+      );
+      await writeFile(
+        pageConfig,
+        'export default { title: "Details" };',
+        "utf-8",
+      );
+      await controlledWatch.dispatchTreeChange(pageConfig);
+
+      await Promise.race([
+        running,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("queued Page update shutdown timed out")),
+            devUpdateTimeoutMs,
+          ),
+        ),
+      ]);
+
+      expect(events).toEqual(["initial:/", "added-page:1"]);
+    } finally {
+      if (running && !settled) {
+        process.emit("SIGINT");
+        await running.catch(() => undefined);
+      }
+      controlledWatch.restore();
     }
   });
 
@@ -11391,8 +12076,8 @@ describe("dev", () => {
       "boundary:begin",
       "update:empty",
       "resume:accept",
-      "afterBuild:true",
       "facts:fresh",
+      "afterBuild:true",
       "transition:finalize",
       "afterBuild:true",
       "facts:post-finalize:published",
@@ -11711,7 +12396,7 @@ describe("dev", () => {
     });
     const plugin: Plugin<Record<string, never>> = {
       id: "reload-context",
-      async contribute(ctx) {
+      async emitIR(ctx) {
         if (ctx.config.dev.proxy[0]?.target === "https://example.com") {
           markCandidateContributionStarted?.();
           await candidateContributionGate;
@@ -13139,6 +13824,18 @@ describe("dev", () => {
       'export default { plugins: { "page-theme": { value: "light" } } };',
       "utf-8",
     );
+    const secondPageDir = path.join(cwd, "src/pages/catalog");
+    await fs.promises.mkdir(secondPageDir, { recursive: true });
+    await writeFile(
+      path.join(secondPageDir, "page.tsx"),
+      "export default function Catalog() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(secondPageDir, "page.config.ts"),
+      'export default { plugins: { "page-theme": { value: "catalog" } } };',
+      "utf-8",
+    );
 
     const pageThemeConfig = pluginOptions<{ value: string }>();
     const plugin = definePlugin<
@@ -13149,7 +13846,7 @@ describe("dev", () => {
     >({
       id: "page-theme",
       page: pageThemeConfig,
-      contributePage(ctx) {
+      emitPageIR(ctx) {
         const theme = ctx.pageOptions.value;
         ctx.emit.data({
           id: "page-theme-data",
@@ -13180,14 +13877,29 @@ describe("dev", () => {
             options.activate();
             const tag = update.next.generated?.slots.find(
               (item) =>
-                item.slot === "html.tag" && item.id === "page-theme-meta",
+                item.slot === "html.tag" &&
+                item.id === "page-theme-meta" &&
+                item.target?.kind === "page" &&
+                item.target.pageId === "home",
             );
             const previousModule = update.previous.generated?.modules.find(
-              (item) => item.id === "page-theme-data",
+              (item) =>
+                item.id === "page-theme-data" &&
+                item.scope.kind === "page" &&
+                item.scope.pageId === "home",
             );
             const nextModule = update.next.generated?.modules.find(
-              (item) => item.id === "page-theme-data",
+              (item) =>
+                item.id === "page-theme-data" &&
+                item.scope.kind === "page" &&
+                item.scope.pageId === "home",
             );
+            const pageModuleCount = update.next.generated?.modules.filter(
+              (item) => item.id === "page-theme-data",
+            ).length;
+            const pageSlotCount = update.next.generated?.slots.filter(
+              (item) => item.id === "page-theme-meta",
+            ).length;
             events.push(
               [
                 "update",
@@ -13199,6 +13911,8 @@ describe("dev", () => {
                 previousModule?.sourceHash !== nextModule?.sourceHash,
                 update.previous.generated?.coreGraphHash !==
                   update.next.generated?.coreGraphHash,
+                pageModuleCount,
+                pageSlotCount,
               ].join(":"),
             );
             process.emit("SIGINT");
@@ -13235,7 +13949,7 @@ describe("dev", () => {
 
     expect(events).toEqual([
       "bundler.dev",
-      "update:true:false:0:0:dark:true:true",
+      "update:true:false:0:0:dark:true:true:2:2",
     ]);
   });
 
@@ -13275,7 +13989,7 @@ describe("dev", () => {
           },
         };
       },
-      contribute(ctx) {
+      emitIR(ctx) {
         const value = ctx.options;
         events.push(`contribution:${value.generation}`);
       },
@@ -13376,7 +14090,7 @@ describe("dev", () => {
           },
         };
       },
-      contribute(ctx) {
+      emitIR(ctx) {
         contributionCount += 1;
         const state = fs.existsSync(pluginDataPath)
           ? fs.readFileSync(pluginDataPath, "utf-8")
@@ -13482,7 +14196,7 @@ describe("dev", () => {
           },
         };
       },
-      contribute(ctx) {
+      emitIR(ctx) {
         const value = ctx.options;
         events.push(`contribution:${value.generation}`);
       },
@@ -13592,7 +14306,7 @@ describe("dev", () => {
           },
         };
       },
-      contribute(ctx) {
+      emitIR(ctx) {
         events.push(`contribution:${ctx.options.generation}`);
       },
     })();
@@ -14144,7 +14858,7 @@ describe("dev", () => {
     function createPlugin(label: string): Plugin<Record<string, never>> {
       return {
         id: "same-id-plugin",
-        contribute() {
+        emitIR() {
           events.push(`contribution:${label}`);
         },
         setup() {
@@ -14477,7 +15191,7 @@ describe("dev", () => {
               },
             };
           },
-          contribute() {
+          emitIR() {
             events.push(`contribution:${label}`);
           },
         };
@@ -14672,7 +15386,7 @@ describe("dev", () => {
       let contributionCount = 0;
       return {
         id: "same-id-plugin",
-        contribute() {
+        emitIR() {
           contributionCount += 1;
           events.push(`contribution:${label}:${contributionCount}`);
         },

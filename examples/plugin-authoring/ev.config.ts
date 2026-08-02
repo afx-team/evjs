@@ -23,7 +23,7 @@ const metadataPlugin = definePlugin({
       `[example-metadata-plugin] Application value: ${JSON.stringify(metadata)}`,
     );
   },
-  contribute(ctx) {
+  emitIR(ctx) {
     for (const { page, options } of ctx.pages) {
       console.log(
         `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(options)}`,

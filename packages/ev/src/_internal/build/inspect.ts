@@ -242,9 +242,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   const {
     registry: pluginSettings,
     applicationSettings: applicationPluginSettings,
-  } = resolvePluginSettingsState(baseConfig, undefined, {
-    reusePreparedApplicationSettings: true,
-  });
+  } = resolvePluginSettingsState(baseConfig);
   const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginSetupContext<TBundlerCfg> = {

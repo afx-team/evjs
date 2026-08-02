@@ -14,15 +14,15 @@ import type {
   FrameworkView,
   GeneratedModuleRef,
   Plugin,
-  PluginContributeContext,
+  PluginEmitIRContext,
   PluginSetupContext,
 } from "@evjs/ev/plugin";
 import { DOMParser } from "domparser-rs";
 import { describe, expect, it } from "vitest";
 import {
-  contributeQiankunMaster,
-  contributeQiankunSlave,
   createQiankunSlaveHooks,
+  emitQiankunMasterIR,
+  emitQiankunSlaveIR,
   evPluginQiankunMaster,
   evPluginQiankunSlave,
 } from "../src/index.js";
@@ -59,7 +59,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const captured = createContributionCapture(cwd, {});
     const sourceDir = generatedModuleDir(cwd, "qiankun-master");
 
-    await plugin.contribute?.(captured.ctx);
+    await plugin.emitIR?.(captured.ctx);
 
     expect(captured.watched).toEqual([
       path.join(cwd, "src/qiankun.master.ts"),
@@ -111,7 +111,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       source: "export default async () => ({ apps: [] });",
     });
 
-    await contributeQiankunMaster(captured.ctx, { resolver });
+    await emitQiankunMasterIR(captured.ctx, { resolver });
 
     expect(captured.watched).toEqual([qiankunRuntime]);
     const wrapper = captured.modules.find(
@@ -146,7 +146,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       createApplicationFramework("#root"),
     );
 
-    await plugin.contribute?.(captured.ctx);
+    await plugin.emitIR?.(captured.ctx);
     const wrapper = captured.modules.find(
       (module) => module.id === "entry-wrapper",
     );
@@ -203,7 +203,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       source: "export const runtime = {};",
     });
 
-    await contributeQiankunSlave(captured.ctx, {
+    await emitQiankunSlaveIR(captured.ctx, {
       name: "platform-slave",
       runtime: { module: runtime, exportName: "runtime" },
     });
@@ -251,7 +251,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     });
     const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(cwd, {});
-    await plugin.contribute?.(captured.ctx);
+    await plugin.emitIR?.(captured.ctx);
 
     const hooks = await plugin.setup?.(createPluginSetupContext(cwd, [], {}));
     const webpackConfig: Record<string, unknown> = {
@@ -277,7 +277,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     });
     const plugin = activatePlugin(evPluginQiankunSlave());
     const captured = createContributionCapture(cwd, {});
-    await plugin.contribute?.(captured.ctx);
+    await plugin.emitIR?.(captured.ctx);
     const hooks = await plugin.setup?.(createPluginSetupContext(cwd, [], {}));
     const doc = new DOMParser().parseFromString(
       '<!doctype html><html><head></head><body><script src="/main.js"></script></body></html>',
@@ -307,7 +307,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       createApplicationFramework(),
     );
 
-    await plugin.contribute?.(captured.ctx);
+    await plugin.emitIR?.(captured.ctx);
 
     const original = captured.modules.find(
       (module) => module.id === "original-entry",
@@ -343,7 +343,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
     const captured = createContributionCapture(cwd, {});
 
-    await plugin.contribute?.(captured.ctx);
+    await plugin.emitIR?.(captured.ctx);
 
     expect(captured.slots).toContainEqual({
       name: "resolve.external",
@@ -366,17 +366,17 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
 
     await expect(
-      plugin.contribute?.(
+      plugin.emitIR?.(
         createContributionCapture(cwd, {}, createMpaFramework()).ctx,
       ),
     ).rejects.toThrow("only supports a normalized SPA Application");
     await expect(
-      plugin.contribute?.(
+      plugin.emitIR?.(
         createContributionCapture(cwd, {}, createMultipleAppFramework()).ctx,
       ),
     ).rejects.toThrow("requires exactly one normalized SPA Application");
     await expect(
-      plugin.contribute?.(
+      plugin.emitIR?.(
         createContributionCapture(cwd, {}, createSpaFrameworkWithoutEntry())
           .ctx,
       ),
@@ -423,7 +423,7 @@ function createContributionCapture(
       return `virtual:${refs.get(ref) ?? "unknown"}`;
     },
   };
-  const ctx: PluginContributeContext = {
+  const ctx: PluginEmitIRContext = {
     ...createPluginSetupContext(cwd, watched, config),
     framework,
     emit,
@@ -457,10 +457,9 @@ function renderModule(
 }
 
 function activatePlugin<TPlugin extends Plugin>(plugin: TPlugin): TPlugin {
-  resolvePluginSettingsState(
-    resolveConfig({ routing: { mode: "spa" }, plugins: [plugin] }),
-  );
-  return plugin;
+  const config = resolveConfig({ routing: { mode: "spa" }, plugins: [plugin] });
+  resolvePluginSettingsState(config);
+  return config.plugins[0] as TPlugin;
 }
 
 async function createProject(files: Record<string, string>): Promise<string> {

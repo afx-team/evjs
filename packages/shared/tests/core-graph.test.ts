@@ -288,6 +288,27 @@ describe("assertCoreGraph", () => {
     );
   });
 
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("treats the prototype-shaped Server Function id %s as data", (id) => {
+    const graph = createValidGraph();
+    graph.serverFunctions = [
+      { id, module: "src/actions.ts", exportName: "first" },
+    ];
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+
+    graph.serverFunctions.push({
+      id,
+      module: "src/other-actions.ts",
+      exportName: "second",
+    });
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      `[evjs] coreGraph.serverFunctions[1].id "${id}" must be unique.`,
+    );
+  });
+
   it("validates Server Route nodes, methods, and route-shape uniqueness", () => {
     const graph = createValidGraph();
     graph.serverRoutes = [

@@ -350,7 +350,7 @@ export default defineConfig({
 通过 `plugins` 安装插件，通常写成
 `pluginFactory(applicationConfig)`。插件可以声明独立 Page 合同，其 canonical `id`
 会出现在相邻 `page.config.ts` 中。同一个 Plugin descriptor 承载 `configure()`、
-`setup()`、`contribute()` 与 lifecycle hooks。参见[插件](./plugins)。
+`setup()`、`emitIR()` 与 lifecycle hooks。参见[插件](./plugins)。
 
 ### Bundler
 

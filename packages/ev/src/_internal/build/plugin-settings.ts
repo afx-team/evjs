@@ -49,11 +49,6 @@ export interface ResolvedPluginSettingsState {
   readonly applicationSettings: CoreApplicationPluginSettings;
 }
 
-export interface ResolvePluginSettingsStateOptions {
-  /** Reuse the Application snapshot prepared at the start of config hooks. */
-  readonly reusePreparedApplicationSettings?: boolean;
-}
-
 export interface ApplyPluginSettingsOptions {
   readonly applicationSettings?: CoreApplicationPluginSettings;
   readonly canonicalPages?: Readonly<Record<string, ResolvedPageFileConfig>>;
@@ -115,7 +110,6 @@ export function resolvePluginSettingsState<TBundlerCfg>(
   registry: PluginSettingsRegistry = collectPluginSettingsRegistry(
     config.plugins,
   ),
-  options: ResolvePluginSettingsStateOptions = {},
 ): ResolvedPluginSettingsState {
   const applicationSettings: CoreApplicationPluginSettings = {};
   const context = createPluginApplicationSettingContext(config);
@@ -123,7 +117,6 @@ export function resolvePluginSettingsState<TBundlerCfg>(
     const setting = resolveDefinedPluginApplicationSetting(
       entry.plugin,
       context,
-      { reusePrepared: options.reusePreparedApplicationSettings === true },
     );
     defineRecordValue(applicationSettings, entry.id, {
       enabled: setting?.enabled ?? true,

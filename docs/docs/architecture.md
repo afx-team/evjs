@@ -105,7 +105,7 @@ sequenceDiagram
   Core->>Plugin: configure() and resolve Application settings
   Core->>Plugin: setup()
   Core->>Core: resolve Page settings and create CoreGraph
-  Core->>Plugin: contribute(FrameworkView)
+  Core->>Plugin: emitIR(FrameworkView)
   Core->>Core: create BuildPlan
   Core->>Core: materialize .ev
   Core->>Plugin: configureBundler()

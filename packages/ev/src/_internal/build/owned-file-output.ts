@@ -102,8 +102,13 @@ export async function snapshotOwnedOutputFile(
 
   try {
     const stats = await fs.lstat(destination);
-    if (stats.isSymbolicLink() || !stats.isFile()) {
-      throw new Error(`[evjs] ${field} output path must be a regular file.`);
+    if (stats.isSymbolicLink()) {
+      throw new Error(
+        `[evjs] ${field} must not overwrite a symbolic-link output file.`,
+      );
+    }
+    if (!stats.isFile()) {
+      throw new Error(`[evjs] ${field} output path must be a file.`);
     }
     return {
       contents: await fs.readFile(destination),
@@ -143,6 +148,35 @@ export async function removeOwnedOutputDirectoryIfEmpty(
     await fs.rmdir(destination);
   } catch (error) {
     if (isMissingPathError(error) || isNonEmptyDirectoryError(error)) return;
+    throw error;
+  }
+}
+
+/** Remove one symbolic-link leaf without following it or a symbolic ancestor. */
+export async function removeOwnedOutputSymbolicLink(
+  rootDir: string,
+  outputPath: string,
+  field: string,
+): Promise<void> {
+  const absoluteRoot = path.resolve(rootDir);
+  const destination = path.resolve(outputPath);
+  assertStrictDescendant(absoluteRoot, destination, field);
+  if (!(await assertExistingOwnedDirectory(absoluteRoot, field))) return;
+
+  const relativeParent = path.relative(absoluteRoot, path.dirname(destination));
+  let current = absoluteRoot;
+  for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
+    current = path.join(current, segment);
+    if (!(await assertExistingOwnedDirectory(current, field))) return;
+  }
+
+  try {
+    const stats = await fs.lstat(destination);
+    if (stats.isSymbolicLink()) {
+      await fs.rm(destination);
+    }
+  } catch (error) {
+    if (isMissingPathError(error)) return;
     throw error;
   }
 }

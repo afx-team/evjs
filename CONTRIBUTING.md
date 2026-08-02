@@ -116,7 +116,7 @@ Release automation replaces them with the release version before publishing.
    `page.config.ts`. Page values are strict JSON; callbacks and
    secrets stay in Application options or plugin code.
 4. Derive Route or Document behavior from the normalized Page graph and
-   project runtime behavior explicitly through `contribute()` or another
+   project runtime behavior explicitly through `emitIR()` or another
    runtime contract.
 
 ### Add an example
@@ -135,13 +135,13 @@ load config
 run configure hooks and resolve Application plugin settings
 run setup hooks
 create CoreGraph while resolving Page plugin settings
-collect generated contributions with contribute/contributePage
+collect generated contributions with emitIR/emitPageIR
 derive BuildPlan
 materialize .ev
 ```
 
-`ev build` then asks the selected bundler for build facts, links `BuildOutput`,
-runs `beforeBuild` after fresh facts, links and transforms output, writes
+`ev build` then asks the selected bundler for fresh build facts, runs
+`beforeBuild`, links and transforms `BuildOutput`, writes
 deployment metadata and Documents, and runs `afterBuild` only after canonical
 output is published. `prepare` and `inspect` do not run the before/after pair.
 

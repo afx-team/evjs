@@ -49,13 +49,13 @@ export async function buildHtml<TBundlerCfg = unknown>(
         outputSnapshot,
         options.isRebuild ?? false,
       );
-      const htmlContext = {
+      const htmlContext = Object.freeze({
         ...latePluginContext,
         ...htmlSnapshot,
         ...buildResult,
         buildId: outputSnapshot.buildId,
         publicPath: outputSnapshot.publicPath,
-      };
+      });
       await h.transformHtml(doc, htmlContext);
     }
   }

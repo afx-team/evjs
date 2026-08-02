@@ -99,7 +99,7 @@ sequenceDiagram
   EV->>Plugin: configure() and resolve typed Application settings
   EV->>Plugin: setup()
   EV->>EV: create CoreGraph and resolve Page settings
-  EV->>Plugin: contribute(FrameworkView)
+  EV->>Plugin: emitIR(FrameworkView)
   EV->>EV: derive BuildPlan
   EV->>EV: materialize .ev IR
   EV->>Plugin: configureBundler()
@@ -137,7 +137,10 @@ reviewable intermediate representation containing:
 ```
 
 The manifest links generated modules, import edges, slot contributions, and
-final entry facades. Bundlers compile those concrete entries. `.ev`,
+final entry facades. The generated server entry namespace-imports every
+reachable server-function module and registers its named implementations in a
+registry owned by that `createApp()` instance; source transforms never mutate
+process-global function state. Bundlers compile those concrete entries. `.ev`,
 `src/route-types.d.ts`, `src/plugin-types.d.ts`, and `dist` are generated
 output and are not application source. The plugin declaration stays under
 `src` so normal application TypeScript programs consume its augmentation.

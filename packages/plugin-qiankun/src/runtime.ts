@@ -150,6 +150,25 @@ interface SlaveRuntimeProjection {
   history: QiankunHistoryOptions;
 }
 
+interface DocumentMountLookupScope {
+  container: Element;
+  mount: string;
+  mountId?: string;
+}
+
+interface DocumentMountLookupState {
+  scopes: DocumentMountLookupScope[];
+  originalQuerySelector?: (selector: string) => Element | null;
+  originalGetElementById?: (id: string) => HTMLElement | null;
+  scopedQuerySelector?: (selector: string) => Element | null;
+  scopedGetElementById?: (id: string) => HTMLElement | null;
+}
+
+interface DocumentMountLookupLock {
+  tail: Promise<void>;
+  pending: number;
+}
+
 interface QiankunRuntimeModule {
   loadMicroApp(
     app: {
@@ -193,6 +212,21 @@ const qiankunMicroAppRouteFields = [
   "microAppProps",
 ] as const;
 const qiankunRedirectRouteFields = ["path", "redirect"] as const;
+const qiankunRouteParamNamePattern = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const reservedQiankunRouteParamNames = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+  "_splat",
+]);
+const documentMountLookupStates = new WeakMap<
+  Document,
+  DocumentMountLookupState
+>();
+const documentMountLookupLocks = new WeakMap<
+  Document,
+  Map<string, DocumentMountLookupLock>
+>();
 
 export function defineQiankunMasterResolver<T extends QiankunMasterResolver>(
   resolver: T,
@@ -292,8 +326,10 @@ export function createQiankunSlaveLifecycles(options: {
   let loadedEntry: Promise<unknown> | undefined;
   let loadedEntryModule: unknown;
   let currentContainer: Element | undefined;
+  let bootstrapped = false;
   let hasMountedEntry = false;
   let entryMounted = false;
+  let lifecycleQueue = Promise.resolve();
   let runtimeProjection: SlaveRuntimeProjection = {
     basepath: "/",
     history: { type: "browser" },
@@ -307,73 +343,158 @@ export function createQiankunSlaveLifecycles(options: {
   });
 
   async function loadEntry(): Promise<unknown> {
-    loadedEntry ??= options.loadEntry();
-    loadedEntryModule = await loadedEntry;
-    return loadedEntryModule;
+    let pendingEntry = loadedEntry;
+    if (!pendingEntry) {
+      pendingEntry = Promise.resolve().then(() => options.loadEntry());
+      loadedEntry = pendingEntry;
+    }
+    try {
+      const entryModule = await pendingEntry;
+      loadedEntryModule = entryModule;
+      return entryModule;
+    } catch (error) {
+      if (loadedEntry === pendingEntry) {
+        loadedEntry = undefined;
+        loadedEntryModule = undefined;
+      }
+      throw error;
+    }
   }
 
-  async function bootstrap(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runBootstrap(
+    props: QiankunLifecycleProps = {},
+  ): Promise<void> {
+    if (bootstrapped) return;
     currentContainer = resolveMountContainer(props, options.mount);
-    await runtime.bootstrap?.(props, ctx());
+    try {
+      await runtime.bootstrap?.(props, ctx());
+      bootstrapped = true;
+    } catch (error) {
+      currentContainer = undefined;
+      throw error;
+    }
   }
 
-  async function mount(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runMount(props: QiankunLifecycleProps = {}): Promise<void> {
     if (entryMounted) return;
     currentContainer = resolveMountContainer(props, options.mount);
     const context = ctx();
-    const restoreDocumentLookup = scopeDocumentMountLookup(
-      currentContainer,
-      options.mount,
-    );
+    const previousProjection = runtimeProjection;
+    let nextProjection = previousProjection;
+    let projectionUpdate:
+      | ((update: GeneratedPagesAppRuntimeUpdate) => MaybePromise<void>)
+      | undefined;
+    let projectionAttempted = false;
+    let runtimeMountAttempted = false;
+    let entryMountAttempted = false;
+    let entryModule: unknown;
+    let restoreDocumentLookup = () => {};
+
     try {
-      await runtime.mount?.(props, context);
-      const entryModule = await context.loadEntry();
-      runtimeProjection = await configureSlaveEntry(
-        entryModule,
-        props,
-        runtimeProjection,
+      restoreDocumentLookup = await acquireDocumentMountLookup(
+        currentContainer,
+        options.mount,
       );
+      runtimeMountAttempted = runtime.mount !== undefined;
+      await runtime.mount?.(props, context);
+      entryModule = await context.loadEntry();
+      nextProjection = resolveSlaveRuntimeProjection(props, previousProjection);
+      const projectionOptions = createSlaveRuntimeProjectionUpdate(
+        previousProjection,
+        nextProjection,
+      );
+      if (projectionOptions) {
+        projectionUpdate = resolveRequiredSlavePagesAppUpdate(entryModule);
+        projectionAttempted = true;
+        await projectionUpdate(projectionOptions);
+      }
       const start = hasMountedEntry
         ? undefined
         : resolveEntryStart(entryModule);
       if (start) {
+        entryMountAttempted = true;
         await start(currentContainer ?? options.mount);
       } else {
-        await mountLoadedEntry(entryModule, currentContainer, options.mount);
+        const render = resolveEntryRender(entryModule);
+        if (!render) {
+          throw new Error(
+            "[evjs:plugin-qiankun] The generated slave entry does not expose an app.render() method required for mounting.",
+          );
+        }
+        entryMountAttempted = true;
+        await render(currentContainer ?? options.mount);
       }
-      hasMountedEntry = true;
-      entryMounted = true;
-    } finally {
       restoreDocumentLookup();
+      restoreDocumentLookup = () => {};
+    } catch (error) {
+      const rollbackErrors: unknown[] = [];
+      if (entryMountAttempted) {
+        await collectQiankunCleanupError(rollbackErrors, () =>
+          unmountLoadedEntry(entryModule),
+        );
+      }
+      if (projectionAttempted && projectionUpdate) {
+        const rollbackProjection = createSlaveRuntimeProjectionUpdate(
+          nextProjection,
+          previousProjection,
+        );
+        if (rollbackProjection) {
+          await collectQiankunCleanupError(rollbackErrors, () =>
+            projectionUpdate?.(rollbackProjection),
+          );
+        }
+      }
+      if (runtimeMountAttempted) {
+        await collectQiankunCleanupError(rollbackErrors, () =>
+          runtime.unmount?.(props, context),
+        );
+      }
+      await collectQiankunCleanupError(rollbackErrors, () =>
+        clearContainer(currentContainer),
+      );
+      await collectQiankunCleanupError(rollbackErrors, restoreDocumentLookup);
+      currentContainer = undefined;
+      entryMounted = false;
+      throwQiankunMountError(error, rollbackErrors);
     }
+
+    hasMountedEntry = true;
+    entryMounted = true;
+    runtimeProjection = nextProjection;
   }
 
-  async function unmount(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runUnmount(props: QiankunLifecycleProps = {}): Promise<void> {
+    if (!entryMounted) return;
     const context = ctx();
     const errors: unknown[] = [];
+    let restoreDocumentLookup = () => {};
     try {
-      await runtime.unmount?.(props, context);
+      restoreDocumentLookup = await acquireDocumentMountLookup(
+        currentContainer,
+        options.mount,
+      );
     } catch (error) {
       errors.push(error);
     }
-    try {
-      await unmountLoadedEntry(loadedEntryModule);
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      clearContainer(currentContainer);
-    } catch (error) {
-      errors.push(error);
-    }
+    await collectQiankunCleanupError(errors, () =>
+      runtime.unmount?.(props, context),
+    );
+    await collectQiankunCleanupError(errors, () =>
+      unmountLoadedEntry(loadedEntryModule),
+    );
+    await collectQiankunCleanupError(errors, () =>
+      clearContainer(currentContainer),
+    );
+    await collectQiankunCleanupError(errors, restoreDocumentLookup);
     currentContainer = undefined;
     entryMounted = false;
     throwQiankunCleanupErrors(errors);
   }
 
-  async function update(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runUpdate(props: QiankunLifecycleProps = {}): Promise<void> {
+    if (!entryMounted) return;
     await runtime.update?.(props, ctx());
-    if (!entryMounted || !loadedEntryModule) return;
+    if (!loadedEntryModule) return;
     runtimeProjection = await configureSlaveEntry(
       loadedEntryModule,
       props,
@@ -381,6 +502,24 @@ export function createQiankunSlaveLifecycles(options: {
       false,
     );
   }
+
+  function enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
+    const result = lifecycleQueue.then(operation);
+    lifecycleQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  const bootstrap = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runBootstrap(props));
+  const mount = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runMount(props));
+  const unmount = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runUnmount(props));
+  const update = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runUpdate(props));
 
   return {
     bootstrap,
@@ -437,6 +576,10 @@ function normalizeQiankunMasterOptions(
   });
 
   const routePaths = new Set<string>();
+  const runtimeRouteShapes = new Map<
+    string,
+    { index: number; path: string; runtimePath: string }
+  >();
   routes.forEach((route, index) => {
     if (!isRecord(route)) {
       throw new Error(
@@ -444,12 +587,13 @@ function normalizeQiankunMasterOptions(
       );
     }
     assertAbsoluteRoutePath(route.path, `routes[${index}].path`);
-    if (routePaths.has(route.path)) {
+    const normalizedRoutePath = normalizeQiankunRoutePath(route.path);
+    if (routePaths.has(normalizedRoutePath)) {
       throw new Error(
-        `[evjs:plugin-qiankun] Master resolver contains duplicate route path "${route.path}".`,
+        `[evjs:plugin-qiankun] Master resolver contains duplicate route path "${normalizedRoutePath}".`,
       );
     }
-    routePaths.add(route.path);
+    routePaths.add(normalizedRoutePath);
 
     const hasMicroApp = Object.hasOwn(route, "microApp");
     const hasRedirect = Object.hasOwn(route, "redirect");
@@ -496,6 +640,22 @@ function normalizeQiankunMasterOptions(
       );
       assertTrimmedString(route.redirect, `routes[${index}].redirect`);
     }
+
+    const runtimePath = isQiankunRedirectRoute(route)
+      ? toEvjsRoutePath(route.path, false)
+      : toEvjsRoutePath(route.path, (route.mode ?? "prepend") === "prepend");
+    const runtimeShape = qiankunRuntimeRouteShape(runtimePath);
+    const previousRuntimeRoute = runtimeRouteShapes.get(runtimeShape);
+    if (previousRuntimeRoute) {
+      throw new Error(
+        `[evjs:plugin-qiankun] Master resolver routes[${index}].path "${route.path}" conflicts with routes[${previousRuntimeRoute.index}].path "${previousRuntimeRoute.path}" after runtime route normalization ("${runtimePath}" and "${previousRuntimeRoute.runtimePath}" have the same shape).`,
+      );
+    }
+    runtimeRouteShapes.set(runtimeShape, {
+      index,
+      path: route.path,
+      runtimePath,
+    });
   });
 
   const base = normalizeBase(value.base ?? "/", "base");
@@ -795,7 +955,7 @@ function joinBase(base: string, path: string): string {
 }
 
 function toEvjsRoutePath(path: string, prepend: boolean): string {
-  let normalized = path === "/" ? "/" : path.replace(/\/+$/, "");
+  let normalized = normalizeQiankunRoutePath(path);
   normalized = normalized
     .split("/")
     .map((segment) => {
@@ -830,33 +990,68 @@ async function configureSlaveEntry(
   current: SlaveRuntimeProjection,
   useStandaloneDefaults = true,
 ): Promise<SlaveRuntimeProjection> {
-  const next: SlaveRuntimeProjection = {
-    basepath:
-      props.base === undefined
-        ? useStandaloneDefaults
-          ? "/"
-          : current.basepath
-        : normalizeBase(props.base, "slave base"),
+  const next = resolveSlaveRuntimeProjection(
+    props,
+    current,
+    useStandaloneDefaults,
+  );
+  const updateOptions = createSlaveRuntimeProjectionUpdate(current, next);
+  if (!updateOptions) return next;
+
+  const update = resolveRequiredSlavePagesAppUpdate(entryModule);
+  await update(updateOptions);
+  return next;
+}
+
+function resolveSlaveRuntimeProjection(
+  props: QiankunLifecycleProps,
+  current: SlaveRuntimeProjection,
+  useStandaloneDefaults = true,
+): SlaveRuntimeProjection {
+  return {
+    basepath: resolveSlaveBasepath(
+      props.base,
+      current.basepath,
+      useStandaloneDefaults,
+    ),
     history:
       normalizeSlaveHistory(props.history) ??
       (useStandaloneDefaults ? { type: "browser" } : current.history),
   };
+}
+
+function resolveSlaveBasepath(
+  base: string | undefined,
+  current: string,
+  useStandaloneDefaults: boolean,
+): string {
+  if (base !== undefined) return normalizeBase(base, "slave base");
+  return useStandaloneDefaults ? "/" : current;
+}
+
+function createSlaveRuntimeProjectionUpdate(
+  current: SlaveRuntimeProjection,
+  next: SlaveRuntimeProjection,
+): GeneratedPagesAppRuntimeUpdate | undefined {
   const updateOptions: GeneratedPagesAppRuntimeUpdate = {
     ...(next.basepath !== current.basepath ? { basepath: next.basepath } : {}),
     ...(!equalHistoryOptions(next.history, current.history)
       ? { history: next.history }
       : {}),
   };
-  if (Object.keys(updateOptions).length === 0) return next;
+  return Object.keys(updateOptions).length > 0 ? updateOptions : undefined;
+}
 
+function resolveRequiredSlavePagesAppUpdate(
+  entryModule: unknown,
+): (update: GeneratedPagesAppRuntimeUpdate) => MaybePromise<void> {
   const update = resolvePagesAppUpdate(entryModule);
   if (!update) {
     throw new Error(
       "[evjs:plugin-qiankun] The generated slave entry does not expose pagesApp.updateRuntime() required for base/history projection.",
     );
   }
-  await update(updateOptions);
-  return next;
+  return update;
 }
 
 function equalHistoryOptions(
@@ -1003,6 +1198,28 @@ async function unmountLoadedEntry(entryModule: unknown): Promise<void> {
   await unmount?.();
 }
 
+async function collectQiankunCleanupError(
+  errors: unknown[],
+  cleanup: () => MaybePromise<unknown>,
+): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    errors.push(error);
+  }
+}
+
+function throwQiankunMountError(
+  error: unknown,
+  rollbackErrors: unknown[],
+): never {
+  if (rollbackErrors.length === 0) throw error;
+  throw new AggregateError(
+    [error, ...rollbackErrors],
+    "[evjs:plugin-qiankun] Slave mount failed and one or more rollback steps also failed.",
+  );
+}
+
 function throwQiankunCleanupErrors(errors: unknown[]): void {
   if (errors.length === 0) return;
   if (errors.length === 1) throw errors[0];
@@ -1010,20 +1227,6 @@ function throwQiankunCleanupErrors(errors: unknown[]): void {
     errors,
     "[evjs:plugin-qiankun] Multiple slave unmount steps failed.",
   );
-}
-
-async function mountLoadedEntry(
-  entryModule: unknown,
-  container: Element | undefined,
-  mount: string,
-): Promise<void> {
-  const render = resolveEntryRender(entryModule);
-  if (!render) {
-    throw new Error(
-      "[evjs:plugin-qiankun] The generated slave entry does not expose an app.render() method required for mounting.",
-    );
-  }
-  await render(container ?? mount);
 }
 
 function resolveEntryRender(
@@ -1066,44 +1269,190 @@ function resolveEntryUnmount(
   return undefined;
 }
 
-function scopeDocumentMountLookup(
+async function acquireDocumentMountLookup(
   container: Element | undefined,
   mount: string,
-): () => void {
+): Promise<() => void> {
   const doc = globalThis.document;
   if (!container || !doc) return () => {};
 
-  const originalQuerySelector = doc.querySelector;
-  const originalGetElementById = doc.getElementById;
-  const mountId = mount.startsWith("#") ? mount.slice(1) : undefined;
-
-  if (typeof originalQuerySelector === "function") {
-    doc.querySelector = function scopedQuerySelector(
-      selector: string,
-    ): Element | null {
-      if (selector === mount) {
-        return querySelector(container, mount) ?? container;
-      }
-      return originalQuerySelector.call(this, selector);
-    };
+  let locks = documentMountLookupLocks.get(doc);
+  if (!locks) {
+    locks = new Map();
+    documentMountLookupLocks.set(doc, locks);
+  }
+  let lock = locks.get(mount);
+  if (!lock) {
+    lock = { tail: Promise.resolve(), pending: 0 };
+    locks.set(mount, lock);
   }
 
-  if (mountId && typeof originalGetElementById === "function") {
-    doc.getElementById = function scopedGetElementById(
-      id: string,
-    ): HTMLElement | null {
-      if (id === mountId) {
-        const nested = querySelector(container, mount);
-        return (nested ?? container) as HTMLElement;
-      }
-      return originalGetElementById.call(this, id);
-    };
+  const previous = lock.tail;
+  let releaseLock = () => {};
+  const gate = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  lock.pending += 1;
+  lock.tail = previous.then(() => gate);
+  await previous;
+
+  let restoreDocumentLookup: () => void;
+  try {
+    restoreDocumentLookup = scopeDocumentMountLookup(doc, container, mount);
+  } catch (error) {
+    releaseDocumentMountLookupLock(doc, mount, locks, lock, releaseLock);
+    throw error;
   }
+  let released = false;
 
   return () => {
-    doc.querySelector = originalQuerySelector;
-    doc.getElementById = originalGetElementById;
+    if (released) return;
+    released = true;
+    try {
+      restoreDocumentLookup();
+    } finally {
+      releaseDocumentMountLookupLock(doc, mount, locks, lock, releaseLock);
+    }
   };
+}
+
+function releaseDocumentMountLookupLock(
+  doc: Document,
+  mount: string,
+  locks: Map<string, DocumentMountLookupLock>,
+  lock: DocumentMountLookupLock,
+  release: () => void,
+): void {
+  release();
+  lock.pending -= 1;
+  if (lock.pending > 0) return;
+  locks.delete(mount);
+  if (locks.size === 0) documentMountLookupLocks.delete(doc);
+}
+
+function scopeDocumentMountLookup(
+  doc: Document,
+  container: Element,
+  mount: string,
+): () => void {
+  let state = documentMountLookupStates.get(doc);
+  if (!state) {
+    state = createDocumentMountLookupState(doc);
+    documentMountLookupStates.set(doc, state);
+  }
+  const mountId = mount.startsWith("#") ? mount.slice(1) : undefined;
+  const scope: DocumentMountLookupScope = {
+    container,
+    mount,
+    ...(mountId ? { mountId } : {}),
+  };
+  state.scopes.push(scope);
+  let released = false;
+
+  return () => {
+    if (released) return;
+    released = true;
+    const scopeIndex = state.scopes.indexOf(scope);
+    if (scopeIndex >= 0) state.scopes.splice(scopeIndex, 1);
+    if (state.scopes.length > 0) return;
+
+    try {
+      restoreDocumentMountLookupState(doc, state);
+    } finally {
+      documentMountLookupStates.delete(doc);
+    }
+  };
+}
+
+function createDocumentMountLookupState(
+  doc: Document,
+): DocumentMountLookupState {
+  const originalQuerySelector =
+    typeof doc.querySelector === "function" ? doc.querySelector : undefined;
+  const originalGetElementById =
+    typeof doc.getElementById === "function" ? doc.getElementById : undefined;
+  const state: DocumentMountLookupState = {
+    scopes: [],
+    ...(originalQuerySelector ? { originalQuerySelector } : {}),
+    ...(originalGetElementById ? { originalGetElementById } : {}),
+  };
+
+  try {
+    if (originalQuerySelector) {
+      state.scopedQuerySelector = function scopedQuerySelector(
+        selector: string,
+      ): Element | null {
+        const scope = findDocumentQueryScope(state, selector);
+        if (scope) {
+          return querySelector(scope.container, scope.mount) ?? scope.container;
+        }
+        return originalQuerySelector.call(doc, selector);
+      };
+      doc.querySelector = state.scopedQuerySelector as typeof doc.querySelector;
+    }
+
+    if (originalGetElementById) {
+      state.scopedGetElementById = function scopedGetElementById(
+        id: string,
+      ): HTMLElement | null {
+        const scope = findDocumentIdScope(state, id);
+        if (scope) {
+          const nested = querySelector(scope.container, scope.mount);
+          return (nested ?? scope.container) as HTMLElement;
+        }
+        return originalGetElementById.call(doc, id);
+      };
+      doc.getElementById = state.scopedGetElementById;
+    }
+  } catch (error) {
+    restoreDocumentMountLookupState(doc, state);
+    throw error;
+  }
+
+  return state;
+}
+
+function findDocumentQueryScope(
+  state: DocumentMountLookupState,
+  selector: string,
+): DocumentMountLookupScope | undefined {
+  for (let index = state.scopes.length - 1; index >= 0; index -= 1) {
+    const scope = state.scopes[index];
+    if (scope?.mount === selector) return scope;
+  }
+  return undefined;
+}
+
+function findDocumentIdScope(
+  state: DocumentMountLookupState,
+  id: string,
+): DocumentMountLookupScope | undefined {
+  for (let index = state.scopes.length - 1; index >= 0; index -= 1) {
+    const scope = state.scopes[index];
+    if (scope?.mountId === id) return scope;
+  }
+  return undefined;
+}
+
+function restoreDocumentMountLookupState(
+  doc: Document,
+  state: DocumentMountLookupState,
+): void {
+  if (
+    state.scopedQuerySelector &&
+    doc.querySelector ===
+      (state.scopedQuerySelector as typeof doc.querySelector) &&
+    state.originalQuerySelector
+  ) {
+    doc.querySelector = state.originalQuerySelector as typeof doc.querySelector;
+  }
+  if (
+    state.scopedGetElementById &&
+    doc.getElementById === state.scopedGetElementById &&
+    state.originalGetElementById
+  ) {
+    doc.getElementById = state.originalGetElementById;
+  }
 }
 
 function normalizeBase(value: string, label: string): string {
@@ -1127,15 +1476,71 @@ function assertAbsoluteRoutePath(
       `[evjs:plugin-qiankun] ${label} must not contain whitespace, a query string, or a hash.`,
     );
   }
-  const segments = splitPath(value);
-  const wildcardIndex = segments.findIndex(
-    (segment) => segment === "*" || segment === "$",
-  );
-  if (wildcardIndex >= 0 && wildcardIndex !== segments.length - 1) {
+  if (value.includes("//")) {
     throw new Error(
-      `[evjs:plugin-qiankun] ${label} wildcard must be the terminal path segment.`,
+      `[evjs:plugin-qiankun] ${label} must not contain repeated "/" separators.`,
     );
   }
+
+  const segments = splitPath(value);
+  const paramNames = new Set<string>();
+  for (const [index, segment] of segments.entries()) {
+    if (segment === "*") {
+      if (index !== segments.length - 1) {
+        throw new Error(
+          `[evjs:plugin-qiankun] ${label} wildcard must be the terminal path segment.`,
+        );
+      }
+      continue;
+    }
+    if (segment.includes("*")) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} wildcard must be "*" as a complete terminal path segment.`,
+      );
+    }
+    if (segment.startsWith("$")) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} must use ":param" or "*" syntax instead of evjs "$" route segments.`,
+      );
+    }
+    if (!segment.startsWith(":")) continue;
+
+    const name = segment.slice(1);
+    if (!name) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} contains dynamic segment ":" without a param name.`,
+      );
+    }
+    if (!qiankunRouteParamNamePattern.test(name)) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} dynamic segment "${segment}" must use ":param" with an identifier-style param name.`,
+      );
+    }
+    if (reservedQiankunRouteParamNames.has(name)) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} uses reserved dynamic param name "${name}".`,
+      );
+    }
+    if (paramNames.has(name)) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} uses duplicate dynamic param name "${name}".`,
+      );
+    }
+    paramNames.add(name);
+  }
+}
+
+function normalizeQiankunRoutePath(path: string): string {
+  return path === "/" ? "/" : path.replace(/\/$/, "");
+}
+
+function qiankunRuntimeRouteShape(path: string): string {
+  return path
+    .split("/")
+    .map((segment) =>
+      segment !== "$" && segment.startsWith("$") ? "$param" : segment,
+    )
+    .join("/");
 }
 
 function assertTrimmedString(
@@ -1178,6 +1583,7 @@ function assertLifeCycles(value: unknown, label: string): void {
       `[evjs:plugin-qiankun] Master resolver ${label} must be an object.`,
     );
   }
+  assertNoUnknownFields(value, qiankunLifecycleNames, label);
   for (const name of qiankunLifecycleNames) {
     const lifecycle = value[name];
     if (lifecycle === undefined || typeof lifecycle === "function") continue;
@@ -1226,8 +1632,9 @@ function assertMemoryHistoryOptions(history: Record<string, unknown>): void {
   }
   if (
     history.initialIndex !== undefined &&
-    (!Number.isInteger(history.initialIndex) ||
-      (history.initialIndex as number) < 0)
+    (typeof history.initialIndex !== "number" ||
+      !Number.isInteger(history.initialIndex) ||
+      history.initialIndex < 0)
   ) {
     throw new Error(
       "[evjs:plugin-qiankun] Slave memory history initialIndex must be a non-negative integer.",

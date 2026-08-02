@@ -378,7 +378,7 @@ Install plugins through `plugins`, normally as
 `pluginFactory(applicationConfig)`. A plugin can declare an independent Page
 contract whose canonical `id` becomes available in adjacent `page.config.ts`
 files.
-The same Plugin descriptor owns `configure()`, `setup()`, `contribute()`, and
+The same Plugin descriptor owns `configure()`, `setup()`, `emitIR()`, and
 lifecycle hooks. See [Plugins](./plugins).
 
 ### Bundler

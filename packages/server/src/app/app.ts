@@ -7,6 +7,7 @@
 
 import {
   APPLICATION_JSON_CONTENT_TYPE,
+  compareRoutePathsBySpecificity,
   getFunctionEndpoint,
   getPathPatternValidationError,
   getRequestFnId,
@@ -35,7 +36,12 @@ import {
   handleRscFlightRequest,
 } from "../framework-rendering/framework.js";
 import type { RouteHandler } from "../routes/index.js";
-import { type DispatchError, dispatch } from "../server-functions/dispatch.js";
+import {
+  createServerFunctionRegistry,
+  type DispatchError,
+  isServerFunctionRegistry,
+  type ServerFunctionRegistry,
+} from "../server-functions/registry.js";
 import { textResponse } from "../shared/responses.js";
 import { isRecord } from "../shared/validation.js";
 
@@ -57,6 +63,13 @@ export interface CreateAppOptions {
    * renderers attach here so deployment adapters do not own render semantics.
    */
   framework?: FrameworkServerOptions;
+  /**
+   * Server functions owned by this application.
+   *
+   * Create the registry with `createServerFunctionRegistry()` and register
+   * functions before passing it to `createApp()`.
+   */
+  serverFunctions?: ServerFunctionRegistry;
 }
 
 /**
@@ -70,7 +83,12 @@ export interface CreateAppOptions {
  */
 export function createApp(options?: CreateAppOptions): Hono {
   assertCreateAppOptions(options);
-  const { routes = [], middlewares = [], framework } = options ?? {};
+  const {
+    routes = [],
+    middlewares = [],
+    framework,
+    serverFunctions = createServerFunctionRegistry(),
+  } = options ?? {};
   const endpoint = toRuntimePathname(
     framework?.runtime.runtime.server.fn ?? getFunctionEndpoint(),
   );
@@ -86,8 +104,21 @@ export function createApp(options?: CreateAppOptions): Hono {
     app.use(mw);
   }
 
+  // A more-specific path owns the request, including its 405 response. Keep
+  // each route's handlers and fallback together so a static route cannot fall
+  // through to a less-specific dynamic route for a method it does not expose.
+  // Preserve the caller's index for diagnostics after ordering the routes.
+  const orderedRoutes = routes
+    .map((handler, routeIndex) => ({ handler, routeIndex }))
+    .sort((left, right) =>
+      compareProgrammaticRoutePathsBySpecificity(
+        left.handler.path,
+        right.handler.path,
+      ),
+    );
+
   // Mount route handlers (before server function endpoint for priority)
-  for (const [routeIndex, handler] of routes.entries()) {
+  for (const { handler, routeIndex } of orderedRoutes) {
     for (const [method, routeHandlerFn] of Object.entries(handler.methods)) {
       if (!routeHandlerFn) continue;
       const source = `routes[${routeIndex}].methods.${method}`;
@@ -140,7 +171,10 @@ export function createApp(options?: CreateAppOptions): Hono {
         }
 
         const response = isRecord(body)
-          ? await dispatch(body.fnId, readServerFunctionArgs(body))
+          ? await serverFunctions.dispatch(
+              body.fnId,
+              readServerFunctionArgs(body),
+            )
           : createInvalidServerFunctionRequest();
 
         const status = "error" in response ? response.status : 200;
@@ -369,6 +403,15 @@ function assertCreateAppOptions(
   if (options.framework !== undefined) {
     assertFrameworkServerOptions(options.framework);
   }
+
+  if (
+    options.serverFunctions !== undefined &&
+    !isServerFunctionRegistry(options.serverFunctions)
+  ) {
+    throw new Error(
+      "[evjs] createApp() serverFunctions must be created by createServerFunctionRegistry().",
+    );
+  }
 }
 
 function assertFrameworkServerOptions(value: unknown): void {
@@ -433,6 +476,18 @@ function assertOptionalPprRuntimeOptions(value: unknown, name: string): void {
         `[evjs] createApp() ${name}.regionCache.delete must be a function when provided.`,
       );
     }
+  }
+
+  const maxRegionCacheEntries = value.maxRegionCacheEntries;
+  if (
+    maxRegionCacheEntries !== undefined &&
+    (typeof maxRegionCacheEntries !== "number" ||
+      !Number.isSafeInteger(maxRegionCacheEntries) ||
+      maxRegionCacheEntries <= 0)
+  ) {
+    throw new Error(
+      `[evjs] createApp() ${name}.maxRegionCacheEntries must be a positive integer.`,
+    );
   }
 
   const staleWhileRevalidate = value.staleWhileRevalidate;
@@ -598,6 +653,28 @@ function assertUniqueRoutePaths(routes: RouteHandler[]): void {
     }
     seenShapes.set(routeShape, { index, path: route.path });
   });
+}
+
+function compareProgrammaticRoutePathsBySpecificity(
+  leftPath: string,
+  rightPath: string,
+): number {
+  return compareRoutePathsBySpecificity(
+    toCanonicalSpecificityPath(leftPath),
+    toCanonicalSpecificityPath(rightPath),
+  );
+}
+
+/** Translate Hono's wildcard syntax without treating `$`-prefixed literals as parameters. */
+function toCanonicalSpecificityPath(routePath: string): string {
+  return routePath
+    .split("/")
+    .map((segment) => {
+      if (segment === "*") return "$";
+      if (segment.startsWith("$")) return `%24${segment.slice(1)}`;
+      return segment;
+    })
+    .join("/");
 }
 
 function assertMiddlewareArray(value: unknown, name: string): void {

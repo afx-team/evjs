@@ -198,7 +198,7 @@ export async function createWebpackConfigs(
     return expectation ? [expectation] : [];
   });
 
-  const ctx: ConfigureBundlerContext<WebpackConfig> = {
+  const ctx: ConfigureBundlerContext<WebpackConfig> = Object.freeze({
     mode: plan.mode,
     command: plan.mode === "production" ? "build" : "dev",
     cwd,
@@ -212,7 +212,7 @@ export async function createWebpackConfigs(
           : "server",
     logger,
     addWatchFile: options.addWatchFile ?? missingFrameworkWatchCollector,
-  };
+  });
 
   for (const h of hooks) {
     if (h.configureBundler) {
@@ -365,6 +365,11 @@ interface FrameworkWebpackOutputExpectation {
   configName: string;
   field: "output.client" | "output.server" | "build-only output";
   path: string;
+  mode: unknown;
+  target: unknown;
+  clean: unknown;
+  publicPath: unknown;
+  crossOriginLoading: unknown;
   entryImports: ReadonlyMap<string, string>;
   templates: WebpackOutputTemplateSnapshot;
   cssPlugin?: MiniCssExtractPlugin;
@@ -403,6 +408,11 @@ function getFrameworkWebpackOutputExpectation(
       plugin instanceof MiniCssExtractPlugin,
   );
   const outputExpectation = {
+    mode: config.mode,
+    target: config.target,
+    clean: config.output?.clean,
+    publicPath: config.output?.publicPath,
+    crossOriginLoading: config.output?.crossOriginLoading,
     entryImports: snapshotFrameworkWebpackEntryImports(config),
     templates,
     ...(cssPlugin
@@ -454,6 +464,7 @@ async function assertFrameworkWebpackOutput(
     );
   }
 
+  assertFrameworkWebpackIdentity(config, expectation);
   assertFrameworkWebpackEntries(config, expectation);
   assertWebpackOutputTemplates(config, expectation);
   assertSelfContainedServerEntrypoints(config, expectation);
@@ -464,6 +475,28 @@ async function assertFrameworkWebpackOutput(
       `Webpack config "${expectation.configName}"`,
       outputPaths.rootDir,
       actualPath,
+    );
+  }
+}
+
+function assertFrameworkWebpackIdentity(
+  config: Configuration,
+  expectation: FrameworkWebpackOutputExpectation,
+): void {
+  for (const [field, actual, expected] of [
+    ["mode", config.mode, expectation.mode],
+    ["target", config.target, expectation.target],
+    ["output.clean", config.output?.clean, expectation.clean],
+    ["output.publicPath", config.output?.publicPath, expectation.publicPath],
+    [
+      "output.crossOriginLoading",
+      config.output?.crossOriginLoading,
+      expectation.crossOriginLoading,
+    ],
+  ] as const) {
+    if (Object.is(actual, expected)) continue;
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" ${field} ${formatOutputTemplate(actual)} must remain the framework-owned value ${formatOutputTemplate(expected)}. configureBundler hooks cannot override framework runtime identity.`,
     );
   }
 }

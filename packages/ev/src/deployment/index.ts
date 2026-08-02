@@ -7,6 +7,7 @@
 
 import path from "node:path";
 import type { FrameworkRuntime } from "@evjs/server";
+import { assertFrameworkRuntime } from "@evjs/server/framework";
 import type {
   BuildOutput,
   DeploymentDocumentOutput,
@@ -74,6 +75,30 @@ export interface EdgeDeploymentAdapterOptions
    */
   frameworkRuntime?: FrameworkRuntime;
 }
+
+const NODE_DEPLOYMENT_ADAPTER_OPTION_FIELDS = new Set([
+  "platform",
+  "includeAssets",
+  "artifactFileName",
+  "serverFileName",
+  "portEnv",
+  "defaultPort",
+  "frameworkRuntime",
+]);
+const STATIC_DEPLOYMENT_ADAPTER_OPTION_FIELDS = new Set([
+  "platform",
+  "includeAssets",
+  "artifactFileName",
+  "redirectsFileName",
+]);
+const EDGE_DEPLOYMENT_ADAPTER_OPTION_FIELDS = new Set([
+  "platform",
+  "includeAssets",
+  "artifactFileName",
+  "workerFileName",
+  "assetsBinding",
+  "frameworkRuntime",
+]);
 
 export interface NodeDeploymentFiles {
   artifactFileName: string;
@@ -323,13 +348,17 @@ function resolveNodeDeploymentFileNames(
 export function nodeDeploymentAdapter(
   options: NodeDeploymentAdapterOptions = {},
 ): Plugin {
+  const adapterOptions = snapshotNodeDeploymentAdapterOptions(options);
   return {
     id: "node-deployment-adapter",
     setup(ctx) {
       return {
         afterBuild: declareDeploymentOutputReservations(
           ({ output }) => {
-            const files = resolveNodeDeploymentFileNames(output, options);
+            const files = resolveNodeDeploymentFileNames(
+              output,
+              adapterOptions,
+            );
             const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
             return [
               deploymentOutput(
@@ -352,7 +381,7 @@ export function nodeDeploymentAdapter(
           },
           async ({ output, frameworkRuntime }) => {
             const files = createNodeDeploymentFiles(output, {
-              ...options,
+              ...adapterOptions,
               frameworkRuntime,
             });
             const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
@@ -455,13 +484,17 @@ function resolveStaticDeploymentFileNames(
 export function staticDeploymentAdapter(
   options: StaticDeploymentAdapterOptions = {},
 ): Plugin {
+  const adapterOptions = snapshotStaticDeploymentAdapterOptions(options);
   return {
     id: "static-deployment-adapter",
     setup(ctx) {
       return {
         afterBuild: declareDeploymentOutputReservations(
           ({ output }) => {
-            const files = resolveStaticDeploymentFileNames(output, options);
+            const files = resolveStaticDeploymentFileNames(
+              output,
+              adapterOptions,
+            );
             const publicDir = resolveOutputDir(ctx.cwd, output, "publicDir");
             return [
               deploymentOutput(
@@ -479,7 +512,7 @@ export function staticDeploymentAdapter(
             ];
           },
           async ({ output }) => {
-            const files = createStaticDeploymentFiles(output, options);
+            const files = createStaticDeploymentFiles(output, adapterOptions);
             const publicDir = resolveOutputDir(ctx.cwd, output, "publicDir");
             await writeDeploymentFile(
               ctx.cwd,
@@ -565,13 +598,17 @@ function resolveEdgeDeploymentFileNames(
 export function edgeDeploymentAdapter(
   options: EdgeDeploymentAdapterOptions = {},
 ): Plugin {
+  const adapterOptions = snapshotEdgeDeploymentAdapterOptions(options);
   return {
     id: "edge-deployment-adapter",
     setup(ctx) {
       return {
         afterBuild: declareDeploymentOutputReservations(
           ({ output }) => {
-            const files = resolveEdgeDeploymentFileNames(output, options);
+            const files = resolveEdgeDeploymentFileNames(
+              output,
+              adapterOptions,
+            );
             const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
             return [
               deploymentOutput(
@@ -594,7 +631,7 @@ export function edgeDeploymentAdapter(
           },
           async ({ output, frameworkRuntime }) => {
             const files = createEdgeDeploymentFiles(output, {
-              ...options,
+              ...adapterOptions,
               frameworkRuntime,
             });
             const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
@@ -617,6 +654,193 @@ export function edgeDeploymentAdapter(
       };
     },
   };
+}
+
+function snapshotNodeDeploymentAdapterOptions(
+  value: unknown,
+): Readonly<NodeDeploymentAdapterOptions> {
+  const source = "nodeDeploymentAdapter() options";
+  const options = readDeploymentAdapterOptions(
+    value,
+    source,
+    NODE_DEPLOYMENT_ADAPTER_OPTION_FIELDS,
+  );
+  const frameworkRuntime = readFrameworkRuntimeOption(options, source);
+  return Object.freeze({
+    platform: readStringOption(options, "platform", source) ?? "node",
+    includeAssets: readBooleanOption(options, "includeAssets", source) ?? true,
+    artifactFileName: resolveDeploymentFileName(
+      readOption(options, "artifactFileName"),
+      "deployment.node.json",
+      "nodeDeploymentAdapter.artifactFileName",
+    ),
+    serverFileName: resolveDeploymentFileName(
+      readOption(options, "serverFileName"),
+      "server.mjs",
+      "nodeDeploymentAdapter.serverFileName",
+    ),
+    portEnv: readStringOption(options, "portEnv", source) ?? "PORT",
+    defaultPort: readPortOption(options, "defaultPort", source) ?? 3000,
+    ...(frameworkRuntime ? { frameworkRuntime } : {}),
+  });
+}
+
+function snapshotStaticDeploymentAdapterOptions(
+  value: unknown,
+): Readonly<StaticDeploymentAdapterOptions> {
+  const source = "staticDeploymentAdapter() options";
+  const options = readDeploymentAdapterOptions(
+    value,
+    source,
+    STATIC_DEPLOYMENT_ADAPTER_OPTION_FIELDS,
+  );
+  return Object.freeze({
+    platform: readStringOption(options, "platform", source) ?? "static",
+    includeAssets: readBooleanOption(options, "includeAssets", source) ?? true,
+    artifactFileName: resolveDeploymentFileName(
+      readOption(options, "artifactFileName"),
+      "deployment.static.json",
+      "staticDeploymentAdapter.artifactFileName",
+    ),
+    redirectsFileName: resolveDeploymentFileName(
+      readOption(options, "redirectsFileName"),
+      "_redirects",
+      "staticDeploymentAdapter.redirectsFileName",
+    ),
+  });
+}
+
+function snapshotEdgeDeploymentAdapterOptions(
+  value: unknown,
+): Readonly<EdgeDeploymentAdapterOptions> {
+  const source = "edgeDeploymentAdapter() options";
+  const options = readDeploymentAdapterOptions(
+    value,
+    source,
+    EDGE_DEPLOYMENT_ADAPTER_OPTION_FIELDS,
+  );
+  const frameworkRuntime = readFrameworkRuntimeOption(options, source);
+  return Object.freeze({
+    platform: readStringOption(options, "platform", source) ?? "edge",
+    includeAssets: readBooleanOption(options, "includeAssets", source) ?? true,
+    artifactFileName: resolveDeploymentFileName(
+      readOption(options, "artifactFileName"),
+      "deployment.edge.json",
+      "edgeDeploymentAdapter.artifactFileName",
+    ),
+    workerFileName: resolveDeploymentFileName(
+      readOption(options, "workerFileName"),
+      "worker.mjs",
+      "edgeDeploymentAdapter.workerFileName",
+    ),
+    assetsBinding:
+      readStringOption(options, "assetsBinding", source) ?? "ASSETS",
+    ...(frameworkRuntime ? { frameworkRuntime } : {}),
+  });
+}
+
+function readDeploymentAdapterOptions(
+  value: unknown,
+  source: string,
+  supportedFields: ReadonlySet<string>,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`[evjs] ${source} must be a plain object.`);
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`[evjs] ${source} must be a plain object.`);
+  }
+
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
+    }
+    if (!supportedFields.has(key)) {
+      throw new Error(`[evjs] ${source} has unknown field "${key}".`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      throw new Error(
+        `[evjs] ${source}.${key} must be an enumerable own data property.`,
+      );
+    }
+  }
+  return value as Record<string, unknown>;
+}
+
+function readOption(options: Record<string, unknown>, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(options, key)?.value;
+}
+
+function readStringOption(
+  options: Record<string, unknown>,
+  key: string,
+  source: string,
+): string | undefined {
+  const value = readOption(options, key);
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`[evjs] ${source}.${key} must be a non-empty string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${source}.${key} must not contain leading or trailing whitespace.`,
+    );
+  }
+  return value;
+}
+
+function readBooleanOption(
+  options: Record<string, unknown>,
+  key: string,
+  source: string,
+): boolean | undefined {
+  const value = readOption(options, key);
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new Error(`[evjs] ${source}.${key} must be a boolean.`);
+  }
+  return value;
+}
+
+function readPortOption(
+  options: Record<string, unknown>,
+  key: string,
+  source: string,
+): number | undefined {
+  const value = readOption(options, key);
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > 65535
+  ) {
+    throw new Error(
+      `[evjs] ${source}.${key} must be an integer TCP port from 1 to 65535.`,
+    );
+  }
+  return value;
+}
+
+function readFrameworkRuntimeOption(
+  options: Record<string, unknown>,
+  source: string,
+): FrameworkRuntime | undefined {
+  const value = readOption(options, "frameworkRuntime");
+  if (value === undefined) return undefined;
+  const runtimeSource = `${source}.frameworkRuntime`;
+  let snapshot: unknown;
+  try {
+    snapshot = structuredClone(value);
+  } catch (error) {
+    throw new Error(`[evjs] ${runtimeSource} must be cloneable data.`, {
+      cause: error,
+    });
+  }
+  assertFrameworkRuntime(snapshot, runtimeSource);
+  return Object.freeze(snapshot);
 }
 
 function deploymentOutput(
@@ -694,14 +918,21 @@ function createNodeServerModule(
     "Node deployment BuildOutput",
   );
 
-  return `import { readFile } from "node:fs/promises";
+  return `import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { serve } from "@evjs/ev/_internal/server/node";
+import { resolveContainedRealPath, serve } from "@evjs/ev/_internal/server/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientRoot = path.join(__dirname, ${JSON.stringify(clientRoot)});
-const serverDir = path.join(__dirname, ${JSON.stringify(serverRoot)});
+const deploymentRoot = await realpath(__dirname);
+const clientRoot = await resolveDeploymentDirectory(
+  path.join(deploymentRoot, ${JSON.stringify(clientRoot)}),
+  "Public output directory",
+);
+const serverDir = await resolveDeploymentDirectory(
+  path.join(deploymentRoot, ${JSON.stringify(serverRoot)}),
+  "Server output directory",
+);
 const serverEntry = ${JSON.stringify(serverEntry ?? "")};
 const serverArtifacts = new Set(${JSON.stringify(serverArtifacts)});
 const frameworkExactEndpointPaths = ${JSON.stringify(frameworkExactEndpointPaths, null, 2)};
@@ -712,12 +943,12 @@ const staticFallback = ${JSON.stringify(staticFallback ?? "")};
 const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};
 globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${serializeFrameworkRuntimeExpression(frameworkRuntime)};
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
-  const mod = await import(pathToFileURL(resolveServerArtifact(asset)).href);
+  const mod = await import(pathToFileURL(await resolveServerArtifact(asset)).href);
   return normalizeServerModule(mod);
 };
 const serverHandler = serverEntry
   ? unwrapServerHandler(
-      await import(pathToFileURL(resolveServerArtifact(serverEntry)).href),
+      await import(pathToFileURL(await resolveServerArtifact(serverEntry)).href),
     )
   : undefined;
 if (serverEntry && typeof serverHandler?.fetch !== "function") {
@@ -798,10 +1029,12 @@ function stripStaticAssetPrefix(pathname) {
 
 async function serveFile(filePath) {
   try {
-    const body = await readFile(filePath);
+    const resolvedFilePath = await resolveContainedRealPath(clientRoot, filePath);
+    if (!resolvedFilePath) return undefined;
+    const body = await readFile(resolvedFilePath);
     return new Response(body, {
       headers: {
-        "content-type": contentTypeFor(filePath),
+        "content-type": contentTypeFor(resolvedFilePath),
       },
     });
   } catch {
@@ -809,25 +1042,36 @@ async function serveFile(filePath) {
   }
 }
 
-function resolveServerArtifact(asset) {
+async function resolveServerArtifact(asset) {
   if (!serverArtifacts.has(asset)) {
     throw new Error(
       \`[evjs] Server artifact "\${String(asset)}" is not declared by BuildOutput.\`,
     );
   }
   const artifactPath = path.resolve(serverDir, ...asset.split("/"));
-  const relativePath = path.relative(serverDir, artifactPath);
-  if (
-    !relativePath ||
-    relativePath === ".." ||
-    relativePath.startsWith(\`..\${path.sep}\`) ||
-    path.isAbsolute(relativePath)
-  ) {
+  const resolvedArtifactPath = await resolveContainedRealPath(
+    serverDir,
+    artifactPath,
+  );
+  if (!resolvedArtifactPath) {
     throw new Error(
       \`[evjs] Server artifact "\${String(asset)}" must resolve inside the server output directory.\`,
     );
   }
-  return artifactPath;
+  return resolvedArtifactPath;
+}
+
+async function resolveDeploymentDirectory(directory, field) {
+  const resolvedDirectory = await resolveContainedRealPath(
+    deploymentRoot,
+    directory,
+  );
+  if (!resolvedDirectory) {
+    throw new Error(
+      \`[evjs] \${field} must resolve inside the deployment output root.\`,
+    );
+  }
+  return resolvedDirectory;
 }
 
 function normalizeServerModule(mod) {

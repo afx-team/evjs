@@ -9,7 +9,7 @@ import {
   type FrameworkView,
   type GeneratedModuleRef,
   type HtmlDocument,
-  type PluginContributeContext,
+  type PluginEmitIRContext,
   type PluginHooks,
   type PluginSetupContext,
   pluginOptions,
@@ -97,10 +97,8 @@ const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
  *
  * This is the composable form of {@link evPluginQiankunMaster}.
  */
-export async function contributeQiankunMaster<
-  TBundlerCfg = DefaultBundlerConfig,
->(
-  ctx: PluginContributeContext<TBundlerCfg>,
+export async function emitQiankunMasterIR<TBundlerCfg = DefaultBundlerConfig>(
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
 ): Promise<void> {
   const state = createMasterState(ctx, options);
@@ -134,10 +132,8 @@ export async function contributeQiankunMaster<
  *
  * This is the composable form of {@link evPluginQiankunSlave}.
  */
-export async function contributeQiankunSlave<
-  TBundlerCfg = DefaultBundlerConfig,
->(
-  ctx: PluginContributeContext<TBundlerCfg>,
+export async function emitQiankunSlaveIR<TBundlerCfg = DefaultBundlerConfig>(
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions = {},
 ): Promise<void> {
   const state = await createSlaveState(ctx, options);
@@ -170,8 +166,8 @@ export const evPluginQiankunMaster = definePlugin({
   id: masterPluginId,
   application: pluginOptions<QiankunMasterPluginOptions>(),
   enforce: "pre",
-  async contribute(ctx) {
-    await contributeQiankunMaster(ctx, ctx.options);
+  async emitIR(ctx) {
+    await emitQiankunMasterIR(ctx, ctx.options);
   },
   setup() {
     return createQiankunMasterHooks();
@@ -182,8 +178,8 @@ export const evPluginQiankunSlave = definePlugin({
   id: slavePluginId,
   application: pluginOptions<QiankunSlavePluginOptions>({ defaults: {} }),
   enforce: "pre",
-  async contribute(ctx) {
-    await contributeQiankunSlave(ctx, ctx.options);
+  async emitIR(ctx) {
+    await emitQiankunSlaveIR(ctx, ctx.options);
   },
   async setup(ctx) {
     return createQiankunSlaveHooks(ctx, ctx.options);
@@ -322,7 +318,7 @@ function resolveModulePath(cwd: string, specifier: string): string {
 }
 
 function createMasterState<TBundlerCfg>(
-  ctx: PluginContributeContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
 ): MasterEntryWrapperState {
   const entry = resolveSingleAppEntry(ctx.framework, "master");
@@ -336,7 +332,7 @@ function createMasterState<TBundlerCfg>(
 }
 
 async function createSlaveState<TBundlerCfg>(
-  ctx: PluginContributeContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions,
 ): Promise<SlaveEntryWrapperState> {
   const entry = resolveSingleAppEntry(ctx.framework, "slave");
@@ -354,7 +350,7 @@ async function createSlaveState<TBundlerCfg>(
 }
 
 function addQiankunExternalContribution<TBundlerCfg>(
-  ctx: PluginContributeContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
 ): void {
   ctx.slot("resolve.external").add({
     id: "qiankun-external",
@@ -389,7 +385,7 @@ function createMasterEntryWrapperSource(
 }
 
 function emitOriginalEntryModule<TBundlerCfg>(
-  ctx: PluginContributeContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
 ): GeneratedModuleRef {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) {

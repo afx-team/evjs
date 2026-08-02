@@ -306,12 +306,15 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       }),
   );
 
-  const serverFunctions: Record<string, ServerFunctionOutput> = {};
+  const serverFunctions = Object.create(null) as Record<
+    string,
+    ServerFunctionOutput
+  >;
   for (const fn of input.graph.serverFunctions) {
-    serverFunctions[fn.id] = {
+    defineRecordValue(serverFunctions, fn.id, {
       assets: cloneServerCapabilityAssets(),
       exportName: fn.exportName,
-    };
+    });
   }
 
   const serverRoutes: ServerRouteOutput[] = input.graph.serverRoutes.map(

@@ -34,11 +34,15 @@ import {
 } from "./framework-runtime.js";
 import { type generateHtml, validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
-import { assertSafeBuildOutputPaths } from "./output-path-safety.js";
+import {
+  assertSafeBuildOutputPaths,
+  type ResolvedBuildOutputPaths,
+} from "./output-path-safety.js";
 import {
   type OwnedOutputFileSnapshot,
   removeOwnedOutputDirectoryIfEmpty,
   removeOwnedOutputFile,
+  removeOwnedOutputSymbolicLink,
   snapshotOwnedOutputFile,
   writeOwnedOutputFile,
 } from "./owned-file-output.js";
@@ -74,9 +78,10 @@ export interface FrameworkOutputSnapshot {
 }
 
 /**
- * Capture only files the framework may mutate while publishing canonical
- * output for the supplied plans. Bundle assets remain owned by the adapter and
- * are deliberately excluded from this rollback boundary.
+ * Capture framework-owned files for dev-cycle rollback and production
+ * symlink validation. Production builds publish the complete dist tree through
+ * a separate staging transaction, so adapter assets intentionally remain
+ * outside this file-level snapshot.
  */
 export async function createFrameworkOutputSnapshot(
   cwd: string,
@@ -86,13 +91,9 @@ export async function createFrameworkOutputSnapshot(
   const metadataFiles = new Set<string>();
   const missingDirectories = new Set<string>();
 
-  async function capture(file: string): Promise<void> {
+  async function capture(file: string, field: string): Promise<void> {
     if (files.has(file)) return;
-    const snapshot = await snapshotOwnedOutputFile(
-      cwd,
-      file,
-      "Framework output snapshot",
-    );
+    const snapshot = await snapshotOwnedOutputFile(cwd, file, field);
     files.set(file, snapshot);
     for (const directory of snapshot.missingDirectories) {
       missingDirectories.add(directory);
@@ -106,7 +107,7 @@ export async function createFrameworkOutputSnapshot(
       FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
     );
     metadataFiles.add(metadataFile);
-    await capture(metadataFile);
+    await capture(metadataFile, "deployment metadata output");
 
     const previous = parsePreviousFrameworkHtmlOutput(
       cwd,
@@ -114,23 +115,30 @@ export async function createFrameworkOutputSnapshot(
       clientDir,
       files.get(metadataFile)?.contents,
     );
-    const htmlFiles = [
-      ...plan.html.flatMap((html) => [html.fileName, ...(html.aliases ?? [])]),
-      ...(previous?.documents.flatMap((document) => [
-        document.fileName,
-        ...(document.aliases ?? []),
-      ]) ?? []),
-    ];
-    const mutationPaths = [
-      ...RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) =>
-        path.join(clientDir, fileName),
+    const mutationPaths: FrameworkOutputMutationPath[] = [
+      ...RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) => ({
+        field: `Runtime-only bundler manifest "${fileName}"`,
+        file: path.join(clientDir, fileName),
+      })),
+      ...collectFrameworkHtmlMutationPaths(
+        clientDir,
+        previous?.documents ?? [],
+        "Stale HTML Document",
       ),
-      ...htmlFiles.flatMap((fileName) => {
-        const file = resolveContainedFile(clientDir, fileName);
-        return file ? [file] : [];
-      }),
+      ...collectFrameworkHtmlMutationPaths(
+        clientDir,
+        plan.html,
+        "HTML Document",
+      ),
     ];
-    await Promise.all([...new Set(mutationPaths)].map(capture));
+    const uniqueMutationPaths = new Map(
+      mutationPaths.map((mutation) => [mutation.file, mutation]),
+    );
+    await Promise.all(
+      [...uniqueMutationPaths.values()].map(({ file, field }) =>
+        capture(file, field),
+      ),
+    );
   }
 
   let settled = false;
@@ -155,10 +163,20 @@ export async function createFrameworkOutputSnapshot(
           path.relative(cwd, left).split(path.sep).length,
       );
       await runCleanupTasks([
+        ...directories
+          .toReversed()
+          .map(
+            (directory) => () =>
+              removeOwnedOutputSymbolicLink(
+                cwd,
+                directory,
+                "Framework output rollback",
+              ),
+          ),
         ...ordinaryFiles.map(
           ([file, snapshot]) =>
             () =>
-              restoreFrameworkOutputFile(cwd, file, snapshot.contents),
+              restoreFrameworkOutputFile(cwd, file, snapshot),
         ),
         ...directories.map(
           (directory) => () =>
@@ -171,21 +189,59 @@ export async function createFrameworkOutputSnapshot(
         ...populatedMetadataFiles.map(
           ([file, snapshot]) =>
             () =>
-              restoreFrameworkOutputFile(cwd, file, snapshot.contents),
+              restoreFrameworkOutputFile(cwd, file, snapshot),
         ),
       ]);
     },
   };
 }
 
+interface FrameworkOutputMutationPath {
+  field: string;
+  file: string;
+}
+
+function collectFrameworkHtmlMutationPaths(
+  clientDir: string,
+  documents: readonly {
+    id: string;
+    fileName: string;
+    aliases?: readonly string[];
+  }[],
+  operation: "HTML Document" | "Stale HTML Document",
+): FrameworkOutputMutationPath[] {
+  const mutations: FrameworkOutputMutationPath[] = [];
+  for (const document of documents) {
+    for (const fileName of [document.fileName, ...(document.aliases ?? [])]) {
+      const file = resolveContainedFile(clientDir, fileName);
+      if (!file) continue;
+      mutations.push({
+        field: `${operation} "${document.id}" output "${fileName}"`,
+        file,
+      });
+    }
+  }
+  return mutations;
+}
+
 function restoreFrameworkOutputFile(
   cwd: string,
   file: string,
-  contents: Buffer | undefined,
+  snapshot: OwnedOutputFileSnapshot,
 ): Promise<void> {
-  return contents === undefined
-    ? removeOwnedOutputFile(cwd, file, "Framework output rollback")
-    : writeOwnedOutputFile(cwd, file, contents, "Framework output rollback");
+  if (snapshot.contents === undefined) {
+    return removeOwnedOutputFile(cwd, file, "Framework output rollback");
+  }
+  return restorePopulatedFrameworkOutputFile(cwd, file, snapshot.contents);
+}
+
+async function restorePopulatedFrameworkOutputFile(
+  cwd: string,
+  file: string,
+  contents: Buffer,
+): Promise<void> {
+  await removeOwnedOutputSymbolicLink(cwd, file, "Framework output rollback");
+  await writeOwnedOutputFile(cwd, file, contents, "Framework output rollback");
 }
 
 export function validateHtmlTemplates<TBundlerCfg>(
@@ -322,7 +378,15 @@ function collectHtmlTemplates<TBundlerCfg>(
 function getFrameworkOutputPaths(
   cwd: string,
   output: BuildOutput,
+  emissionPaths?: ResolvedBuildOutputPaths,
 ): { rootDir: string; clientDir: string; serverDir: string } {
+  if (emissionPaths) {
+    return {
+      rootDir: path.resolve(emissionPaths.rootDir),
+      clientDir: path.resolve(emissionPaths.clientDir),
+      serverDir: path.resolve(emissionPaths.serverDir),
+    };
+  }
   const rootDir = path.resolve(cwd, output.paths.rootDir);
   const publicDir = output.paths.publicDir;
   const serverDir = output.paths.serverDir;
@@ -341,8 +405,13 @@ function getFrameworkOutputPaths(
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
+  emissionPaths?: ResolvedBuildOutputPaths,
 ): Promise<PreviousFrameworkHtmlOutput | undefined> {
-  const { rootDir, clientDir } = getFrameworkOutputPaths(cwd, output);
+  const { rootDir, clientDir } = getFrameworkOutputPaths(
+    cwd,
+    output,
+    emissionPaths,
+  );
   const previousHtmlOutput = await readPreviousFrameworkHtmlOutput(
     cwd,
     rootDir,
@@ -535,8 +604,13 @@ async function emitFrameworkHtml<TBundlerCfg>(
   previousHtmlOutput?: PreviousFrameworkHtmlOutput,
   bundlerClientFiles?: readonly string[],
   loadServerModule?: (asset: string) => Promise<unknown>,
+  emissionPaths?: ResolvedBuildOutputPaths,
 ): Promise<void> {
-  const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
+  const { clientDir, serverDir } = getFrameworkOutputPaths(
+    cwd,
+    output,
+    emissionPaths,
+  );
   await removeStaleFrameworkHtml(
     cwd,
     clientDir,
@@ -821,6 +895,8 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   hooks: PluginHooks<TBundlerCfg>[];
   pluginCtx: PluginSetupContext<TBundlerCfg>;
   isRebuild: boolean;
+  /** Internal production staging paths; BuildOutput identity stays canonical. */
+  emissionPaths?: ResolvedBuildOutputPaths;
 }): Promise<{
   output: BuildOutput;
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
@@ -828,7 +904,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   assertBundlerBuildFactsContract(options.bundlerFacts);
   await assertSafeBuildOutputPaths(
     options.cwd,
-    resolveBuildOutputPaths(options.cwd, options.plan),
+    options.emissionPaths ?? resolveBuildOutputPaths(options.cwd, options.plan),
   );
   assertFrameworkHtmlOutputsAvailable(
     options.plan,
@@ -887,7 +963,11 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     createBuildResult(output, options.isRebuild, { frameworkRuntime }),
     { cwd: options.cwd, emittedFiles: options.bundlerFacts.emittedFiles },
   );
-  const previousHtmlOutput = await emitFrameworkManifest(options.cwd, output);
+  const previousHtmlOutput = await emitFrameworkManifest(
+    options.cwd,
+    output,
+    options.emissionPaths,
+  );
   await emitFrameworkHtml(
     options.cwd,
     options.config,
@@ -900,6 +980,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     previousHtmlOutput,
     options.bundlerFacts.emittedFiles?.client,
     options.bundlerFacts.loadServerModule,
+    options.emissionPaths,
   );
 
   return { output, frameworkRuntime };

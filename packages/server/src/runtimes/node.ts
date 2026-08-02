@@ -16,10 +16,8 @@ export interface NodeRunnerOptions {
  * Start a Node.js HTTP(S) server for the given Hono app.
  *
  * Port resolution order: options.port → PORT env → 3001 default.
- * Registers SIGTERM/SIGINT handlers for graceful shutdown.
- *
- * When `https` is enabled, generates a self-signed certificate using
- * Node's built-in crypto module for local development.
+ * Registers SIGTERM/SIGINT handlers for graceful shutdown while the returned
+ * server is open.
  */
 export function serve(
   app: {
@@ -30,7 +28,7 @@ export function serve(
   },
   options?: NodeRunnerOptions,
 ) {
-  const port = options?.port || Number(process.env.PORT) || 3001;
+  const port = resolvePort(options?.port, process.env.PORT);
   const hostname = options?.host;
   const serverOptions: Record<string, unknown> = {
     fetch: app.fetch,
@@ -38,6 +36,7 @@ export function serve(
     hostname,
   };
 
+  let httpsEnabled = false;
   if (options?.https) {
     try {
       let key: string;
@@ -60,6 +59,7 @@ export function serve(
 
       serverOptions.createServer = https.createServer;
       serverOptions.serverOptions = { key, cert };
+      httpsEnabled = true;
     } catch (err) {
       if (process.env.NODE_ENV === "production") {
         throw new Error(
@@ -70,7 +70,7 @@ export function serve(
     }
   }
 
-  const protocol = options?.https ? "https" : "http";
+  const protocol = httpsEnabled ? "https" : "http";
   const server = honoServe(
     serverOptions as Parameters<typeof honoServe>[0],
     (info) => {
@@ -83,14 +83,54 @@ export function serve(
   );
 
   // Graceful shutdown for container/orchestrator environments
+  let forceExitTimer: NodeJS.Timeout | undefined;
+  let shuttingDown = false;
+  const removeSignalHandlers = () => {
+    process.off("SIGTERM", shutdown);
+    process.off("SIGINT", shutdown);
+    if (forceExitTimer) {
+      clearTimeout(forceExitTimer);
+      forceExitTimer = undefined;
+    }
+  };
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info`Shutting down server...`;
-    server.close(() => process.exit(0));
+    process.exitCode = 0;
+    server.close(removeSignalHandlers);
     // Force exit after 10 seconds if connections don't drain
-    setTimeout(() => process.exit(1), 10_000).unref();
+    forceExitTimer = setTimeout(() => process.exit(1), 10_000);
+    forceExitTimer.unref();
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
+  server.once("close", removeSignalHandlers);
+  server.once("error", removeSignalHandlers);
 
   return server;
+}
+
+function resolvePort(
+  optionPort: number | undefined,
+  envPort: string | undefined,
+): number {
+  if (optionPort !== undefined) {
+    return assertPort(optionPort, "options.port");
+  }
+  const normalizedEnvPort = envPort?.trim();
+  if (!normalizedEnvPort) return 3001;
+  if (!/^\d+$/.test(normalizedEnvPort)) {
+    return assertPort(Number.NaN, "process.env.PORT");
+  }
+  return assertPort(Number(normalizedEnvPort), "process.env.PORT");
+}
+
+function assertPort(value: number, source: string): number {
+  if (!Number.isInteger(value) || value < 0 || value > 65535) {
+    throw new Error(
+      `[evjs] ${source} must be an integer TCP port from 0 to 65535.`,
+    );
+  }
+  return value;
 }

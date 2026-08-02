@@ -114,11 +114,21 @@ export function createWebSocketExampleTest() {
             console.error("[e2e-ws-server]", data.toString());
           });
 
-          serverProcess.on("exit", (code) => {
+          serverProcess.once("error", (error) => {
             clearTimeout(timeout);
-            if (code !== null && code !== 0) {
-              reject(new Error(`WebSocket server exited with code ${code}`));
-            }
+            reject(
+              new Error("WebSocket server failed before readiness", {
+                cause: error,
+              }),
+            );
+          });
+          serverProcess.once("exit", (code, signal) => {
+            clearTimeout(timeout);
+            reject(
+              new Error(
+                `WebSocket server exited before readiness (code ${code ?? "null"}, signal ${signal ?? "null"})`,
+              ),
+            );
           });
         });
 

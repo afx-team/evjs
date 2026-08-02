@@ -12,7 +12,7 @@ framework slot。
 Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
 并把它们挂到 framework slot 上。
 
-`contribute(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
+`emitIR(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
 graph 时，evjs 可能会再次执行该 hook。
 
 这个定义刻意比任意临时文件系统更窄。插件不会随意向 `.ev` 写文件；插件声明 artifact
@@ -20,7 +20,7 @@ graph 时，evjs 可能会再次执行该 hook。
 
 ```mermaid
 flowchart TB
-  Hook["contribute(ctx)"]
+  Hook["emitIR(ctx)"]
 
   subgraph Declare["插件声明"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -91,9 +91,11 @@ framework state。
 Application 与 Page view 会暴露解析后的 `plugins` setting bag。Application bag 只包含
 enablement；私有 factory 配置绝不会进入 CoreGraph。Page bag 可以包含经过校验的 static
 Page value。defined plugin 通常使用类型更窄的 `ctx.options` 与 `ctx.pages`；每个已启用
-Page 项都是 `{ page, options }`。逐 Page 的 `contributePage()` 使用
-`ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。内部 provenance 与
-解析结果会在 `contribute()` 物化 generated code 前可用。
+Page 项都是 `{ page, options }`。逐 Page 的 `emitPageIR()` 使用
+`ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。它的 `ctx.emit` 与
+`ctx.slot()` identity 会自动限定在当前 Page，因此插件可以在每个 Page 重用 `runtime`
+等局部 id，无需手动拼接 `ctx.page.id`。内部 provenance 与
+解析结果会在 `emitIR()` 物化 generated code 前可用。
 
 Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
 id。因此 MPA 表现为一个拥有多个 Page/Document 的逻辑 Application，而不是互不关联的
@@ -111,6 +113,9 @@ module，也仍然可见。
 返回的 specifier 只应在生成源码中使用。应用源码不应 import `.ev` 路径或
 `evjs:generated/*` specifier。
 
+Contribution id 在插件内是局部的；在 `emitPageIR()` 中还会进一步限定到当前
+Page。`@evjs/` 前缀保留给框架内部的 namespace。
+
 插件生成模块使用 opaque ref，不暴露文件系统路径：
 
 ```ts
@@ -118,7 +123,7 @@ import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
   id: "analytics",
-  contribute(ctx) {
+  emitIR(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -145,7 +150,7 @@ export const analytics = definePlugin({
 `ctx.emit.entryFacade()`，不要重建 framework internal：
 
 ```ts
-contribute(ctx) {
+emitIR(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -206,7 +211,7 @@ projection 时会失败。后声明的 contribution 包在先声明的 contribut
 route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
 ```ts
-contribute(ctx) {
+emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -42,9 +42,13 @@ import type {
   HtmlDocument,
   HtmlDocumentInfo,
   Plugin,
-  PluginContributeContext,
   PluginSetupContext,
 } from "../../plugin/index.js";
+import {
+  type InternalPluginEmitIRContext,
+  pluginEmitIRScopeFactory,
+  type ScopedPluginEmitIRContext,
+} from "../../plugin/internal.js";
 import {
   createOriginalClientEntryFacadeSource,
   createPagesAppEntryMainSource,
@@ -177,7 +181,7 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   });
 
   for (const plugin of options.plugins) {
-    if (!plugin.contribute) continue;
+    if (!plugin.emitIR) continue;
     await collector.run(plugin);
   }
   collector.resolveModuleSources();
@@ -236,9 +240,9 @@ export function applyHtmlTagContributions(
 
 /**
  * Build-local linker for generated modules and framework slots. Contribution
- * ids are unique per plugin across modules and slots, refs cannot escape their
- * build, and target validation distinguishes semantic graph nodes from the
- * entries and Documents that were actually materialized for them.
+ * ids are unique per plugin and emission scope across modules and slots, refs
+ * cannot escape their build, and target validation distinguishes semantic
+ * graph nodes from the entries and Documents materialized for them.
  */
 class ContributionCollector<TBundlerCfg> {
   readonly modules: InternalGeneratedModule[] = [];
@@ -265,7 +269,7 @@ class ContributionCollector<TBundlerCfg> {
     const pluginId = plugin.id;
     assertPluginId(pluginId, "plugin id");
     const emit = this.createEmitApi(pluginId);
-    const context: PluginContributeContext<TBundlerCfg> = {
+    const context = Object.freeze({
       ...this.options.pluginContext,
       mode: this.options.mode,
       command: this.options.command,
@@ -275,8 +279,10 @@ class ContributionCollector<TBundlerCfg> {
       emit,
       slot: <K extends FrameworkSlotName>(name: K) =>
         this.createSlot(pluginId, name),
-    };
-    await plugin.contribute?.(context);
+      [pluginEmitIRScopeFactory]: (namespace: string) =>
+        this.createScopedEmitContext(pluginId, namespace),
+    }) as InternalPluginEmitIRContext<TBundlerCfg>;
+    await plugin.emitIR?.(context);
   }
 
   resolveModuleSources(): void {
@@ -420,17 +426,32 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private createEmitApi(pluginId: string): EmitApi {
-    return {
+  private createScopedEmitContext(
+    pluginId: string,
+    namespace: string,
+  ): ScopedPluginEmitIRContext {
+    return Object.freeze({
+      emit: this.createEmitApi(pluginId, namespace),
+      slot: <K extends FrameworkSlotName>(name: K) =>
+        this.createSlot(pluginId, name, namespace),
+    });
+  }
+
+  private createEmitApi(pluginId: string, namespace?: string): EmitApi {
+    const emit: EmitApi = {
       module: (input) => {
         const id = validateContributionId(input.id, pluginId);
-        return this.emitGeneratedModule(pluginId, {
-          id,
-          scope: input.scope,
-          source: input.source,
-          extension: input.extension ?? ".ts",
-          keyKind: "generated module",
-        });
+        return this.emitGeneratedModule(
+          pluginId,
+          {
+            id,
+            scope: input.scope,
+            source: input.source,
+            extension: input.extension ?? ".ts",
+            keyKind: "generated module",
+          },
+          namespace,
+        );
       },
       data: (input) => {
         const id = validateContributionId(input.id, pluginId);
@@ -439,13 +460,17 @@ class ContributionCollector<TBundlerCfg> {
           `Plugin "${pluginId}" generated data "${id}" value`,
         );
         const source = `${JSON.stringify(input.value, null, 2)}\n`;
-        return this.emitGeneratedModule(pluginId, {
-          id,
-          scope: input.scope,
-          source,
-          extension: ".json",
-          keyKind: "generated data",
-        });
+        return this.emitGeneratedModule(
+          pluginId,
+          {
+            id,
+            scope: input.scope,
+            source,
+            extension: ".json",
+            keyKind: "generated data",
+          },
+          namespace,
+        );
       },
       entryFacade: (input) => {
         const id = validateContributionId(input.id, pluginId);
@@ -465,16 +490,20 @@ class ContributionCollector<TBundlerCfg> {
             `[evjs] Plugin "${pluginId}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
           );
         }
-        return this.emitGeneratedModule(pluginId, {
-          id,
-          scope: input.scope ?? generatedScopeForEntry(entry),
-          source: ({ importFile }) =>
-            createOriginalClientEntryFacadeSource(entry, importFile, {
-              autoStart: input.autoStart,
-            }),
-          extension: ".ts",
-          keyKind: "entry facade",
-        });
+        return this.emitGeneratedModule(
+          pluginId,
+          {
+            id,
+            scope: input.scope ?? generatedScopeForEntry(entry),
+            source: ({ importFile }) =>
+              createOriginalClientEntryFacadeSource(entry, importFile, {
+                autoStart: input.autoStart,
+              }),
+            extension: ".ts",
+            keyKind: "entry facade",
+          },
+          namespace,
+        );
       },
       importOf: (ref) =>
         this.importOf(ref, {
@@ -482,6 +511,7 @@ class ContributionCollector<TBundlerCfg> {
           kind: "plugin-import-helper",
         }),
     };
+    return Object.freeze(emit);
   }
 
   private emitGeneratedModule(
@@ -493,50 +523,59 @@ class ContributionCollector<TBundlerCfg> {
       extension: string;
       keyKind: string;
     },
+    namespace?: string,
   ): GeneratedModuleRef {
     if (!SUPPORTED_GENERATED_EXTENSIONS.has(input.extension)) {
       throw new Error(
         `[evjs] Plugin "${pluginId}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
       );
     }
-    validateGeneratedScope(pluginId, input.id, input.scope);
-    const key = this.reserveKey(pluginId, input.id, input.keyKind);
+    const scope = snapshotGeneratedScope(pluginId, input.id, input.scope);
+    const key = this.reserveKey(pluginId, input.id, input.keyKind, namespace);
     const module = this.createGeneratedModule({
       pluginId,
       id: input.id,
       key,
-      scope: input.scope,
+      scope,
       source: input.source,
       extension: input.extension,
     });
     this.modules.push(module);
     this.refs.set(key, module);
-    return {
+    return Object.freeze({
       __evGeneratedModuleRef: generatedModuleRefSymbol,
       key,
-    } as unknown as GeneratedModuleRef;
+    }) as unknown as GeneratedModuleRef;
   }
 
   private createSlot<K extends FrameworkSlotName>(
     pluginId: string,
     name: K,
+    namespace?: string,
   ): FrameworkSlot<K> {
     validateEnum(name, FRAMEWORK_SLOT_NAMES, `Plugin "${pluginId}" slot name`);
-    return {
+    const slot: FrameworkSlot<K> = {
       add: (input) => {
         assertRecord(input, `Plugin "${pluginId}" ${name} contribution`);
-        const normalized = this.normalizeSlotInput(pluginId, name, input);
+        const normalized = this.normalizeSlotInput(
+          pluginId,
+          name,
+          input,
+          namespace,
+        );
         this.slots.push(normalized);
       },
     };
+    return Object.freeze(slot);
   }
 
   private normalizeSlotInput<K extends FrameworkSlotName>(
     pluginId: string,
     name: K,
     input: FrameworkSlotInput<K>,
+    namespace?: string,
   ): FrameworkSlotPlanItem {
-    const base = this.createSlotBase(pluginId, input);
+    const base = this.createSlotBase(pluginId, input, namespace);
     switch (name) {
       case "client.entry": {
         const item = input as FrameworkSlotInput<"client.entry">;
@@ -684,10 +723,11 @@ class ContributionCollector<TBundlerCfg> {
   private createSlotBase(
     pluginId: string,
     input: { id: string },
+    namespace?: string,
   ): Pick<FrameworkSlotPlanItem, "key" | "id" | "pluginId"> {
     const id = validateContributionId(input.id, pluginId);
     return {
-      key: this.reserveKey(pluginId, id, "slot contribution"),
+      key: this.reserveKey(pluginId, id, "slot contribution", namespace),
       id,
       pluginId,
     };
@@ -724,8 +764,15 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private reserveKey(pluginId: string, id: string, label: string): string {
-    const key = `${pluginId}:${id}`;
+  private reserveKey(
+    pluginId: string,
+    id: string,
+    label: string,
+    namespace?: string,
+  ): string {
+    const key = namespace
+      ? `${pluginId}:@evjs/${namespace.length}:${namespace}:${id}`
+      : `${pluginId}:${id}`;
     const existing = this.seenKeys.get(key);
     if (existing) {
       throw new Error(
@@ -823,49 +870,68 @@ async function writeGeneratedIR(
   generated: GeneratedFrameworkPlan,
 ): Promise<void> {
   const rootDir = path.resolve(cwd, GENERATED_IR_DIR);
-  await fs.rm(rootDir, { recursive: true, force: true });
-  await fs.mkdir(rootDir, { recursive: true });
-
-  const modulesByKey = new Map(modules.map((module) => [module.key, module]));
-  await Promise.all([
-    writeGeneratedTypes(rootDir),
-    ...writeGeneratedFrameworkFiles(cwd, graph, plan),
-    ...modules.map((module) =>
-      writeGeneratedModule(cwd, rootDir, module, modulesByKey),
-    ),
-    ...generated.entries.map((entry) =>
-      writeGeneratedEntry(cwd, rootDir, plan, entry),
-    ),
-  ]);
-
-  await fs.writeFile(
-    path.join(rootDir, GENERATED_IR_MANIFEST),
-    `${JSON.stringify(createManifestView(plan, graph), null, 2)}\n`,
-    "utf-8",
+  const candidateRoot = await fs.mkdtemp(
+    path.join(cwd, `${GENERATED_IR_DIR}-candidate-`),
   );
+
+  try {
+    const modulesByKey = new Map(modules.map((module) => [module.key, module]));
+    await completeGeneratedIRWrites([
+      writeGeneratedTypes(candidateRoot),
+      ...writeGeneratedFrameworkFiles(candidateRoot, graph, plan),
+      ...modules.map((module) =>
+        writeGeneratedModule(cwd, rootDir, candidateRoot, module, modulesByKey),
+      ),
+      ...generated.entries.map((entry) =>
+        writeGeneratedEntry(cwd, rootDir, candidateRoot, plan, entry),
+      ),
+    ]);
+
+    await fs.writeFile(
+      path.join(candidateRoot, GENERATED_IR_MANIFEST),
+      `${JSON.stringify(createManifestView(plan, graph), null, 2)}\n`,
+      "utf-8",
+    );
+    await publishGeneratedIR(rootDir, candidateRoot);
+  } catch (error) {
+    await fs
+      .rm(candidateRoot, { recursive: true, force: true })
+      .catch(() => {});
+    throw error;
+  }
+}
+
+async function completeGeneratedIRWrites(
+  writes: readonly Promise<void>[],
+): Promise<void> {
+  const results = await Promise.allSettled(writes);
+  const errors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "[evjs] Multiple generated IR writes failed.",
+    );
+  }
 }
 
 function writeGeneratedFrameworkFiles(
-  cwd: string,
+  rootDir: string,
   graph: CoreGraph,
   plan: BuildPlan,
 ): Promise<void>[] {
   return [
-    writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/core-graph.json`),
-      {
-        generatedBy: "evjs",
-        graph,
-      },
-    ),
-    writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/build-plan.json`),
-      {
-        version: 1,
-        generatedBy: "evjs",
-        plan,
-      },
-    ),
+    writeJsonFile(path.join(rootDir, "framework/core-graph.json"), {
+      generatedBy: "evjs",
+      graph,
+    }),
+    writeJsonFile(path.join(rootDir, "framework/build-plan.json"), {
+      version: 1,
+      generatedBy: "evjs",
+      plan,
+    }),
   ];
 }
 
@@ -900,10 +966,15 @@ async function writeGeneratedTypes(rootDir: string): Promise<void> {
 
 async function writeGeneratedModule(
   cwd: string,
-  rootDir: string,
+  finalRoot: string,
+  candidateRoot: string,
   module: InternalGeneratedModule,
   modulesByKey: Map<string, InternalGeneratedModule>,
 ): Promise<void> {
+  const outputFile = path.join(
+    candidateRoot,
+    path.relative(finalRoot, module.absoluteFile),
+  );
   const resolvedSource =
     module.resolvedSource ??
     (typeof module.source === "function"
@@ -927,12 +998,12 @@ async function writeGeneratedModule(
           },
         })
       : module.source);
-  await fs.mkdir(path.dirname(module.absoluteFile), { recursive: true });
+  await fs.mkdir(path.dirname(outputFile), { recursive: true });
   await fs.writeFile(
-    module.absoluteFile,
+    outputFile,
     withGeneratedHeader(resolvedSource, module.extension, {
-      fromFile: module.absoluteFile,
-      rootDir,
+      fromFile: outputFile,
+      rootDir: candidateRoot,
     }),
     "utf-8",
   );
@@ -940,26 +1011,78 @@ async function writeGeneratedModule(
 
 async function writeGeneratedEntry(
   cwd: string,
-  rootDir: string,
+  finalRoot: string,
+  candidateRoot: string,
   plan: BuildPlan,
   entry: GeneratedEntryPlan,
 ): Promise<void> {
   const buildEntry = plan.entries.find((item) => item.name === entry.name);
   if (!buildEntry) return;
-  const absoluteFile = path.resolve(cwd, entry.file);
-  await fs.mkdir(path.dirname(absoluteFile), { recursive: true });
+  const logicalFile = path.resolve(cwd, entry.file);
+  const outputFile = path.join(
+    candidateRoot,
+    path.relative(finalRoot, logicalFile),
+  );
+  await fs.mkdir(path.dirname(outputFile), { recursive: true });
   await fs.writeFile(
-    absoluteFile,
+    outputFile,
     withGeneratedHeader(
       createEntrySource(cwd, buildEntry, entry, plan),
       ".ts",
       {
-        fromFile: absoluteFile,
-        rootDir,
+        fromFile: outputFile,
+        rootDir: candidateRoot,
       },
     ),
     "utf-8",
   );
+}
+
+async function publishGeneratedIR(
+  rootDir: string,
+  candidateRoot: string,
+): Promise<void> {
+  const backupRoot = path.join(
+    path.dirname(rootDir),
+    `${path.basename(rootDir)}-previous-${randomUUID()}`,
+  );
+  let previousMoved = false;
+  let published = false;
+  try {
+    try {
+      await fs.rename(rootDir, backupRoot);
+      previousMoved = true;
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+
+    try {
+      await fs.rename(candidateRoot, rootDir);
+      published = true;
+    } catch (publishError) {
+      if (!previousMoved) throw publishError;
+      try {
+        await fs.rename(backupRoot, rootDir);
+      } catch (restoreError) {
+        throw new AggregateError(
+          [publishError, restoreError],
+          "[evjs] Failed to publish generated IR and restore the previous snapshot.",
+          { cause: publishError },
+        );
+      }
+      throw publishError;
+    }
+  } finally {
+    if (previousMoved && published) {
+      // The canonical directory is already complete. Backup cleanup must not
+      // turn a successful atomic publication into a reported build failure.
+      await fs.rm(backupRoot, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
 
 /** Compact index for inspecting linked generated artifacts and plan entries. */
@@ -1531,9 +1654,12 @@ function createServerAppEntrySource(
   const serverFunctionModules = collectServerFunctionModules(
     metadata.serverFunctions,
   );
+  const serverFunctionModuleIndexes = new Map(
+    serverFunctionModules.map((module, index) => [module, index]),
+  );
 
   const imports = [
-    `import { createApp, createRoute } from "@evjs/ev/_internal/server";`,
+    `import { createApp, createRoute, createServerFunctionRegistry } from "@evjs/ev/_internal/server";`,
     `import { createReactFrameworkServer } from "@evjs/ev/_internal/server/react";`,
     ...contributionMiddlewares.map(
       (middleware) =>
@@ -1548,8 +1674,10 @@ function createServerAppEntrySource(
         )};`,
     ),
     ...serverFunctionModules.map(
-      (module) =>
-        `import ${JSON.stringify(toGeneratedImportSpecifier(cwd, fromFile, module))};`,
+      (module, index) =>
+        `import * as serverFunctionModule${index} from ${JSON.stringify(
+          toGeneratedImportSpecifier(cwd, fromFile, module),
+        )};`,
     ),
     ...metadata.routes.map(
       (route, index) =>
@@ -1589,6 +1717,19 @@ function createServerAppEntrySource(
     ...contributionMiddlewares.map((middleware) => middleware.importName),
     ...toMiddlewareReferences(middlewares, middlewareImportNames),
   ];
+  const serverFunctionRegistrations = (metadata.serverFunctions ?? []).map(
+    (serverFunction) => {
+      const moduleIndex = serverFunctionModuleIndexes.get(
+        serverFunction.module,
+      );
+      if (moduleIndex === undefined) {
+        throw new Error(
+          `[evjs] Missing generated server function module "${serverFunction.module}".`,
+        );
+      }
+      return `serverFunctions.register(${JSON.stringify(serverFunction.id)}, serverFunctionModule${moduleIndex}[${JSON.stringify(serverFunction.exportName)}]);`;
+    },
+  );
 
   return [
     ...imports,
@@ -1596,9 +1737,11 @@ function createServerAppEntrySource(
     ...routeDefinitions,
     "",
     "const framework = createReactFrameworkServer();",
+    "const serverFunctions = createServerFunctionRegistry();",
+    ...serverFunctionRegistrations,
     `const middlewares = [${middlewareReferences.join(", ")}];`,
     `const routes = [${routeEntries.join(", ")}];`,
-    "const app = createApp({ middlewares, routes, ...(framework ? { framework } : {}) });",
+    "const app = createApp({ middlewares, routes, serverFunctions, ...(framework ? { framework } : {}) });",
     "export const fetch = app.fetch;",
     "export default { fetch };",
   ].join("\n");
@@ -1748,26 +1891,33 @@ function validateContributionId(id: string, pluginId: string): string {
       `[evjs] Plugin "${pluginId}" contribution id "${id}" must not contain leading or trailing whitespace.`,
     );
   }
+  if (id.startsWith("@evjs/")) {
+    throw new Error(
+      `[evjs] Plugin "${pluginId}" contribution id "${id}" uses the reserved "@evjs/" prefix.`,
+    );
+  }
   return id;
 }
 
-function validateGeneratedScope(
+function snapshotGeneratedScope(
   pluginId: string,
   id: string,
   scope: GeneratedScope,
-): void {
+): GeneratedScope {
   if (!scope || typeof scope !== "object") {
     throw new Error(
       `[evjs] Plugin "${pluginId}" generated module "${id}" must declare a valid scope.`,
     );
   }
-  if (scope.kind === "application" || scope.kind === "server") return;
+  if (scope.kind === "application" || scope.kind === "server") {
+    return Object.freeze({ kind: scope.kind });
+  }
   if (
     scope.kind === "page" &&
     typeof scope.pageId === "string" &&
     scope.pageId.trim()
   ) {
-    return;
+    return Object.freeze({ kind: "page", pageId: scope.pageId });
   }
   throw new Error(
     `[evjs] Plugin "${pluginId}" generated module "${id}" has an invalid scope.`,

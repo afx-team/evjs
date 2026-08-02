@@ -201,7 +201,7 @@ type PluginSetupResult<TBundlerCfg> =
   | Promise<PluginHooks<TBundlerCfg> | undefined>
   | Promise<void>;
 
-type ContributeHookResult = void | Promise<void>;
+type EmitIRHookResult = void | Promise<void>;
 
 type AnyFunction = (...args: never[]) => unknown;
 
@@ -243,11 +243,11 @@ type PluginSetupHook<TBundlerCfg> = <
   ctx: PluginSetupContext<TActualBundlerCfg>,
 ) => PluginSetupResult<TBundlerCfg>;
 
-type PluginContributeHook<TBundlerCfg> = <
+type PluginEmitIRHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
-  ctx: PluginContributeContext<TActualBundlerCfg>,
-) => ContributeHookResult;
+  ctx: PluginEmitIRContext<TActualBundlerCfg>,
+) => EmitIRHookResult;
 
 /**
  * An evjs plugin.
@@ -298,13 +298,13 @@ export interface Plugin<TBundlerCfg = unknown> {
   setup?: PluginSetupHook<TBundlerCfg>;
 
   /**
-   * Declare generated framework contributions for the `.ev` IR.
+   * Emit generated framework modules and slots into the `.ev` IR.
    *
    * This hook is separate from setup() lifecycle hooks. It declares generated
    * modules, structured framework slots, and resolution changes before bundler
    * configuration is created.
    */
-  contribute?: PluginContributeHook<TBundlerCfg>;
+  emitIR?: PluginEmitIRHook<TBundlerCfg>;
 
   /**
    * Relative ordering tier for plugins without an explicit dependency edge.
@@ -340,7 +340,7 @@ export type CliFlagValue = boolean | string | Array<boolean | string>;
 
 export type CliFlags = Record<string, CliFlagValue>;
 
-/** Read-only framework snapshot exposed to contribution hooks. */
+/** Read-only framework snapshot exposed while plugins emit framework IR. */
 export interface FrameworkView {
   /** Normalized Applications discovered before bundling. */
   readonly applications: readonly FrameworkApplicationView[];
@@ -565,7 +565,7 @@ export interface FrameworkServerAppEntryMetadata {
   readonly serverFunctions?: readonly FrameworkServerFunctionView[];
 }
 
-export interface PluginContributeContext<TBundlerCfg = DefaultBundlerConfig>
+export interface PluginEmitIRContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginSetupContext<TBundlerCfg> {
   readonly framework: FrameworkView;
   readonly emit: EmitApi;

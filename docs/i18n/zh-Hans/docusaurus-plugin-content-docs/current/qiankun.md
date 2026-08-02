@@ -249,9 +249,9 @@ evPluginQiankunSlave({
 ```
 
 路径类引用会先基于项目根目录解析，再进入 bundling。包名 specifier 按项目依赖正常
-解析。在另一个插件的 `contribute()` hook 中，可以把 `ctx.emit.module()`
-返回的 opaque `GeneratedModuleRef` 直接传给 `contributeQiankunMaster()` 或
-`contributeQiankunSlave()`。
+解析。在另一个插件的 `emitIR()` hook 中，可以把 `ctx.emit.module()`
+返回的 opaque `GeneratedModuleRef` 直接传给 `emitQiankunMasterIR()` 或
+`emitQiankunSlaveIR()`。
 
 ## Runtime 形态
 
@@ -429,8 +429,8 @@ export default async function resolveQiankunMaster() {
 
 ## 平台组合
 
-上层集成插件可以在 `contribute()` 中复用 `contributeQiankunMaster()` 或
-`contributeQiankunSlave()`，并在 `setup()` 中复用对应的
+上层集成插件可以在 `emitIR()` 中复用 `emitQiankunMasterIR()` 或
+`emitQiankunSlaveIR()`，并在 `setup()` 中复用对应的
 `createQiankun*Hooks()` helper。它必须先规范化外部数据，再把 resolver 或 runtime
 模块传给公共 bridge；若自身还有 lifecycle 行为，则需与 helper 返回的 hooks 组合。
 

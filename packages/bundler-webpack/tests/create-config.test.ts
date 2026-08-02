@@ -201,7 +201,7 @@ describe("createWebpackConfigs", () => {
           if (client) {
             configs.splice(index, 1, {
               ...client,
-              output: { ...client.output, clean: false },
+              performance: { hints: false },
             });
           }
         },
@@ -209,6 +209,9 @@ describe("createWebpackConfigs", () => {
     ]);
 
     expect(configs.filter((item) => item.name === "client")).toHaveLength(1);
+    expect(configs.find((item) => item.name === "client")?.performance).toEqual(
+      { hints: false },
+    );
   });
 
   it("rejects a relative spelling of the BuildPlan output path", async () => {
@@ -320,6 +323,68 @@ describe("createWebpackConfigs", () => {
       '[evjs] Webpack config "client" output.filename "../../escape.js" must remain the framework-owned template "[name].js".',
     );
     expect(events).toEqual(["mutate"]);
+  });
+
+  it("preserves framework runtime identity after configureBundler hooks", async () => {
+    const cases: Array<{
+      expected: string;
+      mutate(config: NonNullable<Exclude<WebpackConfig, unknown[]>>): void;
+    }> = [
+      {
+        expected:
+          'Webpack config "client" mode "production" must remain the framework-owned value "development"',
+        mutate(config) {
+          config.mode = "production";
+        },
+      },
+      {
+        expected:
+          'Webpack config "client" target "node" must remain the framework-owned value "web"',
+        mutate(config) {
+          config.target = "node";
+        },
+      },
+      {
+        expected:
+          'Webpack config "client" output.clean false must remain the framework-owned value true',
+        mutate(config) {
+          if (config.output) config.output.clean = false;
+        },
+      },
+      {
+        expected:
+          'Webpack config "client" output.publicPath "/plugin/" must remain the framework-owned value "auto"',
+        mutate(config) {
+          if (config.output) config.output.publicPath = "/plugin/";
+        },
+      },
+      {
+        expected:
+          'Webpack config "client" output.crossOriginLoading "use-credentials" must remain the framework-owned value "anonymous"',
+        mutate(config) {
+          if (config.output) {
+            config.output.crossOriginLoading = "use-credentials";
+          }
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const config = createResolvedConfig();
+      const graph = createGraph(config);
+      const plan = await createGeneratedPlan(config, graph, "development");
+      await expect(
+        createWebpackConfigs(config, plan, process.cwd(), [
+          {
+            configureBundler(configs) {
+              const items = Array.isArray(configs) ? configs : [configs];
+              const client = items.find((item) => item.name === "client");
+              if (client) testCase.mutate(client);
+            },
+          },
+        ]),
+      ).rejects.toThrow(testCase.expected);
+    }
   });
 
   it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {
@@ -796,7 +861,7 @@ describe("createWebpackConfigs", () => {
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<WebpackConfig> = {
       id: "generated-alias",
-      contribute(ctx) {
+      emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
           scope: { kind: "application" },

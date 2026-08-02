@@ -18,7 +18,7 @@ flowchart TB
   subgraph Plan["框架规划"]
     Graph["discover graph\nroutes + server functions"]
     PageSettings["解析 Page plugin settings"]
-    Contributions["contribute(ctx) / contributePage(ctx)\nmodules + slots"]
+    Contributions["emitIR(ctx) / emitPageIR(ctx)\nmodules + slots"]
     BuildPlan["create BuildPlan"]
     IR["materialize .ev"]
   end
@@ -49,8 +49,8 @@ flowchart TB
 ```
 
 通过 `definePlugin()` 创建插件时，类型安全的值在这些阶段保持扁平：configure 与 setup
-使用 `ctx.options`；`contribute()` 使用 `ctx.options` 和
-`ctx.pages[].options`；`contributePage()` 使用 `ctx.options` 与
+使用 `ctx.options`；`emitIR()` 使用 `ctx.options` 和
+`ctx.pages[].options`；`emitPageIR()` 使用 `ctx.options` 与
 `ctx.pageOptions`。
 
 | Hook | 用途 |
@@ -79,15 +79,18 @@ output cycle 都收到 `isRebuild: true`，并按 `beforeBuild() → afterBuild(
 output transform、HTML 发射或发布失败，`afterBuild()` 不会执行。`prepare` 与 `inspect`
 只暂存 framework state、不发布 output，因此也不会触发这两个 hook。
 
+`afterBuild()` 明确定义在发布之后。若它失败，evjs 会报告构建失败或停止 dev session，
+但不会回滚 canonical output，也不会删除更早的 `afterBuild()` hook 已输出的产物。
+
 每个 setup snapshot 的 `dispose()` 最多执行一次，并按 plugin 逆序运行。触发场景包括
 production build 结束、dev server 关闭、config reload 替换旧 snapshot，以及
 setup/初始化失败后的回滚；普通 dev rebuild 之后不会执行它。
 
-`setup()`、`contribute()` 和 `configureBundler()` context 提供 `addWatchFile()` 来注册
+`setup()`、`emitIR()` 和 `configureBundler()` context 提供 `addWatchFile()` 来注册
 analysis/config 依赖；`BeforeBuildContext` 明确不提供它，晚期 output、HTML 与 dispose
 context 也不提供。文件变化时，框架复用已提交的
 config、Application options 与 setup hooks，再重新执行 contributions 和 graph analysis。
-需要读取变化数据时，应在 `contribute()` 中读取，不要在 `setup()` 中缓存。
+需要读取变化数据时，应在 `emitIR()` 中读取，不要在 `setup()` 中缓存。
 
 `configureBundler()` context 的 `addWatchFile()` 注册实际 bundler config 依赖。文件变化时，
 框架会先暂存一份完整的 config 与 plugin 快照，再应用对应的 plan update。如果所选

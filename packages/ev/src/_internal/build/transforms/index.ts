@@ -22,7 +22,7 @@ export interface TransformResult {
  * Transform a "use server" file for either client or server builds.
  * This is a pure function with no bundler dependency.
  *
- * - **Server**: keeps original source + appends `registerServerReference()` calls
+ * - **Server**: keeps implementations and reports them to the build manifest
  * - **Client**: replaces function bodies with generated client reference stubs
  */
 export async function transformServerFile(

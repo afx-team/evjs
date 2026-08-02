@@ -9,7 +9,11 @@ import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
 import { materializeFrameworkIR } from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
-import { type CreateBuildPlanOptions, createBuildPlan } from "./plan/index.js";
+import {
+  type CreateBuildPlanOptions,
+  createBuildGenerationId,
+  createBuildPlan,
+} from "./plan/index.js";
 import {
   createPluginSettingsResolutionSession,
   type PluginSettingsRegistry,
@@ -37,6 +41,14 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
   analysis: GraphAnalysisResult;
   plan: BuildPlan;
 }> {
+  const planOptions: CreateBuildPlanOptions = {
+    mode: options.mode,
+    ...options.plan,
+    buildId:
+      options.plan?.buildId ??
+      createBuildGenerationId(options.plan?.mode ?? options.mode),
+  };
+
   async function materialize(
     analysis: GraphAnalysisResult,
   ): Promise<BuildPlan> {
@@ -48,10 +60,7 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       graph: analysis.graph,
       plugins: options.config.plugins,
       pluginContext: options.pluginContext,
-      plan: createBuildPlan(options.config, analysis.graph, {
-        mode: options.mode,
-        ...options.plan,
-      }),
+      plan: createBuildPlan(options.config, analysis.graph, planOptions),
       write: options.write,
     });
   }

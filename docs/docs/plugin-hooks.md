@@ -19,7 +19,7 @@ flowchart TB
   subgraph Plan["Framework planning"]
     Graph["discover graph\nroutes + server functions"]
     PageSettings["resolve Page plugin settings"]
-    Contributions["contribute(ctx) / contributePage(ctx)\nmodules + slots"]
+    Contributions["emitIR(ctx) / emitPageIR(ctx)\nmodules + slots"]
     BuildPlan["create BuildPlan"]
     IR["materialize .ev"]
   end
@@ -50,8 +50,8 @@ flowchart TB
 ```
 
 For plugins created with `definePlugin()`, typed values stay flat across these
-stages: configure and setup use `ctx.options`; `contribute()` uses
-`ctx.options` and `ctx.pages[].options`; `contributePage()` uses `ctx.options`
+stages: configure and setup use `ctx.options`; `emitIR()` uses
+`ctx.options` and `ctx.pages[].options`; `emitPageIR()` uses `ctx.options`
 and `ctx.pageOptions`.
 
 | Hook | Purpose |
@@ -83,17 +83,21 @@ Neither hook runs when bundling fails before producing fresh facts. If
 fails, `afterBuild()` does not run. `prepare` and `inspect` stage framework
 state without publishing output, so they trigger neither hook.
 
+`afterBuild()` is deliberately post-publication. If it fails, evjs reports the
+build or fail-stops the dev session, but it does not roll back canonical output
+or artifacts already emitted by earlier `afterBuild()` hooks.
+
 `dispose()` runs at most once for each setup snapshot, in reverse plugin order,
 when a production build ends, a dev server closes, a config reload replaces
 the snapshot, or setup/initialization rolls back. It does not run after an
 ordinary dev rebuild.
 
-The `setup()`, `contribute()`, and `configureBundler()` contexts expose
+The `setup()`, `emitIR()`, and `configureBundler()` contexts expose
 `addWatchFile()` for analysis/config dependencies. `BeforeBuildContext`
 deliberately does not; output, HTML, and disposal contexts do not either.
 Changing an analysis dependency reuses the committed config,
 Application options, and setup hooks, then reruns contributions and graph
-analysis. Read changing watched data inside `contribute()` rather than
+analysis. Read changing watched data inside `emitIR()` rather than
 caching it in `setup()`.
 
 `configureBundler()` context `addWatchFile()` registers an effective bundler-config

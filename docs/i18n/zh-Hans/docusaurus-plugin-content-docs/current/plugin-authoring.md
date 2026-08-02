@@ -4,10 +4,10 @@
 以及插件扩展的框架阶段。应用通过 `config.plugins` 使用返回的工厂。
 
 插件开发模型只有三层：`pluginOptions()` 声明插件持有的 Application 或 Page 数据；
-`configure()`、`contribute()` 等 descriptor 方法参与框架规划；`setup()` 返回命令式
+`configure()`、`emitIR()` 等 descriptor 方法参与框架规划；`setup()` 返回命令式
 lifecycle hooks。同一项行为只应属于其中一层。
 这三层描述的是职责，并非三个相邻的时间段：`configure()` 早于 `setup()` 执行，而
-`contribute()` 会在之后的 graph planning 中执行。Descriptor 方法不能出现在
+`emitIR()` 会在之后的 graph planning 中执行。Descriptor 方法不能出现在
 `setup()` 返回值中，lifecycle hook 也不能直接写在 descriptor 上。
 
 ## 定义最小插件
@@ -80,7 +80,7 @@ export const analytics = definePlugin({
     console.log(ctx.options.endpoint);
   },
 
-  contribute(ctx) {
+  emitIR(ctx) {
     // ctx.pages 只包含已启用的 Page。
     for (const { page, options } of ctx.pages) {
       console.log(page.id, options.channel);
@@ -100,9 +100,9 @@ Application 与 Page 的具体写法见[插件](./plugins)。
 
 Application 与 Page value 不会相互合并。在任一合同内部，authoring 字段会在校验前
 深度合并到该合同的 defaults。`setup()` 只接收
-`ctx.options`；`contribute()` 还会接收所有已启用的
+`ctx.options`；`emitIR()` 还会接收所有已启用的
 `ctx.pages`，其中每一项直接暴露 `{ page, options }`。逐个处理已启用 Page 时使用
-`contributePage()`；它直接暴露 `ctx.options`、`ctx.page` 与 `ctx.pageOptions`。
+`emitPageIR()`；它直接暴露 `ctx.options`、`ctx.page` 与 `ctx.pageOptions`。
 
 ## 合同、默认值与校验
 
@@ -221,7 +221,7 @@ Setup context 提供 `mode`、`command`、`cwd`、resolved `config`、`logger`�
 顺序与各 hook 合同见[插件 Hooks](./plugin-hooks)。
 
 公开 context 名称与阶段一一对应：`PluginConfigureContext`、
-`PluginSetupContext`、`PluginContributeContext`、`ConfigureBundlerContext`、
+`PluginSetupContext`、`PluginEmitIRContext`、`ConfigureBundlerContext`、
 `BeforeBuildContext`、`TransformOutputContext`、`TransformHtmlContext` 与
 `DisposeContext`。contribution 通过 `ctx.framework` 读取规范化的 `FrameworkView`。
 插件 options helper 公开 `PluginOptionsContract`、`PluginOptionsDefinition` 与
@@ -246,11 +246,11 @@ Setup context 提供 `mode`、`command`、`cwd`、resolved `config`、`logger`�
 | 在 discovery 前修改框架配置 | `configure()` |
 | 初始化共享状态 | `setup()` |
 | 执行 build lifecycle 行为 | `setup()` 返回的 hooks |
-| 生成模块或挂载结构化行为 | `contribute()` 或 `contributePage()` |
+| 生成模块或挂载结构化行为 | `emitIR()` 或 `emitPageIR()` |
 | 编译自定义文件类型或调整优化 | `configureBundler()` |
 | 改写已解析的 HTML 文档 | `transformHtml()` |
 | 在 projection 前调整 linked assets 或 deployment metadata | `transformOutput()` |
 | 输出稳定后写入最终外部产物 | `afterBuild()` |
 
-`contribute()` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
+`emitIR()` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
 graph 时，evjs 可能会再次执行它。

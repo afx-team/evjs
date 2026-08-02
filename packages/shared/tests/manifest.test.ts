@@ -3106,6 +3106,58 @@ describe("linkBuildOutput", () => {
     }
   });
 
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped server Function id %s", (functionId) => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [
+        {
+          id: functionId,
+          module: "./src/actions.ts",
+          exportName: "runAction",
+        },
+      ],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: `prototype-function-${functionId}`,
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [createServerRuntimeEntry()],
+      html: [],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({ graph, plan });
+    const linkedFunction = Reflect.get(output.server.functions, functionId);
+
+    expect(Object.getPrototypeOf(output.server.functions)).toBeNull();
+    expect(Object.hasOwn(output.server.functions, functionId)).toBe(true);
+    expect(linkedFunction).toEqual({
+      assets: { js: ["server.js"], css: [] },
+      exportName: "runAction",
+    });
+    expect(Object.keys(output.server.functions)).toEqual([functionId]);
+    expect(() =>
+      assertFrameworkManifestShape(output, "linked output"),
+    ).not.toThrow();
+    expect(createServerManifest(output).routes).toContainEqual({
+      kind: "server-function",
+      path: "/__evjs/fn",
+      methods: ["POST"],
+    });
+  });
+
   it("keeps route-derived CSR pages out of the v1 runtime manifest", () => {
     const graph: LinkerFixture = {
       version: 1,

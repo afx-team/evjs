@@ -464,11 +464,21 @@ export function createExampleTest(exampleName: string) {
             }
           });
 
-          serverProcess.on("exit", (code) => {
+          serverProcess.once("error", (error) => {
             clearTimeout(timeout);
-            if (code !== null && code !== 0) {
-              reject(new Error(`Server exited with code ${code}`));
-            }
+            reject(
+              new Error("Server process failed before readiness", {
+                cause: error,
+              }),
+            );
+          });
+          serverProcess.once("exit", (code, signal) => {
+            clearTimeout(timeout);
+            reject(
+              new Error(
+                `Server exited before readiness (code ${code ?? "null"}, signal ${signal ?? "null"})`,
+              ),
+            );
           });
         });
 

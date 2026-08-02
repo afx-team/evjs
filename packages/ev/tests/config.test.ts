@@ -1185,6 +1185,16 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
+            id: "removed-contribute-hook",
+            contribute() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].contribute is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
             id: "test-plugin",
             transformOutput() {},
           } as never,

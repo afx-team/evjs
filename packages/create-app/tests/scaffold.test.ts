@@ -1,8 +1,11 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  restoreScaffoldGitignore,
   shouldCopyTemplatePath,
   withGeneratedFrameworkIgnores,
 } from "../src/index.js";
@@ -193,6 +196,37 @@ describe("create-app scaffolding", () => {
     }
   });
 
+  it("restores the packaged template ignore file as .gitignore", () => {
+    const targetDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "evjs-scaffold-ignore-"),
+    );
+    try {
+      fs.writeFileSync(
+        path.join(targetDir, "_gitignore"),
+        ".ev\n.evjs\n.turbopack\nroute-types.d.ts\n",
+      );
+
+      restoreScaffoldGitignore(targetDir);
+
+      expect(fs.existsSync(path.join(targetDir, "_gitignore"))).toBe(false);
+      const gitignore = fs.readFileSync(
+        path.join(targetDir, ".gitignore"),
+        "utf-8",
+      );
+      expect(gitignore.split(/\r?\n/)).toEqual(
+        expect.arrayContaining([
+          ".ev",
+          ".evjs",
+          ".turbopack",
+          "route-types.d.ts",
+          "plugin-types.d.ts",
+        ]),
+      );
+    } finally {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+  });
+
   it("template package.json uses workspace references for @evjs deps", () => {
     const templates = listTemplateNames();
 
@@ -262,14 +296,8 @@ describe("create-app scaffolding", () => {
   });
 
   it("prepack dereference excludes generated framework artifacts", async () => {
-    const derefScriptUrl = pathToFileURL(
-      path.resolve(__dirname, "../scripts/deref-templates.js"),
-    ).href;
     const { shouldDerefTemplatePath, withGeneratedFrameworkIgnores } =
-      (await import(derefScriptUrl)) as {
-        shouldDerefTemplatePath: (src: string) => boolean;
-        withGeneratedFrameworkIgnores: (source: string) => string;
-      };
+      await loadDerefTemplateHelpers();
 
     expect(shouldDerefTemplatePath("/some/path/.ev")).toBe(false);
     expect(shouldDerefTemplatePath("/some/path/.ev/manifest.json")).toBe(false);
@@ -286,7 +314,146 @@ describe("create-app scaffolding", () => {
       "route-types.d.ts\nplugin-types.d.ts\n",
     );
   });
+
+  it("packs an executable npm bin and a portable template ignore", async () => {
+    const tempDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "evjs-create-app-pack-"),
+    );
+    try {
+      const stagingDir = path.join(tempDir, "package");
+      const tarballsDir = path.join(tempDir, "tarballs");
+      const consumerDir = path.join(tempDir, "consumer");
+      const cacheDir = path.join(tempDir, "npm-cache");
+      fs.mkdirSync(path.join(stagingDir, "bin"), { recursive: true });
+      fs.mkdirSync(path.join(stagingDir, "dist"), { recursive: true });
+      fs.mkdirSync(path.join(stagingDir, "templates", "basic"), {
+        recursive: true,
+      });
+      fs.mkdirSync(tarballsDir, { recursive: true });
+      fs.mkdirSync(consumerDir, { recursive: true });
+
+      const packageJson = JSON.parse(
+        fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"),
+      );
+      packageJson.scripts = {};
+      packageJson.dependencies = {};
+      packageJson.devDependencies = {};
+      fs.writeFileSync(
+        path.join(stagingDir, "package.json"),
+        JSON.stringify(packageJson, null, 2),
+      );
+      fs.copyFileSync(
+        path.resolve(__dirname, "../bin/create-evjs-app.js"),
+        path.join(stagingDir, "bin", "create-evjs-app.js"),
+      );
+      fs.writeFileSync(
+        path.join(stagingDir, "dist", "index.js"),
+        'export async function runCreateAppCli() { console.log("create-app-bin-ok"); }\n',
+      );
+      fs.writeFileSync(
+        path.join(stagingDir, "dist", "index.d.ts"),
+        "export declare function runCreateAppCli(): Promise<void>;\n",
+      );
+      fs.writeFileSync(
+        path.join(stagingDir, "templates", "basic", ".gitignore"),
+        ".ev\n.evjs\n.turbopack\nroute-types.d.ts\nplugin-types.d.ts\n",
+      );
+      const { preparePackagedTemplateGitignore } =
+        await loadDerefTemplateHelpers();
+      preparePackagedTemplateGitignore(
+        path.join(stagingDir, "templates", "basic"),
+      );
+
+      const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+      const packResult = JSON.parse(
+        execFileSync(
+          npmCommand,
+          [
+            "pack",
+            "--ignore-scripts",
+            "--json",
+            "--loglevel=error",
+            "--cache",
+            cacheDir,
+            "--pack-destination",
+            tarballsDir,
+          ],
+          { cwd: stagingDir, encoding: "utf-8" },
+        ),
+      ) as Array<{
+        filename: string;
+        files: Array<{ path: string }>;
+      }>;
+      const packed = packResult[0];
+      if (!packed) throw new Error("npm pack did not return package metadata.");
+      const packedFiles = packed.files.map((file) => file.path);
+      expect(packedFiles).toContain("bin/create-evjs-app.js");
+      expect(packedFiles).toContain("templates/basic/_gitignore");
+      expect(packedFiles).not.toContain("templates/basic/.gitignore");
+      expect(packedFiles).not.toContain("templates/basic/.npmignore");
+
+      fs.writeFileSync(
+        path.join(consumerDir, "package.json"),
+        JSON.stringify({ name: "create-app-consumer", private: true }),
+      );
+      execFileSync(
+        npmCommand,
+        [
+          "install",
+          "--ignore-scripts",
+          "--no-package-lock",
+          "--no-audit",
+          "--no-fund",
+          "--loglevel=error",
+          "--cache",
+          cacheDir,
+          path.join(tarballsDir, packed.filename),
+        ],
+        { cwd: consumerDir, encoding: "utf-8" },
+      );
+
+      const installedPackage = path.join(
+        consumerDir,
+        "node_modules",
+        "@evjs",
+        "create-app",
+      );
+      expect(
+        fs.existsSync(
+          path.join(installedPackage, "templates", "basic", "_gitignore"),
+        ),
+      ).toBe(true);
+      const installedBin = path.join(
+        consumerDir,
+        "node_modules",
+        ".bin",
+        process.platform === "win32"
+          ? "create-evjs-app.cmd"
+          : "create-evjs-app",
+      );
+      expect(
+        execFileSync(installedBin, ["--version"], { encoding: "utf-8" }).trim(),
+      ).toBe("create-app-bin-ok");
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
+
+async function loadDerefTemplateHelpers(): Promise<{
+  preparePackagedTemplateGitignore(templateDir: string): void;
+  shouldDerefTemplatePath(src: string): boolean;
+  withGeneratedFrameworkIgnores(source: string): string;
+}> {
+  const derefScriptUrl = pathToFileURL(
+    path.resolve(__dirname, "../scripts/deref-templates.js"),
+  ).href;
+  return import(derefScriptUrl) as Promise<{
+    preparePackagedTemplateGitignore(templateDir: string): void;
+    shouldDerefTemplatePath(src: string): boolean;
+    withGeneratedFrameworkIgnores(source: string): string;
+  }>;
+}
 
 function listTemplateNames(): string[] {
   return fs

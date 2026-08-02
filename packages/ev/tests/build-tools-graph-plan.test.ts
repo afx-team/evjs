@@ -39,6 +39,34 @@ afterEach(async () => {
 });
 
 describe("canonical CoreGraph and BuildPlan integration", () => {
+  it("assigns a unique identity to each production generation", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+
+    const first = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const second = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const development = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+    const explicit = createBuildPlan(config, analysis.graph, {
+      buildId: "release-42",
+      mode: "production",
+    });
+
+    expect(first.buildId).toMatch(/^build-[a-f0-9-]{36}$/);
+    expect(second.buildId).not.toBe(first.buildId);
+    expect(development.buildId).toBe("development");
+    expect(explicit.buildId).toBe("release-42");
+  });
+
   it("keeps recursively cleaned outputs inside the BuildPlan distDir", async () => {
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",

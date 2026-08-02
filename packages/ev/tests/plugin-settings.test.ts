@@ -22,8 +22,15 @@ import {
   type PluginOptionsContract,
   pluginOptions,
 } from "../src/plugin/index.js";
+import { pluginEmitIRScopeFactory } from "../src/plugin/internal.js";
 
 describe("plugin settings registry", () => {
+  it("shares the hidden Page IR scope factory across package copies", () => {
+    expect(pluginEmitIRScopeFactory).toBe(
+      Symbol.for("@evjs/ev/plugin-emit-ir-scope-factory/v1"),
+    );
+  });
+
   it("collects every plugin and snapshots independent owner contracts", () => {
     const analytics = definePlugin({
       id: "analytics",
@@ -144,10 +151,14 @@ describe("plugin settings registry", () => {
     })();
     const registry = Reflect.get(
       globalThis,
-      Symbol.for("@evjs/ev/defined-plugin-runtime-registry/v2"),
+      Symbol.for("@evjs/ev/defined-plugin-runtime-registry/v3"),
     ) as {
-      readonly version: 2;
+      readonly version: 3;
       readonly runtimeByPlugin: WeakMap<object, { readonly id: string }>;
+      readonly bindingByPlugin: WeakMap<
+        object,
+        { applicationSetting: unknown }
+      >;
     };
     const runtime = registry.runtimeByPlugin.get(plugin);
 
@@ -155,7 +166,7 @@ describe("plugin settings registry", () => {
     expect(Reflect.set(runtime as object, "id", "mutated-runtime")).toBe(false);
     expect(plugin.id).toBe("identity-guard");
     expect(runtime?.id).toBe("identity-guard");
-    expect(registry.version).toBe(2);
+    expect(registry.version).toBe(3);
     expect(Object.isFrozen(registry)).toBe(true);
     expect(Object.isFrozen(runtime)).toBe(true);
 
@@ -166,6 +177,9 @@ describe("plugin settings registry", () => {
       transported,
       runtime as { readonly id: string },
     );
+    registry.bindingByPlugin.set(transported, {
+      applicationSetting: undefined,
+    });
     expect(collectPluginSettingsRegistry([transported]).catalog).toEqual({
       entries: {
         "identity-guard": { page: { defaultable: true } },
@@ -174,18 +188,27 @@ describe("plugin settings registry", () => {
 
     const divergent: Plugin = { id: "public-identity" };
     registry.runtimeByPlugin.set(divergent, runtime as { readonly id: string });
+    registry.bindingByPlugin.set(divergent, {
+      applicationSetting: undefined,
+    });
     expect(() => collectPluginSettingsRegistry([divergent])).toThrow(
       'Defined plugin runtime id "identity-guard" does not match its public plugin id',
     );
   });
 
   it("rejects non-canonical and reserved plugin ids at definition time", () => {
-    expect(() => definePlugin({ id: "@scope/plugin-auth" })).toThrow(
-      "must be a lowercase plugin id",
-    );
-    expect(() => definePlugin({ id: "con" })).toThrow(
-      "reserved object key or Windows device basename",
-    );
+    expect(() =>
+      definePlugin({
+        // @ts-expect-error Scoped package names are not canonical short plugin ids.
+        id: "@scope/plugin-auth",
+      }),
+    ).toThrow("must be a lowercase plugin id");
+    expect(() =>
+      definePlugin({
+        // @ts-expect-error Windows device basenames are reserved plugin ids.
+        id: "con",
+      }),
+    ).toThrow("reserved object key or Windows device basename");
   });
 });
 
@@ -266,18 +289,21 @@ describe("definePlugin and pluginOptions", () => {
   it("validates descriptor identity and owner contracts", () => {
     expect(() =>
       definePlugin({
+        // @ts-expect-error Empty plugin ids are rejected statically and at runtime.
         id: "",
         page: pluginOptions({ defaults: {} }),
       }),
     ).toThrow("must be a lowercase plugin id");
     expect(() =>
       definePlugin({
+        // @ts-expect-error Plugin ids cannot start with whitespace.
         id: " analytics",
         page: pluginOptions({ defaults: {} }),
       }),
     ).toThrow("must be a lowercase plugin id");
     expect(() =>
       definePlugin({
+        // @ts-expect-error Plugin ids must be lowercase.
         id: "Analytics",
         page: pluginOptions({ defaults: {} }),
       }),
@@ -300,6 +326,19 @@ describe("definePlugin and pluginOptions", () => {
         key: "analytics",
       } as never),
     ).toThrow("descriptor contains unsupported field key");
+    expect(() =>
+      definePlugin({
+        id: "removed-contribute-hook",
+        contribute() {},
+      } as never),
+    ).toThrow("descriptor contains unsupported field contribute");
+    expect(() =>
+      definePlugin({
+        id: "removed-page-contribute-hook",
+        page: pluginOptions({ defaults: {} }),
+        contributePage() {},
+      } as never),
+    ).toThrow("descriptor contains unsupported field contributePage");
   });
 
   it("keeps descriptor identity and owner contracts statically definite", () => {
@@ -351,6 +390,80 @@ describe("definePlugin and pluginOptions", () => {
         id: brandedId,
       });
       definePlugin({
+        // @ts-expect-error Plugin ids must start with a lowercase letter.
+        id: "1analytics",
+      });
+      definePlugin({
+        // @ts-expect-error Plugin ids cannot start with a hyphen.
+        id: "-analytics",
+      });
+      definePlugin({
+        // @ts-expect-error Plugin ids cannot end with a hyphen.
+        id: "analytics-",
+      });
+      definePlugin({
+        // @ts-expect-error Plugin id segments cannot be empty.
+        id: "analytics--reporting",
+      });
+      definePlugin({
+        // @ts-expect-error Plugin ids accept lowercase letters, digits, and hyphens only.
+        id: "analytics.reporting",
+      });
+      definePlugin({
+        // @ts-expect-error Plugin ids accept lowercase letters, digits, and hyphens only.
+        id: "analytics_plugin",
+      });
+      definePlugin({
+        // @ts-expect-error Object prototype keys are reserved plugin ids.
+        id: "__proto__",
+      });
+      definePlugin({
+        // @ts-expect-error Object prototype keys are reserved plugin ids.
+        id: "constructor",
+      });
+      definePlugin({
+        // @ts-expect-error Object prototype keys are reserved plugin ids.
+        id: "prototype",
+      });
+      definePlugin({
+        // @ts-expect-error Windows device basenames are reserved plugin ids.
+        id: "aux",
+      });
+      definePlugin({
+        // @ts-expect-error Windows device basenames are reserved plugin ids.
+        id: "con",
+      });
+      definePlugin({
+        // @ts-expect-error Windows device basenames are reserved plugin ids.
+        id: "prn",
+      });
+      definePlugin({
+        // @ts-expect-error Windows device basenames are reserved plugin ids.
+        id: "nul",
+      });
+      definePlugin({
+        // @ts-expect-error Numbered Windows COM device basenames are reserved.
+        id: "com1",
+      });
+      definePlugin({
+        // @ts-expect-error Numbered Windows COM device basenames are reserved.
+        id: "com9",
+      });
+      definePlugin({
+        // @ts-expect-error Numbered Windows LPT device basenames are reserved.
+        id: "lpt1",
+      });
+      definePlugin({
+        // @ts-expect-error Numbered Windows LPT device basenames are reserved.
+        id: "lpt9",
+      });
+      definePlugin({ id: "com0" });
+      definePlugin({ id: "com10" });
+      definePlugin({ id: "com1-tools" });
+      definePlugin({ id: "con-tools" });
+      definePlugin({ id: "a" });
+      definePlugin({ id: "plugin-1" });
+      definePlugin({
         id: "optional-application",
         // @ts-expect-error Application contract presence must be statically definite.
         application: optionalApplication,
@@ -369,6 +482,16 @@ describe("definePlugin and pluginOptions", () => {
         id: "union-page",
         // @ts-expect-error Differing Page contract unions are unsafe.
         page: unionPage,
+      });
+      definePlugin({
+        id: "removed-contribute-hook",
+        // @ts-expect-error The former contribute hook is not part of the descriptor.
+        contribute() {},
+      });
+      definePlugin({
+        id: "page-emitter-without-page-contract",
+        // @ts-expect-error emitPageIR requires a Page options contract.
+        emitPageIR() {},
       });
       // @ts-expect-error Defaultability must remain the literal true or false contract.
       definePlugin({
@@ -592,7 +715,7 @@ describe("definePlugin and pluginOptions", () => {
     });
     const plugin = analytics({ retry: { count: 3 } });
     const state = resolveInstalled(plugin);
-    plugin.setup?.({} as never);
+    state.plugin.setup?.({} as never);
     const graph = applyPluginSettings(createSpaGraph(), state.registry, {
       applicationSettings: state.applicationSettings,
       canonicalPages: {
@@ -639,8 +762,8 @@ describe("definePlugin and pluginOptions", () => {
       retry: { count: 3, backoff: undefined },
     });
 
-    resolveInstalled(plugin);
-    plugin.setup?.({} as never);
+    const state = resolveInstalled(plugin);
+    state.plugin.setup?.({} as never);
 
     expect(setupSettings).toEqual([
       {
@@ -686,8 +809,8 @@ describe("definePlugin and pluginOptions", () => {
       callbacks({ retry: { onRetry: {} } });
     };
 
-    resolveInstalled(plugin);
-    plugin.setup?.({} as never);
+    const state = resolveInstalled(plugin);
+    state.plugin.setup?.({} as never);
 
     expect(assertInvalidCallbackOverrides).toBeTypeOf("function");
     expect(setupSettings).toEqual([
@@ -724,6 +847,73 @@ describe("definePlugin and pluginOptions", () => {
     };
 
     expect(assertInvalidRichOverrides).toBeTypeOf("function");
+  });
+
+  it("requires Page contracts to be recursively static JSON", () => {
+    const callback = pluginOptions<{
+      nested: { onEvent?: () => void };
+    }>();
+    const date = pluginOptions<{ createdAt: Date }>();
+    const collections = pluginOptions<{
+      metadata: Map<string, string>;
+      labels: Set<string>;
+    }>();
+    const primitiveKinds = pluginOptions<{
+      sequence: bigint;
+      token: symbol;
+    }>();
+    const requiredUndefined = pluginOptions<{
+      channel: string | undefined;
+    }>();
+    const optionalJson = definePlugin({
+      id: "optional-json",
+      page: pluginOptions<{
+        channel?: string;
+        metadata?: {
+          flags?: readonly boolean[];
+          sampling: null | number;
+        };
+      }>(),
+    });
+    const assertInvalidPageContracts = () => {
+      definePlugin({
+        id: "callback-page",
+        // @ts-expect-error Page contract fields must be static JSON recursively.
+        page: callback,
+      });
+      definePlugin({
+        id: "date-page",
+        // @ts-expect-error Date values cannot cross the Page static-JSON boundary.
+        page: date,
+      });
+      definePlugin({
+        id: "collection-page",
+        // @ts-expect-error Map and Set values are not Page static JSON.
+        page: collections,
+      });
+      definePlugin({
+        id: "primitive-kind-page",
+        // @ts-expect-error BigInt and symbol values are not JSON-serializable.
+        page: primitiveKinds,
+      });
+      definePlugin({
+        id: "required-undefined-page",
+        // @ts-expect-error Only optional object fields may include undefined.
+        page: requiredUndefined,
+      });
+      const schema = {} as StandardSchemaV1<
+        { callback: () => void },
+        { channel: string }
+      >;
+      definePlugin({
+        id: "schema-input-page",
+        // @ts-expect-error Page schema inputs must also be static JSON.
+        page: pluginOptions(schema),
+      });
+    };
+
+    expect(optionalJson()).toBeTypeOf("object");
+    expect(assertInvalidPageContracts).toBeTypeOf("function");
   });
 
   it("accepts only record contracts and preserves tuple option types", () => {
@@ -813,10 +1003,12 @@ describe("definePlugin and pluginOptions", () => {
         },
       }),
       configure(config, context) {
+        expect(Object.isFrozen(context)).toBe(true);
         seen.push(context.options);
         return { ...config, routing: { mode: "spa" } };
       },
       setup(context) {
+        expect(Object.isFrozen(context)).toBe(true);
         seen.push(context.options);
       },
     });
@@ -829,10 +1021,9 @@ describe("definePlugin and pluginOptions", () => {
         mode: "production",
       },
     );
-    resolvePluginSettingsState(resolveConfig(configured), undefined, {
-      reusePreparedApplicationSettings: true,
-    });
-    plugin.setup?.({} as never);
+    const resolved = resolveConfig(configured);
+    resolvePluginSettingsState(resolved);
+    resolved.plugins[0]?.setup?.({} as never);
 
     expect(defaultsCalls).toBe(1);
     expect(validationCalls).toBe(1);
@@ -841,6 +1032,64 @@ describe("definePlugin and pluginOptions", () => {
       { sequence: 1, routingMode: "mpa" },
     ]);
     expect(seen[0]).toBe(seen[1]);
+  });
+
+  it("isolates Application snapshots across concurrent config sessions", async () => {
+    type RoutingMode = "spa" | "mpa";
+    const configuredOptions = new Map<RoutingMode, object>();
+    const setupOptions = new Map<RoutingMode, object>();
+    let configureArrivals = 0;
+    let releaseConfigureHooks: (() => void) | undefined;
+    const configureHooksReady = new Promise<void>((resolve) => {
+      releaseConfigureHooks = resolve;
+    });
+    const contextual = definePlugin({
+      id: "concurrent-contextual",
+      application: pluginOptions<{
+        routingMode: RoutingMode;
+      }>({
+        defaults(context) {
+          return { routingMode: context.routingMode };
+        },
+      }),
+      async configure(_config, context) {
+        configuredOptions.set(context.options.routingMode, context.options);
+        configureArrivals++;
+        if (configureArrivals === 2) releaseConfigureHooks?.();
+        await configureHooksReady;
+      },
+      setup(context) {
+        setupOptions.set(context.options.routingMode, context.options);
+      },
+    });
+    const plugin = contextual();
+    const configureContext = {
+      command: "build",
+      cwd: process.cwd(),
+      mode: "production",
+    } as const;
+
+    const [spaConfigured, mpaConfigured] = await Promise.all([
+      runConfigureHooks(
+        { routing: { mode: "spa" }, plugins: [plugin] },
+        configureContext,
+      ),
+      runConfigureHooks(
+        { routing: { mode: "mpa" }, plugins: [plugin] },
+        configureContext,
+      ),
+    ]);
+    const spaResolved = resolveConfig(spaConfigured);
+    const mpaResolved = resolveConfig(mpaConfigured);
+    resolvePluginSettingsState(spaResolved);
+    resolvePluginSettingsState(mpaResolved);
+    await spaResolved.plugins[0]?.setup?.({} as never);
+    await mpaResolved.plugins[0]?.setup?.({} as never);
+
+    expect([...configuredOptions.keys()].sort()).toEqual(["mpa", "spa"]);
+    expect(setupOptions.get("spa")).toBe(configuredOptions.get("spa"));
+    expect(setupOptions.get("mpa")).toBe(configuredOptions.get("mpa"));
+    expect(setupOptions.get("spa")).not.toBe(setupOptions.get("mpa"));
   });
 
   it("isolates in-place configure hook mutations from the caller", async () => {
@@ -1118,10 +1367,10 @@ describe("definePlugin and pluginOptions", () => {
     });
     const plugin = analytics(authored);
 
-    resolveInstalled(plugin);
+    const state = resolveInstalled(plugin);
     authored.endpoint = "/mutated";
     authored.headers.regions.push("caller");
-    plugin.setup?.({} as never);
+    state.plugin.setup?.({} as never);
 
     expect(observed).toEqual({
       endpoint: "/events",
@@ -1517,6 +1766,7 @@ describe("static plugin settings", () => {
     };
     const invalidPlugin = definePlugin({
       id: "non-static-schema-output",
+      // @ts-expect-error Page schema outputs must remain static JSON.
       page: pluginOptions(schema),
     });
     const state = resolveInstalled(invalidPlugin());
@@ -1536,6 +1786,7 @@ describe("static plugin settings", () => {
   it("rejects non-static Page defaults during apply", () => {
     const dated = definePlugin({
       id: "dated",
+      // @ts-expect-error Date defaults cannot cross the Page static-JSON boundary.
       page: pluginOptions({
         defaults: { createdAt: new Date() },
       }),
@@ -1597,7 +1848,7 @@ describe("static plugin settings", () => {
       createdAt: new Date(0),
     });
     const configuredState = resolveInstalled(configured);
-    configured.setup?.({} as never);
+    configuredState.plugin.setup?.({} as never);
     expect(configuredState.applicationSettings.configured).toEqual({
       enabled: true,
     });
@@ -1643,25 +1894,33 @@ describe("plugin setting lifecycle", () => {
       application: pluginOptions({ defaults: { endpoint: "/events" } }),
       page: pluginOptions({ defaults: { channel: "default" } }),
       setup(context) {
+        expect(Object.isFrozen(context)).toBe(true);
         calls.push(`setup:${context.options.endpoint}`);
       },
-      contribute(context) {
-        calls.push(`contribute:${context.pages.length}`);
+      emitIR(context) {
+        expect(Object.isFrozen(context)).toBe(true);
+        expect(Object.isFrozen(context.pages)).toBe(true);
+        expect(context.pages.every(Object.isFrozen)).toBe(true);
+        expect(() => {
+          (context.pages as unknown as unknown[]).splice(0);
+        }).toThrow(TypeError);
+        calls.push(`emitIR:${context.pages.length}`);
       },
-      contributePage(context) {
+      emitPageIR(context) {
+        expect(Object.isFrozen(context)).toBe(true);
         calls.push(`page:${context.page.id}`);
       },
     });
     const plugin = analytics.forPages();
     const state = resolveInstalled(plugin);
 
-    await plugin.setup?.({} as never);
-    await plugin.contribute?.({
+    await state.plugin.setup?.({} as never);
+    await state.plugin.emitIR?.({
       framework: {
         pages: [{ id: "home", plugins: { analytics: { enabled: false } } }],
       },
     } as never);
-    expect(calls).toEqual(["setup:/events", "contribute:0"]);
+    expect(calls).toEqual(["setup:/events", "emitIR:0"]);
 
     const graph = applyPluginSettings(createSpaGraph(), state.registry, {
       applicationSettings: state.applicationSettings,
@@ -1671,7 +1930,7 @@ describe("plugin setting lifecycle", () => {
     });
     const pageOptions = graph.pages.home?.plugins.analytics?.options;
     expect(pageOptions).toEqual({ channel: "default" });
-    await plugin.contribute?.({
+    await state.plugin.emitIR?.({
       framework: {
         pages: [
           {
@@ -1682,12 +1941,16 @@ describe("plugin setting lifecycle", () => {
           },
         ],
       },
+      [Symbol.for("@evjs/ev/plugin-emit-ir-scope-factory/v1")]: () => ({
+        emit: {} as never,
+        slot: () => ({ add() {} }) as never,
+      }),
     } as never);
 
     expect(calls).toEqual([
       "setup:/events",
-      "contribute:0",
-      "contribute:1",
+      "emitIR:0",
+      "emitIR:1",
       "page:home",
     ]);
   });
@@ -1716,7 +1979,7 @@ describe("plugin setting lifecycle", () => {
     );
 
     const state = resolvePluginSettingsState(config, registry);
-    plugin.setup?.({} as never);
+    config.plugins[0]?.setup?.({} as never);
     expect(state.applicationSettings.analytics).toEqual({ enabled: true });
     expect(setupSettings).toEqual([{ endpoint: "/events" }]);
 
@@ -1795,7 +2058,10 @@ describe("plugin setting lifecycle", () => {
 function resolveInstalled(plugin: Plugin) {
   const config = resolveConfig({ plugins: [plugin] });
   const registry = collectPluginSettingsRegistry(config.plugins);
-  return resolvePluginSettingsState(config, registry);
+  return {
+    ...resolvePluginSettingsState(config, registry),
+    plugin: config.plugins[0] as Plugin,
+  };
 }
 
 function resolveValidationResult(

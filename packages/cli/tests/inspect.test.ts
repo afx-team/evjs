@@ -453,8 +453,8 @@ describe("inspect", () => {
           },
         };
       },
-      contribute(ctx) {
-        events.push("contribute");
+      emitIR(ctx) {
+        events.push("emitIR");
         const module = ctx.emit.module({
           id: "entry",
           scope: { kind: "application" },
@@ -492,7 +492,7 @@ describe("inspect", () => {
         }),
       ]),
     );
-    expect(events).toEqual(["setup", "contribute", "dispose"]);
+    expect(events).toEqual(["setup", "emitIR", "dispose"]);
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 

@@ -35,6 +35,10 @@ import {
   createFrameworkErrorResponse,
   reportFrameworkError,
 } from "./errors.js";
+import {
+  createDefaultPprRegionCache,
+  DEFAULT_PPR_REGION_CACHE_MAX_ENTRIES,
+} from "./ppr-region-cache.js";
 
 export interface FrameworkRuntime {
   version: 1;
@@ -159,6 +163,11 @@ export interface FrameworkServerOptions {
 }
 
 export interface PprRuntimeOptions {
+  /**
+   * Maximum entries retained by the built-in in-memory region cache.
+   * Defaults to 256 and does not apply to a custom regionCache.
+   */
+  maxRegionCacheEntries?: number;
   regionCache?: PprRegionCache;
   staleWhileRevalidate?: number;
 }
@@ -277,16 +286,14 @@ interface PprRegionMatch {
   pageUrl?: string;
 }
 
-const pprRegionCaches = new WeakMap<
-  FrameworkServerOptions,
-  Map<string, PprRegionCacheEntry>
->();
+const pprRegionCaches = new WeakMap<FrameworkServerOptions, PprRegionCache>();
 const pprRegionRevalidations = new WeakMap<
   FrameworkServerOptions,
   Set<string>
 >();
 
 interface PprRegionCacheWriteOptions {
+  allowSharedCache: boolean;
   store: boolean;
 }
 
@@ -1405,7 +1412,9 @@ async function renderPprPageResponse(
     const headers = new Headers(response.headers);
     removeStaleBodyHeaders(headers);
     headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
-    applyDefaultPprPageCacheHeaders(headers, page, options);
+    // Region responses are not rendered for HEAD, so their runtime cache
+    // safety cannot be verified before publishing the page headers.
+    applyPprPageCacheHeaders(headers, page, options, false);
     return new Response(null, {
       status: response.status,
       statusText: response.statusText,
@@ -1450,6 +1459,7 @@ async function renderPprMergedPageResponse(
 
   let html = await response.text();
   let changed = false;
+  let regionsAllowSharedCache = true;
 
   for (const regionId of Object.keys(page.ppr.regions)) {
     const regionResponse = await renderPprRegionResponse(
@@ -1458,6 +1468,12 @@ async function renderPprMergedPageResponse(
       { pageId, regionId, pageUrl: request.url },
       coordinator,
     );
+    if (
+      regionResponse &&
+      !responseAllowsSharedPprCache(regionResponse.headers)
+    ) {
+      regionsAllowSharedCache = false;
+    }
     if (!isPatchablePprRegionResponse(regionResponse)) continue;
 
     const nextHtml = replacePprRegionPlaceholder(
@@ -1474,7 +1490,12 @@ async function renderPprMergedPageResponse(
   const headers = new Headers(response.headers);
   removeStaleBodyHeaders(headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
-  applyDefaultPprPageCacheHeaders(headers, page, options);
+  applyPprPageCacheHeaders(
+    headers,
+    page,
+    options,
+    requestAllowsSharedPprCache(request) && regionsAllowSharedCache,
+  );
   if (!changed) {
     return new Response(html, {
       status: response.status,
@@ -1506,7 +1527,9 @@ async function renderPprStreamingPageResponse(
   const headers = new Headers(response.headers);
   removeStaleBodyHeaders(headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
-  applyDefaultPprPageCacheHeaders(headers, page, options);
+  // Streaming starts before region responses resolve, so private region
+  // headers cannot be known before the page headers are committed.
+  applyPprPageCacheHeaders(headers, page, options, false);
   headers.set("x-evjs-ppr", "stream");
 
   const encoder = new TextEncoder();
@@ -1563,7 +1586,10 @@ async function renderPprRegionResponse(
   if (!region) return undefined;
   const cachePolicy = region.cache ?? "no-store";
   const cacheKey = createPprRegionCacheKey(request, match);
-  const cached = await readPprRegionCache(options, cacheKey, cachePolicy);
+  const allowSharedCache = requestAllowsSharedPprCache(request);
+  const cached = allowSharedCache
+    ? await readPprRegionCache(options, cacheKey, cachePolicy)
+    : undefined;
   if (cached) {
     if (cached.state === "stale" && request.method !== "HEAD") {
       schedulePprRegionRevalidation(options, cacheKey, () =>
@@ -1589,6 +1615,7 @@ async function renderPprRegionResponse(
   if (!response) return undefined;
 
   return applyPprRegionCache(options, cacheKey, cachePolicy, response, {
+    allowSharedCache,
     store: request.method !== "HEAD",
   });
 }
@@ -1610,6 +1637,7 @@ async function refreshPprRegionCache(
   if (!freshResponse) return;
 
   await applyPprRegionCache(options, cacheKey, cachePolicy, freshResponse, {
+    allowSharedCache: true,
     store: true,
   });
 }
@@ -2312,6 +2340,11 @@ async function readPprRegionCache(
   const cache = getPprRegionCache(options);
   const cached = await getPprRegionCacheEntry(cache, key);
   if (!cached) return undefined;
+  const headers = new Headers(cached.headers);
+  if (!responseAllowsSharedPprCache(headers)) {
+    await deletePprRegionCacheEntry(cache, key);
+    return undefined;
+  }
   const now = Date.now();
   const isFresh = cached.expiresAt > now;
   const isStale =
@@ -2321,7 +2354,6 @@ async function readPprRegionCache(
     return undefined;
   }
 
-  const headers = new Headers(cached.headers);
   headers.set("x-evjs-cache", isFresh ? "HIT" : "STALE");
   return {
     state: isFresh ? "fresh" : "stale",
@@ -2342,6 +2374,19 @@ async function applyPprRegionCache(
 ): Promise<Response> {
   const headers = new Headers(response.headers);
   const revalidate = getPprRegionRevalidate(policy);
+  const canUseSharedCache = responseAllowsSharedPprCache(headers);
+  if (!writeOptions.allowSharedCache || !canUseSharedCache) {
+    if (writeOptions.allowSharedCache && !canUseSharedCache) {
+      await deletePprRegionCacheEntry(getPprRegionCache(options), key);
+    }
+    applyPrivatePprCacheHeaders(headers);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
   if (revalidate === undefined) {
     if (!headers.has("Cache-Control")) {
       headers.set("Cache-Control", "no-store");
@@ -2427,20 +2472,13 @@ function getPprRegionCache(options: FrameworkServerOptions): PprRegionCache {
 
   let cache = pprRegionCaches.get(options);
   if (!cache) {
-    cache = new Map();
+    cache = createDefaultPprRegionCache(
+      options.ppr?.maxRegionCacheEntries ??
+        DEFAULT_PPR_REGION_CACHE_MAX_ENTRIES,
+    );
     pprRegionCaches.set(options, cache);
   }
-  const cacheMap = cache;
-
-  return {
-    get: (key) => cacheMap.get(key),
-    set: (key, entry) => {
-      cacheMap.set(key, entry);
-    },
-    delete: (key) => {
-      cacheMap.delete(key);
-    },
-  };
+  return cache;
 }
 
 async function getPprRegionCacheEntry(
@@ -2523,17 +2561,98 @@ function waitUntilPprRegionRevalidation(promise: Promise<unknown>): void {
   }
 }
 
-function applyDefaultPprPageCacheHeaders(
+function applyPprPageCacheHeaders(
   headers: Headers,
   page: FrameworkPageRuntime,
   options: FrameworkServerOptions,
+  allowSharedCache: boolean,
 ): void {
+  if (!allowSharedCache || !responseAllowsSharedPprCache(headers)) {
+    applyPrivatePprCacheHeaders(headers);
+    return;
+  }
   if (headers.has("Cache-Control")) return;
 
   const cacheControl = getPprPageCacheControl(page, options);
   if (cacheControl) {
     headers.set("Cache-Control", cacheControl);
   }
+}
+
+function requestAllowsSharedPprCache(request: Request): boolean {
+  return (
+    !request.headers.has("Cookie") && !request.headers.has("Authorization")
+  );
+}
+
+function responseAllowsSharedPprCache(headers: Headers): boolean {
+  return (
+    !headers.has("Set-Cookie") &&
+    !hasCacheControlDirective(headers, "private") &&
+    !hasCacheControlDirective(headers, "no-store") &&
+    !hasCacheControlDirective(headers, "no-cache") &&
+    !hasZeroCacheFreshness(headers) &&
+    !hasHeaderToken(headers, "Pragma", "no-cache") &&
+    !headers.has("Vary")
+  );
+}
+
+function hasCacheControlDirective(
+  headers: Headers,
+  name: "no-cache" | "no-store" | "private",
+): boolean {
+  const value = headers.get("Cache-Control");
+  if (!value) return false;
+
+  return value.split(",").some((directive) => {
+    const separator = directive.indexOf("=");
+    const directiveName = (
+      separator === -1 ? directive : directive.slice(0, separator)
+    )
+      .trim()
+      .toLowerCase();
+    return directiveName === name;
+  });
+}
+
+function hasZeroCacheFreshness(headers: Headers): boolean {
+  const value = headers.get("Cache-Control");
+  if (!value) return false;
+
+  return value.split(",").some((directive) => {
+    const separator = directive.indexOf("=");
+    if (separator === -1) return false;
+    const name = directive.slice(0, separator).trim().toLowerCase();
+    if (name !== "max-age" && name !== "s-maxage") return false;
+    const seconds = directive
+      .slice(separator + 1)
+      .trim()
+      .replace(/^"|"$/g, "");
+    return /^\d+$/.test(seconds) && Number(seconds) === 0;
+  });
+}
+
+function hasHeaderToken(
+  headers: Headers,
+  header: "Pragma",
+  token: string,
+): boolean {
+  return (
+    headers
+      .get(header)
+      ?.split(",")
+      .some((value) => value.trim().toLowerCase() === token) ?? false
+  );
+}
+
+function applyPrivatePprCacheHeaders(headers: Headers): void {
+  if (
+    hasCacheControlDirective(headers, "private") ||
+    hasCacheControlDirective(headers, "no-store")
+  ) {
+    return;
+  }
+  headers.set("Cache-Control", "private, no-store");
 }
 
 function getPprPageCacheControl(

@@ -6,10 +6,10 @@ Applications consume the returned factory through `config.plugins`.
 
 The authoring model has three layers: `pluginOptions()` declares plugin-owned
 Application or Page data, descriptor methods such as `configure()` and
-`contribute()` participate in framework planning, and `setup()` returns
+`emitIR()` participate in framework planning, and `setup()` returns
 imperative lifecycle hooks. A behavior should live in only one layer.
 These are responsibility layers rather than adjacent time blocks:
-`configure()` runs before `setup()`, while `contribute()` runs later during graph
+`configure()` runs before `setup()`, while `emitIR()` runs later during graph
 planning. Descriptor methods never belong in the object returned by `setup()`,
 and lifecycle hooks never belong on the descriptor.
 
@@ -85,7 +85,7 @@ export const analytics = definePlugin({
     console.log(ctx.options.endpoint);
   },
 
-  contribute(ctx) {
+  emitIR(ctx) {
     // Only enabled Pages appear in ctx.pages.
     for (const { page, options } of ctx.pages) {
       console.log(page.id, options.channel);
@@ -108,9 +108,9 @@ Page-configurable plugins in the tuple passed directly to `defineConfig()`. See
 Application and Page values never merge with each other. Within either
 contract, authored fields are deeply merged over that contract's defaults
 before validation. `setup()` receives only
-`ctx.options`; `contribute()` receives that setting plus the
+`ctx.options`; `emitIR()` receives that setting plus the
 enabled `ctx.pages`, whose entries expose `{ page, options }`. Use
-`contributePage()` as the per-enabled-Page alternative; it exposes
+`emitPageIR()` as the per-enabled-Page alternative; it exposes
 `ctx.options`, `ctx.page`, and `ctx.pageOptions` directly.
 
 ## Contracts, Defaults, and Validation
@@ -251,7 +251,7 @@ the descriptor. Continue with [Plugin Hooks](./plugin-hooks) for lifecycle
 order and hook-specific contracts.
 
 Public context names follow their stages: `PluginConfigureContext`,
-`PluginSetupContext`, `PluginContributeContext`, `ConfigureBundlerContext`,
+`PluginSetupContext`, `PluginEmitIRContext`, `ConfigureBundlerContext`,
 `BeforeBuildContext`, `TransformOutputContext`, `TransformHtmlContext`, and
 `DisposeContext`. Contribution code reads the normalized `FrameworkView` from
 `ctx.framework`. Plugin option helpers expose `PluginOptionsContract`,
@@ -280,12 +280,12 @@ Required Application options stay required in either available factory form.
 | Change framework config before discovery | `configure()` |
 | Allocate shared state | `setup()` |
 | Run build lifecycle behavior | Hooks returned by `setup()` |
-| Generate modules or attach structured behavior | `contribute()` or `contributePage()` |
+| Generate modules or attach structured behavior | `emitIR()` or `emitPageIR()` |
 | Compile a custom file type or tune optimization | `configureBundler()` |
 | Rewrite a parsed HTML document | `transformHtml()` |
 | Adjust linked assets or deployment metadata before projection | `transformOutput()` |
 | Write final external artifacts after output stabilizes | `afterBuild()` |
 
-Keep `contribute()` deterministic and free of external side effects. evjs
+Keep `emitIR()` deterministic and free of external side effects. evjs
 may evaluate it again when contributed source aliases change the framework
 graph.

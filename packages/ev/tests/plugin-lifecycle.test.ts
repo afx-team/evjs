@@ -228,6 +228,76 @@ describe("collectPluginHooks", () => {
     ]);
   });
 
+  it("isolates frozen context shells and flags between plugins", async () => {
+    const callerFlags = { feature: ["one"] };
+    const setupContexts: object[] = [];
+    const beforeBuildContexts: object[] = [];
+    const plugins: Plugin[] = [
+      {
+        id: "context-mutator",
+        setup(ctx) {
+          setupContexts.push(ctx);
+          expect(Object.isFrozen(ctx)).toBe(true);
+          expect(Object.isFrozen(ctx.flags)).toBe(true);
+          expect(Object.isFrozen(ctx.flags?.feature)).toBe(true);
+          expect(() => {
+            (ctx as { cwd: string }).cwd = "/mutated";
+          }).toThrow(TypeError);
+          expect(() => {
+            (ctx as { addWatchFile(file: string): void }).addWatchFile =
+              () => {};
+          }).toThrow(TypeError);
+          expect(() => {
+            (ctx.flags?.feature as string[]).push("mutated");
+          }).toThrow(TypeError);
+          return {
+            beforeBuild(buildContext) {
+              beforeBuildContexts.push(buildContext);
+              expect(Object.isFrozen(buildContext)).toBe(true);
+              expect(() => {
+                (buildContext as { isRebuild: boolean }).isRebuild = true;
+              }).toThrow(TypeError);
+            },
+          };
+        },
+      },
+      {
+        id: "context-observer",
+        setup(ctx) {
+          setupContexts.push(ctx);
+          expect(ctx.cwd).toBe("/project");
+          expect(ctx.flags?.feature).toEqual(["one"]);
+          return {
+            beforeBuild(buildContext) {
+              beforeBuildContexts.push(buildContext);
+              expect(buildContext.cwd).toBe("/project");
+              expect(buildContext.isRebuild).toBe(false);
+              expect(buildContext.flags?.feature).toEqual(["one"]);
+            },
+          };
+        },
+      },
+    ];
+    const context = {
+      mode: "production",
+      command: "build",
+      cwd: "/project",
+      config: resolveConfig({ plugins }),
+      flags: callerFlags,
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    const hooks = await collectPluginHooks(plugins, context);
+    await runBeforeBuildHooks(hooks, context, false);
+
+    expect(setupContexts[0]).not.toBe(setupContexts[1]);
+    expect(beforeBuildContexts[0]).not.toBe(beforeBuildContexts[1]);
+    expect(callerFlags).toEqual({ feature: ["one"] });
+    expect(Object.isFrozen(callerFlags)).toBe(false);
+    expect(Object.isFrozen(callerFlags.feature)).toBe(false);
+  });
+
   it("rejects accessors in a resolved plugin config snapshot", () => {
     const config = resolveConfig();
     Object.defineProperty(config.server, "basePath", {

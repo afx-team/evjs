@@ -64,7 +64,7 @@ const expectedPublishedFiles = {
   "@evjs/client": ["esm"],
   "@evjs/server": ["esm"],
   "@evjs/cli": ["bin", "dist"],
-  "@evjs/create-app": ["dist", "templates"],
+  "@evjs/create-app": ["bin", "dist", "templates"],
   "@evjs/plugin-qiankun": ["esm"],
   "@evjs/bundler-utoopack": ["esm"],
   "@evjs/bundler-webpack": ["esm"],
@@ -298,7 +298,6 @@ const expectedServerSubpathExports = [
   "./app",
   "./fetch",
   "./framework",
-  "./internal/server-functions",
   "./node",
   "./react",
 ] as const;
@@ -327,7 +326,6 @@ const expectedPackageExportSubpaths = {
     "./_internal/server/fetch",
     "./_internal/server/node",
     "./_internal/server/react",
-    "./_internal/server/server-functions",
     "./build-tools",
     "./config",
     "./deployment",
@@ -1051,7 +1049,7 @@ describe("workspace package surface", () => {
         import { defineConfig } from "@evjs/ev";
         import { Link } from "@evjs/ev/navigation";
         import { headers } from "@evjs/ev/server-context";
-        import "@evjs/ev/_internal/server/server-functions";
+        import "@evjs/ev/_internal/server";
         export { initTransport } from "@evjs/ev/transport";
         export * from "@evjs/ev/_internal/client";
         const runtime = import("@evjs/shared/manifest");
@@ -1060,7 +1058,7 @@ describe("workspace package surface", () => {
       "@evjs/ev",
       "@evjs/ev/navigation",
       "@evjs/ev/server-context",
-      "@evjs/ev/_internal/server/server-functions",
+      "@evjs/ev/_internal/server",
       "@evjs/ev/transport",
       "@evjs/ev/_internal/client",
       "@evjs/shared/manifest",
@@ -1192,11 +1190,9 @@ describe("workspace package surface", () => {
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([...forbiddenServerSubpathExports]),
     );
-    expect(serverPackageJson.exports?.["./internal/server-functions"]).toEqual({
-      types: "./esm/server-functions/server-function-runtime.d.ts",
-      import: "./esm/server-functions/server-function-runtime.js",
-      default: "./esm/server-functions/server-function-runtime.js",
-    });
+    expect(
+      serverPackageJson.exports?.["./internal/server-functions"],
+    ).toBeUndefined();
 
     const readme = await fs.readFile(
       path.join(repoRoot, "packages/server/README.md"),
@@ -1204,7 +1200,8 @@ describe("workspace package surface", () => {
     );
     expect(readme).toContain("@evjs/server/node");
     expect(readme).toContain("@evjs/server/fetch");
-    expect(readme).toContain(`export { fetch } from "@evjs/server/fetch"`);
+    expect(readme).toContain("createServerFunctionRegistry");
+    expect(readme).toContain("export const fetch = app.fetch;");
     expect(readme).not.toContain("@evjs/server/ecma");
   });
 });
