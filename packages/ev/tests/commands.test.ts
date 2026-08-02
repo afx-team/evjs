@@ -2716,6 +2716,12 @@ describe("prepareFrameworkBuild", () => {
       );
     }
     expect(serverEntry).toContain("createServerFunctionRegistry()");
+    expect(serverEntry).toContain(
+      'import { getServerReferenceId } from "@evjs/ev/_internal/server/server-reference";',
+    );
+    expect(serverEntry).toContain("getServerReferenceId(");
+    expect(serverEntry).toContain("serverFunctionBundlerId");
+    expect(serverEntry).toContain("!== undefined");
     expect(
       serverEntry.match(/import \* as serverFunctionModule\d+ from/g),
     ).toHaveLength(2);

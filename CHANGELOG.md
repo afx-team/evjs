@@ -63,7 +63,9 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 - **Application-owned Server Functions** — `createServerFunctionRegistry()`
   now owns registration and dispatch for one `createApp()` instance. Generated
   server entries explicitly register discovered exports in that registry;
-  server transforms no longer mutate a process-global registry. The global
+  server transforms no longer mutate a process-global registry. Utoopack's
+  required server transform module records weak action-ID metadata so generated
+  entries can bind bundler IDs to the application-owned registry. The global
   `registerServerReference()` and `dispatch()` exports and their internal
   registration subpaths are removed.
 

@@ -326,6 +326,7 @@ const expectedPackageExportSubpaths = {
     "./_internal/server/fetch",
     "./_internal/server/node",
     "./_internal/server/react",
+    "./_internal/server/server-reference",
     "./build-tools",
     "./config",
     "./deployment",
@@ -528,6 +529,13 @@ describe("workspace package surface", () => {
       types: "./esm/build-tools/index.d.ts",
       import: "./esm/build-tools/index.js",
       default: "./esm/build-tools/index.js",
+    });
+    expect(
+      evPackageJson.exports?.["./_internal/server/server-reference"],
+    ).toEqual({
+      types: "./esm/_internal/generated/server/server-reference.d.ts",
+      import: "./esm/_internal/generated/server/server-reference.js",
+      default: "./esm/_internal/generated/server/server-reference.js",
     });
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([

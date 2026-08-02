@@ -1661,6 +1661,11 @@ function createServerAppEntrySource(
   const imports = [
     `import { createApp, createRoute, createServerFunctionRegistry } from "@evjs/ev/_internal/server";`,
     `import { createReactFrameworkServer } from "@evjs/ev/_internal/server/react";`,
+    ...(serverFunctionModules.length > 0
+      ? [
+          `import { getServerReferenceId } from "@evjs/ev/_internal/server/server-reference";`,
+        ]
+      : []),
     ...contributionMiddlewares.map(
       (middleware) =>
         `import ${middleware.importName} from ${JSON.stringify(
@@ -1717,8 +1722,8 @@ function createServerAppEntrySource(
     ...contributionMiddlewares.map((middleware) => middleware.importName),
     ...toMiddlewareReferences(middlewares, middlewareImportNames),
   ];
-  const serverFunctionRegistrations = (metadata.serverFunctions ?? []).map(
-    (serverFunction) => {
+  const serverFunctionRegistrations = (metadata.serverFunctions ?? []).flatMap(
+    (serverFunction, index) => {
       const moduleIndex = serverFunctionModuleIndexes.get(
         serverFunction.module,
       );
@@ -1727,7 +1732,18 @@ function createServerAppEntrySource(
           `[evjs] Missing generated server function module "${serverFunction.module}".`,
         );
       }
-      return `serverFunctions.register(${JSON.stringify(serverFunction.id)}, serverFunctionModule${moduleIndex}[${JSON.stringify(serverFunction.exportName)}]);`;
+      const canonicalId = JSON.stringify(serverFunction.id);
+      const exportName = JSON.stringify(serverFunction.exportName);
+      const implementation = `serverFunctionImplementation${index}`;
+      const bundlerId = `serverFunctionBundlerId${index}`;
+      return [
+        `const ${implementation} = serverFunctionModule${moduleIndex}[${exportName}];`,
+        `serverFunctions.register(${canonicalId}, ${implementation});`,
+        `const ${bundlerId} = getServerReferenceId(${implementation}, ${exportName});`,
+        `if (${bundlerId} !== undefined && ${bundlerId} !== ${canonicalId}) {`,
+        `  serverFunctions.register(${bundlerId}, ${implementation});`,
+        `}`,
+      ];
     },
   );
 

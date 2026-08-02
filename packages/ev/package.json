@@ -117,6 +117,11 @@
       "types": "./esm/_internal/generated/server/react.d.ts",
       "import": "./esm/_internal/generated/server/react.js",
       "default": "./esm/_internal/generated/server/react.js"
+    },
+    "./_internal/server/server-reference": {
+      "types": "./esm/_internal/generated/server/server-reference.d.ts",
+      "import": "./esm/_internal/generated/server/server-reference.js",
+      "default": "./esm/_internal/generated/server/server-reference.js"
     }
   },
   "scripts": {

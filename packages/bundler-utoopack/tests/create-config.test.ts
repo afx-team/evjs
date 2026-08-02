@@ -657,10 +657,33 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.server?.entry).toBe("./.ev/entries/server.ts");
     expect(utoopackConfig.server?.function).toEqual({
       clientProxy: "@evjs/ev/_internal/client/server-functions",
+      serverRegister: "@evjs/ev/_internal/server/server-reference",
     });
-    expect(utoopackConfig.server?.function).not.toHaveProperty(
-      "serverRegister",
+  });
+
+  it("configures both transform runtimes for discovered server functions", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverFunctions: [
+        {
+          id: "canonical-id",
+          module: "src/apis/actions.server.ts",
+          exportName: "runAction",
+        },
+      ],
+    });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
     );
+
+    expect(utoopackConfig.server?.function).toEqual({
+      clientProxy: "@evjs/ev/_internal/client/server-functions",
+      serverRegister: "@evjs/ev/_internal/server/server-reference",
+    });
   });
 
   it("does not add SPA history fallback for MPA builds", async () => {
@@ -1178,6 +1201,55 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
+  it("preserves framework-owned server function runtimes", async () => {
+    const cases: Array<{
+      expected: string;
+      mutate(config: ConfigComplete): void;
+    }> = [
+      {
+        expected:
+          'Utoopack server.function.clientProxy "./plugin-client-proxy" must remain the framework-owned value "@evjs/ev/_internal/client/server-functions"',
+        mutate(config) {
+          if (config.server?.function) {
+            config.server.function.clientProxy = "./plugin-client-proxy";
+          }
+        },
+      },
+      {
+        expected:
+          'Utoopack server.function.serverRegister <unset> must remain the framework-owned value "@evjs/ev/_internal/server/server-reference"',
+        mutate(config) {
+          if (config.server?.function) {
+            delete config.server.function.serverRegister;
+          }
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const config = createResolvedConfig();
+      const plan = await createPlan(config, {
+        serverFunctions: [
+          {
+            id: "canonical-id",
+            module: "src/apis/actions.server.ts",
+            exportName: "runAction",
+          },
+        ],
+      });
+
+      await expect(
+        createUtoopackConfig(config, plan, process.cwd(), [
+          {
+            configureBundler(utoopackConfig) {
+              testCase.mutate(utoopackConfig);
+            },
+          },
+        ]),
+      ).rejects.toThrow(testCase.expected);
+    }
+  });
+
   it("rejects a relative spelling of the BuildPlan output path", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
@@ -1380,10 +1452,12 @@ function createPlan(
     distDir?: string;
     mode?: "development" | "production";
     serverRoutes?: ServerRouteNode[];
+    serverFunctions?: CoreGraph["serverFunctions"];
   } = {},
 ): Promise<BuildPlan> {
   const graph = createGraph(config, {
     serverRoutes: options.serverRoutes,
+    serverFunctions: options.serverFunctions,
   });
   const buildConfig = {
     ...config,
@@ -1428,7 +1502,11 @@ interface TestPage {
 
 function createGraph(
   config: Parameters<typeof createUtoopackConfig>[0],
-  options: { pages?: TestPage[]; serverRoutes?: ServerRouteNode[] } = {},
+  options: {
+    pages?: TestPage[];
+    serverRoutes?: ServerRouteNode[];
+    serverFunctions?: CoreGraph["serverFunctions"];
+  } = {},
 ): CoreGraph {
   const documentTemplate = config.routing?.html ?? "./index.html";
   const routingPages = (config.routing?.routes ?? []).flatMap<TestPage>(
@@ -1533,7 +1611,7 @@ function createGraph(
           ]),
     ),
     plugins: { entries: {} },
-    serverFunctions: [],
+    serverFunctions: options.serverFunctions ?? [],
     serverRoutes: options.serverRoutes ?? [],
   };
 }

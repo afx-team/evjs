@@ -29,4 +29,6 @@ export const SERVER_FUNCTION_TRANSFORM_RUNTIME = {
   clientModule: "@evjs/ev/_internal/client/server-functions",
   /** Client-side server reference factory (RSC convention). */
   createServerReference: "createServerReference",
+  /** Action-ID metadata bridge required by Utoopack's server transform. */
+  serverModule: "@evjs/ev/_internal/server/server-reference",
 } as const;

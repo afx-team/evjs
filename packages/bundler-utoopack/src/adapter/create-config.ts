@@ -172,10 +172,12 @@ export async function createUtoopackConfig(
                 : "[name].js",
             },
             // The generated server entry registers every discovered export in
-            // its app-owned registry. Utoopack only owns client proxy stubs;
-            // do not restore the former process-global server registrar.
+            // its app-owned registry. Utoopack still requires a server-side
+            // transform module; its weak metadata lets the entry register the
+            // native action ID without restoring a process-global registrar.
             function: {
               clientProxy: SERVER_FUNCTION_TRANSFORM_RUNTIME.clientModule,
+              serverRegister: SERVER_FUNCTION_TRANSFORM_RUNTIME.serverModule,
             },
           },
         }
@@ -189,8 +191,8 @@ export async function createUtoopackConfig(
       proxy: devProxy,
     },
   };
-  const outputTemplateExpectation =
-    snapshotUtoopackOutputTemplates(utoopackConfig);
+  const frameworkExpectation =
+    snapshotUtoopackFrameworkExpectation(utoopackConfig);
   const frameworkClientEntries = plan.entries
     .filter((entry) => entry.environment === "client")
     .map(({ import: entryImport, name }) => ({
@@ -217,10 +219,7 @@ export async function createUtoopackConfig(
       assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
         requireServerOutput: finalServerEntry !== undefined,
       });
-      assertUtoopackOutputTemplatesMatchFramework(
-        utoopackConfig,
-        outputTemplateExpectation,
-      );
+      assertUtoopackFrameworkExpectation(utoopackConfig, frameworkExpectation);
       assertUtoopackArtifactIdentity(utoopackConfig, frameworkClientEntries);
       await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
     }
@@ -230,10 +229,7 @@ export async function createUtoopackConfig(
   assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
     requireServerOutput: finalServerEntry !== undefined,
   });
-  assertUtoopackOutputTemplatesMatchFramework(
-    utoopackConfig,
-    outputTemplateExpectation,
-  );
+  assertUtoopackFrameworkExpectation(utoopackConfig, frameworkExpectation);
   assertUtoopackArtifactIdentity(utoopackConfig, frameworkClientEntries);
   await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
@@ -283,18 +279,24 @@ type UtoopackClientOutputTemplateField =
 type UtoopackServerOutputTemplateField =
   (typeof UTOOPACK_SERVER_OUTPUT_TEMPLATE_FIELDS)[number];
 
-interface UtoopackOutputTemplateExpectation {
+interface UtoopackFrameworkExpectation {
   mode: unknown;
   clean: unknown;
   publicPath: unknown;
   crossOriginLoading: unknown;
   client: Record<UtoopackClientOutputTemplateField, unknown>;
-  server?: Record<UtoopackServerOutputTemplateField, unknown>;
+  server?: {
+    output: Record<UtoopackServerOutputTemplateField, unknown>;
+    function: {
+      clientProxy: unknown;
+      serverRegister: unknown;
+    };
+  };
 }
 
-function snapshotUtoopackOutputTemplates(
+function snapshotUtoopackFrameworkExpectation(
   config: ConfigComplete,
-): UtoopackOutputTemplateExpectation {
+): UtoopackFrameworkExpectation {
   return {
     mode: config.mode,
     clean: config.output?.clean,
@@ -308,20 +310,26 @@ function snapshotUtoopackOutputTemplates(
     ) as Record<UtoopackClientOutputTemplateField, unknown>,
     ...(config.server
       ? {
-          server: Object.fromEntries(
-            UTOOPACK_SERVER_OUTPUT_TEMPLATE_FIELDS.map((field) => [
-              field,
-              config.server?.output?.[field],
-            ]),
-          ) as Record<UtoopackServerOutputTemplateField, unknown>,
+          server: {
+            output: Object.fromEntries(
+              UTOOPACK_SERVER_OUTPUT_TEMPLATE_FIELDS.map((field) => [
+                field,
+                config.server?.output?.[field],
+              ]),
+            ) as Record<UtoopackServerOutputTemplateField, unknown>,
+            function: {
+              clientProxy: config.server?.function?.clientProxy,
+              serverRegister: config.server?.function?.serverRegister,
+            },
+          },
         }
       : {}),
   };
 }
 
-function assertUtoopackOutputTemplatesMatchFramework(
+function assertUtoopackFrameworkExpectation(
   config: ConfigComplete,
-  expectation: UtoopackOutputTemplateExpectation,
+  expectation: UtoopackFrameworkExpectation,
 ): void {
   assertUtoopackFrameworkField("mode", config.mode, expectation.mode);
   assertUtoopackFrameworkField(
@@ -359,9 +367,19 @@ function assertUtoopackOutputTemplatesMatchFramework(
     assertUtoopackOutputTemplate(
       `Utoopack server.output.${field}`,
       config.server?.output?.[field],
-      expectation.server[field],
+      expectation.server.output[field],
     );
   }
+  assertUtoopackFrameworkField(
+    "server.function.clientProxy",
+    config.server?.function?.clientProxy,
+    expectation.server.function.clientProxy,
+  );
+  assertUtoopackFrameworkField(
+    "server.function.serverRegister",
+    config.server?.function?.serverRegister,
+    expectation.server.function.serverRegister,
+  );
 }
 
 function assertUtoopackFrameworkField(
