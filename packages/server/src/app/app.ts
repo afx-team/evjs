@@ -12,7 +12,6 @@ import {
   getPathPatternValidationError,
   getRequestFnId,
   getServerRouteParamSegmentValidationError,
-  type HttpMethod,
   isApplicationJsonContentType,
   isHttpMethod,
   type PathPatternValidationError,
@@ -119,6 +118,10 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   // Mount route handlers (before server function endpoint for priority)
   for (const { handler, routeIndex } of orderedRoutes) {
+    const allowedMethods = Object.entries(handler.methods)
+      .filter(([, routeHandlerFn]) => typeof routeHandlerFn === "function")
+      .map(([method]) => method)
+      .join(", ");
     for (const [method, routeHandlerFn] of Object.entries(handler.methods)) {
       if (!routeHandlerFn) continue;
       const source = `routes[${routeIndex}].methods.${method}`;
@@ -134,7 +137,7 @@ export function createApp(options?: CreateAppOptions): Hono {
     // 405 Method Not Allowed for any unregistered methods.
     app.all(handler.path, () => {
       return textResponse("Method Not Allowed", 405, {
-        Allow: handler.allowedMethods.join(", "),
+        Allow: allowedMethods,
       });
     });
   }
@@ -536,7 +539,7 @@ function assertRouteHandler(route: RouteHandler, index: number): void {
     );
   }
 
-  const methodHandlers: HttpMethod[] = [];
+  let hasMethodHandler = false;
   for (const [method, handler] of Object.entries(route.methods)) {
     if (!isHttpMethod(method)) {
       throw new Error(
@@ -549,53 +552,16 @@ function assertRouteHandler(route: RouteHandler, index: number): void {
       );
     }
     if (typeof handler === "function") {
-      methodHandlers.push(method);
+      hasMethodHandler = true;
     }
   }
-  if (methodHandlers.length === 0) {
+  if (!hasMethodHandler) {
     throw new Error(
       `[evjs] createApp() ${name}.methods must include at least one HTTP method handler.`,
     );
   }
 
   assertMiddlewareArray(route.middlewares, `${name}.middlewares`);
-
-  if (
-    !Array.isArray(route.allowedMethods) ||
-    route.allowedMethods.length === 0 ||
-    route.allowedMethods.some((method) => !isHttpMethod(method))
-  ) {
-    throw new Error(
-      `[evjs] createApp() ${name}.allowedMethods must be a non-empty array of supported HTTP methods.`,
-    );
-  }
-
-  const duplicateAllowedMethod = route.allowedMethods.find(
-    (method, index) => route.allowedMethods.indexOf(method) !== index,
-  );
-  if (duplicateAllowedMethod) {
-    throw new Error(
-      `[evjs] createApp() ${name}.allowedMethods must not contain duplicate method "${duplicateAllowedMethod}".`,
-    );
-  }
-
-  const missingAllowedMethod = methodHandlers.find(
-    (method) => !route.allowedMethods.includes(method),
-  );
-  if (missingAllowedMethod) {
-    throw new Error(
-      `[evjs] createApp() ${name}.allowedMethods must include method handler "${missingAllowedMethod}".`,
-    );
-  }
-
-  const unsupportedAllowedMethod = route.allowedMethods.find(
-    (method) => !methodHandlers.includes(method),
-  );
-  if (unsupportedAllowedMethod) {
-    throw new Error(
-      `[evjs] createApp() ${name}.allowedMethods includes method "${unsupportedAllowedMethod}" without a handler.`,
-    );
-  }
 }
 
 function toRuntimePathname(endpoint: string): string {

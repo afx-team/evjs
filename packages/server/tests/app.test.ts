@@ -846,7 +846,6 @@ describe("createApp", () => {
             path: "",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           },
         ],
       }),
@@ -858,7 +857,6 @@ describe("createApp", () => {
             path: "api/items",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -870,7 +868,6 @@ describe("createApp", () => {
             path: "/api/items ",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -882,7 +879,6 @@ describe("createApp", () => {
             path: "/api/items?filter=all",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -896,7 +892,6 @@ describe("createApp", () => {
             path: "/api/items/:",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -910,7 +905,6 @@ describe("createApp", () => {
             path: "/api/items/:constructor",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -924,7 +918,6 @@ describe("createApp", () => {
             path: "/api/users/:userId/posts/:userId",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -938,7 +931,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: null,
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -950,7 +942,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { get: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -964,7 +955,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { GET: "not a function" },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -976,7 +966,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: {},
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -990,7 +979,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { GET: async () => new Response("ok") },
             middlewares: [null],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -1004,69 +992,11 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["CONNECT"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      "[evjs] createApp() routes[0].allowedMethods must be a non-empty array of supported HTTP methods.",
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["POST"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      '[evjs] createApp() routes[0].allowedMethods must include method handler "GET".',
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["GET", "GET"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      '[evjs] createApp() routes[0].allowedMethods must not contain duplicate method "GET".',
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["GET", "POST"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      '[evjs] createApp() routes[0].allowedMethods includes method "POST" without a handler.',
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["GET"],
           },
           {
             path: "/api/items",
             methods: { POST: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["POST"],
           },
         ],
       }),
@@ -1080,13 +1010,11 @@ describe("createApp", () => {
             path: "/api/items/:id",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           },
           {
             path: "/api/items/:itemId",
             methods: { POST: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["POST"],
           },
         ],
       }),
@@ -1100,13 +1028,11 @@ describe("createApp", () => {
             path: "/users",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           },
           {
             path: "/%75sers",
             methods: { POST: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["POST"],
           },
         ],
       }),

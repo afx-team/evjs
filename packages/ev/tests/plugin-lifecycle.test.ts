@@ -7,6 +7,12 @@ import {
   runBeforeBuildHooks,
 } from "../src/_internal/build/plugin-lifecycle.js";
 import { resolveConfig } from "../src/config/index.js";
+import {
+  createPluginApplicationSettingContext,
+  definePlugin,
+  pluginOptions,
+  prepareDefinedPluginApplicationSetting,
+} from "../src/plugin/defined.js";
 import type {
   BuildResult,
   Plugin,
@@ -20,7 +26,6 @@ describe("collectPluginHooks", () => {
     let retired = false;
     const context = {
       mode: "development",
-      command: "dev",
       cwd: "/project",
       config: {} as PluginSetupContext["config"],
       logger: {} as PluginSetupContext["logger"],
@@ -69,7 +74,6 @@ describe("collectPluginHooks", () => {
     const events: string[] = [];
     const context = {
       mode: "development",
-      command: "dev",
       cwd: "/project",
       config: resolveConfig(),
       logger: {} as PluginSetupContext["logger"],
@@ -116,7 +120,6 @@ describe("collectPluginHooks", () => {
     };
     const context = {
       mode: "production",
-      command: "build",
       cwd: "/project",
       config: resolveConfig(),
       logger: {} as PluginSetupContext["logger"],
@@ -145,7 +148,6 @@ describe("collectPluginHooks", () => {
     };
     const context = {
       mode: "production",
-      command: "build",
       cwd: "/project",
       config: resolveConfig(),
       logger: {} as PluginSetupContext["logger"],
@@ -207,7 +209,6 @@ describe("collectPluginHooks", () => {
     });
     const context = {
       mode: "production",
-      command: "build",
       cwd: "/project",
       config,
       logger: {} as PluginSetupContext["logger"],
@@ -226,6 +227,25 @@ describe("collectPluginHooks", () => {
       "dependency",
       "immutable-context",
     ]);
+  });
+
+  it("hides defined-plugin Application options from other plugin contexts", () => {
+    const secret = definePlugin({
+      id: "secret-options",
+      application: pluginOptions<{ token: string }>(),
+    })({ token: "build-only-secret" });
+    const config = resolveConfig({ plugins: [secret] });
+    prepareDefinedPluginApplicationSetting(
+      config.plugins[0] as object,
+      createPluginApplicationSettingContext(config),
+    );
+
+    const view = createPluginConfigView(config);
+    const visiblePlugin = view.plugins[0] as object;
+    expect(
+      Reflect.get(visiblePlugin, Symbol.for("@evjs/ev/defined-plugin-runtime")),
+    ).toBeUndefined();
+    expect(Reflect.ownKeys(visiblePlugin)).toEqual(["id"]);
   });
 
   it("isolates frozen context shells and flags between plugins", async () => {
@@ -280,7 +300,6 @@ describe("collectPluginHooks", () => {
     ];
     const context = {
       mode: "production",
-      command: "build",
       cwd: "/project",
       config: resolveConfig({ plugins }),
       flags: callerFlags,

@@ -310,19 +310,28 @@ describe("initTransport + callServer", () => {
     expect(() => initTransport({ adapter: null as never })).toThrow(
       "[evjs] initTransport() adapter must be an object.",
     );
+    expect(() => initTransport({ adapter: {} as never })).toThrow(
+      "[evjs] initTransport() adapter.send must be a function.",
+    );
     expect(() => initTransport({ adapter: { send: "send" } as never })).toThrow(
-      "[evjs] initTransport() adapter.send must be a function when provided.",
+      "[evjs] initTransport() adapter.send must be a function.",
     );
     expect(() =>
       initTransport({
-        adapter: { flight: async () => new Response() } as never,
+        adapter: {
+          send: async () => undefined,
+          flight: async () => new Response(),
+        } as never,
       }),
     ).toThrow(
       "[evjs] initTransport() adapter.flight is not supported. Custom transports only support send(fnId, args, context).",
     );
     expect(() =>
       initTransport({
-        adapter: { render: async () => new Response() } as never,
+        adapter: {
+          send: async () => undefined,
+          render: async () => new Response(),
+        } as never,
       }),
     ).toThrow(
       "[evjs] initTransport() adapter.render is not supported. Custom transports only support send(fnId, args, context).",
@@ -424,14 +433,6 @@ describe("initTransport + callServer", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("reports adapters without send using evjs diagnostics", async () => {
-    initTransport({ adapter: {} });
-
-    await expect(callServer("fn1", [])).rejects.toThrow(
-      "[evjs] Transport adapter does not implement send().",
-    );
-  });
-
   it("propagates transport errors", async () => {
     const send = vi.fn().mockRejectedValue(new Error("network failure"));
     initTransport({ adapter: { send } });
@@ -447,19 +448,27 @@ describe("transport types", () => {
     };
     expect(adapter).toEqual({ send: adapter.send });
 
+    // @ts-expect-error A custom transport must implement server-function calls.
+    const missingSendAdapter: TransportAdapter = {};
+    expect(missingSendAdapter).toEqual({});
+
     const invalidFlightAdapter: TransportAdapter = {
+      send: async () => "ok",
       // @ts-expect-error RSC Flight transport is not part of the stable custom adapter contract.
       flight: async () => new Response(),
     };
     expect(invalidFlightAdapter).toEqual({
+      send: expect.any(Function),
       flight: expect.any(Function),
     });
 
     const invalidRenderAdapter: TransportAdapter = {
+      send: async () => "ok",
       // @ts-expect-error SSR document rendering is not part of the stable custom adapter contract.
       render: async () => new Response(),
     };
     expect(invalidRenderAdapter).toEqual({
+      send: expect.any(Function),
       render: expect.any(Function),
     });
   });

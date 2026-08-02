@@ -50,6 +50,9 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   Public context types follow those stage names, and contribution code reads
   the normalized `FrameworkView`. The previous authoring names and internal
   `DefinedPlugin*` inference types are no longer exported.
+- **Single build environment signal** — Plugin contexts and the programmatic
+  prepare/inspect build APIs expose only `mode: "development" | "production"`.
+  The redundant `command: "dev" | "build"` field and option are removed.
 - **Application-owned plugin installation** — Plugin `configure()` hooks now
   receive and return only framework configuration. They cannot add, remove,
   reorder, or replace `config.plugins`; the Application's original plugin
@@ -76,6 +79,30 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   inventories reject missing entry assets and unowned JavaScript chunks.
   Server Functions and API Routes receive isolated snapshots of the canonical
   server runtime assets.
+- **Webpack hook configuration set** — `@evjs/bundler-webpack` now exports the
+  plural `WebpackConfigs` type. Its adapter and typed `webpack()` helper always
+  expose the complete `Configuration[]` set; the ambiguous singular-or-array
+  `WebpackConfig` type is removed.
+- **Bundler-neutral Core types** — `@evjs/ev/config` no longer exports
+  `DefaultBundlerConfig` or depends on `@utoo/pack` for its type. Core generic
+  defaults are opaque; bundler-specific plugins must use the selected adapter's
+  typed helper or an explicit generic. `@evjs/cli` still exposes its concrete
+  Utoopack default.
+- **Canonical manifest projection** — The unused split
+  `PublicManifestOutput` / `ServerManifestOutput` protocols and their
+  `createPublicManifest()` / `createServerManifest()` helpers are removed.
+  Framework output remains one `BuildOutput`, with `DeploymentMetadata` as its
+  deployment-safe projection.
+- **Runtime API cleanup** — Custom `TransportAdapter` implementations must
+  provide `send()` at initialization. `RouteHandler` now derives `Allow` from
+  its immutable method map. The unused `ShellOptions.onWarning`,
+  `ShellWarningContext`, client RSC debug JSON helpers, and
+  `ReactRscDebugPayload` are removed. The RSC Flight adapter also no longer
+  accepts `createProps`; RSC integrations render Flight responses directly.
+- **Explicit qiankun slave containers** — Slave entry code mounts through the
+  container supplied by qiankun. The plugin no longer rewrites global
+  `document.querySelector()` or `document.getElementById()` during lifecycle
+  calls.
 
 ### ✨ Improvements
 
@@ -92,6 +119,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 - **Composable plugin defaults** — Application and Page contracts remain
   independent, while authored fields deep-merge over defaults within each
   contract before validation.
+- **Direct plugin pipeline state** — Defined-plugin metadata now travels as a
+  non-enumerable instance field shared by config-loaded module copies. The
+  versioned `globalThis` registry and its parallel WeakMap bookkeeping are
+  removed, while plugin contexts continue to hide build-only options.
 - **Qiankun runtime base projection** — A mounted slave now projects the
   master-provided base and history into its generated Pages app before the first
   render. Master runtime overlays remain outside the canonical CoreGraph,

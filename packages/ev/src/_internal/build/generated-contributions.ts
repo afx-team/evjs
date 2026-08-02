@@ -151,7 +151,6 @@ type TargetedSlotPlanItem =
 interface MaterializeFrameworkIROptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
-  command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   graph: CoreGraph;
   plan: BuildPlan;
@@ -173,7 +172,6 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   const collector = new ContributionCollector({
     cwd: options.cwd,
     mode: options.mode,
-    command: options.command,
     config: options.config,
     graph: options.graph,
     plan,
@@ -257,7 +255,6 @@ class ContributionCollector<TBundlerCfg> {
     private readonly options: {
       cwd: string;
       mode: "development" | "production";
-      command: "dev" | "build";
       config: ResolvedFrameworkConfig<TBundlerCfg>;
       graph: CoreGraph;
       plan: BuildPlan;
@@ -272,7 +269,6 @@ class ContributionCollector<TBundlerCfg> {
     const context = Object.freeze({
       ...this.options.pluginContext,
       mode: this.options.mode,
-      command: this.options.command,
       cwd: this.options.cwd,
       config: createPluginConfigView(this.options.config),
       framework: createFrameworkView(this.options.graph, this.options.plan),

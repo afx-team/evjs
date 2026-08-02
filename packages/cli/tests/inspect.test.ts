@@ -58,6 +58,8 @@ describe("inspect", () => {
     );
 
     expect(hasInspectErrors(result)).toBe(false);
+    expect(result.mode).toBe("production");
+    expect(result).not.toHaveProperty("command");
     expect(result.routing).toMatchObject({
       routingMode: "spa",
       pageRoot: "./src/pages",
@@ -110,6 +112,7 @@ describe("inspect", () => {
       ppr: "__evjs/ppr",
     });
     const text = formatInspectText(result);
+    expect(text).toContain("Mode: production");
     expect(text).toContain("config=./src/pages/page.config.ts");
     expect(text).toContain(
       'metadata={"title":"Home","meta":{"description":"Inspect metadata"}}',

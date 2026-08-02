@@ -3,6 +3,7 @@ import { type Config, resolvePluginsConfig } from "../../config/index.js";
 import {
   copyDefinedPluginRuntime,
   createPluginApplicationSettingContext,
+  definedPluginRuntimeMetadata,
   forkDefinedPluginRuntime,
   prepareDefinedPluginApplicationSetting,
   shareDefinedPluginApplicationBinding,
@@ -423,6 +424,9 @@ function cloneConfigureHookValue(
     if (Array.isArray(value) && key === "length") {
       continue;
     }
+    // Reattach plugin metadata below so this clone can fork or share the
+    // build-local Application binding intentionally.
+    if (key === definedPluginRuntimeMetadata) continue;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor) continue;
     Object.defineProperty(
@@ -558,7 +562,6 @@ export function createLatePluginContext<TBundlerCfg>(
   const flags = snapshotPluginFlags(ctx.flags);
   return Object.freeze({
     mode: ctx.mode,
-    command: ctx.command,
     cwd: ctx.cwd,
     config: createPluginConfigView(ctx.config),
     ...(flags === undefined ? {} : { flags }),
@@ -669,6 +672,9 @@ function cloneReadonlyPluginConfigValue(
     if (Array.isArray(value) && key === "length") {
       continue;
     }
+    // Defined-plugin metadata contains build-only Application options. It is
+    // pipeline state, not part of another plugin's public config view.
+    if (key === definedPluginRuntimeMetadata) continue;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor) continue;
     if ("value" in descriptor) {

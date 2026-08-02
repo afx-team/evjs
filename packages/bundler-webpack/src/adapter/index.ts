@@ -28,13 +28,7 @@ import { pageRoutePathToRegExp } from "@evjs/shared";
 import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { createFsFromVolume, Volume } from "memfs";
-import type {
-  Compiler,
-  Configuration,
-  MultiCompiler,
-  MultiStats,
-  Stats,
-} from "webpack";
+import type { Compiler, MultiCompiler, MultiStats, Stats } from "webpack";
 import webpack from "webpack";
 import WebpackDevServer from "webpack-dev-server";
 import {
@@ -43,7 +37,7 @@ import {
   WebpackManifestGenerator,
   type WebpackStatsLike,
 } from "../manifest-generator.js";
-import { createWebpackConfigs, type WebpackConfig } from "./create-config.js";
+import { createWebpackConfigs, type WebpackConfigs } from "./create-config.js";
 import { copyServerPublicAssetsToClient } from "./server-public-assets.js";
 
 const logger = getLogger(["evjs", "bundler-webpack"]);
@@ -134,7 +128,7 @@ type FrameworkRequestKind =
   | "server-rendered-page"
   | "runtime";
 
-export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
+export const webpackAdapter: BundlerAdapter<WebpackConfigs> = {
   name: "webpack",
   capabilities: {
     build: {
@@ -152,7 +146,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   },
 
   async build(
-    ctx: BundlerBuildContext<WebpackConfig>,
+    ctx: BundlerBuildContext<WebpackConfigs>,
   ): Promise<BundlerBuildFacts> {
     const { addWatchFile, config, cwd, hooks, plan } = ctx;
     const outputPaths = resolveBuildOutputPaths(cwd, plan);
@@ -212,8 +206,8 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   },
 
   async dev(
-    ctx: BundlerDevContext<WebpackConfig>,
-  ): Promise<BundlerDevController<WebpackConfig>> {
+    ctx: BundlerDevContext<WebpackConfigs>,
+  ): Promise<BundlerDevController<WebpackConfigs>> {
     const session = new WebpackDevSession(ctx);
     try {
       await session.start();
@@ -233,9 +227,9 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   },
 };
 
-class WebpackDevSession implements BundlerDevController<WebpackConfig> {
+class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
   readonly done: Promise<void>;
-  private config: ResolvedConfig<WebpackConfig>;
+  private config: ResolvedConfig<WebpackConfigs>;
   private plan: BuildPlan;
   private buildGeneration: BundlerDevGeneration;
   private buildState: WebpackDevBuildState;
@@ -267,7 +261,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
       }
     | undefined;
 
-  constructor(private ctx: BundlerDevContext<WebpackConfig>) {
+  constructor(private ctx: BundlerDevContext<WebpackConfigs>) {
     this.done = this.sessionDone.promise;
     void this.done.catch(() => {});
     this.config = ctx.config;
@@ -440,14 +434,14 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
 
   updatePlan(
     update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<WebpackConfig>,
+    options: BundlerDevUpdateOptions<WebpackConfigs>,
   ): Promise<void> {
     return this.preparePlanUpdate(update, options);
   }
 
   private async preparePlanUpdate(
     update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<WebpackConfig>,
+    options: BundlerDevUpdateOptions<WebpackConfigs>,
   ): Promise<void> {
     this.throwIfUnavailable();
     const transition = this.pendingPlanTransition;
@@ -483,7 +477,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfig> {
 
   private async applyPlanUpdate(
     update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<WebpackConfig>,
+    options: BundlerDevUpdateOptions<WebpackConfigs>,
     transition: WebpackDevPlanTransition,
   ): Promise<void> {
     const previousPlan = this.plan;
@@ -1275,7 +1269,7 @@ function createInitialBuildBarrier(options: {
 }
 
 function createWebpackCompiler(
-  configs: Configuration[],
+  configs: WebpackConfigs,
 ): Compiler | MultiCompiler {
   if (configs.length === 1) {
     return webpack(configs[0]);
@@ -1320,7 +1314,7 @@ function configureBuildOnlyMemoryOutputs(compiler: Compiler | MultiCompiler): {
 }
 
 function createDevServerOptions(
-  config: ResolvedConfig<WebpackConfig>,
+  config: ResolvedConfig<WebpackConfigs>,
   plan: BuildPlan,
   clientDir: string,
 ): ConstructorParameters<typeof WebpackDevServer>[0] {
@@ -1387,7 +1381,7 @@ function createDevServerOptions(
 }
 
 function createDevProxyRules(
-  config: ResolvedConfig<WebpackConfig>,
+  config: ResolvedConfig<WebpackConfigs>,
   plan: BuildPlan,
 ): WebpackDevProxyRule[] {
   const serverTarget = `${config.server.dev.https ? "https" : "http"}://localhost:${config.server.dev.port}`;
@@ -1452,7 +1446,7 @@ function createFrameworkRuntimePathMatchers(plan: BuildPlan): RegExp[] {
 }
 
 function createDevServerTransport(
-  https: ResolvedConfig<WebpackConfig>["dev"]["https"],
+  https: ResolvedConfig<WebpackConfigs>["dev"]["https"],
 ): ConstructorParameters<typeof WebpackDevServer>[0]["server"] {
   if (!https) return "http";
   if (https === true) return "https";
@@ -1664,7 +1658,7 @@ function toWebpackDevProxy(rule: WebpackDevProxyRule) {
   };
 }
 
-async function runWebpack(configs: Configuration[]): Promise<{
+async function runWebpack(configs: WebpackConfigs): Promise<{
   clientStats?: WebpackStatsLike;
   serverStats?: WebpackStatsLike;
   memoryFiles: Map<string, Buffer>;

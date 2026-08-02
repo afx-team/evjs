@@ -16,7 +16,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
-  type WebpackConfig,
+  type WebpackConfigs,
 } from "../src/adapter/create-config.js";
 
 describe("createWebpackConfigs", () => {
@@ -120,6 +120,8 @@ describe("createWebpackConfigs", () => {
         {
           configureBundler(_configs, ctx) {
             ctx.addWatchFile("./webpack-plugin.config.ts");
+            expect(ctx.mode).toBe("development");
+            expect(ctx).not.toHaveProperty("command");
             expect(Object.isFrozen(ctx.config)).toBe(true);
             expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
             expect(() => {
@@ -150,7 +152,6 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            if (!Array.isArray(configs)) return;
             const index = configs.findIndex((item) => item.name === "client");
             const [client] = configs.splice(index, 1);
             if (client) configs.push({ ...client, name: "renamed-client" });
@@ -171,7 +172,6 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            if (!Array.isArray(configs)) return;
             const client = configs.find((item) => item.name === "client");
             if (!client) return;
             if (client.output) client.output.clean = false;
@@ -195,7 +195,6 @@ describe("createWebpackConfigs", () => {
     const configs = await createWebpackConfigs(config, plan, process.cwd(), [
       {
         configureBundler(configs) {
-          if (!Array.isArray(configs)) return;
           const index = configs.findIndex((item) => item.name === "client");
           const client = configs[index];
           if (client) {
@@ -223,8 +222,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (client?.output) {
               client.output.clean = false;
               client.output.path = "dist/client";
@@ -246,8 +244,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (client?.output) {
               client.output.path = path.resolve(process.cwd(), "dist/server");
             }
@@ -270,8 +267,7 @@ describe("createWebpackConfigs", () => {
         {
           configureBundler(configs) {
             events.push("mutate");
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (client?.output) {
               client.output.path = path.resolve(process.cwd(), "dist/server");
             }
@@ -280,8 +276,7 @@ describe("createWebpackConfigs", () => {
         {
           configureBundler(configs) {
             events.push("restore");
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (client?.output) {
               client.output.path = path.resolve(process.cwd(), "dist/client");
             }
@@ -305,16 +300,14 @@ describe("createWebpackConfigs", () => {
         {
           configureBundler(configs) {
             events.push("mutate");
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (client?.output) client.output.filename = "../../escape.js";
           },
         },
         {
           configureBundler(configs) {
             events.push("restore");
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (client?.output) client.output.filename = "[name].js";
           },
         },
@@ -328,7 +321,7 @@ describe("createWebpackConfigs", () => {
   it("preserves framework runtime identity after configureBundler hooks", async () => {
     const cases: Array<{
       expected: string;
-      mutate(config: NonNullable<Exclude<WebpackConfig, unknown[]>>): void;
+      mutate(config: WebpackConfigs[number]): void;
     }> = [
       {
         expected:
@@ -377,8 +370,7 @@ describe("createWebpackConfigs", () => {
         createWebpackConfigs(config, plan, process.cwd(), [
           {
             configureBundler(configs) {
-              const items = Array.isArray(configs) ? configs : [configs];
-              const client = items.find((item) => item.name === "client");
+              const client = configs.find((item) => item.name === "client");
               if (client) testCase.mutate(client);
             },
           },
@@ -398,8 +390,7 @@ describe("createWebpackConfigs", () => {
         {
           configureBundler(configs) {
             events.push("mutate");
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             const entries = client?.entry;
             if (
               entries &&
@@ -446,8 +437,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             if (!client) return;
             client.optimization = {
               ...client.optimization,
@@ -479,8 +469,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const server = items.find((item) => item.name === "server");
+            const server = configs.find((item) => item.name === "server");
             if (!server) return;
             server.optimization = {
               ...server.optimization,
@@ -503,8 +492,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             const entries = client?.entry;
             if (
               entries &&
@@ -532,8 +520,7 @@ describe("createWebpackConfigs", () => {
         {
           configureBundler(configs) {
             events.push("mutate");
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             const entries = client?.entry;
             if (
               entries &&
@@ -567,8 +554,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const client = items.find((item) => item.name === "client");
+            const client = configs.find((item) => item.name === "client");
             const entries = client?.entry;
             if (
               entries &&
@@ -608,8 +594,7 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            const items = Array.isArray(configs) ? configs : [configs];
-            const target = items.find((item) => item.name === configName);
+            const target = configs.find((item) => item.name === configName);
             const entries = target?.entry;
             if (
               entries &&
@@ -646,7 +631,6 @@ describe("createWebpackConfigs", () => {
     const configs = await createWebpackConfigs(config, plan, process.cwd(), [
       {
         configureBundler(configs) {
-          if (!Array.isArray(configs)) return;
           const server = configs.find((item) => item.name === "server");
           const entries = server?.entry;
           if (
@@ -701,7 +685,6 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            if (!Array.isArray(configs)) return;
             configs.push({
               name: "plugin-owned",
               entry: { "plugin-entry": "./src/plugin-entry.ts" },
@@ -728,7 +711,6 @@ describe("createWebpackConfigs", () => {
       createWebpackConfigs(config, plan, process.cwd(), [
         {
           configureBundler(configs) {
-            if (!Array.isArray(configs)) return;
             configs.push({
               name: "plugin-owned",
               entry: { "plugin-entry": "./src/plugin-entry.ts" },
@@ -758,7 +740,6 @@ describe("createWebpackConfigs", () => {
         createWebpackConfigs(config, plan, cwd, [
           {
             configureBundler(configs) {
-              if (!Array.isArray(configs)) return;
               configs.push({
                 name: "plugin-owned",
                 entry: { "plugin-entry": "./src/plugin-entry.ts" },
@@ -798,8 +779,7 @@ describe("createWebpackConfigs", () => {
         createWebpackConfigs(config, plan, process.cwd(), [
           {
             configureBundler(configs) {
-              const items = Array.isArray(configs) ? configs : [configs];
-              const target = items.find((item) => item.name === configName);
+              const target = configs.find((item) => item.name === configName);
               if (target?.output) {
                 target.output.clean = false;
                 target.output.path = path.resolve(
@@ -859,7 +839,7 @@ describe("createWebpackConfigs", () => {
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
-    const plugin: Plugin<WebpackConfig> = {
+    const plugin: Plugin<WebpackConfigs> = {
       id: "generated-alias",
       emitIR(ctx) {
         const configModule = ctx.emit.data({
@@ -874,7 +854,7 @@ describe("createWebpackConfigs", () => {
         });
       },
     };
-    const config: ResolvedConfig<WebpackConfig> = {
+    const config: ResolvedConfig<WebpackConfigs> = {
       ...createResolvedConfig(),
       plugins: [plugin],
     };
@@ -901,7 +881,7 @@ describe("createWebpackConfigs", () => {
   });
 
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
-    const config: ResolvedConfig<WebpackConfig> = {
+    const config: ResolvedConfig<WebpackConfigs> = {
       ...createResolvedConfig(),
       output: {
         client: "dist/client",
@@ -929,7 +909,7 @@ describe("createWebpackConfigs", () => {
   });
 
   it("filters resolve.external contributions by webpack target runtime", async () => {
-    const config: ResolvedConfig<WebpackConfig> = {
+    const config: ResolvedConfig<WebpackConfigs> = {
       ...createResolvedConfig(),
     };
     const graph = createGraph(config, {
@@ -1004,7 +984,7 @@ describe("createWebpackConfigs", () => {
   });
 
   it("uses component page bootstrap instead of the SPA router loader for MPA page routes", async () => {
-    const config: ResolvedConfig<WebpackConfig> = {
+    const config: ResolvedConfig<WebpackConfigs> = {
       ...createResolvedConfig(),
       routing: {
         mode: "mpa",
@@ -1058,7 +1038,7 @@ describe("createWebpackConfigs", () => {
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {
-    const config: ResolvedConfig<WebpackConfig> = {
+    const config: ResolvedConfig<WebpackConfigs> = {
       ...createResolvedConfig(),
     };
     const graph = createGraph(config, {
@@ -1115,7 +1095,7 @@ describe("createWebpackConfigs", () => {
   });
 });
 
-function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
+function createResolvedConfig(): ResolvedConfig<WebpackConfigs> {
   return {
     conventions: true,
     routing: {
@@ -1161,7 +1141,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
 }
 
 async function createGeneratedPlan(
-  config: ResolvedConfig<WebpackConfig>,
+  config: ResolvedConfig<WebpackConfigs>,
   graph: CoreGraph,
   mode: "development" | "production",
 ) {
@@ -1175,14 +1155,12 @@ async function createGeneratedPlan(
   return materializeFrameworkIR({
     cwd: process.cwd(),
     mode,
-    command: mode === "development" ? "dev" : "build",
     config,
     graph,
     plugins: config.plugins,
     pluginContext: {
       cwd: process.cwd(),
       mode,
-      command: mode === "development" ? "dev" : "build",
       config,
       logger: {} as never,
       addWatchFile() {},
@@ -1201,7 +1179,7 @@ interface TestPage {
 }
 
 function createGraph(
-  config: ResolvedConfig<WebpackConfig>,
+  config: ResolvedConfig<WebpackConfigs>,
   options: { pages?: TestPage[]; serverRoutes?: ServerRouteNode[] } = {},
 ): CoreGraph {
   const documentTemplate = config.routing?.html ?? "./index.html";

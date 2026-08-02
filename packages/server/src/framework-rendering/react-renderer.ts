@@ -84,24 +84,9 @@ export interface ReactRscFlightAdapterOptions {
     asset: string,
     renderer: FrameworkServerRenderer,
   ) => Promise<ReactServerRendererModule>;
-  createProps?(
-    ctx: RscFlightContext,
-  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   renderFlight?(ctx: RscFlightContext): Response | Promise<Response>;
   onError?(error: unknown, ctx: RscFlightContext): void | Promise<void>;
   validateContentType?: boolean;
-}
-
-export interface ReactRscDebugPayload {
-  version: 1;
-  type: "evjs.rsc";
-  buildId: string;
-  endpoint?: string;
-  pageId?: string;
-  renderer?: string;
-  html?: string;
-  assets: FrameworkAssetGroup;
-  pages?: NonNullable<FrameworkRuntime["rsc"]>["pages"];
 }
 
 export function createReactServerRenderAdapter(
@@ -210,24 +195,20 @@ export function createReactRscFlightAdapter(
     },
     async renderFlight(ctx) {
       try {
-        if (options.renderFlight) {
-          const response = await options.renderFlight(ctx);
-          assertRscFlightResponse(
-            response,
-            "createReactRscFlightAdapter() renderFlight()",
+        const response = options.renderFlight
+          ? await options.renderFlight(ctx)
+          : await renderLoadedRscFlight(ctx, options);
+        if (response === undefined) {
+          return textResponse(
+            "[evjs] RSC Flight renderer is not configured for this page.",
+            501,
           );
-          return validateFlightResponse(response, options);
         }
-
-        const rendered = await renderDefaultRscDebugPayload(ctx, options);
-        if (rendered instanceof Response) {
-          return validateFlightResponse(rendered, options);
-        }
-
-        return textResponse(
-          "[evjs] RSC Flight renderer is not configured for this page.",
-          501,
+        assertRscFlightResponse(
+          response,
+          "createReactRscFlightAdapter() renderFlight()",
         );
+        return validateFlightResponse(response, options);
       } catch (error) {
         await options.onError?.(error, ctx);
         return createFrameworkErrorResponse("RSC Flight render failed", error);
@@ -308,10 +289,6 @@ function assertReactRscFlightAdapterOptions(
     "createReactRscFlightAdapter() loadModule",
   );
   assertOptionalFunction(
-    value.createProps,
-    "createReactRscFlightAdapter() createProps",
-  );
-  assertOptionalFunction(
     value.renderFlight,
     "createReactRscFlightAdapter() renderFlight",
   );
@@ -337,35 +314,12 @@ function assertOptionalBoolean(value: unknown, source: string): void {
   }
 }
 
-async function renderDefaultRscDebugPayload(
+async function renderLoadedRscFlight(
   ctx: RscFlightContext,
   options: ReactRscFlightAdapterOptions,
-): Promise<ReactRscDebugPayload | Response> {
-  const rendererName = ctx.rscPage?.renderer;
-  const renderer = rendererName ? ctx.renderer : undefined;
-  const html = renderer
-    ? await renderRscRendererModule(ctx, renderer, options)
-    : undefined;
-  if (html instanceof Response) return html;
-
-  return {
-    version: 1,
-    type: "evjs.rsc",
-    buildId: ctx.runtime.buildId,
-    endpoint: getRscEndpoint(ctx.runtime),
-    pageId: ctx.pageId,
-    renderer: rendererName,
-    html,
-    assets: ctx.rscPage?.assets ?? emptyAssets(),
-    pages: ctx.runtime.rsc?.pages ?? {},
-  };
-}
-
-async function renderRscRendererModule(
-  ctx: RscFlightContext,
-  renderer: FrameworkServerRenderer,
-  options: ReactRscFlightAdapterOptions,
-): Promise<string | Response | undefined> {
+): Promise<Response | undefined> {
+  const renderer = ctx.renderer;
+  if (!renderer) return undefined;
   const asset = renderer.assets.js[0];
   if (!asset || !options.loadModule) return undefined;
 
@@ -374,40 +328,14 @@ async function renderRscRendererModule(
     module,
     "createReactRscFlightAdapter() loadModule()",
   );
-  const customFlight = getModuleFunction(module, "renderFlight");
-  if (customFlight) {
-    const result = await customFlight(ctx);
-    if (result instanceof Response) return result;
-    if (typeof result === "string") return result;
-    if (isHtmlResult(result)) return result.html;
-    return undefined;
-  }
+  if (typeof module.renderFlight !== "function") return undefined;
 
-  const customRsc = getModuleFunction(module, "renderRsc");
-  if (customRsc) {
-    const result = await customRsc(ctx);
-    if (result instanceof Response) return result;
-    if (typeof result === "string") return result;
-    if (isHtmlResult(result)) return result.html;
-    return undefined;
-  }
-
-  if (typeof module.default !== "function") return undefined;
-
-  const Component = module.default as ComponentType<Record<string, unknown>>;
-  const props = await resolveRscRenderProps(options, ctx);
-  return renderReactHtml(
-    createPageElement(Component, props, ctx, resolvePageProvider(module)),
+  const response = await module.renderFlight(ctx);
+  assertRscFlightResponse(
+    response,
+    "createReactRscFlightAdapter() loaded module renderFlight()",
   );
-}
-
-function getModuleFunction(
-  module: ReactServerRendererModule,
-  name: "renderFlight" | "renderRsc",
-): ((ctx: RscFlightContext) => unknown | Promise<unknown>) | undefined {
-  return typeof module[name] === "function"
-    ? (module[name] as (ctx: RscFlightContext) => unknown | Promise<unknown>)
-    : undefined;
+  return response;
 }
 
 function isHtmlResult(value: unknown): value is { html: string } {
@@ -428,33 +356,8 @@ function isReactServerRenderResult(
   );
 }
 
-function defaultRscProps(ctx: RscFlightContext): Record<string, unknown> {
-  return {
-    runtime: {
-      buildId: ctx.runtime.buildId,
-    },
-    pageId: ctx.pageId,
-    route: findRouteForPage(
-      ctx.runtime,
-      ctx.pageId,
-      readUrlPathname(ctx.pageUrl),
-    ),
-  };
-}
-
 function getRscEndpoint(runtime: FrameworkRuntime): string | undefined {
   return runtime.runtime.server.rsc;
-}
-
-async function resolveRscRenderProps(
-  options: ReactRscFlightAdapterOptions,
-  ctx: RscFlightContext,
-): Promise<Record<string, unknown>> {
-  const props = options.createProps
-    ? await options.createProps(ctx)
-    : defaultRscProps(ctx);
-  assertRenderProps(props, "createReactRscFlightAdapter() createProps()");
-  return props;
 }
 
 function defaultProps(ctx: ReactServerRenderContext): Record<string, unknown> {

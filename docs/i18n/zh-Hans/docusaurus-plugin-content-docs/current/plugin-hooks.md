@@ -227,7 +227,8 @@ export const yamlPlugin = definePlugin({
 ```
 
 切换到 webpack 的项目，选择 webpack adapter 并使用它的类型安全 helper
-即可。`defineConfig()` 会从 adapter 自动推断 bundler config 类型：
+即可。`defineConfig()` 会从 adapter 自动推断 bundler config 类型，helper
+回调会收到完整的 `Configuration[]` 配置集合：
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -238,10 +239,12 @@ const webpackAlias = definePlugin({
   id: "webpack-alias",
   setup() {
     return {
-      configureBundler: webpack((config) => {
-        config.resolve ??= {};
-        config.resolve.alias ??= {};
-        config.resolve.alias["@app"] = "./src";
+      configureBundler: webpack((configs) => {
+        for (const config of configs) {
+          config.resolve ??= {};
+          config.resolve.alias ??= {};
+          config.resolve.alias["@app"] = "./src";
+        }
       }),
     };
   },

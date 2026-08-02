@@ -51,7 +51,7 @@ export interface RequestContext {
 
 export interface TransportAdapter {
   /** Execute a server function call. */
-  send?(
+  send(
     fnId: string,
     args: unknown[],
     context?: RequestContext,
@@ -535,13 +535,7 @@ export async function callServer(
   context?: RequestContext,
 ): Promise<unknown> {
   assertServerFunctionCall(fnId, args);
-  const runtime = getRuntime();
-  const send = runtime.adapter.send;
-  if (!send) {
-    throw new Error("[evjs] Transport adapter does not implement send().");
-  }
-
-  return send(fnId, args, context);
+  return getRuntime().adapter.send(fnId, args, context);
 }
 
 /** Minimal callable shape for server function stubs. */
@@ -820,10 +814,8 @@ function assertTransportAdapter(
     throw new Error("[evjs] initTransport() adapter must be an object.");
   }
 
-  if (adapter.send !== undefined && typeof adapter.send !== "function") {
-    throw new Error(
-      "[evjs] initTransport() adapter.send must be a function when provided.",
-    );
+  if (typeof adapter.send !== "function") {
+    throw new Error("[evjs] initTransport() adapter.send must be a function.");
   }
 
   for (const key of ["flight", "render"] as const) {

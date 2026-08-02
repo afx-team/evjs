@@ -5,28 +5,28 @@ import {
   type PluginHooks,
 } from "@evjs/ev/plugin";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { WebpackConfig } from "../src/index.js";
+import type { WebpackConfigs } from "../src/index.js";
 import { webpack } from "../src/plugin-helper.js";
 
 describe("webpack plugin helper", () => {
   function createCtx(
     bundlerName: string,
-  ): ConfigureBundlerContext<WebpackConfig> {
+  ): ConfigureBundlerContext<WebpackConfigs> {
     return {
       mode: "production",
-      command: "build",
       cwd: process.cwd(),
-      config: {} as ConfigureBundlerContext<WebpackConfig>["config"],
+      config: {} as ConfigureBundlerContext<WebpackConfigs>["config"],
       bundlerName,
-      logger: {} as ConfigureBundlerContext<WebpackConfig>["logger"],
+      logger: {} as ConfigureBundlerContext<WebpackConfigs>["logger"],
       addWatchFile() {},
     };
   }
 
   it("runs only for the webpack adapter", async () => {
     const events: string[] = [];
-    const hook = webpack((config, ctx) => {
-      events.push(`${ctx.bundlerName}:${Array.isArray(config)}`);
+    const hook = webpack((configs, ctx) => {
+      expectTypeOf(configs).toEqualTypeOf<WebpackConfigs>();
+      events.push(`${ctx.bundlerName}:${configs.length}`);
     });
 
     expectTypeOf(hook).toMatchTypeOf<
@@ -35,7 +35,7 @@ describe("webpack plugin helper", () => {
     await hook([], createCtx("utoopack"));
     await hook([], createCtx("webpack"));
 
-    expect(events).toEqual(["webpack:true"]);
+    expect(events).toEqual(["webpack:0"]);
   });
 
   it("keeps a default definePlugin factory bundler-agnostic", () => {
@@ -43,10 +43,8 @@ describe("webpack plugin helper", () => {
       id: "webpack-helper",
       setup() {
         return {
-          configureBundler: webpack((config) => {
-            for (const webpackConfig of Array.isArray(config)
-              ? config
-              : [config]) {
+          configureBundler: webpack((configs) => {
+            for (const webpackConfig of configs) {
               webpackConfig.resolve ??= {};
             }
           }),

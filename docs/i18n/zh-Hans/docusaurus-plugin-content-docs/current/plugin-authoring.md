@@ -216,9 +216,9 @@ export default defineConfig({
 未知 hook key 也会被拒绝，避免拼写错误静默 no-op。插件包自己的 metadata 应放在
 hooks object 之外。
 
-Setup context 提供 `mode`、`command`、`cwd`、resolved `config`、`logger`、
-`addWatchFile()`，以及 descriptor 声明的类型安全 Application `ctx.options`。生命周期
-顺序与各 hook 合同见[插件 Hooks](./plugin-hooks)。
+Setup context 提供 `mode`、`cwd`、resolved `config`、`logger`、
+`addWatchFile()`，以及 descriptor 声明的类型安全 Application `ctx.options`。插件通过
+`mode` 区分开发与生产环境。生命周期顺序与各 hook 合同见[插件 Hooks](./plugin-hooks)。
 
 公开 context 名称与阶段一一对应：`PluginConfigureContext`、
 `PluginSetupContext`、`PluginEmitIRContext`、`ConfigureBundlerContext`、

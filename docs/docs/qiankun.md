@@ -222,7 +222,9 @@ export default defineQiankunSlaveRuntime({
 
 In qiankun mode the plugin mounts into `props.container`. Outside qiankun it
 automatically starts the same canonical SPA entry. It does not infer a magic
-`src/main.tsx` or expose a second application entry model.
+`src/main.tsx` or expose a second application entry model. Slave code must use
+the supplied container; the plugin never rewrites global `document` lookup
+methods to redirect selectors.
 
 ## Module References
 

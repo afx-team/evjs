@@ -75,17 +75,8 @@ export type {
   PageRoutePath,
   PageRouteSearch,
 } from "./framework/page/route-types.js";
-export type {
-  RscDebugPayload,
-  RscDebugPayloadMountOptions,
-  RscFlightFetchOptions,
-} from "./rsc/react.js";
-export {
-  fetchRscDebugPayload,
-  fetchRscFlight,
-  loadRscDebugPage,
-  mountRscDebugPayload,
-} from "./rsc/react.js";
+export type { RscFlightFetchOptions } from "./rsc/react.js";
+export { fetchRscFlight } from "./rsc/react.js";
 export type {
   ReactRscModelOptions,
   ReactRscMountOptions,

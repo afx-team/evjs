@@ -792,14 +792,12 @@ describe("createUtoopackConfig", () => {
     const plan = await materializeFrameworkIR({
       cwd: process.cwd(),
       mode: "development",
-      command: "dev",
       config,
       graph,
       plugins: [],
       pluginContext: {
         cwd: process.cwd(),
         mode: "development",
-        command: "dev",
         config,
         logger: {} as never,
         addWatchFile() {},
@@ -855,6 +853,8 @@ describe("createUtoopackConfig", () => {
             await Promise.resolve();
             cfg.define = { ...cfg.define, __PLUGIN_ASYNC__: "true" };
             ctx.addWatchFile("./utoopack-plugin.config.ts");
+            expect(ctx.mode).toBe("development");
+            expect(ctx).not.toHaveProperty("command");
             expect(ctx.bundlerName).toBe("utoopack");
             expect(ctx.environment).toBe("client");
             expect(Object.isFrozen(ctx.config)).toBe(true);
@@ -1471,14 +1471,12 @@ function createPlan(
   return materializeFrameworkIR({
     cwd: process.cwd(),
     mode,
-    command: mode === "development" ? "dev" : "build",
     config,
     graph,
     plugins: config.plugins,
     pluginContext: {
       cwd: process.cwd(),
       mode,
-      command: mode === "development" ? "dev" : "build",
       config,
       logger: {} as never,
       addWatchFile() {},

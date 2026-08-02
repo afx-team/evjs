@@ -282,6 +282,10 @@ describe("createRoute", () => {
       GET: async () => Response.json([]),
       POST: async () => Response.json({}, { status: 201 }),
     });
+    expect(Object.isFrozen(handler.methods)).toBe(true);
+    expect(
+      Reflect.set(handler.methods, "DELETE", async () => new Response()),
+    ).toBe(false);
 
     const res = await fetch(handler, "/api/items", { method: "OPTIONS" });
     expect(res.status).toBe(204);
@@ -289,6 +293,7 @@ describe("createRoute", () => {
     expect(allow).toContain("GET");
     expect(allow).toContain("POST");
     expect(allow).toContain("OPTIONS");
+    expect(allow).not.toContain("DELETE");
   });
 
   it("auto-derives HEAD from GET", async () => {

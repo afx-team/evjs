@@ -55,7 +55,6 @@ async function runAfterBuildHooks(
 const TEST_CONFIG = resolveConfig({});
 const CTX: PluginSetupContext = {
   mode: "production",
-  command: "build",
   cwd: process.cwd(),
   config: TEST_CONFIG,
   logger: getLogger(["evjs", "test"]),
@@ -63,7 +62,6 @@ const CTX: PluginSetupContext = {
 };
 const BEFORE_BUILD_CTX: BeforeBuildContext = {
   mode: CTX.mode,
-  command: CTX.command,
   cwd: CTX.cwd,
   config: CTX.config,
   logger: CTX.logger,
@@ -151,7 +149,6 @@ describe("resolveConfig", () => {
 
     await collectPluginHooks([plugin], {
       mode: "production",
-      command: "build",
       cwd: process.cwd(),
       config,
       logger: getLogger(["evjs", "test"]),

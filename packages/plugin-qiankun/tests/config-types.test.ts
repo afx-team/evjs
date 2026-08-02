@@ -1,4 +1,4 @@
-import { type WebpackConfig, webpackAdapter } from "@evjs/bundler-webpack";
+import { type WebpackConfigs, webpackAdapter } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/ev";
 import type { Plugin } from "@evjs/ev/plugin";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -68,8 +68,8 @@ describe("qiankun plugin config types", () => {
       plugins: [master, slave],
     });
 
-    expectTypeOf(master).toMatchTypeOf<Plugin<WebpackConfig>>();
-    expectTypeOf(slave).toMatchTypeOf<Plugin<WebpackConfig>>();
+    expectTypeOf(master).toMatchTypeOf<Plugin<WebpackConfigs>>();
+    expectTypeOf(slave).toMatchTypeOf<Plugin<WebpackConfigs>>();
     expectTypeOf(config.plugins).toEqualTypeOf<
       readonly [typeof master, typeof slave]
     >();

@@ -24,7 +24,6 @@ export type {
   ShellErrorContext,
   ShellModuleRegistration,
   ShellOptions,
-  ShellWarningContext,
 } from "@evjs/client/internal";
 export {
   callServer,

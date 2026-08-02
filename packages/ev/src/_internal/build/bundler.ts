@@ -7,10 +7,7 @@ import {
   assertPortableRelativeBrowserArtifactPath,
   assertServerRelativeArtifactPath,
 } from "@evjs/shared/manifest";
-import type {
-  DefaultBundlerConfig,
-  ResolvedFrameworkConfig,
-} from "../../config/index.js";
+import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type { PluginHooks } from "../../plugin/index.js";
 
 export interface BundlerEmittedFiles {
@@ -188,7 +185,7 @@ function defineRecordValue<T>(
   });
 }
 
-export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
+export interface BundlerBuildContext<TBundlerCfg = unknown> {
   cwd: string;
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   plan: BuildPlan;
@@ -210,7 +207,7 @@ export interface BundlerDevGeneration {
   readonly [bundlerDevGenerationBrand]: true;
 }
 
-export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
+export interface BundlerDevContext<TBundlerCfg = unknown>
   extends BundlerBuildContext<TBundlerCfg> {
   /** Generation owned by the initial dev plan. */
   generation: BundlerDevGeneration;
@@ -240,7 +237,7 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
   };
 }
 
-export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
+export interface BundlerDevUpdateOptions<TBundlerCfg = unknown> {
   /** The resolved config that produced the next plan. */
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   /**
@@ -287,7 +284,7 @@ export interface BundlerDevUpdateTransition {
   finalize(): void;
 }
 
-export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
+export interface BundlerDevController<TBundlerCfg = unknown> {
   /** Settles if the adapter-owned dev service terminates independently. */
   done?: Promise<void>;
   close?(): void | Promise<void>;
@@ -388,7 +385,7 @@ export interface BundlerCapabilityGap {
 /**
  * Interface that all bundler adapters must implement.
  */
-export interface BundlerAdapter<TBundlerCfg = DefaultBundlerConfig> {
+export interface BundlerAdapter<TBundlerCfg = unknown> {
   /** Human-readable bundler name (used by plugin helpers for type-narrowing). */
   readonly name: string;
   /** Stable framework capabilities used for plan preflight. */

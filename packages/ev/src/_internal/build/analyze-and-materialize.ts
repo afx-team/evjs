@@ -23,7 +23,6 @@ import { syncPluginTypes } from "./plugin-types.js";
 export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
-  command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   pluginContext: PluginSetupContext<TBundlerCfg>;
   pluginSettings: PluginSettingsRegistry;
@@ -55,7 +54,6 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
     return materializeFrameworkIR({
       cwd: options.cwd,
       mode: options.mode,
-      command: options.command,
       config: options.config,
       graph: analysis.graph,
       plugins: options.config.plugins,

@@ -31,11 +31,7 @@ import type {
   ServerRuntime,
 } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
-import type {
-  Config,
-  DefaultBundlerConfig,
-  ResolvedFrameworkConfig,
-} from "../config/index.js";
+import type { Config, ResolvedFrameworkConfig } from "../config/index.js";
 
 export type {
   ClientContributionRuntime,
@@ -146,15 +142,13 @@ export interface HtmlDocument {
 /**
  * Context passed to plugin bundler hooks.
  */
-export interface ConfigureBundlerContext<TBundlerCfg = DefaultBundlerConfig> {
+export interface ConfigureBundlerContext<TBundlerCfg = unknown> {
   /** The current mode. */
   readonly mode: "development" | "production";
   /** The current working directory. */
   readonly cwd: string;
   /** The fully resolved, read-only framework config. */
   readonly config: ReadonlyFrameworkConfig<TBundlerCfg>;
-  /** The current command. */
-  readonly command: "dev" | "build";
   /** Selected bundler adapter name. */
   readonly bundlerName: string;
   /** Environment currently being configured when known. */
@@ -173,12 +167,10 @@ export interface PluginConfigureContext {
   readonly cwd: string;
   /** Extra CLI flags made available to plugins. */
   readonly flags?: DeepReadonly<CliFlags>;
-  /** The current command. */
-  readonly command: "dev" | "build";
 }
 
 /** Framework configuration a plugin may change before defaults are resolved. */
-export type PluginConfigureInput<TBundlerCfg = DefaultBundlerConfig> = Omit<
+export type PluginConfigureInput<TBundlerCfg = unknown> = Omit<
   Config<TBundlerCfg>,
   "plugins"
 >;
@@ -314,7 +306,7 @@ export interface Plugin<TBundlerCfg = unknown> {
   enforce?: "pre" | "normal" | "post";
 }
 
-interface PluginBaseContext<TBundlerCfg = DefaultBundlerConfig> {
+interface PluginBaseContext<TBundlerCfg = unknown> {
   /** Current mode. */
   readonly mode: "development" | "production";
   /** The current working directory. */
@@ -323,14 +315,12 @@ interface PluginBaseContext<TBundlerCfg = DefaultBundlerConfig> {
   readonly config: ReadonlyFrameworkConfig<TBundlerCfg>;
   /** Extra CLI flags made available to plugins. */
   readonly flags?: DeepReadonly<CliFlags>;
-  /** Current command. */
-  readonly command: "dev" | "build";
   /** Logger plugins can use for framework-scoped messages. */
   readonly logger: Logger;
 }
 
 /** Context passed to plugin setup(). */
-export interface PluginSetupContext<TBundlerCfg = DefaultBundlerConfig>
+export interface PluginSetupContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {
   /** Adds an extra framework-level watch file in dev mode. */
   addWatchFile(file: string): void;
@@ -565,7 +555,7 @@ export interface FrameworkServerAppEntryMetadata {
   readonly serverFunctions?: readonly FrameworkServerFunctionView[];
 }
 
-export interface PluginEmitIRContext<TBundlerCfg = DefaultBundlerConfig>
+export interface PluginEmitIRContext<TBundlerCfg = unknown>
   extends PluginSetupContext<TBundlerCfg> {
   readonly framework: FrameworkView;
   readonly emit: EmitApi;
@@ -685,16 +675,16 @@ export interface ResolveExternalContribution {
   runtime?: ContributionRuntime;
 }
 
-export interface BeforeBuildContext<TBundlerCfg = DefaultBundlerConfig>
+export interface BeforeBuildContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {
   /** True when processing a dev rebuild rather than the initial output. */
   readonly isRebuild: boolean;
 }
 
-export interface TransformOutputContext<TBundlerCfg = DefaultBundlerConfig>
+export interface TransformOutputContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {}
 
-export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
+export interface DisposeContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {}
 
 type BeforeBuildHook<TBundlerCfg> = <
@@ -817,10 +807,9 @@ export interface HtmlDocumentInfo {
   assets: AssetGroup;
 }
 
-export type TransformHtmlContext<TBundlerCfg = DefaultBundlerConfig> =
-  BuildResult &
-    HtmlDocumentInfo &
-    PluginBaseContext<TBundlerCfg> & {
-      buildId: string;
-      publicPath: BuildOutput["publicPath"];
-    };
+export type TransformHtmlContext<TBundlerCfg = unknown> = BuildResult &
+  HtmlDocumentInfo &
+  PluginBaseContext<TBundlerCfg> & {
+    buildId: string;
+    publicPath: BuildOutput["publicPath"];
+  };

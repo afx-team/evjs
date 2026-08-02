@@ -46,14 +46,16 @@ describe("createDeploymentArtifact", () => {
   it("removes analysis watch capabilities from late hook contexts", () => {
     const context = {
       mode: "development",
-      command: "dev",
       cwd: "/project",
       config: {} as PluginSetupContext["config"],
       logger: {} as PluginSetupContext["logger"],
       addWatchFile() {},
     } satisfies PluginSetupContext;
 
-    expect(createLatePluginContext(context)).not.toHaveProperty("addWatchFile");
+    const lateContext = createLatePluginContext(context);
+    expect(lateContext.mode).toBe("development");
+    expect(lateContext).not.toHaveProperty("command");
+    expect(lateContext).not.toHaveProperty("addWatchFile");
   });
 
   it("creates a platform-neutral deployment artifact from BuildOutput", () => {
@@ -539,7 +541,6 @@ describe("createDeploymentArtifact", () => {
     ];
     const pluginContext = {
       mode: "production",
-      command: "build",
       cwd: "/project",
       config: {} as PluginSetupContext["config"],
       logger: {} as PluginSetupContext["logger"],

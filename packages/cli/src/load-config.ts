@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { utoopackAdapter } from "@evjs/bundler-utoopack";
 import {
+  type BundlerAdapter,
   type LoadConfigFileOptions,
   loadConfigFile,
 } from "@evjs/ev/_internal/build";
-import type { Config, DefaultBundlerConfig } from "@evjs/ev/config";
+import type { Config } from "@evjs/ev/config";
+
+export type DefaultBundlerConfig =
+  typeof utoopackAdapter extends BundlerAdapter<infer TBundlerCfg>
+    ? TBundlerCfg
+    : never;
 
 export const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
 

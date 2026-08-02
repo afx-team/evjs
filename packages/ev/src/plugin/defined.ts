@@ -1,6 +1,5 @@
 import { assertPluginId } from "@evjs/shared/manifest";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { DefaultBundlerConfig } from "../config/index.js";
 import type { ResolvedPagePluginOptionsInput } from "../config/plugins.js";
 import {
   resolveStaticConfigObject,
@@ -472,7 +471,7 @@ type ResolvedContractOptions<TContract> = [TContract] extends [undefined]
 
 export interface DefinedPluginSetupContext<
   TApplication extends AnyPluginOptionsContract | undefined,
-  TBundlerCfg = DefaultBundlerConfig,
+  TBundlerCfg = unknown,
 > extends PluginSetupContext<TBundlerCfg> {
   /** Resolved Application options passed to the plugin factory. */
   readonly options: ResolvedContractOptions<TApplication>;
@@ -488,7 +487,7 @@ export interface DefinedPluginConfigureContext<
 export interface DefinedPluginEmitIRContext<
   TApplication extends AnyPluginOptionsContract | undefined,
   TPage extends AnyPluginOptionsContract | undefined,
-  TBundlerCfg = DefaultBundlerConfig,
+  TBundlerCfg = unknown,
 > extends PluginEmitIRContext<TBundlerCfg> {
   /** Resolved Application options passed to the plugin factory. */
   readonly options: ResolvedContractOptions<TApplication>;
@@ -499,7 +498,7 @@ export interface DefinedPluginEmitIRContext<
 export interface DefinedPluginPageEmitIRContext<
   TApplication extends AnyPluginOptionsContract | undefined,
   TPage extends AnyPluginOptionsContract | undefined,
-  TBundlerCfg = DefaultBundlerConfig,
+  TBundlerCfg = unknown,
 > extends PluginEmitIRContext<TBundlerCfg> {
   readonly page: FrameworkPageView;
   /** Resolved Application options passed to the plugin factory. */
@@ -743,19 +742,15 @@ interface DefinedPluginApplicationBinding {
   applicationSetting: RuntimePluginSetting | undefined;
 }
 
-const DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION = 3;
-
-interface DefinedPluginRuntimeRegistry {
-  readonly schemaVersion: typeof DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION;
-  readonly runtimeByPlugin: WeakMap<object, DefinedPluginRuntime>;
-  readonly bindingByPlugin: WeakMap<object, DefinedPluginApplicationBinding>;
+interface DefinedPluginRuntimeMetadata {
+  readonly runtime: DefinedPluginRuntime;
+  binding: DefinedPluginApplicationBinding;
 }
 
-// Keep one identity across module copies; schemaVersion guards its layout.
-const DEFINED_PLUGIN_RUNTIME_REGISTRY_SYMBOL = Symbol.for(
-  "@evjs/ev/defined-plugin-runtime-registry",
+/** @internal Shared so config-loaded copies can carry their plugin metadata. */
+export const definedPluginRuntimeMetadata = Symbol.for(
+  "@evjs/ev/defined-plugin-runtime",
 );
-const definedPluginRuntimeRegistry = getDefinedPluginRuntimeRegistry();
 
 /**
  * Define a bundler-agnostic typed plugin factory from one owner-aware
@@ -1002,52 +997,15 @@ export function shareDefinedPluginApplicationBinding(
   source: object,
   target: object,
 ): void {
-  const sourceRuntime = getDefinedPluginRuntime(source);
-  const targetRuntime = getDefinedPluginRuntime(target);
-  if (!sourceRuntime || !targetRuntime) return;
-  if (sourceRuntime !== targetRuntime) {
+  const sourceMetadata = getDefinedPluginRuntimeMetadata(source);
+  const targetMetadata = getDefinedPluginRuntimeMetadata(target);
+  if (!sourceMetadata || !targetMetadata) return;
+  if (sourceMetadata.runtime !== targetMetadata.runtime) {
     throw new Error(
       "[evjs] Cannot share Application settings between different defined plugins.",
     );
   }
-  definedPluginRuntimeRegistry.bindingByPlugin.set(
-    target,
-    getDefinedPluginApplicationBinding(source),
-  );
-}
-
-function getDefinedPluginRuntimeRegistry(): DefinedPluginRuntimeRegistry {
-  const existing = Reflect.get(
-    globalThis,
-    DEFINED_PLUGIN_RUNTIME_REGISTRY_SYMBOL,
-  ) as DefinedPluginRuntimeRegistry | undefined;
-  if (existing !== undefined) {
-    if (
-      existing.schemaVersion !==
-        DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION ||
-      !Object.isFrozen(existing) ||
-      !(existing.runtimeByPlugin instanceof WeakMap) ||
-      !(existing.bindingByPlugin instanceof WeakMap)
-    ) {
-      throw new Error(
-        `[evjs] Defined plugin runtime registry schema v${DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION} is incompatible.`,
-      );
-    }
-    return existing;
-  }
-
-  const registry: DefinedPluginRuntimeRegistry = Object.freeze({
-    schemaVersion: DEFINED_PLUGIN_RUNTIME_REGISTRY_SCHEMA_VERSION,
-    runtimeByPlugin: new WeakMap<object, DefinedPluginRuntime>(),
-    bindingByPlugin: new WeakMap<object, DefinedPluginApplicationBinding>(),
-  });
-  Object.defineProperty(globalThis, DEFINED_PLUGIN_RUNTIME_REGISTRY_SYMBOL, {
-    configurable: false,
-    enumerable: false,
-    value: registry,
-    writable: false,
-  });
-  return registry;
+  targetMetadata.binding = sourceMetadata.binding;
 }
 
 function createDefinedPluginRuntime(definition: {
@@ -1069,24 +1027,24 @@ function createDefinedPluginRuntime(definition: {
 function getDefinedPluginApplicationBinding(
   plugin: object,
 ): DefinedPluginApplicationBinding {
-  const binding = definedPluginRuntimeRegistry.bindingByPlugin.get(plugin);
-  if (!binding) {
+  const metadata = getDefinedPluginRuntimeMetadata(plugin);
+  if (!metadata) {
     throw new Error(
       "[evjs] Defined plugin Application binding is unavailable.",
     );
   }
-  return binding;
+  return metadata.binding;
 }
 
 function getDefinedPluginRuntime(
   plugin: object,
 ): DefinedPluginRuntime | undefined {
-  const runtime = definedPluginRuntimeRegistry.runtimeByPlugin.get(plugin);
-  if (!runtime) return undefined;
+  const metadata = getDefinedPluginRuntimeMetadata(plugin);
+  if (!metadata) return undefined;
+  const { runtime } = metadata;
   const publicIdDescriptor = Object.getOwnPropertyDescriptor(plugin, "id");
   if (
     !Object.isFrozen(runtime) ||
-    !definedPluginRuntimeRegistry.bindingByPlugin.has(plugin) ||
     !publicIdDescriptor ||
     !("value" in publicIdDescriptor) ||
     publicIdDescriptor.value !== runtime.id
@@ -1122,8 +1080,38 @@ function attachDefinedPluginRuntime(
     value: runtime.id,
     writable: false,
   });
-  definedPluginRuntimeRegistry.runtimeByPlugin.set(plugin, runtime);
-  definedPluginRuntimeRegistry.bindingByPlugin.set(plugin, binding);
+  Object.defineProperty(plugin, definedPluginRuntimeMetadata, {
+    configurable: false,
+    enumerable: false,
+    value: Object.seal({ runtime, binding }),
+    writable: false,
+  });
+}
+
+function getDefinedPluginRuntimeMetadata(
+  plugin: object,
+): DefinedPluginRuntimeMetadata | undefined {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    plugin,
+    definedPluginRuntimeMetadata,
+  );
+  if (!descriptor) return undefined;
+  if (descriptor.enumerable || !("value" in descriptor)) {
+    throw new Error("[evjs] Defined plugin runtime metadata is invalid.");
+  }
+  const metadata = descriptor.value as DefinedPluginRuntimeMetadata | undefined;
+  if (
+    !metadata ||
+    typeof metadata !== "object" ||
+    !Object.isSealed(metadata) ||
+    !metadata.runtime ||
+    typeof metadata.runtime !== "object" ||
+    !metadata.binding ||
+    typeof metadata.binding !== "object"
+  ) {
+    throw new Error("[evjs] Defined plugin runtime metadata is invalid.");
+  }
+  return metadata;
 }
 
 export function resolveDefinedPluginApplicationSetting(

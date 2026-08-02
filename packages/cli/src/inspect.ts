@@ -15,7 +15,7 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
   const lines: string[] = [];
   lines.push("ev inspect");
   lines.push(`Project: ${result.cwd}`);
-  lines.push(`Mode: ${result.command} (${result.mode})`);
+  lines.push(`Mode: ${result.mode}`);
   lines.push("");
 
   lines.push("Routing");

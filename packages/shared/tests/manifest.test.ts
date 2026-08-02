@@ -22,8 +22,6 @@ import type {
 import {
   assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
   linkBuildOutput as linkManifestBuildOutput,
 } from "../src/manifest/index.js";
 
@@ -445,6 +443,20 @@ describe("assertFrameworkManifestShape", () => {
     expect(() =>
       assertFrameworkManifestShape(createMinimalBuildOutput(), "manifest"),
     ).not.toThrow();
+  });
+
+  it("requires a complete BuildOutput", () => {
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          version: 1,
+          buildId: "build",
+          publicPath: "/",
+          routing: { kind: "spa", routes: [] },
+        },
+        "manifest",
+      ),
+    ).toThrow("[evjs] manifest.paths must be an object.");
   });
 
   it("allows runtime-free CSR and static SSG output", () => {
@@ -3151,7 +3163,7 @@ describe("linkBuildOutput", () => {
     expect(() =>
       assertFrameworkManifestShape(output, "linked output"),
     ).not.toThrow();
-    expect(createServerManifest(output).routes).toContainEqual({
+    expect(createDeploymentMetadata(output).routes).toContainEqual({
       kind: "server-function",
       path: "/__evjs/fn",
       methods: ["POST"],
@@ -3323,20 +3335,7 @@ describe("linkBuildOutput", () => {
         pageId: "orders",
       },
     ]);
-    expect(createPublicManifest(output)).toMatchObject({
-      routing: {
-        kind: "spa",
-        routes: [
-          {
-            id: "orders",
-            path: "/orders",
-            pageId: "orders",
-            render: "csr",
-            metadata,
-          },
-        ],
-      },
-    });
+    expect(output.pages.orders.render).toBe("csr");
 
     metadata.title = "Mutated";
     metadata.meta.description = "Mutated";
@@ -4823,8 +4822,8 @@ describe("linkBuildOutput", () => {
   });
 });
 
-describe("createPublicManifest", () => {
-  it("redacts source and server-only build metadata from the browser manifest", () => {
+describe("createDeploymentMetadata", () => {
+  it("projects the canonical deployable metadata from BuildOutput", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build",
@@ -4990,111 +4989,6 @@ describe("createPublicManifest", () => {
       },
     };
 
-    const manifest = createPublicManifest(output);
-    const serialized = JSON.stringify(manifest);
-
-    expect(() =>
-      assertFrameworkManifestShape(manifest, "public manifest", {
-        server: "optional",
-        pageRendererReferences: "optional",
-        pprRendererReferences: "optional",
-        rscRendererReferences: "optional",
-      }),
-    ).not.toThrow();
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...manifest,
-          assets: { insights: { js: ["evjs-rsc-client.js"], css: [] } },
-        },
-        "public manifest",
-        {
-          server: "optional",
-          pageRendererReferences: "optional",
-          pprRendererReferences: "optional",
-          rscRendererReferences: "optional",
-        },
-      ),
-    ).toThrow(
-      '[evjs] public manifest.assets must be omitted when routing.kind is "mpa".',
-    );
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...manifest,
-          pages: {},
-          routes: [],
-        },
-        "public manifest",
-        {
-          server: "optional",
-          pageRendererReferences: "optional",
-          pprRendererReferences: "optional",
-          rscRendererReferences: "optional",
-        },
-      ),
-    ).toThrow(
-      "[evjs] public manifest.pages is not supported in public manifests.",
-    );
-    if (!("routing" in manifest)) {
-      throw new Error("Expected routed public manifest.");
-    }
-    const { routing: _routing, ...manifestWithoutRouting } = manifest;
-    expect(() =>
-      assertFrameworkManifestShape(manifestWithoutRouting, "public manifest", {
-        server: "optional",
-        pageRendererReferences: "optional",
-        pprRendererReferences: "optional",
-        rscRendererReferences: "optional",
-      }),
-    ).toThrow(
-      "[evjs] public manifest must define either routing or documents.",
-    );
-    expect(serialized).not.toContain(".tsx");
-    expect(serialized).not.toContain(".ts");
-    expect(serialized).not.toContain("file://");
-    expect(serialized).not.toContain("/Users/");
-    if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-      throw new Error("Expected MPA public manifest.");
-    }
-    const pages = manifest.routing.pages;
-    expect(pages.insights.assets).toEqual({
-      js: ["evjs-rsc-client.js"],
-      css: ["insights.css"],
-    });
-    expect(pages.insights.render).toBe("ssr");
-    expect(pages.insights.metadata).toEqual({
-      title: "Insights",
-      meta: { description: "Business insights" },
-    });
-    expect(pages.landing.render).toBe("ssg");
-    expect(pages.landing.document).toEqual({
-      fileName: "landing.html",
-      aliases: ["legacy/landing.html"],
-    });
-    expect("module" in pages.insights).toBe(false);
-    expect("runtime" in manifest).toBe(false);
-    expect("pages" in manifest).toBe(false);
-    expect("routes" in manifest).toBe(false);
-    expect("app" in manifest).toBe(false);
-    expect("assets" in manifest).toBe(false);
-    expect(pages.insights.document).toEqual({
-      fileName: "insights.html",
-    });
-    expect(pages.campaign.assets).toEqual({ js: [], css: [] });
-    expect(pages.campaign.document).toEqual({
-      fileName: "campaign.html",
-    });
-    expect(pages.settlement.document).toBeUndefined();
-    expect("hydrate" in pages.campaign).toBe(false);
-    expect("rendering" in pages.campaign).toBe(false);
-    expect("ppr" in pages.campaign).toBe(false);
-    expect("server" in manifest).toBe(false);
-    expect("rsc" in manifest).toBe(false);
-    expect("distDir" in manifest).toBe(false);
-    expect("paths" in manifest).toBe(false);
-    expect("deployment" in manifest).toBe(false);
-
     const deployment = createDeploymentMetadata(output);
     expect(deployment.documents).toEqual([
       {
@@ -5166,7 +5060,7 @@ describe("createPublicManifest", () => {
     expect(JSON.stringify(deployment)).not.toContain("insights-rsc");
   });
 
-  it("keeps top-level assets for SPA manifests", () => {
+  it("keeps top-level public assets in deployment metadata", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       assets: {
@@ -5187,18 +5081,23 @@ describe("createPublicManifest", () => {
       ],
     };
 
-    expect(createPublicManifest(output)).toMatchObject({
+    expect(createDeploymentMetadata(output)).toMatchObject({
       assets: {
         main: { js: ["main.js"], css: ["main.css"] },
       },
-      routing: {
-        kind: "spa",
-        routes: [{ id: "home", path: "/" }],
-      },
+      documents: [
+        {
+          kind: "app",
+          id: "default",
+          fileName: "index.html",
+          fallback: "/",
+          assets: { js: ["main.js"], css: ["main.css"] },
+        },
+      ],
     });
   });
 
-  it("keeps wildcard SPA routes in public manifests", () => {
+  it("keeps wildcard SPA fallbacks in deployment metadata", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       apps: {
@@ -5216,15 +5115,16 @@ describe("createPublicManifest", () => {
       ],
     };
 
-    expect(createPublicManifest(output)).toMatchObject({
-      routing: {
-        kind: "spa",
-        routes: [{ id: "docs_splat", path: "/docs/$" }],
-      },
+    expect(createDeploymentMetadata(output).documents).toContainEqual({
+      kind: "app",
+      id: "default",
+      fileName: "index.html",
+      fallback: "/docs/$",
+      assets: { js: ["main.js"], css: [] },
     });
   });
 
-  it("keeps route-owned SSG page documents in SPA manifests", () => {
+  it("keeps route-owned SSG documents in deployment metadata", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       assets: {
@@ -5266,29 +5166,35 @@ describe("createPublicManifest", () => {
       ],
     };
 
-    expect(createPublicManifest(output)).toMatchObject({
+    expect(output.pages.report.metadata).toEqual({
+      title: "Report",
+      meta: { description: "Annual report" },
+    });
+    expect(createDeploymentMetadata(output)).toMatchObject({
       assets: {
         main: { js: ["main.js"], css: [] },
       },
-      routing: {
-        kind: "spa",
-        routes: [
-          {
-            id: "report",
-            path: "/report",
-            pageId: "report",
-            render: "ssg",
-            metadata: {
-              title: "Report",
-              meta: { description: "Annual report" },
-            },
-          },
-        ],
-      },
+      documents: expect.arrayContaining([
+        {
+          kind: "page",
+          id: "report",
+          fileName: "report.html",
+        },
+      ]),
+      routes: [
+        {
+          kind: "static-page",
+          path: "/report",
+          pageId: "report",
+          documentId: "report",
+          render: "ssg",
+          methods: ["GET", "HEAD"],
+        },
+      ],
     });
   });
 
-  it("keeps static-only SSG SPA manifests minimal", () => {
+  it("keeps static-only SSG deployment metadata minimal", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       assets: {},
@@ -5340,23 +5246,6 @@ describe("createPublicManifest", () => {
       },
     };
 
-    expect(createPublicManifest(output)).toEqual({
-      version: 1,
-      buildId: "build",
-      publicPath: "/",
-      documents: [
-        {
-          id: "report",
-          path: "/report",
-          fileName: "report.html",
-          render: "ssg",
-          metadata: {
-            title: "Report",
-            meta: { robots: "noindex" },
-          },
-        },
-      ],
-    });
     expect(createDeploymentMetadata(output)).toEqual({
       version: 1,
       buildId: "build",
@@ -5385,14 +5274,8 @@ describe("createPublicManifest", () => {
       ],
       server: {},
     });
-    expect(createServerManifest(output)).toEqual({
-      version: 1,
-      routes: [],
-    });
   });
-});
 
-describe("createDeploymentMetadata", () => {
   it("rejects request-time output without a canonical server runtime entry", () => {
     const output = createRuntimeFreeBuildOutput();
     output.server.routes.push({
@@ -5531,7 +5414,7 @@ describe("createDeploymentMetadata", () => {
   });
 });
 
-describe("createServerManifest", () => {
+describe("server deployment metadata", () => {
   it("rejects request-time output without a canonical server runtime entry", () => {
     const output = createRuntimeFreeBuildOutput();
     output.server.functions.work = {
@@ -5539,12 +5422,12 @@ describe("createServerManifest", () => {
       assets: { js: [], css: [] },
     };
 
-    expect(() => createServerManifest(output)).toThrow(
+    expect(() => createDeploymentMetadata(output)).toThrow(
       "BuildOutput.server.entry is required because server Functions are present",
     );
   });
 
-  it("projects BuildOutput into the server manifest shape", () => {
+  it("projects server routes without implementation details", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       runtime: {
@@ -5626,9 +5509,10 @@ describe("createServerManifest", () => {
       },
     };
 
-    expect(createServerManifest(output)).toEqual({
-      version: 1,
-      entry: "server.js",
+    const deployment = createDeploymentMetadata(output);
+
+    expect(deployment).toMatchObject({
+      server: { entry: "server.js" },
       routes: [
         {
           kind: "server-page",
@@ -5668,18 +5552,19 @@ describe("createServerManifest", () => {
         },
       ],
     });
-    const serverManifestText = JSON.stringify(createServerManifest(output));
-    expect(serverManifestText).not.toContain("fn:getUser");
-    expect(serverManifestText).not.toContain('"assets"');
-    expect(serverManifestText).not.toContain('"renderers"');
-    expect(serverManifestText).not.toContain("dashboard-rsc");
+    const serverProjection = JSON.stringify({
+      routes: deployment.routes,
+      server: deployment.server,
+    });
+    expect(serverProjection).not.toContain("fn:getUser");
+    expect(serverProjection).not.toContain('"assets"');
+    expect(serverProjection).not.toContain('"renderers"');
+    expect(serverProjection).not.toContain("dashboard-rsc");
   });
 
-  it("projects the minimal server output into the server manifest shape", () => {
-    expect(createServerManifest(createMinimalBuildOutput())).toEqual({
-      version: 1,
-      entry: "server.js",
-      routes: [],
-    });
+  it("projects the minimal server entry", () => {
+    expect(createDeploymentMetadata(createMinimalBuildOutput()).server).toEqual(
+      { entry: "server.js" },
+    );
   });
 });

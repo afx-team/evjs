@@ -9,6 +9,7 @@ import {
   prepareFrameworkBuild,
 } from "@evjs/ev/_internal/build";
 import type { Config } from "@evjs/ev/config";
+import type { DefaultBundlerConfig } from "./load-config.js";
 
 export type {
   BuildOptions,
@@ -23,12 +24,7 @@ export {
   type ResolvedConfig,
   resolveConfig,
 } from "@evjs/ev/config";
-export { loadConfig } from "./load-config.js";
-
-export type DefaultBundlerConfig =
-  typeof utoopackAdapter extends BundlerAdapter<infer TBundlerCfg>
-    ? TBundlerCfg
-    : never;
+export { type DefaultBundlerConfig, loadConfig } from "./load-config.js";
 
 const defaultBundler: BundlerAdapter<DefaultBundlerConfig> = utoopackAdapter;
 

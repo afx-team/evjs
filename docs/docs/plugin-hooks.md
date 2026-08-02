@@ -245,7 +245,8 @@ export const yamlPlugin = definePlugin({
 ```
 
 For webpack projects, select the webpack adapter and use its typed helper.
-`defineConfig()` infers the bundler config type from the adapter:
+`defineConfig()` infers the bundler config type from the adapter, and the
+helper callback receives the complete `Configuration[]` set:
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -256,10 +257,12 @@ const webpackAlias = definePlugin({
   id: "webpack-alias",
   setup() {
     return {
-      configureBundler: webpack((config) => {
-        config.resolve ??= {};
-        config.resolve.alias ??= {};
-        config.resolve.alias["@app"] = "./src";
+      configureBundler: webpack((configs) => {
+        for (const config of configs) {
+          config.resolve ??= {};
+          config.resolve.alias ??= {};
+          config.resolve.alias["@app"] = "./src";
+        }
       }),
     };
   },

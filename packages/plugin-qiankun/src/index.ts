@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DefaultBundlerConfig } from "@evjs/ev/config";
 import {
   definePlugin,
   type FrameworkView,
@@ -97,7 +96,7 @@ const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
  *
  * This is the composable form of {@link evPluginQiankunMaster}.
  */
-export async function emitQiankunMasterIR<TBundlerCfg = DefaultBundlerConfig>(
+export async function emitQiankunMasterIR<TBundlerCfg = unknown>(
   ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
 ): Promise<void> {
@@ -132,7 +131,7 @@ export async function emitQiankunMasterIR<TBundlerCfg = DefaultBundlerConfig>(
  *
  * This is the composable form of {@link evPluginQiankunSlave}.
  */
-export async function emitQiankunSlaveIR<TBundlerCfg = DefaultBundlerConfig>(
+export async function emitQiankunSlaveIR<TBundlerCfg = unknown>(
   ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions = {},
 ): Promise<void> {
@@ -196,9 +195,7 @@ export function createQiankunMasterHooks(): PluginHooks {
 }
 
 /** Lifecycle hooks reused by standalone and platform-composed slave plugins. */
-export async function createQiankunSlaveHooks<
-  TBundlerCfg = DefaultBundlerConfig,
->(
+export async function createQiankunSlaveHooks<TBundlerCfg = unknown>(
   ctx: PluginSetupContext<TBundlerCfg>,
   options: Pick<QiankunSlavePluginOptions, "name"> = {},
 ): Promise<PluginHooks> {
@@ -479,15 +476,19 @@ function applyQiankunSlaveBundlerConfig(
 ): void {
   assertSupportedBundler(bundlerName);
   if (bundlerName === "webpack") {
-    applyWebpackSlaveLibraryToConfig(config, state);
+    applyWebpackSlaveLibraryToConfigs(config, state);
   }
 }
 
-function applyWebpackSlaveLibraryToConfig(
-  config: unknown,
+function applyWebpackSlaveLibraryToConfigs(
+  configs: unknown,
   state: QiankunSlaveState,
 ): void {
-  const configs = Array.isArray(config) ? config : [config];
+  if (!Array.isArray(configs)) {
+    throw new Error(
+      "[evjs:plugin-qiankun] Webpack configureBundler expected an array of configurations.",
+    );
+  }
   for (const webpackConfig of configs) {
     if (!isRecord(webpackConfig)) continue;
     if (webpackConfig.target === "node") continue;

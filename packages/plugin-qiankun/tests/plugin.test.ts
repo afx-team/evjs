@@ -224,7 +224,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       { name: "platform-slave" },
     );
     await hooks.configureBundler?.(
-      webpackConfig as never,
+      [webpackConfig] as never,
       createBundlerContext(cwd, "webpack"),
     );
     expect(webpackConfig.entry).toEqual({
@@ -258,7 +258,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       entry: { main: "./.ev/entries/main.ts" },
     };
     await hooks?.configureBundler?.(
-      webpackConfig as never,
+      [webpackConfig] as never,
       createBundlerContext(cwd, "webpack"),
     );
 
@@ -268,6 +268,25 @@ describe("@evjs/plugin-qiankun plugin", () => {
         library: { name: "console", type: "umd" },
       },
     });
+  });
+
+  it("rejects the legacy single webpack configuration shape", async () => {
+    const cwd = await createProject({
+      "src/pages/page.tsx": "export default function Page() { return null; }",
+    });
+    const hooks = await createQiankunSlaveHooks(
+      createPluginSetupContext(cwd, [], {}),
+      { name: "console" },
+    );
+
+    expect(() =>
+      hooks.configureBundler?.(
+        { entry: { main: "./.ev/entries/main.ts" } } as never,
+        createBundlerContext(cwd, "webpack"),
+      ),
+    ).toThrow(
+      "[evjs:plugin-qiankun] Webpack configureBundler expected an array of configurations.",
+    );
   });
 
   it("injects an utoopack lifecycle proxy before the qiankun entry script", async () => {
@@ -482,7 +501,6 @@ function createPluginSetupContext(
 ): PluginSetupContext {
   return {
     cwd,
-    command: "build",
     mode: "production",
     config: {
       conventions: true,
@@ -502,7 +520,6 @@ function createBundlerContext(
 ): ConfigureBundlerContext {
   return {
     cwd,
-    command: "build",
     mode: "production",
     config: {} as never,
     bundlerName,

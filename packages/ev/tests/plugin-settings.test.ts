@@ -27,7 +27,7 @@ import { pluginEmitIRScopeFactory } from "../src/plugin/internal.js";
 describe("plugin settings registry", () => {
   it("shares the hidden Page IR scope factory across package copies", () => {
     expect(pluginEmitIRScopeFactory).toBe(
-      Symbol.for("@evjs/ev/plugin-emit-ir-scope-factory/v1"),
+      Symbol.for("@evjs/ev/plugin-emit-ir-scope-factory"),
     );
   });
 
@@ -144,41 +144,35 @@ describe("plugin settings registry", () => {
     expect(assertNoPageOnlyMode).toBeTypeOf("function");
   });
 
-  it("shares immutable defined-plugin state through the global registry", () => {
+  it("carries defined-plugin state across package copies", () => {
     const plugin = definePlugin({
       id: "identity-guard",
       page: pluginOptions({ defaults: {} }),
     })();
-    const registry = Reflect.get(
-      globalThis,
-      Symbol.for("@evjs/ev/defined-plugin-runtime-registry"),
-    ) as {
-      readonly schemaVersion: 3;
-      readonly runtimeByPlugin: WeakMap<object, { readonly id: string }>;
-      readonly bindingByPlugin: WeakMap<
-        object,
-        { applicationSetting: unknown }
-      >;
+    const metadataSymbol = Symbol.for("@evjs/ev/defined-plugin-runtime");
+    const metadata = Reflect.get(plugin, metadataSymbol) as {
+      readonly runtime: { readonly id: string };
+      binding: { applicationSetting: unknown };
     };
-    const runtime = registry.runtimeByPlugin.get(plugin);
+    const { runtime } = metadata;
 
     expect(Reflect.set(plugin, "id", "mutated-identity")).toBe(false);
-    expect(Reflect.set(runtime as object, "id", "mutated-runtime")).toBe(false);
+    expect(Reflect.set(runtime, "id", "mutated-runtime")).toBe(false);
     expect(plugin.id).toBe("identity-guard");
-    expect(runtime?.id).toBe("identity-guard");
-    expect(registry.schemaVersion).toBe(3);
-    expect(Object.isFrozen(registry)).toBe(true);
+    expect(runtime.id).toBe("identity-guard");
+    expect(
+      Object.getOwnPropertyDescriptor(plugin, metadataSymbol)?.enumerable,
+    ).toBe(false);
+    expect(Object.isSealed(metadata)).toBe(true);
     expect(Object.isFrozen(runtime)).toBe(true);
 
-    // A second @evjs/ev module instance observes this same global registry.
-    // Associate a structural plugin copy as that instance's copy helper would.
+    // A second @evjs/ev module instance observes the same symbol-keyed metadata.
     const transported: Plugin = { id: "identity-guard" };
-    registry.runtimeByPlugin.set(
-      transported,
-      runtime as { readonly id: string },
-    );
-    registry.bindingByPlugin.set(transported, {
-      applicationSetting: undefined,
+    Object.defineProperty(transported, metadataSymbol, {
+      value: Object.seal({
+        runtime,
+        binding: { applicationSetting: undefined },
+      }),
     });
     expect(collectPluginSettingsRegistry([transported]).catalog).toEqual({
       entries: {
@@ -187,9 +181,11 @@ describe("plugin settings registry", () => {
     });
 
     const divergent: Plugin = { id: "public-identity" };
-    registry.runtimeByPlugin.set(divergent, runtime as { readonly id: string });
-    registry.bindingByPlugin.set(divergent, {
-      applicationSetting: undefined,
+    Object.defineProperty(divergent, metadataSymbol, {
+      value: Object.seal({
+        runtime,
+        binding: { applicationSetting: undefined },
+      }),
     });
     expect(() => collectPluginSettingsRegistry([divergent])).toThrow(
       'Defined plugin runtime id "identity-guard" does not match its public plugin id',
@@ -1016,7 +1012,6 @@ describe("definePlugin and pluginOptions", () => {
     const configured = await runConfigureHooks(
       { routing: { mode: "mpa" }, plugins: [plugin] },
       {
-        command: "build",
         cwd: process.cwd(),
         mode: "production",
       },
@@ -1064,7 +1059,6 @@ describe("definePlugin and pluginOptions", () => {
     });
     const plugin = contextual();
     const configureContext = {
-      command: "build",
       cwd: process.cwd(),
       mode: "production",
     } as const;
@@ -1102,7 +1096,6 @@ describe("definePlugin and pluginOptions", () => {
     const input: Config = { plugins: [plugin] };
 
     const configured = await runConfigureHooks(input, {
-      command: "dev",
       cwd: process.cwd(),
       mode: "development",
     });
@@ -1162,7 +1155,6 @@ describe("definePlugin and pluginOptions", () => {
       runConfigureHooks(
         { plugins: [firstPlugin, secondPlugin] },
         {
-          command: "build",
           cwd: process.cwd(),
           mode: "production",
         },
@@ -1196,7 +1188,6 @@ describe("definePlugin and pluginOptions", () => {
         routing: { mode: "spa" },
       },
       {
-        command: "build",
         cwd: process.cwd(),
         mode: "production",
       },
@@ -1243,7 +1234,6 @@ describe("definePlugin and pluginOptions", () => {
         pluginAlias: installedPlugins,
       } as Config & { pluginAlias: Plugin[] },
       {
-        command: "build",
         cwd: process.cwd(),
         mode: "production",
       },
@@ -1273,7 +1263,6 @@ describe("definePlugin and pluginOptions", () => {
       runConfigureHooks(
         { plugins: [plugin] },
         {
-          command: "build",
           cwd: process.cwd(),
           mode: "production",
         },
@@ -1301,7 +1290,6 @@ describe("definePlugin and pluginOptions", () => {
       runConfigureHooks(
         { plugins: [plugin] },
         {
-          command: "build",
           cwd: process.cwd(),
           mode: "production",
         },
@@ -1332,7 +1320,6 @@ describe("definePlugin and pluginOptions", () => {
     };
 
     const configured = await runConfigureHooks(input, {
-      command: "dev",
       cwd: process.cwd(),
       mode: "development",
     });
@@ -1411,7 +1398,6 @@ describe("definePlugin and pluginOptions", () => {
     const result = await plugin.configure?.(
       {},
       {
-        command: "build",
         cwd: process.cwd(),
         mode: "production",
       },
@@ -1941,7 +1927,7 @@ describe("plugin setting lifecycle", () => {
           },
         ],
       },
-      [Symbol.for("@evjs/ev/plugin-emit-ir-scope-factory/v1")]: () => ({
+      [Symbol.for("@evjs/ev/plugin-emit-ir-scope-factory")]: () => ({
         emit: {} as never,
         slot: () => ({ add() {} }) as never,
       }),

@@ -150,25 +150,6 @@ interface SlaveRuntimeProjection {
   history: QiankunHistoryOptions;
 }
 
-interface DocumentMountLookupScope {
-  container: Element;
-  mount: string;
-  mountId?: string;
-}
-
-interface DocumentMountLookupState {
-  scopes: DocumentMountLookupScope[];
-  originalQuerySelector?: (selector: string) => Element | null;
-  originalGetElementById?: (id: string) => HTMLElement | null;
-  scopedQuerySelector?: (selector: string) => Element | null;
-  scopedGetElementById?: (id: string) => HTMLElement | null;
-}
-
-interface DocumentMountLookupLock {
-  tail: Promise<void>;
-  pending: number;
-}
-
 interface QiankunRuntimeModule {
   loadMicroApp(
     app: {
@@ -219,15 +200,6 @@ const reservedQiankunRouteParamNames = new Set([
   "prototype",
   "_splat",
 ]);
-const documentMountLookupStates = new WeakMap<
-  Document,
-  DocumentMountLookupState
->();
-const documentMountLookupLocks = new WeakMap<
-  Document,
-  Map<string, DocumentMountLookupLock>
->();
-
 export function defineQiankunMasterResolver<T extends QiankunMasterResolver>(
   resolver: T,
 ): T {
@@ -388,13 +360,8 @@ export function createQiankunSlaveLifecycles(options: {
     let runtimeMountAttempted = false;
     let entryMountAttempted = false;
     let entryModule: unknown;
-    let restoreDocumentLookup = () => {};
 
     try {
-      restoreDocumentLookup = await acquireDocumentMountLookup(
-        currentContainer,
-        options.mount,
-      );
       runtimeMountAttempted = runtime.mount !== undefined;
       await runtime.mount?.(props, context);
       entryModule = await context.loadEntry();
@@ -424,8 +391,6 @@ export function createQiankunSlaveLifecycles(options: {
         entryMountAttempted = true;
         await render(currentContainer ?? options.mount);
       }
-      restoreDocumentLookup();
-      restoreDocumentLookup = () => {};
     } catch (error) {
       const rollbackErrors: unknown[] = [];
       if (entryMountAttempted) {
@@ -452,7 +417,6 @@ export function createQiankunSlaveLifecycles(options: {
       await collectQiankunCleanupError(rollbackErrors, () =>
         clearContainer(currentContainer),
       );
-      await collectQiankunCleanupError(rollbackErrors, restoreDocumentLookup);
       currentContainer = undefined;
       entryMounted = false;
       throwQiankunMountError(error, rollbackErrors);
@@ -467,15 +431,6 @@ export function createQiankunSlaveLifecycles(options: {
     if (!entryMounted) return;
     const context = ctx();
     const errors: unknown[] = [];
-    let restoreDocumentLookup = () => {};
-    try {
-      restoreDocumentLookup = await acquireDocumentMountLookup(
-        currentContainer,
-        options.mount,
-      );
-    } catch (error) {
-      errors.push(error);
-    }
     await collectQiankunCleanupError(errors, () =>
       runtime.unmount?.(props, context),
     );
@@ -485,7 +440,6 @@ export function createQiankunSlaveLifecycles(options: {
     await collectQiankunCleanupError(errors, () =>
       clearContainer(currentContainer),
     );
-    await collectQiankunCleanupError(errors, restoreDocumentLookup);
     currentContainer = undefined;
     entryMounted = false;
     throwQiankunCleanupErrors(errors);
@@ -1267,192 +1221,6 @@ function resolveEntryUnmount(
     }
   }
   return undefined;
-}
-
-async function acquireDocumentMountLookup(
-  container: Element | undefined,
-  mount: string,
-): Promise<() => void> {
-  const doc = globalThis.document;
-  if (!container || !doc) return () => {};
-
-  let locks = documentMountLookupLocks.get(doc);
-  if (!locks) {
-    locks = new Map();
-    documentMountLookupLocks.set(doc, locks);
-  }
-  let lock = locks.get(mount);
-  if (!lock) {
-    lock = { tail: Promise.resolve(), pending: 0 };
-    locks.set(mount, lock);
-  }
-
-  const previous = lock.tail;
-  let releaseLock = () => {};
-  const gate = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
-  lock.pending += 1;
-  lock.tail = previous.then(() => gate);
-  await previous;
-
-  let restoreDocumentLookup: () => void;
-  try {
-    restoreDocumentLookup = scopeDocumentMountLookup(doc, container, mount);
-  } catch (error) {
-    releaseDocumentMountLookupLock(doc, mount, locks, lock, releaseLock);
-    throw error;
-  }
-  let released = false;
-
-  return () => {
-    if (released) return;
-    released = true;
-    try {
-      restoreDocumentLookup();
-    } finally {
-      releaseDocumentMountLookupLock(doc, mount, locks, lock, releaseLock);
-    }
-  };
-}
-
-function releaseDocumentMountLookupLock(
-  doc: Document,
-  mount: string,
-  locks: Map<string, DocumentMountLookupLock>,
-  lock: DocumentMountLookupLock,
-  release: () => void,
-): void {
-  release();
-  lock.pending -= 1;
-  if (lock.pending > 0) return;
-  locks.delete(mount);
-  if (locks.size === 0) documentMountLookupLocks.delete(doc);
-}
-
-function scopeDocumentMountLookup(
-  doc: Document,
-  container: Element,
-  mount: string,
-): () => void {
-  let state = documentMountLookupStates.get(doc);
-  if (!state) {
-    state = createDocumentMountLookupState(doc);
-    documentMountLookupStates.set(doc, state);
-  }
-  const mountId = mount.startsWith("#") ? mount.slice(1) : undefined;
-  const scope: DocumentMountLookupScope = {
-    container,
-    mount,
-    ...(mountId ? { mountId } : {}),
-  };
-  state.scopes.push(scope);
-  let released = false;
-
-  return () => {
-    if (released) return;
-    released = true;
-    const scopeIndex = state.scopes.indexOf(scope);
-    if (scopeIndex >= 0) state.scopes.splice(scopeIndex, 1);
-    if (state.scopes.length > 0) return;
-
-    try {
-      restoreDocumentMountLookupState(doc, state);
-    } finally {
-      documentMountLookupStates.delete(doc);
-    }
-  };
-}
-
-function createDocumentMountLookupState(
-  doc: Document,
-): DocumentMountLookupState {
-  const originalQuerySelector =
-    typeof doc.querySelector === "function" ? doc.querySelector : undefined;
-  const originalGetElementById =
-    typeof doc.getElementById === "function" ? doc.getElementById : undefined;
-  const state: DocumentMountLookupState = {
-    scopes: [],
-    ...(originalQuerySelector ? { originalQuerySelector } : {}),
-    ...(originalGetElementById ? { originalGetElementById } : {}),
-  };
-
-  try {
-    if (originalQuerySelector) {
-      state.scopedQuerySelector = function scopedQuerySelector(
-        selector: string,
-      ): Element | null {
-        const scope = findDocumentQueryScope(state, selector);
-        if (scope) {
-          return querySelector(scope.container, scope.mount) ?? scope.container;
-        }
-        return originalQuerySelector.call(doc, selector);
-      };
-      doc.querySelector = state.scopedQuerySelector as typeof doc.querySelector;
-    }
-
-    if (originalGetElementById) {
-      state.scopedGetElementById = function scopedGetElementById(
-        id: string,
-      ): HTMLElement | null {
-        const scope = findDocumentIdScope(state, id);
-        if (scope) {
-          const nested = querySelector(scope.container, scope.mount);
-          return (nested ?? scope.container) as HTMLElement;
-        }
-        return originalGetElementById.call(doc, id);
-      };
-      doc.getElementById = state.scopedGetElementById;
-    }
-  } catch (error) {
-    restoreDocumentMountLookupState(doc, state);
-    throw error;
-  }
-
-  return state;
-}
-
-function findDocumentQueryScope(
-  state: DocumentMountLookupState,
-  selector: string,
-): DocumentMountLookupScope | undefined {
-  for (let index = state.scopes.length - 1; index >= 0; index -= 1) {
-    const scope = state.scopes[index];
-    if (scope?.mount === selector) return scope;
-  }
-  return undefined;
-}
-
-function findDocumentIdScope(
-  state: DocumentMountLookupState,
-  id: string,
-): DocumentMountLookupScope | undefined {
-  for (let index = state.scopes.length - 1; index >= 0; index -= 1) {
-    const scope = state.scopes[index];
-    if (scope?.mountId === id) return scope;
-  }
-  return undefined;
-}
-
-function restoreDocumentMountLookupState(
-  doc: Document,
-  state: DocumentMountLookupState,
-): void {
-  if (
-    state.scopedQuerySelector &&
-    doc.querySelector ===
-      (state.scopedQuerySelector as typeof doc.querySelector) &&
-    state.originalQuerySelector
-  ) {
-    doc.querySelector = state.originalQuerySelector as typeof doc.querySelector;
-  }
-  if (
-    state.scopedGetElementById &&
-    doc.getElementById === state.scopedGetElementById &&
-    state.originalGetElementById
-  ) {
-    doc.getElementById = state.originalGetElementById;
-  }
 }
 
 function normalizeBase(value: string, label: string): string {

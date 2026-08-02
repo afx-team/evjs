@@ -160,8 +160,11 @@ const allowedSampleBundlerDependencies = {
   ],
 } as const satisfies Record<string, readonly string[]>;
 
-const defaultBundlerTypePackage = "@utoo/pack";
-const forbiddenCoreBundlerPackages = ["webpack", "webpack-dev-server"] as const;
+const forbiddenCoreBundlerPackages = [
+  "@utoo/pack",
+  "webpack",
+  "webpack-dev-server",
+] as const;
 
 const generatedFrameworkArtifacts = [
   ".ev",
@@ -671,16 +674,10 @@ describe("workspace package surface", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps @evjs/ev tied only to the default Utoopack type package", async () => {
+  it("keeps @evjs/ev independent of bundler implementations", async () => {
     const evPackageJson = await readPackageJson("ev");
     const declaredDependencies = allDependencyNames(evPackageJson);
     const violations: string[] = [];
-
-    if (evPackageJson.dependencies?.[defaultBundlerTypePackage] === undefined) {
-      violations.push(
-        `packages/ev/package.json does not declare ${defaultBundlerTypePackage}`,
-      );
-    }
 
     for (const packageName of forbiddenCoreBundlerPackages) {
       if (declaredDependencies.has(packageName)) {

@@ -210,7 +210,8 @@ export default defineQiankunSlaveRuntime({
 
 在 qiankun 模式下，插件挂载到 `props.container`；在 qiankun 外则自动启动同一个
 canonical SPA entry。它不会推断 magic `src/main.tsx`，也不会暴露第二套
-Application entry 模型。
+Application entry 模型。Slave 代码必须使用传入的 container；插件不会改写全局
+`document` 查询方法来重定向 selector。
 
 ## 模块引用
 

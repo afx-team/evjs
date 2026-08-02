@@ -2,9 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BundlerAdapter } from "@evjs/ev/_internal/build";
+import type { Config } from "@evjs/ev/config";
 import { describe, expect, it } from "vitest";
 import type { DefaultBundlerConfig } from "../src/index.js";
-import { build, dev, prepare } from "../src/index.js";
+import { build, dev, loadConfig, prepare } from "../src/index.js";
 
 type CustomBundlerConfig = { customFlag: boolean };
 
@@ -22,6 +23,15 @@ function assertCustomBundlerRequiresAdapter(
 }
 
 void assertCustomBundlerRequiresAdapter;
+
+function assertLoadConfigUsesCliDefault(): void {
+  const loaded: Promise<Config<DefaultBundlerConfig> | undefined> = loadConfig(
+    "/tmp/evjs-cli-type-test",
+  );
+  void loaded;
+}
+
+void assertLoadConfigUsesCliDefault;
 
 async function createProject() {
   const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-cli-"));

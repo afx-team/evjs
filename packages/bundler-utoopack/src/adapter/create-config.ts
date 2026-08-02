@@ -203,7 +203,6 @@ export async function createUtoopackConfig(
   // Run plugin bundler hooks
   const ctx: ConfigureBundlerContext<ConfigComplete> = Object.freeze({
     mode: isProduction ? "production" : "development",
-    command: isProduction ? "build" : "dev",
     cwd,
     config: createPluginConfigView(config),
     bundlerName: "utoopack",

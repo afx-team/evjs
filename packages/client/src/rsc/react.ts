@@ -1,8 +1,6 @@
 import {
-  BUILD_IDENTIFIER_DESCRIPTION,
   findBestPageRoute,
   getRscFlightClientPageUrlParam,
-  isBuildIdentifier,
   matchPageRouteParams,
   type PageSearchParams,
   parsePageSearch,
@@ -16,13 +14,8 @@ import {
 } from "../framework/page/page-context.js";
 import type { AppContext, AppModule } from "../framework/shell/index.js";
 import {
-  assertFetchErrorResponseStatus,
-  assertFetchResponseJson,
-  assertFetchResponseJsonContentType,
   assertFetchResponseObject,
-  formatFetchErrorResponseDetail,
   getFetchResponseContentType,
-  readFetchErrorResponseBody,
 } from "../shared/fetch-response.js";
 import {
   assertClientRuntime,
@@ -69,36 +62,6 @@ export interface RscFlightFetchOptions {
   pageId?: string;
   url?: string | URL;
   fetch?: typeof fetch;
-}
-
-export interface RscDebugPayload {
-  version: 1;
-  type: "evjs.rsc";
-  buildId: string;
-  endpoint?: string;
-  pageId?: string;
-  renderer?: string;
-  html?: string;
-  assets?: {
-    js: string[];
-    css: string[];
-  };
-  pages?: Record<
-    string,
-    {
-      renderer: string;
-      assets: {
-        js: string[];
-        css: string[];
-      };
-      routeId?: string;
-    }
-  >;
-}
-
-export interface RscDebugPayloadMountOptions {
-  payload: RscDebugPayload;
-  mount: string | Element;
 }
 
 interface MountedReactRoot {
@@ -434,34 +397,6 @@ function assertOptionalRscFlightUrl(value: unknown, path: string): void {
 }
 
 const RSC_FLIGHT_FETCH_ERROR_PREFIX = "[evjs] RSC Flight";
-const RSC_DEBUG_RESPONSE_ERROR_PREFIX = "[evjs] RSC debug payload response";
-
-export async function fetchRscDebugPayload(
-  options: RscFlightFetchOptions,
-): Promise<RscDebugPayload> {
-  const response = await fetchRscFlight(options);
-  if (!response.ok) {
-    assertFetchErrorResponseStatus(response, RSC_FLIGHT_FETCH_ERROR_PREFIX);
-    const responseBody = await readFetchErrorResponseBody(response);
-    throw new Error(
-      `[evjs] RSC debug payload request failed: ${formatFetchErrorResponseDetail(
-        response,
-        responseBody,
-      )}`,
-    );
-  }
-
-  let payload: unknown;
-  assertFetchResponseJson(response, RSC_DEBUG_RESPONSE_ERROR_PREFIX);
-  assertFetchResponseJsonContentType(response, RSC_DEBUG_RESPONSE_ERROR_PREFIX);
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error("[evjs] RSC debug payload response is not valid JSON.");
-  }
-  assertRscDebugPayload(payload, "RSC debug payload response");
-  return payload;
-}
 
 function assertRscFetchResponseObject(
   value: unknown,
@@ -473,22 +408,6 @@ export function getRscFetchResponseContentType(
   response: Response,
 ): string | null {
   return getFetchResponseContentType(response);
-}
-
-export function mountRscDebugPayload(
-  options: RscDebugPayloadMountOptions,
-): void {
-  assertRscDebugPayloadMountOptions(options);
-  const mountPoint = resolveMountPoint(options.mount);
-  mountPoint.innerHTML = options.payload.html ?? "";
-}
-
-export async function loadRscDebugPage(
-  options: RscFlightFetchOptions & { mount: string | Element },
-): Promise<RscDebugPayload> {
-  const payload = await fetchRscDebugPayload(options);
-  mountRscDebugPayload({ payload, mount: options.mount });
-  return payload;
 }
 
 function resolveRscFlightUrl(
@@ -747,112 +666,6 @@ function readLocationSearch(): PageSearchParams {
 function isStringRecord(value: unknown): value is Record<string, string> {
   if (!isRecord(value)) return false;
   return Object.values(value).every((entry) => typeof entry === "string");
-}
-
-function assertRscDebugPayloadMountOptions(
-  options: unknown,
-): asserts options is RscDebugPayloadMountOptions {
-  if (!isRecord(options)) {
-    throw new Error("[evjs] mountRscDebugPayload() options must be an object.");
-  }
-  assertRscDebugPayload(options.payload, "mountRscDebugPayload() payload");
-  assertReactPageMountOption(options.mount, "mountRscDebugPayload() mount");
-}
-
-function assertRscDebugPayload(
-  value: unknown,
-  source: string,
-): asserts value is RscDebugPayload {
-  if (!isRecord(value) || value.version !== 1 || value.type !== "evjs.rsc") {
-    throw new Error(`[evjs] ${source} is not an evjs RSC debug payload.`);
-  }
-
-  assertRscDebugBuildIdentifier(value.buildId, `${source}.buildId`);
-  assertOptionalRscDebugString(value.endpoint, `${source}.endpoint`);
-  assertOptionalRscDebugBuildIdentifier(value.pageId, `${source}.pageId`);
-  assertOptionalRscDebugBuildIdentifier(value.renderer, `${source}.renderer`);
-  assertOptionalRscDebugHtml(value.html, `${source}.html`);
-  if (value.assets !== undefined) {
-    assertRscDebugAssets(value.assets, `${source}.assets`);
-  }
-  assertOptionalRscDebugRecord(value.pages, `${source}.pages`);
-}
-
-function assertRscDebugBuildIdentifier(value: unknown, path: string): void {
-  if (typeof value !== "string" || !value) {
-    throw new Error(`[evjs] ${path} must be a non-empty string.`);
-  }
-  if (value.trim() !== value) {
-    throw new Error(
-      `[evjs] ${path} must not include leading or trailing whitespace.`,
-    );
-  }
-  if (!isBuildIdentifier(value)) {
-    throw new Error(
-      `[evjs] ${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
-    );
-  }
-}
-
-function assertOptionalRscDebugBuildIdentifier(
-  value: unknown,
-  path: string,
-): void {
-  if (value === undefined) return;
-  assertRscDebugBuildIdentifier(value, path);
-}
-
-function assertOptionalRscDebugString(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (typeof value !== "string") {
-    throw new Error(`[evjs] ${path} must be a string when provided.`);
-  }
-  if (!value) {
-    throw new Error(`[evjs] ${path} must be a non-empty string.`);
-  }
-  if (value.trim() !== value) {
-    throw new Error(
-      `[evjs] ${path} must not include leading or trailing whitespace.`,
-    );
-  }
-}
-
-function assertOptionalRscDebugHtml(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (typeof value !== "string") {
-    throw new Error(`[evjs] ${path} must be a string when provided.`);
-  }
-}
-
-function assertRscDebugAssets(value: unknown, path: string): void {
-  if (!isRecord(value)) {
-    throw new Error(`[evjs] ${path} must be an object.`);
-  }
-  assertRscDebugStringArray(value.js, `${path}.js`);
-  assertRscDebugStringArray(value.css, `${path}.css`);
-}
-
-function assertRscDebugStringArray(value: unknown, path: string): void {
-  if (!Array.isArray(value)) {
-    throw new Error(`[evjs] ${path} must contain only non-empty strings.`);
-  }
-  for (const item of value) {
-    if (typeof item !== "string" || !item) {
-      throw new Error(`[evjs] ${path} must contain only non-empty strings.`);
-    }
-    if (item.trim() !== item) {
-      throw new Error(
-        `[evjs] ${path} item "${item}" must not contain leading or trailing whitespace.`,
-      );
-    }
-  }
-}
-
-function assertOptionalRscDebugRecord(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (!isRecord(value)) {
-    throw new Error(`[evjs] ${path} must be an object when provided.`);
-  }
 }
 
 function shouldHydrate(options: {

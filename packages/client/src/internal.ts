@@ -34,7 +34,6 @@ export type {
   ShellErrorContext,
   ShellModuleRegistration,
   ShellOptions,
-  ShellWarningContext,
 } from "./framework/shell/index.js";
 export {
   createActivationRequestFromUrl,

@@ -51,21 +51,22 @@ type RscClientReferenceConfig =
       include?: RegExp;
     };
 
-export type WebpackConfig = Configuration | Configuration[];
+/** The complete set of webpack compiler configurations for one evjs build. */
+export type WebpackConfigs = Configuration[];
 
 export async function createWebpackConfigs(
-  config: ResolvedConfig<WebpackConfig>,
+  config: ResolvedConfig<WebpackConfigs>,
   plan: BuildPlan,
   cwd: string,
-  hooks: PluginHooks<WebpackConfig>[],
+  hooks: PluginHooks<WebpackConfigs>[],
   options: {
     clean?: boolean;
     addWatchFile?: (file: string) => void;
   } = {},
-): Promise<Configuration[]> {
+): Promise<WebpackConfigs> {
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
-  const configs: Configuration[] = [];
+  const configs: WebpackConfigs = [];
   const clientEntries = plan.entries.filter(
     (entry) => entry.environment === "client",
   );
@@ -198,9 +199,8 @@ export async function createWebpackConfigs(
     return expectation ? [expectation] : [];
   });
 
-  const ctx: ConfigureBundlerContext<WebpackConfig> = Object.freeze({
+  const ctx: ConfigureBundlerContext<WebpackConfigs> = Object.freeze({
     mode: plan.mode,
-    command: plan.mode === "production" ? "build" : "dev",
     cwd,
     config: createPluginConfigView(config),
     bundlerName: "webpack",
@@ -268,7 +268,7 @@ export async function createWebpackConfigs(
 
 async function assertFrameworkWebpackOutputs(
   cwd: string,
-  configs: Configuration[],
+  configs: WebpackConfigs,
   expectations: FrameworkWebpackOutputExpectation[],
   outputPaths: ResolvedBuildOutputPaths,
 ): Promise<void> {
@@ -294,7 +294,7 @@ async function assertFrameworkWebpackOutputs(
 
 async function assertIndependentWebpackOutputs(
   cwd: string,
-  configs: Configuration[],
+  configs: WebpackConfigs,
   expectations: FrameworkWebpackOutputExpectation[],
 ): Promise<void> {
   const frameworkConfigNames = new Set(
@@ -565,7 +565,7 @@ function assertFrameworkWebpackEntries(
   }
 }
 
-function assertPortableWebpackArtifactNames(configs: Configuration[]): void {
+function assertPortableWebpackArtifactNames(configs: WebpackConfigs): void {
   for (const config of configs) {
     const configName = config.name ?? "unnamed";
     if (typeof config.entry === "function") {

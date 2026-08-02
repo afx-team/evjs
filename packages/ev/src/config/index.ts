@@ -25,12 +25,16 @@ import {
   assertSeparateFrameworkOutputDirectories,
 } from "../_internal/build/output-path-conventions.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
-import { copyDefinedPluginRuntime } from "../plugin/defined.js";
+import {
+  copyDefinedPluginRuntime,
+  definedPluginRuntimeMetadata,
+} from "../plugin/defined.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
 import type { PagePluginOptions, PagePluginOptionsCheck } from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
+export { type ConfigPatch, merge } from "./merge.js";
 export type {
   ExtractInstalledPlugin,
   InstalledPluginRegistry,
@@ -42,16 +46,6 @@ export type {
   StaticConfigObject,
   StaticConfigValue,
 } from "./static.js";
-
-/**
- * Default bundler config shape used by framework-core APIs.
- *
- * Utoopack is the default bundler path. Projects that switch bundlers can pass
- * a narrower generic or use the typed helper exported by that adapter.
- */
-export type DefaultBundlerConfig = import("@utoo/pack").ConfigComplete;
-
-export { type ConfigPatch, merge } from "./merge.js";
 
 /** Resolved dev server configuration (all defaults applied). */
 export interface ResolvedDevConfig {
@@ -110,7 +104,7 @@ export interface ResolvedServerRuntimeConfig {
 /**
  * A version of Config where all fields with defaults are guaranteed.
  */
-export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
+export interface ResolvedConfig<TBundlerCfg = unknown> {
   /** Whether framework file conventions are enabled. */
   conventions: boolean;
   /** Emitted HTML and asset-tag output options. */
@@ -125,7 +119,7 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   server: ResolvedServerConfig;
   /** Browser-to-server transport configuration. */
   transport: ResolvedTransportConfig;
-  /** Bundler adapter. When omitted, defaults to utoopack. */
+  /** Bundler adapter. Core leaves this unset; `@evjs/cli` supplies Utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
   /** Active plugins. */
   plugins: Plugin<TBundlerCfg>[];
@@ -137,13 +131,13 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
  * This is the config snapshot exposed to setup, lifecycle, contribution, and
  * bundler contexts.
  */
-export type ResolvedFrameworkConfig<TBundlerCfg = DefaultBundlerConfig> =
+export type ResolvedFrameworkConfig<TBundlerCfg = unknown> =
   ResolvedConfig<TBundlerCfg>;
 
 /**
  * evjs framework configuration.
  */
-export interface Config<TBundlerCfg = DefaultBundlerConfig> {
+export interface Config<TBundlerCfg = unknown> {
   /**
    * Enable framework file conventions.
    *
@@ -192,7 +186,7 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    */
   application?: ConfigRouteApplication;
 
-  /** Bundler adapter. When omitted, defaults to utoopack. */
+  /** Bundler adapter. Core leaves this unset; `@evjs/cli` supplies Utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
 
   /**
@@ -590,7 +584,7 @@ function resolveRscEndpoint(rsc: ServerConfig["rsc"]): string | undefined {
  * Source discovery and plugin setting resolution happen in later build
  * phases; this function only produces their normalized input state.
  */
-export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
+export function resolveConfig<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
 ): ResolvedConfig<TBundlerCfg> {
   const config = resolveRootConfig(userConfig);
@@ -703,7 +697,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   };
 }
 
-export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
+export function resolvePluginsConfig<TBundlerCfg = unknown>(
   plugins: unknown,
 ): Plugin<TBundlerCfg>[] {
   if (plugins === undefined) return [];
@@ -728,7 +722,7 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   return resolved;
 }
 
-function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
+function resolvePlugin<TBundlerCfg = unknown>(
   plugin: unknown,
   index: number,
 ): Plugin<TBundlerCfg> {
@@ -737,6 +731,7 @@ function resolvePlugin<TBundlerCfg = DefaultBundlerConfig>(
     plugin,
     path,
     "a plugin object",
+    definedPluginRuntimeMetadata,
   );
   assertKnownConfigKeys(
     pluginDescriptor,
@@ -839,7 +834,7 @@ function assertDisjointPluginDependencies(
   }
 }
 
-export function resolveBundlerConfig<TBundlerCfg = DefaultBundlerConfig>(
+export function resolveBundlerConfig<TBundlerCfg = unknown>(
   bundler: unknown,
   path = "bundler",
 ): BundlerAdapter<TBundlerCfg> | undefined {
@@ -848,7 +843,7 @@ export function resolveBundlerConfig<TBundlerCfg = DefaultBundlerConfig>(
   return bundler;
 }
 
-function assertBundlerAdapter<TBundlerCfg = DefaultBundlerConfig>(
+function assertBundlerAdapter<TBundlerCfg = unknown>(
   value: unknown,
   path: string,
 ): asserts value is BundlerAdapter<TBundlerCfg> {
@@ -935,7 +930,7 @@ function assertRequiredBoolean(
   throw new Error(`[evjs] ${path} must be a boolean.`);
 }
 
-function resolveRootConfig<TBundlerCfg = DefaultBundlerConfig>(
+function resolveRootConfig<TBundlerCfg = unknown>(
   config: Config<TBundlerCfg> | undefined,
 ): Config<TBundlerCfg> {
   if (config === undefined) return {};
@@ -1430,17 +1425,28 @@ function assertPlainConfigRecord(
   value: unknown,
   path: string,
   description: string,
+  allowedSymbol?: symbol,
 ): Record<string, unknown> {
   if (isPlainConfigRecord(value)) {
-    assertEnumerableStringOwnKeys(value, path);
+    assertEnumerableStringOwnKeys(value, path, allowedSymbol);
     return value;
   }
   throw new Error(`[evjs] ${path} must be ${description}.`);
 }
 
-function assertEnumerableStringOwnKeys(value: object, path: string): void {
+function assertEnumerableStringOwnKeys(
+  value: object,
+  path: string,
+  allowedSymbol?: symbol,
+): void {
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string") {
+      if (key === allowedSymbol) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor && !descriptor.enumerable && "value" in descriptor) {
+          continue;
+        }
+      }
       throw new Error(`[evjs] ${path} must not contain symbol fields.`);
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, key);

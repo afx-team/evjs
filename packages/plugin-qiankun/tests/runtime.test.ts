@@ -509,6 +509,64 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(containerHtml).toBe("");
   });
 
+  it("uses the nested slave container without patching document lookups", async () => {
+    const originalDocument = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "document",
+    );
+    const masterRoot = createElement();
+    const slaveRoot = createElement();
+    const querySelector = vi.fn(() => masterRoot);
+    const getElementById = vi.fn(() => masterRoot);
+    const outerContainer = {
+      innerHTML: '<div id="app"></div>',
+      querySelector: vi.fn((selector: string) =>
+        selector === "#app" ? slaveRoot : null,
+      ),
+    } as unknown as Element;
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { querySelector, getElementById },
+    });
+
+    try {
+      const slave = createQiankunSlaveLifecycles({
+        name: "catalog",
+        mount: "#app",
+        runtime: {
+          mount(_props, context) {
+            expect(context.container).toBe(slaveRoot);
+          },
+        },
+        async loadEntry() {
+          expect(globalThis.document.querySelector).toBe(querySelector);
+          expect(globalThis.document.getElementById).toBe(getElementById);
+          return {
+            start(target: Element) {
+              expect(target).toBe(slaveRoot);
+            },
+            app: { unmount() {} },
+          };
+        },
+      });
+
+      await slave.mount({ container: outerContainer });
+      await slave.unmount({ container: outerContainer });
+
+      expect(outerContainer.querySelector).toHaveBeenCalledWith("#app");
+      expect(querySelector).not.toHaveBeenCalled();
+      expect(getElementById).not.toHaveBeenCalled();
+      expect(globalThis.document.querySelector).toBe(querySelector);
+      expect(globalThis.document.getElementById).toBe(getElementById);
+    } finally {
+      if (originalDocument) {
+        Object.defineProperty(globalThis, "document", originalDocument);
+      } else {
+        delete (globalThis as { document?: unknown }).document;
+      }
+    }
+  });
+
   it("uses the framework start export for a standalone first mount", async () => {
     const originalDocument = Object.getOwnPropertyDescriptor(
       globalThis,
@@ -781,46 +839,6 @@ describe("@evjs/plugin-qiankun runtime", () => {
     ]);
   });
 
-  it("restores document lookup methods after mount fails", async () => {
-    const originalDocument = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "document",
-    );
-    const querySelector = vi.fn(() => null);
-    const getElementById = vi.fn(() => null);
-    Object.defineProperty(globalThis, "document", {
-      value: { querySelector, getElementById },
-      configurable: true,
-    });
-
-    try {
-      const slave = createQiankunSlaveLifecycles({
-        name: "catalog",
-        mount: "#app",
-        runtime: {
-          mount() {
-            throw new Error("mount failed");
-          },
-        },
-        async loadEntry() {
-          return { app: { render() {} } };
-        },
-      });
-
-      await expect(slave.mount({ container: createElement() })).rejects.toThrow(
-        "mount failed",
-      );
-      expect(globalThis.document.querySelector).toBe(querySelector);
-      expect(globalThis.document.getElementById).toBe(getElementById);
-    } finally {
-      if (originalDocument) {
-        Object.defineProperty(globalThis, "document", originalDocument);
-      } else {
-        delete (globalThis as { document?: unknown }).document;
-      }
-    }
-  });
-
   it("rolls back entry, projection, runtime, and container state after mount fails", async () => {
     const mountError = new Error("entry start failed");
     const calls: string[] = [];
@@ -981,174 +999,6 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(render).toHaveBeenCalledTimes(1);
     expect(runtimeUnmount).toHaveBeenCalledTimes(1);
     expect(entryUnmount).toHaveBeenCalledTimes(1);
-  });
-
-  it("serializes shared document lookup ownership across slave instances", async () => {
-    const originalDocument = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "document",
-    );
-    const masterRoot = { name: "master" };
-    const firstRoot = { name: "first" };
-    const secondRoot = { name: "second" };
-    const querySelector = vi.fn(() => masterRoot);
-    const getElementById = vi.fn(() => masterRoot);
-    const fakeDocument = { querySelector, getElementById };
-    const firstContainer = {
-      innerHTML: "",
-      querySelector: vi.fn(() => firstRoot),
-    } as unknown as Element;
-    const secondContainer = {
-      innerHTML: "",
-      querySelector: vi.fn(() => secondRoot),
-    } as unknown as Element;
-    const firstMountStarted = createDeferred();
-    const secondMountStarted = createDeferred();
-    const firstMountGate = createDeferred();
-    const secondMountGate = createDeferred();
-    let firstMount: Promise<void> | undefined;
-    let secondMount: Promise<void> | undefined;
-    let firstUnmount: Promise<void> | undefined;
-    let firstRenderLookup: Element | null | undefined;
-    let firstUnmountLookup: Element | null | undefined;
-
-    Object.defineProperty(globalThis, "document", {
-      value: fakeDocument,
-      configurable: true,
-    });
-
-    try {
-      const firstSlave = createQiankunSlaveLifecycles({
-        name: "first",
-        mount: "#app",
-        runtime: {
-          async mount() {
-            firstMountStarted.resolve();
-            await firstMountGate.promise;
-          },
-          unmount() {
-            firstUnmountLookup = globalThis.document.querySelector("#app");
-          },
-        },
-        async loadEntry() {
-          return {
-            app: {
-              render() {
-                firstRenderLookup = globalThis.document.querySelector("#app");
-              },
-              unmount() {},
-            },
-          };
-        },
-      });
-      const secondRuntimeMount = vi.fn(async () => {
-        secondMountStarted.resolve();
-        await secondMountGate.promise;
-      });
-      const secondSlave = createQiankunSlaveLifecycles({
-        name: "second",
-        mount: "#app",
-        runtime: { mount: secondRuntimeMount },
-        async loadEntry() {
-          return { app: { render() {}, unmount() {} } };
-        },
-      });
-
-      firstMount = firstSlave.mount({ container: firstContainer });
-      await firstMountStarted.promise;
-      expect(globalThis.document.querySelector("#app")).toBe(firstRoot);
-
-      secondMount = secondSlave.mount({ container: secondContainer });
-      firstUnmount = firstSlave.unmount({ container: firstContainer });
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(secondRuntimeMount).not.toHaveBeenCalled();
-
-      firstMountGate.resolve();
-      await firstMount;
-      expect(firstRenderLookup).toBe(firstRoot);
-
-      await secondMountStarted.promise;
-      expect(globalThis.document.querySelector("#app")).toBe(secondRoot);
-      expect(globalThis.document.getElementById("app")).toBe(secondRoot);
-
-      secondMountGate.resolve();
-      await secondMount;
-      await firstUnmount;
-      expect(firstUnmountLookup).toBe(firstRoot);
-      expect(globalThis.document.querySelector).toBe(querySelector);
-      expect(globalThis.document.getElementById).toBe(getElementById);
-      expect(globalThis.document.querySelector("#app")).toBe(masterRoot);
-      await secondSlave.unmount({ container: secondContainer });
-    } finally {
-      firstMountGate.resolve();
-      secondMountGate.resolve();
-      await Promise.allSettled(
-        [firstMount, secondMount, firstUnmount].filter(Boolean),
-      );
-      if (originalDocument) {
-        Object.defineProperty(globalThis, "document", originalDocument);
-      } else {
-        delete (globalThis as { document?: unknown }).document;
-      }
-    }
-  });
-
-  it("scopes slave document mount lookups to the qiankun container while loading entry", async () => {
-    const originalDocument = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "document",
-    );
-    const masterRoot = { name: "master" };
-    const slaveRoot = { name: "slave" };
-    const querySelector = vi.fn(() => masterRoot);
-    const getElementById = vi.fn(() => masterRoot);
-    const fakeDocument = { querySelector, getElementById };
-    const container = {
-      innerHTML: '<div id="app"></div>',
-      querySelector: vi.fn((selector: string) =>
-        selector === "#app" ? slaveRoot : null,
-      ),
-    } as unknown as Element;
-    let queryResult: unknown;
-    let idResult: unknown;
-
-    Object.defineProperty(globalThis, "document", {
-      value: fakeDocument,
-      configurable: true,
-    });
-
-    try {
-      const slave = createQiankunSlaveLifecycles({
-        name: "catalog",
-        mount: "#app",
-        runtime: {
-          async mount(_props, context) {
-            await context.loadEntry();
-          },
-        },
-        loadEntry: async () => {
-          queryResult = globalThis.document.querySelector("#app");
-          idResult = globalThis.document.getElementById("app");
-          return { app: { render() {} } };
-        },
-      });
-
-      await slave.mount({ container });
-
-      expect(queryResult).toBe(slaveRoot);
-      expect(idResult).toBe(slaveRoot);
-      expect(querySelector).not.toHaveBeenCalledWith("#app");
-      expect(getElementById).not.toHaveBeenCalledWith("app");
-      expect(globalThis.document.querySelector).toBe(querySelector);
-      expect(globalThis.document.getElementById).toBe(getElementById);
-    } finally {
-      if (originalDocument) {
-        Object.defineProperty(globalThis, "document", originalDocument);
-      } else {
-        delete (globalThis as { document?: unknown }).document;
-      }
-    }
   });
 });
 

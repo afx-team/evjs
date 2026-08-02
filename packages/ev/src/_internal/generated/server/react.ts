@@ -1,6 +1,5 @@
 export type {
   ReactFrameworkServerOptions,
-  ReactRscDebugPayload,
   ReactRscFlightAdapterOptions,
   ReactServerRenderAdapterOptions,
 } from "@evjs/server/react";

@@ -245,10 +245,11 @@ rejected before lifecycle hooks run. Unknown hook keys are rejected so
 misspelled hooks cannot become silent no-ops. Put package-local metadata outside
 the hooks object.
 
-The setup context provides `mode`, `command`, `cwd`, resolved `config`,
-`logger`, `addWatchFile()`, and the typed Application `ctx.options` declared by
-the descriptor. Continue with [Plugin Hooks](./plugin-hooks) for lifecycle
-order and hook-specific contracts.
+The setup context provides `mode`, `cwd`, resolved `config`, `logger`,
+`addWatchFile()`, and the typed Application `ctx.options` declared by the
+descriptor. Use `mode` to distinguish development from production. Continue
+with [Plugin Hooks](./plugin-hooks) for lifecycle order and hook-specific
+contracts.
 
 Public context names follow their stages: `PluginConfigureContext`,
 `PluginSetupContext`, `PluginEmitIRContext`, `ConfigureBundlerContext`,

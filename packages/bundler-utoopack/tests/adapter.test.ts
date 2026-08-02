@@ -22,8 +22,8 @@ import {
 import type { PluginHooks } from "@evjs/ev/plugin";
 import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
+  assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
@@ -357,7 +357,6 @@ function createFrameworkCallbacks(options: {
           hooks,
           pluginContext: {
             mode: plan.mode,
-            command: "dev",
             cwd: options.cwd,
             config: options.config,
             logger: console as never,
@@ -585,14 +584,12 @@ describe("utoopackAdapter dev", () => {
       plan: await materializeFrameworkIR({
         cwd,
         mode: "development",
-        command: "dev",
         config,
         graph: initialBuildContext.graph,
         plan: initialBuildContext.plan,
         plugins: [],
         pluginContext: {
           mode: "development",
-          command: "dev",
           cwd,
           config,
           logger: console as never,
@@ -629,20 +626,13 @@ describe("utoopackAdapter dev", () => {
 
     const output = onBuildOutput.mock.calls[0]?.[0];
     if (!output) throw new Error("Expected linked BuildOutput.");
-    const manifest = createPublicManifest(output);
-    if (
-      !("routing" in manifest) ||
-      manifest.routing.kind !== "spa" ||
-      !("assets" in manifest)
-    ) {
-      throw new Error("Expected a public SPA manifest.");
-    }
+    assertFrameworkManifestShape(output, "Utoopack dev BuildOutput");
     const html = await fs.promises.readFile(
       path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
 
-    expect(manifest.assets).toEqual({
+    expect(output.assets).toMatchObject({
       main: {
         js: ["main.js"],
         css: ["main.css"],
@@ -669,11 +659,13 @@ describe("utoopackAdapter dev", () => {
       js: ["dev-hook.js"],
       css: [],
     });
-    expect("app" in manifest).toBe(false);
-    expect(manifest.routing).toEqual({
-      kind: "spa",
-      routes: [{ id: "index", path: "/" }],
+    expect(output.apps.default).toMatchObject({
+      assets: { js: ["main.js"], css: ["main.css"] },
+      document: { fileName: "index.html" },
     });
+    expect(output.routes).toEqual([
+      { id: "index", path: "/", appId: "default" },
+    ]);
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');
     expect(html).toContain('data-evjs-kind="app"');
@@ -807,7 +799,7 @@ describe("utoopackAdapter dev", () => {
       );
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
       if (!output) throw new Error("Expected linked BuildOutput.");
-      const manifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "updated Utoopack BuildOutput");
 
       expect(update.entries.added).toHaveLength(0);
       expect(update.entries.changed).toHaveLength(0);
@@ -815,11 +807,7 @@ describe("utoopackAdapter dev", () => {
       expect(html).toContain("next-shell");
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
-      expect(manifest).not.toHaveProperty("assets");
-      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
-      }
-      expect(manifest.routing.pages.home.document).toEqual({
+      expect(output.pages.home.document).toEqual({
         fileName: "home/index.html",
       });
       expect(onBuildOutput).toHaveBeenCalledTimes(2);
@@ -1129,13 +1117,7 @@ describe("utoopackAdapter dev", () => {
     );
     const output = onBuildOutput.mock.calls[0]?.[0];
     if (!output) throw new Error("Expected linked BuildOutput.");
-    const publicManifest = createPublicManifest(output);
-    if (
-      !("routing" in publicManifest) ||
-      publicManifest.routing.kind !== "spa"
-    ) {
-      throw new Error("Expected a public SPA manifest.");
-    }
+    assertFrameworkManifestShape(output, "Utoopack BuildOutput");
     const html = await fs.promises.readFile(
       path.join(cwd, "dist/client/index.html"),
       "utf-8",
@@ -1160,8 +1142,11 @@ describe("utoopackAdapter dev", () => {
     expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
       false,
     );
-    expect("app" in publicManifest).toBe(false);
-    expect(publicManifest.routing.kind).toBe("spa");
+    expect(output.routes).toContainEqual({
+      id: "index",
+      path: "/",
+      appId: "default",
+    });
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');

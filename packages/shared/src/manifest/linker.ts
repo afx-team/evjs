@@ -28,10 +28,6 @@ import type {
   HydrationMode,
   PageOutput,
   PageRenderingOutput,
-  PublicDocumentOutput,
-  PublicManifestOutput,
-  PublicPageOutput,
-  PublicRoutingOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
 } from "./index.js";
@@ -63,19 +59,6 @@ const REMOVED_SERVER_LINK_INPUT_FIELDS = [
   "serverAssets",
   "serverModules",
 ] as const;
-
-export interface ServerManifestOutput {
-  version: 1;
-  entry?: string;
-  routes: ServerManifestRouteOutput[];
-}
-
-export type ServerManifestRouteOutput =
-  | Extract<DeploymentRouteOutput, { kind: "server-page" }>
-  | Extract<DeploymentRouteOutput, { kind: "server-function" }>
-  | Extract<DeploymentRouteOutput, { kind: "ppr-endpoint" }>
-  | Extract<DeploymentRouteOutput, { kind: "rsc-endpoint" }>
-  | Extract<DeploymentRouteOutput, { kind: "api-route" }>;
 
 /**
  * Join CoreGraph, BuildPlan, and bundler facts into one validated BuildOutput.
@@ -643,193 +626,6 @@ function assertBuildOutputLinkInputContract(input: BuildOutputLinkInput): void {
   }
 }
 
-/**
- * Project BuildOutput into a browser-safe routing and asset summary.
- *
- * Runtime startup data stays in ClientRuntime, while framework endpoints and
- * the canonical deployment plan stay in FrameworkRuntime and
- * DeploymentMetadata respectively.
- */
-export function createPublicManifest(
-  output: BuildOutput,
-): PublicManifestOutput {
-  const publicAssetFiles = collectPublicAssetFiles(output);
-  const documents = createPublicDocumentManifest(output, publicAssetFiles);
-  if (documents) {
-    return {
-      version: output.version,
-      buildId: output.buildId,
-      publicPath: output.publicPath,
-      documents,
-    };
-  }
-  const routing = createPublicManifestRouting(output, publicAssetFiles);
-  const assets =
-    routing.kind === "spa"
-      ? clonePublicAssetRecord(output.assets, publicAssetFiles)
-      : undefined;
-  return pruneUndefined({
-    version: output.version,
-    buildId: output.buildId,
-    publicPath: output.publicPath,
-    assets: assets && hasAssetRecordEntries(assets) ? assets : undefined,
-    routing,
-  }) as PublicManifestOutput;
-}
-
-function createPublicManifestRouting(
-  output: BuildOutput,
-  publicAssetFiles: Set<string>,
-): PublicRoutingOutput {
-  const hasSpaRoute = output.routes.some((route) => route.appId);
-  if (!hasSpaRoute && Object.keys(output.pages).length > 0) {
-    return {
-      kind: "mpa",
-      pages: Object.fromEntries(
-        Object.entries(output.pages).map(([id, page]) => [
-          id,
-          sanitizePageOutput(
-            page,
-            publicAssetFiles,
-            findOutputRouteForPage(output, id),
-          ),
-        ]),
-      ),
-    };
-  }
-
-  return {
-    kind: "spa",
-    routes: output.routes.map((route) =>
-      pruneUndefined({
-        id: route.id,
-        path: route.path,
-        pageId: route.pageId,
-        render: route.pageId ? output.pages[route.pageId]?.render : undefined,
-        metadata: route.pageId
-          ? clonePageMetadata(output.pages[route.pageId]?.metadata)
-          : undefined,
-      }),
-    ),
-  };
-}
-
-function createPublicDocumentManifest(
-  output: BuildOutput,
-  publicAssetFiles: Set<string>,
-): PublicDocumentOutput[] | undefined {
-  if (!isStaticDocumentOnlyOutput(output)) return undefined;
-  const documents = createStaticSsgDocumentRecords(output).map((document) =>
-    pruneUndefined({
-      id: document.id,
-      path: document.path,
-      fileName: document.fileName,
-      ...(document.aliases ? { aliases: [...document.aliases] } : {}),
-      render: document.render,
-      metadata: clonePageMetadata(document.metadata),
-      assets: optionalAssetGroup(
-        clonePublicAssets(document.assets, publicAssetFiles),
-      ),
-    }),
-  );
-  return documents.length > 0 ? documents : undefined;
-}
-
-function isStaticDocumentOnlyOutput(output: BuildOutput): boolean {
-  const documentIds = new Set(
-    createStaticSsgDocumentRecords(output).map((document) => document.id),
-  );
-  if (documentIds.size === 0) return false;
-  if (
-    Object.keys(output.pages).some((pageId) => !documentIds.has(pageId)) ||
-    output.routes.some(
-      (route) => !route.pageId || !documentIds.has(route.pageId),
-    )
-  ) {
-    return false;
-  }
-  if (output.server.entry) return false;
-  if (Object.keys(output.server.functions).length > 0) return false;
-  if (output.server.routes.length > 0) return false;
-  if (output.rsc && Object.keys(output.rsc.pages ?? {}).length > 0) {
-    return false;
-  }
-  if (
-    Object.values(output.apps).some(
-      (app) =>
-        app.document ||
-        app.assets.js.length > 0 ||
-        app.assets.css.length > 0 ||
-        app.module,
-    )
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
-  id: string;
-  path: string;
-  fileName: string;
-  aliases?: string[];
-  render: Extract<PageOutput["render"], "ssg">;
-  metadata?: PageOutput["metadata"];
-  assets: AssetGroup;
-}> {
-  return Object.entries(output.pages).flatMap(([id, page]) => {
-    if (
-      !page.document ||
-      page.render !== "ssg" ||
-      page.rendering.html !== "static" ||
-      page.rendering.prerender !== "full" ||
-      page.ppr
-    ) {
-      return [];
-    }
-    const route = findOutputRouteForPage(output, id);
-    const path = route?.path ?? page.path;
-    if (!path?.startsWith("/")) return [];
-    return [
-      {
-        id,
-        path,
-        fileName: page.document.fileName,
-        ...(page.document.aliases
-          ? { aliases: [...page.document.aliases] }
-          : {}),
-        render: page.render,
-        metadata: clonePageMetadata(page.metadata),
-        assets: page.assets,
-      },
-    ];
-  });
-}
-
-export function createServerManifest(
-  output: BuildOutput,
-): ServerManifestOutput {
-  assertBuildOutputServerArtifacts(output, "BuildOutput");
-  return {
-    version: 1,
-    ...(output.server.entry ? { entry: output.server.entry } : {}),
-    routes: createDeploymentRoutes(output).filter(isServerManifestRoute),
-  };
-}
-
-function isServerManifestRoute(
-  route: DeploymentRouteOutput,
-): route is ServerManifestRouteOutput {
-  return (
-    route.kind === "server-page" ||
-    route.kind === "server-function" ||
-    route.kind === "ppr-endpoint" ||
-    route.kind === "rsc-endpoint" ||
-    route.kind === "api-route"
-  );
-}
-
 export interface DeploymentMetadataOptions {
   includeAssets?: boolean;
 }
@@ -877,21 +673,6 @@ function createBuildOutputPaths(
     publicDir: plan.output.clientDir,
     serverDir: plan.output.serverDir,
   };
-}
-
-function sanitizePageOutput(
-  page: PageOutput,
-  publicAssetFiles: Set<string>,
-  route?: BuildOutput["routes"][number],
-): PublicPageOutput {
-  return pruneUndefined({
-    assets: clonePublicAssets(page.assets, publicAssetFiles),
-    document: cloneHtmlDocument(page.document),
-    path: page.path ?? route?.path,
-    routeId: page.routeId ?? route?.id,
-    render: page.render,
-    metadata: clonePageMetadata(page.metadata),
-  }) as PublicPageOutput;
 }
 
 function createDeploymentDocuments(
@@ -1030,13 +811,6 @@ function createDeploymentServerPageRendering(
   throw new Error(
     `[evjs] Page "${pageId}" render mode "${page.render}" cannot be emitted as a server deployment route.`,
   );
-}
-
-function findOutputRouteForPage(
-  output: BuildOutput,
-  pageId: string,
-): BuildOutput["routes"][number] | undefined {
-  return output.routes.find((route) => route.pageId === pageId);
 }
 
 function findOutputRouteForApp(

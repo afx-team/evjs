@@ -21,7 +21,6 @@ import {
 
 export type {
   PageProviderProps,
-  ReactRscDebugPayload,
   ReactRscFlightAdapterOptions,
   ReactServerRenderAdapterOptions,
   ReactServerRenderContext,

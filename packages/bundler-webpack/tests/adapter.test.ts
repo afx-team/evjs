@@ -21,8 +21,8 @@ import { resolveConfig } from "@evjs/ev/config";
 import type { PluginHooks } from "@evjs/ev/plugin";
 import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
+  assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import { Volume } from "memfs";
@@ -36,7 +36,7 @@ import {
   createFrameworkRuntime,
   type FrameworkRuntimeOutput,
 } from "../../ev/src/_internal/build/framework-runtime.js";
-import type { WebpackConfig } from "../src/adapter/create-config.js";
+import type { WebpackConfigs } from "../src/adapter/create-config.js";
 import { __testing as webpackAdapterTesting } from "../src/adapter/index.js";
 import { __testing as serverPublicAssetTesting } from "../src/adapter/server-public-assets.js";
 import { webpackAdapter } from "../src/index.js";
@@ -96,8 +96,8 @@ function createTestDevGeneration(): BundlerDevGeneration {
 }
 
 async function createTestDevUpdateOptions(
-  controller: BundlerDevController<WebpackConfig> | undefined,
-  config: ResolvedConfig<WebpackConfig>,
+  controller: BundlerDevController<WebpackConfigs> | undefined,
+  config: ResolvedConfig<WebpackConfigs>,
   configChanged = false,
 ) {
   if (!controller) throw new Error("Expected webpack dev controller");
@@ -138,8 +138,8 @@ function getSinglePprRegionId(
 
 async function resolveProjectConfig(
   cwd: string,
-  config: Config<WebpackConfig>,
-): Promise<ResolvedConfig<WebpackConfig>> {
+  config: Config<WebpackConfigs>,
+): Promise<ResolvedConfig<WebpackConfigs>> {
   return withPageRoutingDefaults(resolveConfig(config), config, cwd);
 }
 
@@ -157,11 +157,11 @@ afterEach(async () => {
 });
 
 async function buildWithFrameworkArtifacts(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
-  hooks?: PluginHooks<WebpackConfig>[];
+  hooks?: PluginHooks<WebpackConfigs>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
 }) {
   const hooks = options.hooks ?? [];
@@ -186,7 +186,7 @@ async function buildWithFrameworkArtifacts(options: {
 }
 
 async function materializeTestPlan(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
@@ -194,14 +194,12 @@ async function materializeTestPlan(options: {
   return materializeFrameworkIR({
     cwd: options.cwd,
     mode: options.plan.mode,
-    command: options.plan.mode === "production" ? "build" : "dev",
     config: options.config,
     graph: options.graph,
     plan: options.plan,
     plugins: [],
     pluginContext: {
       mode: options.plan.mode,
-      command: options.plan.mode === "production" ? "build" : "dev",
       cwd: options.cwd,
       config: options.config,
       logger: console as never,
@@ -211,11 +209,11 @@ async function materializeTestPlan(options: {
 }
 
 function createFrameworkCallbacks(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
-  hooks?: PluginHooks<WebpackConfig>[];
+  hooks?: PluginHooks<WebpackConfigs>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
   onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
   onServerBundleReady?: () => void | Promise<void>;
@@ -258,11 +256,11 @@ function createFrameworkCallbacks(options: {
 }
 
 async function emitFrameworkArtifacts(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
-  hooks: PluginHooks<WebpackConfig>[];
+  hooks: PluginHooks<WebpackConfigs>[];
   facts: BundlerBuildFacts;
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
   isRebuild?: boolean;
@@ -318,7 +316,6 @@ async function emitFrameworkArtifacts(options: {
       hooks: options.hooks,
       pluginContext: {
         mode: options.plan.mode,
-        command: options.plan.mode === "production" ? "build" : "dev",
         cwd: options.cwd,
         config: options.config,
         logger: console as never,
@@ -461,7 +458,7 @@ describe("webpack stats ownership", () => {
   });
 
   it("bypasses only BuildPlan-owned routes and runtime endpoints", () => {
-    const config = resolveConfig<WebpackConfig>({
+    const config = resolveConfig<WebpackConfigs>({
       server: {
         basePath: "/_ev",
         rsc: {
@@ -590,7 +587,7 @@ describe("webpack stats ownership", () => {
   });
 
   it("proxies a server-rendered root route without catching every asset", () => {
-    const config = resolveConfig<WebpackConfig>();
+    const config = resolveConfig<WebpackConfigs>();
     const plan: BuildPlan = {
       version: 1,
       buildId: "test",
@@ -627,7 +624,7 @@ describe("webpack stats ownership", () => {
   });
 
   it("proxies a dynamic root request route without swallowing deeper SPA paths", () => {
-    const config = resolveConfig<WebpackConfig>();
+    const config = resolveConfig<WebpackConfigs>();
     const plan: BuildPlan = {
       version: 1,
       buildId: "test",
@@ -1695,7 +1692,7 @@ describe("webpack build-only memory modules", () => {
       `,
         "src/b/lazy.ts": 'export default "b";',
       });
-      const config = resolveConfig<WebpackConfig>({});
+      const config = resolveConfig<WebpackConfigs>({});
       const plan: BuildPlan = {
         version: 1,
         buildId: "memory-chunks",
@@ -1829,8 +1826,7 @@ describe("webpackAdapter build", () => {
           hooks: [
             {
               configureBundler(configs) {
-                const items = Array.isArray(configs) ? configs : [configs];
-                const client = items.find((item) => item.name === "client");
+                const client = configs.find((item) => item.name === "client");
                 if (client?.output) client.output.path = path.join(cwd, "src");
               },
             },
@@ -1871,8 +1867,7 @@ describe("webpackAdapter build", () => {
           hooks: [
             {
               configureBundler(configs) {
-                const items = Array.isArray(configs) ? configs : [configs];
-                const client = items.find((item) => item.name === "client");
+                const client = configs.find((item) => item.name === "client");
                 if (client?.output) {
                   client.output.filename = "../../escape.js";
                 }
@@ -1918,7 +1913,7 @@ describe("webpackAdapter build", () => {
         hooks: [],
       });
 
-      const manifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "Webpack MPA BuildOutput");
       const html = await fs.readFile(
         path.join(cwd, "dist/client/home/index.html"),
         "utf-8",
@@ -1934,15 +1929,10 @@ describe("webpackAdapter build", () => {
         component: "./src/pages/home/page.tsx",
         mount: "#root",
       });
-      expect(manifest).not.toHaveProperty("assets");
-      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
-      }
-      expect(manifest.routing.pages.home).toMatchObject({
+      expect(output.pages.home).toMatchObject({
         assets: { js: ["page-client-home.js"], css: [] },
         render: "csr",
       });
-      expect("module" in manifest.routing.pages.home).toBe(false);
       expect(output.pages.home).toMatchObject({
         render: "csr",
         module: {
@@ -2094,7 +2084,7 @@ describe("webpackAdapter build", () => {
           "utf-8",
         ),
       );
-      const publicManifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "Webpack BuildOutput");
       const html = await fs.readFile(
         path.join(cwd, "dist/client/index.html"),
         "utf-8",
@@ -2139,28 +2129,17 @@ describe("webpackAdapter build", () => {
       expect(output.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
       expect("apps" in deploymentMetadata).toBe(false);
       expect("pages" in deploymentMetadata).toBe(false);
-      expect("app" in publicManifest).toBe(false);
-      if (
-        !("routing" in publicManifest) ||
-        publicManifest.routing.kind !== "spa"
-      ) {
-        throw new Error("Expected SPA public manifest.");
-      }
-      expect("assets" in publicManifest).toBe(true);
-      if (!("assets" in publicManifest)) {
-        throw new Error("Expected SPA public manifest assets.");
-      }
-      expect(publicManifest.assets).toEqual({
+      expect(output.assets).toMatchObject({
         main: {
           js: ["main.js"],
           css: [],
         },
       });
-      expect(publicManifest.routing.routes).toContainEqual({
+      expect(output.routes).toContainEqual({
         id: "dashboard",
         path: "/dashboard",
+        appId: "default",
         pageId: "dashboard",
-        render: "ssr",
       });
       await expect(
         fs.access(path.join(cwd, "dist/manifest.json")),
@@ -2569,7 +2548,6 @@ describe("webpackAdapter dev", () => {
             hooks: [],
             pluginCtx: {
               mode: "development",
-              command: "dev",
               cwd,
               config: frameworkConfig,
               logger: console as never,
@@ -2647,7 +2625,7 @@ describe("webpackAdapter dev", () => {
     try {
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
       if (!output) throw new Error("Expected linked BuildOutput.");
-      const manifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "Webpack dev MPA BuildOutput");
       const html = await fetchDevText(
         `http://127.0.0.1:${port}/home/index.html`,
       );
@@ -2659,14 +2637,7 @@ describe("webpackAdapter dev", () => {
       expect(onDevServerReady).toHaveBeenCalledWith({
         origin: `http://localhost:${port}`,
       });
-      expect("distDir" in manifest).toBe(false);
-      expect(manifest).not.toHaveProperty("assets");
-      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
-      }
-      expect(manifest.routing.pages.home.assets.js).toEqual([
-        "page-client-home.js",
-      ]);
+      expect(output.pages.home.assets.js).toEqual(["page-client-home.js"]);
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
       expect(html).toContain('src="/page-client-home.js"');
@@ -2763,12 +2734,9 @@ describe("webpackAdapter dev", () => {
         );
       },
     };
-    const hooks: PluginHooks<WebpackConfig>[] = [
+    const hooks: PluginHooks<WebpackConfigs>[] = [
       {
-        configureBundler(bundlerConfig) {
-          const configs = Array.isArray(bundlerConfig)
-            ? bundlerConfig
-            : [bundlerConfig];
+        configureBundler(configs) {
           for (const webpackConfig of configs) {
             webpackConfig.plugins = [
               ...(webpackConfig.plugins ?? []),
@@ -2939,7 +2907,7 @@ describe("webpackAdapter dev", () => {
       }),
     });
     let failBundlerConfig = false;
-    const hooks: PluginHooks<WebpackConfig>[] = [
+    const hooks: PluginHooks<WebpackConfigs>[] = [
       {
         configureBundler() {
           if (failBundlerConfig) {
@@ -3066,12 +3034,9 @@ describe("webpackAdapter dev", () => {
           );
         },
       };
-      const hooks: PluginHooks<WebpackConfig>[] = [
+      const hooks: PluginHooks<WebpackConfigs>[] = [
         {
-          configureBundler(bundlerConfig) {
-            const configs = Array.isArray(bundlerConfig)
-              ? bundlerConfig
-              : [bundlerConfig];
+          configureBundler(configs) {
             const clientConfig = configs.find(
               (webpackConfig) => webpackConfig.name === "client",
             );
@@ -3340,7 +3305,7 @@ describe("webpackAdapter dev", () => {
       }),
     });
     let failBundlerConfig = false;
-    const hooks: PluginHooks<WebpackConfig>[] = [
+    const hooks: PluginHooks<WebpackConfigs>[] = [
       {
         configureBundler() {
           if (failBundlerConfig) {

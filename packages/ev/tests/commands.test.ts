@@ -711,19 +711,6 @@ describe("prepareFrameworkBuild", () => {
     expect(events).toEqual([]);
   });
 
-  it("rejects mismatched command and mode options", async () => {
-    const cwd = await createProject();
-
-    await expect(
-      prepareFrameworkBuild(
-        { output: { client: "dist/client", server: "dist/server" } },
-        { cwd, command: "build", mode: "development" },
-      ),
-    ).rejects.toThrow(
-      'prepareFrameworkBuild command "build" must use mode "production"',
-    );
-  });
-
   it("rejects invalid option bundler adapters", async () => {
     const cwd = await createProject();
 
@@ -761,13 +748,13 @@ describe("prepareFrameworkBuild", () => {
     const plugin: Plugin<Record<string, never>> = {
       id: "prepare-core",
       configure(config, ctx) {
-        events.push(`config:${ctx.command}`);
+        events.push(`config:${ctx.mode}`);
         return config;
       },
       setup(ctx) {
         expect(ctx.config.bundler).toBeUndefined();
         ctx.addWatchFile("./framework-extra.json");
-        events.push(`setup:${ctx.command}`);
+        events.push(`setup:${ctx.mode}`);
         return {
           beforeBuild() {
             events.push("beforeBuild");
@@ -787,6 +774,8 @@ describe("prepareFrameworkBuild", () => {
       { cwd },
     );
 
+    expect(prepared.mode).toBe("production");
+    expect(prepared).not.toHaveProperty("command");
     expect(prepared.config.output.client).toBe("dist/client");
     expect("graph" in prepared).toBe(false);
     expect("plan" in prepared).toBe(false);
@@ -795,12 +784,16 @@ describe("prepareFrameworkBuild", () => {
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
-    expect(events).toEqual(["config:build", "setup:build"]);
+    expect(events).toEqual(["config:production", "setup:production"]);
 
     await prepared.dispose();
     await prepared.dispose();
 
-    expect(events).toEqual(["config:build", "setup:build", "dispose"]);
+    expect(events).toEqual([
+      "config:production",
+      "setup:production",
+      "dispose",
+    ]);
   });
 
   it("syncs one stable static-config bridge regardless of active plugins", async () => {
@@ -1554,7 +1547,6 @@ describe("prepareFrameworkBuild", () => {
     const materialized = await materializeFrameworkIR({
       cwd,
       mode: "production",
-      command: "build",
       config: {} as never,
       graph: {} as CoreGraph,
       plan,

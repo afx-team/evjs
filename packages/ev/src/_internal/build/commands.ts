@@ -12,7 +12,6 @@ import { execa } from "execa";
 import {
   CONFIG_DEFAULTS,
   type Config,
-  type DefaultBundlerConfig,
   type ResolvedConfig,
   type ResolvedFrameworkConfig,
   resolveBundlerConfig,
@@ -383,7 +382,7 @@ async function withProjectOperationLock<T>(
   });
 }
 
-export interface DevOptions<TBundlerCfg = DefaultBundlerConfig> {
+export interface DevOptions<TBundlerCfg = unknown> {
   cwd?: string;
   bundler?: BundlerAdapter<TBundlerCfg>;
   /** Adapter used only when neither config nor options selects a bundler. */
@@ -402,27 +401,23 @@ export interface DevOptions<TBundlerCfg = DefaultBundlerConfig> {
     | Promise<Config<TBundlerCfg> | undefined>;
 }
 
-export interface BuildOptions<TBundlerCfg = DefaultBundlerConfig> {
+export interface BuildOptions<TBundlerCfg = unknown> {
   cwd?: string;
   bundler?: BundlerAdapter<TBundlerCfg>;
   flags?: CliFlags;
 }
 
-export interface PrepareFrameworkBuildOptions<
-  TBundlerCfg = DefaultBundlerConfig,
-> {
+export interface PrepareFrameworkBuildOptions<TBundlerCfg = unknown> {
   cwd?: string;
   flags?: CliFlags;
   mode?: "development" | "production";
-  command?: "dev" | "build";
   bundler?: BundlerAdapter<TBundlerCfg>;
   requireBundler?: boolean;
 }
 
-export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
+export interface PreparedFrameworkBuild<TBundlerCfg = unknown> {
   cwd: string;
   mode: "development" | "production";
-  command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   fileDependencies: string[];
   pluginWatchFiles: string[];
@@ -440,13 +435,12 @@ export {
   inspectFrameworkBuild,
 } from "./inspect.js";
 
-interface InternalPrepareFrameworkBuildOptions<
-  TBundlerCfg = DefaultBundlerConfig,
-> extends PrepareFrameworkBuildOptions<TBundlerCfg> {
+interface InternalPrepareFrameworkBuildOptions<TBundlerCfg = unknown>
+  extends PrepareFrameworkBuildOptions<TBundlerCfg> {
   plan?: CreateBuildPlanOptions;
 }
 
-interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
+interface InternalPreparedFrameworkBuild<TBundlerCfg = unknown>
   extends PreparedFrameworkBuild<TBundlerCfg> {
   graph: CoreGraph;
   plan: BuildPlan;
@@ -693,27 +687,15 @@ function formatGraphDiagnostic(diagnostic: {
   return location ? `${location} - ${diagnostic.message}` : diagnostic.message;
 }
 
-async function prepareInternalFrameworkBuild<
-  TBundlerCfg = DefaultBundlerConfig,
->(
+async function prepareInternalFrameworkBuild<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
   options: InternalPrepareFrameworkBuildOptions<TBundlerCfg> = {},
 ): Promise<InternalPreparedFrameworkBuild<TBundlerCfg>> {
   const cwd = options.cwd ?? process.cwd();
-  const command =
-    options.command ??
-    (options.mode === "development" ? "dev" : ("build" as const));
-  const expectedMode = command === "dev" ? "development" : "production";
-  if (options.mode && options.mode !== expectedMode) {
-    throw new Error(
-      `[evjs] prepareFrameworkBuild command "${command}" must use mode "${expectedMode}".`,
-    );
-  }
-  const mode = options.mode ?? expectedMode;
+  const mode = options.mode ?? "production";
   const flags = snapshotPluginFlags(options.flags);
   const configuredConfig = await runConfigureHooks(userConfig, {
     mode,
-    command,
     cwd,
     flags,
   });
@@ -756,7 +738,6 @@ async function prepareInternalFrameworkBuild<
   const pluginWatchFiles = new Set<string>();
   const pluginContext: MutablePluginSetupContext<TBundlerCfg> = {
     mode,
-    command,
     cwd,
     config,
     flags,
@@ -778,7 +759,6 @@ async function prepareInternalFrameworkBuild<
     const { analysis, plan } = await analyzeAndMaterializeFrameworkIR({
       cwd,
       mode,
-      command,
       config,
       pluginContext,
       pluginSettings,
@@ -790,7 +770,6 @@ async function prepareInternalFrameworkBuild<
     return {
       cwd,
       mode,
-      command,
       config,
       graph: analysis.graph,
       plan,
@@ -809,7 +788,7 @@ async function prepareInternalFrameworkBuild<
   }
 }
 
-export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
+export async function prepareFrameworkBuild<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
   options: PrepareFrameworkBuildOptions<TBundlerCfg> = {},
 ): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
@@ -819,7 +798,6 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     return {
       cwd: prepared.cwd,
       mode: prepared.mode,
-      command: prepared.command,
       config: prepared.config,
       fileDependencies: prepared.fileDependencies,
       pluginWatchFiles: prepared.pluginWatchFiles,
@@ -969,7 +947,7 @@ function listInitialRouteWatchDependencies(
   return state.dependencies;
 }
 
-export async function dev<TBundlerCfg = DefaultBundlerConfig>(
+export async function dev<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
 ): Promise<void> {
@@ -988,7 +966,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   });
 }
 
-async function runDev<TBundlerCfg = DefaultBundlerConfig>(
+async function runDev<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
 ): Promise<void> {
@@ -1021,7 +999,6 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
       : userConfig;
   const configuredConfig = await runConfigureHooks(initialUserConfig, {
     mode: "development",
-    command: "dev",
     cwd,
     flags,
   });
@@ -1118,7 +1095,7 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
   }
 }
 
-async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
+async function runDevSession<TBundlerCfg = unknown>(
   userConfig: Config<TBundlerCfg> | undefined,
   configuredConfig: Config<TBundlerCfg> | undefined,
   options: DevOptions<TBundlerCfg> | undefined,
@@ -1211,7 +1188,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
   let pluginCtx: MutablePluginSetupContext<TBundlerCfg> = {
     mode: "development",
-    command: "dev",
     cwd,
     config: activeConfig,
     flags,
@@ -1263,7 +1239,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     const materialized = await analyzeAndMaterializeFrameworkIR({
       cwd,
       mode: "development",
-      command: "dev",
       config: activeConfig,
       pluginContext: pluginCtx,
       pluginSettings: activePluginSettings,
@@ -1603,7 +1578,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             : userConfig,
           {
             mode: "development",
-            command: "dev",
             cwd,
             flags,
           },
@@ -2460,7 +2434,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         await analyzeAndMaterializeFrameworkIR({
           cwd,
           mode: "development",
-          command: "dev",
           config: nextConfig,
           pluginContext:
             stagedPluginHooks?.pluginContext ??
@@ -2897,7 +2870,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   await cleanupDev();
 }
 
-export async function build<TBundlerCfg = DefaultBundlerConfig>(
+export async function build<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
   options?: BuildOptions<TBundlerCfg>,
 ): Promise<void> {
@@ -2908,7 +2881,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
   );
 }
 
-async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
+async function runBuild<TBundlerCfg = unknown>(
   userConfig: Config<TBundlerCfg> | undefined,
   options: BuildOptions<TBundlerCfg> | undefined,
   cwd: string,
@@ -2917,7 +2890,6 @@ async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
   const prepared = await prepareInternalFrameworkBuild(userConfig, {
     cwd,
     mode: "production",
-    command: "build",
     bundler: options?.bundler,
     flags: options?.flags,
     requireBundler: true,
