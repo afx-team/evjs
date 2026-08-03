@@ -9,23 +9,108 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ⚠️ Breaking Changes
 
 - **Single plugin configuration model** — Applications install typed plugin
-  factories in `config.plugins`; Pages use one generated short-keyed `plugins`
-  map. The previous owner-scoped extension registries and separate Route or
-  Document configuration surfaces are removed.
+  factories in `config.plugins`; Pages use one generated `plugins` map keyed by
+  canonical plugin ids. The previous owner-scoped extension registries and
+  separate Route or Document configuration surfaces are removed.
+- **Canonical plugin identity** — Plugins now declare one lowercase `id`, used
+  unchanged for installation, Page settings, dependency ordering, CoreGraph
+  catalog entries, diagnostics, and `.ev/plugins/<id>` output. The previous
+  `name`, `key`, `settingsKey`, and generated `pluginName` fields are removed;
+  package-like ids, unsafe object-property ids, and Windows device basenames
+  are rejected when plugins are defined and when graph snapshots are validated,
+  before generated-IR processing.
 - **Application-level qiankun route overlay** — The qiankun master no longer
   exposes a Page contract or derives micro-app bindings from `page.config.ts`.
   Its async Application resolver returns the authoritative `apps/routes`
   snapshot and installs prepend, match, redirect, and micro-app route
   components before the first render. Resolver routes no longer require fixed
   containers, `activeRule`, or physical Pages at the mounted master paths.
+  Public apps use only canonical `name`/`entry` identity; alternate identity
+  fields and per-app credential rewriting are removed. Unknown master, app,
+  and route fields now fail instead of being ignored. Platform integrations
+  must normalize external records and provide request policy explicitly.
+- **Transactional bundler dev contract** — Persistent custom bundler adapters
+  must reserve each framework update with `beginUpdate()`, activate the supplied
+  generation at their serialized plan boundary, and resume either accepted or
+  restored input. Transition finalization is now two-phase:
+  `prepareFinalize()` performs fallible work while keeping the boundary
+  reserved, and synchronous `finalize()` releases it only after Core commits
+  canonical output. `onBuildFacts()` now returns `"published"` or `"discarded"`;
+  adapters may acknowledge compiler facts and signal server readiness only
+  after publication.
+- **Static deployment metadata** — Plugin-owned `BuildOutput.deployment` values
+  must be plain, losslessly JSON-serializable objects. Functions, accessors,
+  non-finite numbers, negative zero, unsafe keys, sparse arrays, and cycles are
+  rejected before output publication; each deployment projection is now an
+  isolated snapshot.
+- **Plugin authoring API reset** — `definePlugin()` now uses `pluginOptions()`,
+  `configure()`, `setup()`, `emitIR()`, and `emitPageIR()`. Hooks
+  returned by `setup()` use `configureBundler()`, `beforeBuild()`,
+  `transformOutput()`, `transformHtml()`, `afterBuild()`, and `dispose()`.
+  Public context types follow those stage names, and contribution code reads
+  the normalized `FrameworkView`. The previous authoring names and internal
+  `DefinedPlugin*` inference types are no longer exported.
+- **Single build environment signal** — Plugin contexts and the programmatic
+  prepare/inspect build APIs expose only `mode: "development" | "production"`.
+  The redundant `command: "dev" | "build"` field and option are removed.
+- **Application-owned plugin installation** — Plugin `configure()` hooks now
+  receive and return only framework configuration. They cannot add, remove,
+  reorder, or replace `config.plugins`; the Application's original plugin
+  installation remains authoritative across the complete lifecycle. Resolved
+  plugin contexts receive one isolated, frozen framework-config view.
+- **Output-cycle build hooks** — `beforeBuild()` now runs after fresh bundler
+  facts arrive and before evjs links or emits canonical output. Successful
+  initial and rebuild cycles pair it with `afterBuild()` using the same
+  `isRebuild`; failures before publication and the `prepare`/`inspect` staging
+  paths do not call the pair.
+- **Application-owned Server Functions** — `createServerFunctionRegistry()`
+  now owns registration and dispatch for one `createApp()` instance. Generated
+  server entries explicitly register discovered exports in that registry;
+  server transforms no longer mutate a process-global registry. Utoopack's
+  required server transform module records weak action-ID metadata so generated
+  entries can bind bundler IDs to the application-owned registry. The global
+  `registerServerReference()` and `dispatch()` exports and their internal
+  registration subpaths are removed.
+
+- **Canonical server entry assets** — Redundant `serverEntry`, `serverAssets`,
+  and `serverModules` build facts are removed. Adapters must report every
+  server entry through `serverEntryAssets`, keyed by its exact BuildPlan name,
+  with one self-contained JavaScript asset per entry. Complete server asset
+  inventories reject missing entry assets and unowned JavaScript chunks.
+  Server Functions and API Routes receive isolated snapshots of the canonical
+  server runtime assets.
+- **Webpack hook configuration set** — `@evjs/bundler-webpack` now exports the
+  plural `WebpackConfigs` type. Its adapter and typed `webpack()` helper always
+  expose the complete `Configuration[]` set; the ambiguous singular-or-array
+  `WebpackConfig` type is removed.
+- **Bundler-neutral Core types** — `@evjs/ev/config` no longer exports
+  `DefaultBundlerConfig` or depends on `@utoo/pack` for its type. Core generic
+  defaults are opaque; bundler-specific plugins must use the selected adapter's
+  typed helper or an explicit generic. `@evjs/cli` still exposes its concrete
+  Utoopack default.
+- **Canonical manifest projection** — The unused split
+  `PublicManifestOutput` / `ServerManifestOutput` protocols and their
+  `createPublicManifest()` / `createServerManifest()` helpers are removed.
+  Framework output remains one `BuildOutput`, with `DeploymentMetadata` as its
+  deployment-safe projection.
+- **Runtime API cleanup** — Custom `TransportAdapter` implementations must
+  provide `send()` at initialization. `RouteHandler` now derives `Allow` from
+  its immutable method map. The unused `ShellOptions.onWarning`,
+  `ShellWarningContext`, client RSC debug JSON helpers, and
+  `ReactRscDebugPayload` are removed. The RSC Flight adapter also no longer
+  accepts `createProps`; RSC integrations render Flight responses directly.
+- **Explicit qiankun slave containers** — Slave entry code mounts through the
+  container supplied by qiankun. The plugin no longer rewrites global
+  `document.querySelector()` or `document.getElementById()` during lifecycle
+  calls.
 
 ### ✨ Improvements
 
 - **Stable Page plugin types** — `prepare`, `dev`, and `build` generate
-  `src/plugin-types.d.ts` as a static bridge to `ev.config.ts`, so Page keys and
+  `src/plugin-types.d.ts` as a static bridge to `ev.config.ts`, so ids and Page
   values for definitely installed plugins retain editor types without Page
   imports. JavaScript config stays isolated from `any` rather than claiming
-  exact Page keys.
+  exact Page plugin ids.
 - **Predictable plugin activation** — Plugin factories distinguish normal
   installation from Page-only opt-in with `forPages()` on defaultable Page
   contracts. Falsy entries in `config.plugins` conditionally omit a plugin; on
@@ -34,11 +119,62 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 - **Composable plugin defaults** — Application and Page contracts remain
   independent, while authored fields deep-merge over defaults within each
   contract before validation.
+- **Direct plugin pipeline state** — Defined-plugin metadata now travels as a
+  non-enumerable instance field shared by config-loaded module copies. The
+  versioned `globalThis` registry and its parallel WeakMap bookkeeping are
+  removed, while plugin contexts continue to hide build-only options.
 - **Qiankun runtime base projection** — A mounted slave now projects the
   master-provided base and history into its generated Pages app before the first
   render. Master runtime overlays remain outside the canonical CoreGraph,
   BuildPlan, deployment routes, and generated `RoutePath` types, while platform
   plugins can reuse the public qiankun contribution and lifecycle-hook helpers.
+
+### 🐛 Bug Fixes
+
+- **Preserve generated runtime record keys** — Dev, Node, and Edge bootstraps
+  now deserialize framework runtime JSON instead of emitting an object literal,
+  preserving own prototype-shaped identifiers such as `__proto__`.
+- **Complete server runtime outputs** — Linked manifests and deployment
+  projections now reject routed SSG without a static Document and require one
+  canonical self-contained runtime entry for request-time SSR, PPR, RSC,
+  server Functions, API Routes, runtime renderers, and runtime assets. Pure CSR
+  and fully materialized SSG output remain runtime-free.
+- **Fail-closed plugin validation** — Application and Page plugin validators
+  now accept only documented synchronous results. Promise-like and unsupported
+  return values fail with explicit contract diagnostics instead of silently
+  enabling invalid configuration.
+- **Preserve BuildPlan entry ownership** — Utoopack and webpack now validate
+  framework entry sets and exact imports after every `configureBundler()` hook.
+  Hooks can no longer replace canonical entry source or publish an unplanned
+  entry through a framework-owned client or server config. Independent webpack
+  configs require an explicit output path that cannot overlap framework output
+  under portable, case-insensitive path identity.
+- **PPR cache origin isolation** — Request-time PPR region cache keys now
+  include the source URL origin, preventing one hostname from reusing another
+  hostname's cached region response when a server instance hosts multiple
+  origins.
+- **Resilient dev dependency watching** — Framework dependencies in the same
+  directory share one native watcher, and project-local config imports remain
+  part of the reload closure. When the operating system exhausts native watcher
+  resources, the affected watcher set falls back to explicit dependency polling
+  and later watcher sets stay in polling mode; permission and unknown watcher
+  failures terminate the session after running cleanup instead of leaving dev
+  running with incomplete coverage. Repeated native notifications for the same
+  dependency snapshot are coalesced without dropping later file revisions or a
+  stronger config-reload requirement.
+- **Transactional dev updates** — Framework plan changes now reserve an adapter
+  generation before writing candidate `.ev` input and publish fresh build facts
+  only after the selected state is stable. Failed updates restore generated IR,
+  generated types, plugin state, and canonical framework output before the
+  previous generation resumes; shutdown also cancels outstanding compiler-stat
+  polling. When Webpack invalidates an in-flight watch compilation before its
+  terminal hooks run, evjs discards its stale build facts so the replacement
+  compilation can publish the selected generation.
+- **Strict static config reload closure** — Config and Page-config loading now
+  observes missing candidates, `require.resolve()` targets, package maps, and
+  transitive project-local imports before evaluation. Unreadable sources,
+  escaped file URLs or symlinks, and invalid package-map semantics fail closed
+  instead of falling through to a lower-priority or unobserved module.
 
 ---
 

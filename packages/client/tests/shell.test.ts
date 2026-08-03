@@ -222,9 +222,6 @@ describe("createShell", () => {
     expect(() => createShell({ runtime, onError: "handle" as never })).toThrow(
       "[evjs] createShell() onError must be a function when provided.",
     );
-    expect(() => createShell({ runtime, onWarning: "warn" as never })).toThrow(
-      "[evjs] createShell() onWarning must be a function when provided.",
-    );
   });
 
   it("rejects invalid shell activation request shapes", async () => {

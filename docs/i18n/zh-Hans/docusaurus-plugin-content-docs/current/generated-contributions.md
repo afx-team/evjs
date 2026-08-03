@@ -12,7 +12,7 @@ framework slot。
 Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
 并把它们挂到 framework slot 上。
 
-`contributions(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
+`emitIR(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
 graph 时，evjs 可能会再次执行该 hook。
 
 这个定义刻意比任意临时文件系统更窄。插件不会随意向 `.ev` 写文件；插件声明 artifact
@@ -20,7 +20,7 @@ graph 时，evjs 可能会再次执行该 hook。
 
 ```mermaid
 flowchart TB
-  Hook["contributions(ctx)"]
+  Hook["emitIR(ctx)"]
 
   subgraph Declare["插件声明"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -33,7 +33,7 @@ flowchart TB
   end
 
   subgraph Materialize["Materialized .ev output"]
-    Files[".ev/plugins/<plugin>\ngenerated artifacts"]
+    Files[".ev/plugins/<id>\ngenerated artifacts"]
     Manifest[".ev/manifest.json\nmodules + slots + importEdges"]
   end
 
@@ -65,10 +65,9 @@ flowchart TB
 │   ├── main.ts
 │   └── server.ts
 ├── plugins/
-│   └── qiankun/
-│       └── slave/
-│           ├── entry-wrapper.ts
-│           └── original-entry.ts
+│   └── qiankun-slave/
+│       ├── entry-wrapper.ts
+│       └── original-entry.ts
 ├── manifest.json
 └── types.d.ts
 ```
@@ -78,10 +77,10 @@ flowchart TB
 - `framework/` 保存 normalized graph、provenance、diagnostic 与 build-plan
   快照。`core-graph.json` 是 planning 与 inspection 消费的唯一语义事实来源。
 - `entries/` 保存 bundler 消费的框架 entry facade。
-- `plugins/<plugin>/` 保存插件生成产物。
-- 插件名会规范化为路径段；例如 `@evjs/plugin-qiankun:slave` 会变成
-  `qiankun/slave`。
-- `manifest.json` 串联 generated artifacts、import edges、slot items、生产插件名、
+- `plugins/<id>/` 保存插件生成产物。
+- 插件的 canonical `id` 直接作为 generated artifact 路径段；例如
+  `qiankun-slave` 持有 `plugins/qiankun-slave/`。
+- `manifest.json` 串联 generated artifacts、import edges、slot items、生产插件 id、
   scope 和最终 entries。
 
 生成文件在需要 framework runtime internals 时可以 import generated-only
@@ -92,9 +91,11 @@ framework state。
 Application 与 Page view 会暴露解析后的 `plugins` setting bag。Application bag 只包含
 enablement；私有 factory 配置绝不会进入 CoreGraph。Page bag 可以包含经过校验的 static
 Page value。defined plugin 通常使用类型更窄的 `ctx.options` 与 `ctx.pages`；每个已启用
-Page 项都是 `{ page, options }`。逐 Page 的 `contributePage()` 使用
-`ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。内部 provenance 与
-解析结果会在 `contributions()` 物化 generated code 前可用。
+Page 项都是 `{ page, options }`。逐 Page 的 `emitPageIR()` 使用
+`ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。它的 `ctx.emit` 与
+`ctx.slot()` identity 会自动限定在当前 Page，因此插件可以在每个 Page 重用 `runtime`
+等局部 id，无需手动拼接 `ctx.page.id`。内部 provenance 与
+解析结果会在 `emitIR()` 物化 generated code 前可用。
 
 Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
 id。因此 MPA 表现为一个拥有多个 Page/Document 的逻辑 Application，而不是互不关联的
@@ -112,14 +113,17 @@ module，也仍然可见。
 返回的 specifier 只应在生成源码中使用。应用源码不应 import `.ev` 路径或
 `evjs:generated/*` specifier。
 
+Contribution id 在插件内是局部的；在 `emitPageIR()` 中还会进一步限定到当前
+Page。`@evjs/` 前缀保留给框架内部的 namespace。
+
 插件生成模块使用 opaque ref，不暴露文件系统路径：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
-  contributions(ctx) {
+  id: "analytics",
+  emitIR(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -146,7 +150,7 @@ export const analytics = definePlugin({
 `ctx.emit.entryFacade()`，不要重建 framework internal：
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -176,9 +180,9 @@ contributions(ctx) {
 hydration marker 语义。Replacement entry 负责首次 `start()` 调用以及之后的
 `app.render()` remount。其他 entry 类型不能关闭 framework startup。
 
-插件生成路径稳定且可读。例如 id 为 `@evjs/plugin-qiankun:slave` 的插件会写入
-`.ev/plugins/qiankun/slave/*`，并暴露类似
-`evjs:generated/qiankun/slave/entry-wrapper` 的 specifier。
+插件生成路径稳定且可读。例如 id 为 `qiankun-slave` 的插件会写入
+`.ev/plugins/qiankun-slave/*`，并暴露类似
+`evjs:generated/qiankun-slave/entry-wrapper` 的 specifier。
 
 使用 `ctx.slot(name).add(...)` 把 generated artifacts 挂到 framework 上。支持的
 slots 如下：
@@ -207,7 +211,7 @@ projection 时会失败。后声明的 contribution 包在先声明的 contribut
 route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",
@@ -255,11 +259,11 @@ Generated contributions 是 file-convention entry 组合，以及插件 entry/ru
 
 Contribution 层不替代插件生命周期：
 
-- 用 `config()` 处理 framework config 默认值或需要早期校验的配置。
+- 用 `configure()` 处理 framework config 默认值或需要早期校验的配置。
 - 用 `setup()` 初始化插件状态并返回 lifecycle hooks。
-- 用 `bundlerConfig()` 处理不由 slot 建模的底层 bundler 能力。
+- 用 `configureBundler()` 处理不由 slot 建模的底层 bundler 能力。
 - 用 `transformHtml()` 处理 AST 级 HTML 改写。
-- 用 `buildOutput()` 和 `buildEnd()` 处理部署 metadata 和最终文件。
+- 用 `transformOutput()` 和 `afterBuild()` 处理部署 metadata 和最终文件。
 
 这个拆分让 IR 保持可读，同时不假装所有插件能力都是 entry contribution。
 
@@ -268,7 +272,7 @@ Contribution 层不替代插件生命周期：
 调试或 code review 时，先看 `.ev/manifest.json`：
 
 1. 在 `entries` 中找到最终 entry。
-2. 查看 `generated.modules`，确认插件产物和 producer plugin。
+2. 查看 `generated.modules`，确认插件产物和 producer plugin id。
 3. 查看 `generated.slots`，确认产物挂载位置。
 4. 查看 `generated.importEdges`，理解 generated-to-generated import。
 5. 打开 `.ev/entries` 和 `.ev/plugins` 下对应文件。

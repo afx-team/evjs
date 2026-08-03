@@ -64,7 +64,7 @@ const expectedPublishedFiles = {
   "@evjs/client": ["esm"],
   "@evjs/server": ["esm"],
   "@evjs/cli": ["bin", "dist"],
-  "@evjs/create-app": ["dist", "templates"],
+  "@evjs/create-app": ["bin", "dist", "templates"],
   "@evjs/plugin-qiankun": ["esm"],
   "@evjs/bundler-utoopack": ["esm"],
   "@evjs/bundler-webpack": ["esm"],
@@ -160,14 +160,18 @@ const allowedSampleBundlerDependencies = {
   ],
 } as const satisfies Record<string, readonly string[]>;
 
-const defaultBundlerTypePackage = "@utoo/pack";
-const forbiddenCoreBundlerPackages = ["webpack", "webpack-dev-server"] as const;
+const forbiddenCoreBundlerPackages = [
+  "@utoo/pack",
+  "webpack",
+  "webpack-dev-server",
+] as const;
 
 const generatedFrameworkArtifacts = [
   ".ev",
   ".evjs",
   ".turbopack",
   "route-types.d.ts",
+  "plugin-types.d.ts",
 ] as const;
 
 const forbiddenPackageNames = [
@@ -188,7 +192,16 @@ const forbiddenBuildToolsLoadTimeImports = [
 ] as const;
 
 const forbiddenPluginAuthoringAliases = [
+  "BuildOutputContext",
+  "BuildStartContext",
+  "BundlerCtx",
   "ClientManifest",
+  "ContributionContext",
+  "DefinedPluginConfigContext",
+  "DefinedPluginContributionContext",
+  "DefinedPluginFactory",
+  "DefinedPluginInstance",
+  "DefinedPluginPageContributionContext",
   "EvBuildResult",
   "EvBundlerCtx",
   "EvDocument",
@@ -198,10 +211,27 @@ const forbiddenPluginAuthoringAliases = [
   "EvPluginContext",
   "EvPluginHooks",
   "FrameworkAppView",
+  "FrameworkIRView",
+  "HtmlTransformContext",
   "ManifestAssets",
   "PageManifestEntry",
+  "PluginConfigContext",
+  "PluginConfigContract",
+  "PluginConfigHookInput",
+  "PluginConfigOptions",
+  "PluginContext",
+  "PluginSettingContext",
   "RouteEntry",
   "ServerManifest",
+  "pluginConfig",
+] as const;
+
+const forbiddenPluginAuthoringFields = [
+  "buildEnd",
+  "buildOutput",
+  "buildStart",
+  "bundlerConfig",
+  "contributions",
 ] as const;
 
 const expectedBuildToolsRuntimeExports = [
@@ -224,6 +254,7 @@ const expectedBuildToolsRuntimeExports = [
   "collectPluginSettingsRegistry",
   "createBuildPlan",
   "createCoreGraph",
+  "createPluginConfigView",
   "createPluginSettingsResolutionSession",
   "detectUseClient",
   "dev",
@@ -246,6 +277,7 @@ const expectedBuildToolsRuntimeExports = [
   "removeOwnedOutputFile",
   "resolveBuildOutputPaths",
   "resolveBundlerClientEntryAssets",
+  "resolveBundlerServerEntryAssets",
   "resolvePluginSettingsState",
   "syncPluginTypes",
   "transformRscClientFile",
@@ -269,7 +301,6 @@ const expectedServerSubpathExports = [
   "./app",
   "./fetch",
   "./framework",
-  "./internal/server-functions",
   "./node",
   "./react",
 ] as const;
@@ -298,7 +329,7 @@ const expectedPackageExportSubpaths = {
     "./_internal/server/fetch",
     "./_internal/server/node",
     "./_internal/server/react",
-    "./_internal/server/server-functions",
+    "./_internal/server/server-reference",
     "./build-tools",
     "./config",
     "./deployment",
@@ -502,6 +533,13 @@ describe("workspace package surface", () => {
       import: "./esm/build-tools/index.js",
       default: "./esm/build-tools/index.js",
     });
+    expect(
+      evPackageJson.exports?.["./_internal/server/server-reference"],
+    ).toEqual({
+      types: "./esm/_internal/generated/server/server-reference.d.ts",
+      import: "./esm/_internal/generated/server/server-reference.js",
+      default: "./esm/_internal/generated/server/server-reference.js",
+    });
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([
         "./client",
@@ -532,13 +570,19 @@ describe("workspace package surface", () => {
   it("keeps plugin authoring types on one canonical public vocabulary", async () => {
     expect(Object.keys(pluginAuthoring).sort()).toEqual([
       "definePlugin",
-      "pluginConfig",
+      "pluginOptions",
     ]);
 
-    const pluginSource = await fs.readFile(
-      path.join(repoRoot, "packages/ev/src/plugin/index.ts"),
-      "utf-8",
-    );
+    const pluginSource = (
+      await Promise.all(
+        ["index.ts", "defined.ts"].map((file) =>
+          fs.readFile(
+            path.join(repoRoot, "packages/ev/src/plugin", file),
+            "utf-8",
+          ),
+        ),
+      )
+    ).join("\n");
 
     expect(pluginSource).not.toContain("BundlerAgnostic");
     expect(pluginSource).not.toContain("AnyPluginConfigContract");
@@ -548,6 +592,12 @@ describe("workspace package surface", () => {
         new RegExp(`\\b(?:class|const|function|interface|type)\\s+${alias}\\b`),
       );
     }
+    for (const field of forbiddenPluginAuthoringFields) {
+      expect(pluginSource).not.toMatch(new RegExp(`\\b${field}\\??\\s*:`));
+    }
+    expect(pluginSource).not.toMatch(
+      /\b(?:readonly\s+)?config\?:\s*(?:Defined)?PluginConfigureHook\b/,
+    );
   });
 
   it("keeps default bundler ownership in the CLI package", async () => {
@@ -624,16 +674,10 @@ describe("workspace package surface", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps @evjs/ev tied only to the default Utoopack type package", async () => {
+  it("keeps @evjs/ev independent of bundler implementations", async () => {
     const evPackageJson = await readPackageJson("ev");
     const declaredDependencies = allDependencyNames(evPackageJson);
     const violations: string[] = [];
-
-    if (evPackageJson.dependencies?.[defaultBundlerTypePackage] === undefined) {
-      violations.push(
-        `packages/ev/package.json does not declare ${defaultBundlerTypePackage}`,
-      );
-    }
 
     for (const packageName of forbiddenCoreBundlerPackages) {
       if (declaredDependencies.has(packageName)) {
@@ -1010,7 +1054,7 @@ describe("workspace package surface", () => {
         import { defineConfig } from "@evjs/ev";
         import { Link } from "@evjs/ev/navigation";
         import { headers } from "@evjs/ev/server-context";
-        import "@evjs/ev/_internal/server/server-functions";
+        import "@evjs/ev/_internal/server";
         export { initTransport } from "@evjs/ev/transport";
         export * from "@evjs/ev/_internal/client";
         const runtime = import("@evjs/shared/manifest");
@@ -1019,7 +1063,7 @@ describe("workspace package surface", () => {
       "@evjs/ev",
       "@evjs/ev/navigation",
       "@evjs/ev/server-context",
-      "@evjs/ev/_internal/server/server-functions",
+      "@evjs/ev/_internal/server",
       "@evjs/ev/transport",
       "@evjs/ev/_internal/client",
       "@evjs/shared/manifest",
@@ -1151,11 +1195,9 @@ describe("workspace package surface", () => {
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([...forbiddenServerSubpathExports]),
     );
-    expect(serverPackageJson.exports?.["./internal/server-functions"]).toEqual({
-      types: "./esm/server-functions/server-function-runtime.d.ts",
-      import: "./esm/server-functions/server-function-runtime.js",
-      default: "./esm/server-functions/server-function-runtime.js",
-    });
+    expect(
+      serverPackageJson.exports?.["./internal/server-functions"],
+    ).toBeUndefined();
 
     const readme = await fs.readFile(
       path.join(repoRoot, "packages/server/README.md"),
@@ -1163,7 +1205,8 @@ describe("workspace package surface", () => {
     );
     expect(readme).toContain("@evjs/server/node");
     expect(readme).toContain("@evjs/server/fetch");
-    expect(readme).toContain(`export { fetch } from "@evjs/server/fetch"`);
+    expect(readme).toContain("createServerFunctionRegistry");
+    expect(readme).toContain("export const fetch = app.fetch;");
     expect(readme).not.toContain("@evjs/server/ecma");
   });
 });

@@ -10,14 +10,9 @@ export type PublicPageHookExports = [
 export type PublicRscExports = [
   typeof Client.createReactRscModel,
   typeof Client.fetchRscFlight,
-  typeof Client.fetchRscDebugPayload,
-  typeof Client.loadRscDebugPage,
-  typeof Client.mountRscDebugPayload,
   typeof Client.mountReactRscPage,
   typeof Client.startReactRscPageRuntime,
   typeof Client.unmountReactRscPage,
-  Client.RscDebugPayload,
-  Client.RscDebugPayloadMountOptions,
   Client.RscFlightFetchOptions,
   Client.ReactRscModelOptions,
   Client.ReactRscMountOptions,
@@ -98,6 +93,25 @@ export type HiddenInitTransportFromRuntime =
 export type HiddenGetRscFetchResponseContentType =
   // @ts-expect-error getRscFetchResponseContentType is an internal runtime helper.
   typeof Client.getRscFetchResponseContentType;
+
+// @ts-expect-error The disconnected JSON debug protocol is not public RSC API.
+export type HiddenRscDebugPayload = Client.RscDebugPayload;
+
+export type HiddenRscDebugPayloadMountOptions =
+  // @ts-expect-error Debug HTML mounting options are not public RSC API.
+  Client.RscDebugPayloadMountOptions;
+
+export type HiddenFetchRscDebugPayload =
+  // @ts-expect-error Real RSC clients consume Flight rather than debug JSON.
+  typeof Client.fetchRscDebugPayload;
+
+export type HiddenLoadRscDebugPage =
+  // @ts-expect-error Real RSC clients mount decoded Flight models.
+  typeof Client.loadRscDebugPage;
+
+export type HiddenMountRscDebugPayload =
+  // @ts-expect-error Debug HTML mounting is not part of the RSC contract.
+  typeof Client.mountRscDebugPayload;
 
 // @ts-expect-error FileRoute is a router implementation detail.
 export type HiddenFileRoute = Client.FileRoute;

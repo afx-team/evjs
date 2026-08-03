@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +24,7 @@ const generatedFrameworkTypeFiles = [
   "route-types.d.ts",
   "plugin-types.d.ts",
 ] as const;
+const packagedTemplateGitignore = "_gitignore";
 
 export function shouldCopyTemplatePath(src: string): boolean {
   return !src
@@ -43,6 +43,23 @@ export function withGeneratedFrameworkIgnores(source: string): string {
   const separator =
     source.length === 0 || /\r?\n$/.test(source) ? "" : lineEnding;
   return `${source}${separator}${missing.join(lineEnding)}${lineEnding}`;
+}
+
+export function restoreScaffoldGitignore(targetDir: string): void {
+  const gitignorePath = path.join(targetDir, ".gitignore");
+  const packagedGitignorePath = path.join(targetDir, packagedTemplateGitignore);
+  let sourcePath = gitignorePath;
+  if (fs.existsSync(packagedGitignorePath)) {
+    sourcePath = packagedGitignorePath;
+  } else if (!fs.existsSync(gitignorePath)) {
+    return;
+  }
+
+  const source = fs.readFileSync(sourcePath, "utf-8");
+  fs.writeFileSync(gitignorePath, withGeneratedFrameworkIgnores(source));
+  if (sourcePath === packagedGitignorePath) {
+    fs.rmSync(packagedGitignorePath);
+  }
 }
 
 export async function runCreateAppCli(argv = process.argv): Promise<void> {
@@ -130,14 +147,7 @@ export async function runCreateAppCli(argv = process.argv): Promise<void> {
         filter: shouldCopyTemplatePath,
       });
 
-      const gitignorePath = path.join(targetDir, ".gitignore");
-      if (fs.existsSync(gitignorePath)) {
-        const gitignore = fs.readFileSync(gitignorePath, "utf-8");
-        const resolvedGitignore = withGeneratedFrameworkIgnores(gitignore);
-        if (resolvedGitignore !== gitignore) {
-          fs.writeFileSync(gitignorePath, resolvedGitignore);
-        }
-      }
+      restoreScaffoldGitignore(targetDir);
 
       // Post-process package.json: sync @evjs/* versions and set project name
       const pkgPath = path.join(targetDir, "package.json");
@@ -172,17 +182,4 @@ export async function runCreateAppCli(argv = process.argv): Promise<void> {
     });
 
   await program.parseAsync(argv);
-}
-
-function isDirectExecution(): boolean {
-  const invokedPath = process.argv[1];
-  if (!invokedPath) return false;
-  return path.resolve(invokedPath) === fileURLToPath(import.meta.url);
-}
-
-if (isDirectExecution()) {
-  runCreateAppCli().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
 }

@@ -320,10 +320,10 @@ export async function buildExample(
   const bundler = await resolveBundler(bundlerName);
   let frameworkRuntime: FrameworkRuntimeOutput | undefined;
   const captureFrameworkRuntimePlugin: Plugin<unknown> = {
-    name: "e2e-framework-runtime-capture",
+    id: "e2e-framework-runtime-capture",
     setup() {
       return {
-        buildEnd(result) {
+        afterBuild(result) {
           frameworkRuntime = result.frameworkRuntime;
         },
       };
@@ -407,7 +407,7 @@ export function createExampleTest(exampleName: string) {
         }
 
         // Read only canonical deployment metadata for the bundle entry;
-        // runtime-only FrameworkRuntime data comes from the buildEnd hook.
+        // runtime-only FrameworkRuntime data comes from the afterBuild hook.
         const deploymentMetadata = readExampleDeploymentMetadata(exampleDir);
         const serverEntry = deploymentMetadata.server.entry;
         if (!serverEntry) {
@@ -464,11 +464,21 @@ export function createExampleTest(exampleName: string) {
             }
           });
 
-          serverProcess.on("exit", (code) => {
+          serverProcess.once("error", (error) => {
             clearTimeout(timeout);
-            if (code !== null && code !== 0) {
-              reject(new Error(`Server exited with code ${code}`));
-            }
+            reject(
+              new Error("Server process failed before readiness", {
+                cause: error,
+              }),
+            );
+          });
+          serverProcess.once("exit", (code, signal) => {
+            clearTimeout(timeout);
+            reject(
+              new Error(
+                `Server exited before readiness (code ${code ?? "null"}, signal ${signal ?? "null"})`,
+              ),
+            );
           });
         });
 

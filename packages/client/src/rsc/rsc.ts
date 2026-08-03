@@ -18,7 +18,7 @@ import type {
 import { formatErrorDetail, isRecord } from "../shared/validation.js";
 import {
   assertRscFlightFetchOptions,
-  fetchRscFlight,
+  fetchRscFlightWithSignal,
   getRscFetchResponseContentType,
   type RscFlightFetchOptions,
 } from "./react.js";
@@ -48,7 +48,17 @@ export interface ReactRscRuntimeBootstrap {
   };
 }
 
-const rootByMountPoint = new WeakMap<Element, Root>();
+interface RscMountOperation {
+  abortController: AbortController;
+}
+
+interface MountedRscRoot {
+  abortController: AbortController;
+  root: Root;
+}
+
+const mountedRootByMountPoint = new WeakMap<Element, MountedRscRoot>();
+const operationByMountPoint = new WeakMap<Element, RscMountOperation>();
 const RSC_BOOTSTRAP_SCRIPT_ID = "__EVJS_RSC_BOOTSTRAP__";
 let runtimeStarted = false;
 let runtimeStarting = false;
@@ -56,17 +66,25 @@ let runtimeStarting = false;
 export async function createReactRscModel(
   options: ReactRscModelOptions,
 ): Promise<ReactNode> {
+  return createReactRscModelWithSignal(options);
+}
+
+async function createReactRscModelWithSignal(
+  options: ReactRscModelOptions,
+  signal?: AbortSignal,
+): Promise<ReactNode> {
   assertReactRscModelOptions(options);
   const { createFromFetch } = await loadReactServerDomClient();
-  return createFromFetch(fetchRscModelFlight(options), {
+  return createFromFetch(fetchRscModelFlight(options, signal), {
     moduleBaseURL: options.moduleBaseURL,
   }) as ReactNode;
 }
 
 async function fetchRscModelFlight(
   options: RscFlightFetchOptions,
+  signal?: AbortSignal,
 ): Promise<Response> {
-  const response = await fetchRscFlight(options);
+  const response = await fetchRscFlightWithSignal(options, signal);
   if (!response.ok) return response;
 
   const contentType = getRscFetchResponseContentType(response);
@@ -122,12 +140,60 @@ export async function mountReactRscPage(
 ): Promise<ReactNode> {
   assertReactRscMountOptions(options);
   const mountPoint = resolveMountPoint(options.mount, options.document);
-  const model = await createReactRscModel(options);
-  const element = createRscRootElement(model, options);
-  unmountMountedRscRoot(mountPoint);
-  const root = mountRscRoot(mountPoint, element, options);
-  rootByMountPoint.set(mountPoint, root);
-  return model;
+  const operation = beginRscMountOperation(mountPoint);
+
+  try {
+    const model = await createReactRscModelWithSignal(
+      options,
+      operation.abortController.signal,
+    );
+    if (!isCurrentRscMountOperation(mountPoint, operation)) return undefined;
+
+    const element = createRscRootElement(model, options);
+    unmountMountedRscRoot(mountPoint);
+    if (!isCurrentRscMountOperation(mountPoint, operation)) return undefined;
+
+    const root = mountRscRoot(mountPoint, element, options);
+    if (!isCurrentRscMountOperation(mountPoint, operation)) {
+      tryUnmountRscRoot(root);
+      return undefined;
+    }
+
+    mountedRootByMountPoint.set(mountPoint, {
+      abortController: operation.abortController,
+      root,
+    });
+    operationByMountPoint.delete(mountPoint);
+    return model;
+  } catch (error) {
+    if (!isCurrentRscMountOperation(mountPoint, operation)) return undefined;
+    cancelRscMountOperation(mountPoint);
+    throw error;
+  }
+}
+
+function beginRscMountOperation(mountPoint: Element): RscMountOperation {
+  const previous = operationByMountPoint.get(mountPoint);
+  const operation = {
+    abortController: new AbortController(),
+  };
+  operationByMountPoint.set(mountPoint, operation);
+  previous?.abortController.abort();
+  return operation;
+}
+
+function isCurrentRscMountOperation(
+  mountPoint: Element,
+  operation: RscMountOperation,
+): boolean {
+  return operationByMountPoint.get(mountPoint) === operation;
+}
+
+function cancelRscMountOperation(mountPoint: Element): void {
+  const operation = operationByMountPoint.get(mountPoint);
+  if (!operation) return;
+  operationByMountPoint.delete(mountPoint);
+  operation.abortController.abort();
 }
 
 function mountRscRoot(
@@ -172,15 +238,17 @@ function createRscRootElement(
 
 export function unmountReactRscPage(mount: string | Element): void {
   const mountPoint = resolveMountPoint(mount);
+  cancelRscMountOperation(mountPoint);
   unmountMountedRscRoot(mountPoint);
 }
 
 function unmountMountedRscRoot(mountPoint: Element): void {
-  const root = rootByMountPoint.get(mountPoint);
-  if (!root) return;
-  rootByMountPoint.delete(mountPoint);
+  const mounted = mountedRootByMountPoint.get(mountPoint);
+  if (!mounted) return;
+  mountedRootByMountPoint.delete(mountPoint);
+  mounted.abortController.abort();
   try {
-    root.unmount();
+    mounted.root.unmount();
   } catch (error) {
     throw new Error(
       `[evjs] RSC root.unmount failed${formatErrorDetail(error)}`,

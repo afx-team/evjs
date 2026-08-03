@@ -13,9 +13,10 @@
     }
   },
   "bin": {
-    "create-evjs-app": "dist/index.js"
+    "create-evjs-app": "bin/create-evjs-app.js"
   },
   "files": [
+    "bin",
     "dist",
     "templates"
   ],

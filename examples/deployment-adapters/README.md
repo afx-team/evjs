@@ -9,9 +9,9 @@ The application uses the canonical model: `src/pages/page.tsx` defines the
 
 It exercises:
 
-- `buildOutput()` metadata mutation;
+- `transformOutput()` metadata mutation;
 - per-document `transformHtml()`;
-- `buildEnd({ output })` artifact generation;
+- `afterBuild({ output })` artifact generation;
 - the built-in node, static, and edge deployment adapters;
 - `createDeploymentArtifact()` output.
 

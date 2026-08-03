@@ -59,7 +59,8 @@ export async function runCli(
   return runCliProgram(argv, {
     version: pkg.version,
     cwd: () => process.cwd(),
-    loadConfig: (cwd) => loadConfig<DefaultBundlerConfig>(cwd),
+    loadConfig: (cwd, options) =>
+      loadConfig<DefaultBundlerConfig>(cwd, options),
     dev,
     build,
     prepare,

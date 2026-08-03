@@ -67,10 +67,10 @@ Release automation replaces them with the release version before publishing.
 4. Framework Pages use `src/pages/**/page.*`; server request Routes use
    `src/apis/**/api.*`. The containing directory owns scope and URL
    in both trees.
-5. Put Page metadata, rendering settings, and the generated short-keyed plugin
-   map in adjacent `page.config.ts`. Configure plugins at Application scope
-   through factory calls in `config.plugins`; do not add Route or Document
-   plugin configuration surfaces.
+5. Put Page metadata, rendering settings, and the generated plugin map keyed by
+   canonical plugin id in adjacent `page.config.ts`. Configure plugins at
+   Application scope through factory calls in `config.plugins`; do not add Route
+   or Document plugin configuration surfaces.
 6. Server-function modules begin with `"use server";` and export named callable
    values. Use `.server.*` when colocation makes the boundary easier to see.
 7. Keep `.ev`, `src/route-types.d.ts`, `src/plugin-types.d.ts`, `dist`,
@@ -109,14 +109,14 @@ Release automation replaces them with the release version before publishing.
 ### Add plugin-owned configuration
 
 1. Declare independent Application and optional Page contracts with
-   `definePlugin()` and `pluginConfig()`.
+   `definePlugin()` and `pluginOptions()`.
 2. Install the factory in `config.plugins` and pass its typed Application
    options there.
-3. Configure installed Page-aware plugins under the generated short key in
-   adjacent `page.config.ts`. Page values are strict JSON; callbacks and
+3. Configure installed Page-aware plugins under their canonical id in adjacent
+   `page.config.ts`. Page values are strict JSON; callbacks and
    secrets stay in Application options or plugin code.
 4. Derive Route or Document behavior from the normalized Page graph and
-   project runtime behavior explicitly through contributions or another
+   project runtime behavior explicitly through `emitIR()` or another
    runtime contract.
 
 ### Add an example
@@ -132,17 +132,18 @@ Release automation replaces them with the release version before publishing.
 
 ```txt
 load config
-run config hooks and resolve Application plugin settings
-run setup/buildStart hooks
+run configure hooks and resolve Application plugin settings
+run setup hooks
 create CoreGraph while resolving Page plugin settings
+collect generated contributions with emitIR/emitPageIR
 derive BuildPlan
-collect generated contributions
 materialize .ev
 ```
 
-`ev build` then asks the selected bundler for build facts, links `BuildOutput`,
-runs output and HTML hooks, writes deployment metadata and Documents, and runs
-`buildEnd`.
+`ev build` then asks the selected bundler for fresh build facts, runs
+`beforeBuild`, links and transforms `BuildOutput`, writes
+deployment metadata and Documents, and runs `afterBuild` only after canonical
+output is published. `prepare` and `inspect` do not run the before/after pair.
 
 `ev dev` keeps normal source edits on the bundler watch/HMR path. Framework
 input changes recreate and diff the graph/plan, then call the adapter's

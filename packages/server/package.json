@@ -45,11 +45,6 @@
       "import": "./esm/index.js",
       "default": "./esm/index.js"
     },
-    "./internal/server-functions": {
-      "types": "./esm/server-functions/server-function-runtime.d.ts",
-      "import": "./esm/server-functions/server-function-runtime.js",
-      "default": "./esm/server-functions/server-function-runtime.js"
-    },
     "./node": {
       "types": "./esm/runtimes/node.d.ts",
       "import": "./esm/runtimes/node.js",
@@ -77,7 +72,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf esm && tsc",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

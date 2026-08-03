@@ -66,6 +66,6 @@ function assertOutputPathMatchesPlan(
   if (actualPath === expectedPath) return;
 
   throw new Error(
-    `[evjs] ${bundlerField} "${actualPath ? formatProjectRelativePath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${planField} directory "${formatProjectRelativePath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by bundlerConfig hooks.`,
+    `[evjs] ${bundlerField} "${actualPath ? formatProjectRelativePath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${planField} directory "${formatProjectRelativePath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by configureBundler hooks.`,
   );
 }

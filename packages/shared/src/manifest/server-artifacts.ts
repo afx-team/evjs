@@ -58,7 +58,10 @@ export function assertServerArtifactGroups(
   }
 }
 
-/** Validate every BuildOutput field whose assets are loaded from serverDir. */
+/**
+ * Validate every BuildOutput field whose assets are loaded from serverDir and
+ * enforce canonical SSG materialization and request-time runtime contracts.
+ */
 export function assertBuildOutputServerArtifacts(
   output: BuildOutput,
   source: string,
@@ -83,17 +86,74 @@ function validateBuildOutputServerArtifacts(
   const groups = collectBuildOutputServerArtifactGroups(output, source);
   assertServerArtifactGroups(groups.runtime);
   assertServerArtifactGroups(groups.build);
+  assertRoutedSsgDocuments(output, source);
 
   const entry = output.server.entry;
-  if (entry !== undefined) {
-    assertServerRelativeArtifactPath(entry, `${source}.server.entry`);
-    if (!output.server.assets.js.includes(entry)) {
+  if (entry === undefined) {
+    const requirement = getServerRuntimeRequirement(output);
+    if (requirement) {
       throw new Error(
-        `[evjs] ${source}.server.entry "${entry}" must exactly match one ${source}.server.assets.js artifact.`,
+        `[evjs] ${source}.server.entry is required because ${requirement}. A request-time server runtime must declare exactly one self-contained ${source}.server.assets.js artifact.`,
       );
     }
+    return groups.runtime;
+  }
+
+  assertServerRelativeArtifactPath(entry, `${source}.server.entry`);
+  if (output.server.assets.js.length !== 1) {
+    throw new Error(
+      `[evjs] ${source}.server.assets.js must declare exactly one self-contained JavaScript artifact when ${source}.server.entry is present; found ${output.server.assets.js.length}.`,
+    );
+  }
+  if (output.server.assets.js[0] !== entry) {
+    throw new Error(
+      `[evjs] ${source}.server.entry "${entry}" must exactly match one ${source}.server.assets.js artifact.`,
+    );
   }
   return groups.runtime;
+}
+
+function getServerRuntimeRequirement(output: BuildOutput): string | undefined {
+  if (
+    output.server.assets.js.length > 0 ||
+    output.server.assets.css.length > 0
+  ) {
+    return "server runtime assets are present";
+  }
+  if (Object.keys(output.server.functions).length > 0) {
+    return "server Functions are present";
+  }
+  if (output.server.routes.length > 0) {
+    return "server request Routes are present";
+  }
+  if (Object.values(output.pages).some((page) => page.ppr !== undefined)) {
+    return "a PPR Page is present";
+  }
+  if (Object.keys(output.rsc?.pages ?? {}).length > 0) {
+    return "an RSC Page is present";
+  }
+  if (Object.values(output.pages).some((page) => page.render === "ssr")) {
+    return "an SSR Page is present";
+  }
+  if (
+    Object.values(output.server.renderers ?? {}).some(
+      (renderer) => renderer.phase !== "build",
+    )
+  ) {
+    return "a request-time server renderer is present";
+  }
+  return undefined;
+}
+
+function assertRoutedSsgDocuments(output: BuildOutput, source: string): void {
+  output.routes.forEach((route, index) => {
+    if (!route.pageId) return;
+    const page = output.pages[route.pageId];
+    if (page?.render !== "ssg" || page.document) return;
+    throw new Error(
+      `[evjs] ${source}.pages.${route.pageId}.document is required because ${source}.routes[${index}] publishes SSG Page "${route.pageId}".`,
+    );
+  });
 }
 
 function collectBuildOutputServerArtifactGroups(

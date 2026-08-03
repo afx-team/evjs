@@ -43,8 +43,8 @@ src/pages/**/page.{ts,tsx,js,jsx}
 ```
 
 所在目录拥有 Page scope 并决定 URL。相邻 `page.config.ts` 提供静态 Page
-metadata、渲染设置和生成的短 key `plugins` map。SPA 与 MPA 使用相同的 Page 与
-Route identity，仅 Document 和 client entry 的物化方式不同。
+metadata、渲染设置和以 canonical plugin id 为键的 `plugins` map。SPA 与 MPA
+使用相同的 Page 与 Route identity，仅 Document 和 client entry 的物化方式不同。
 
 ### 显式 SPA 输入
 
@@ -72,8 +72,8 @@ function。Directive 和 graph 可达性决定 discovery；文件名后缀只用
 ## Typed Plugin Setting
 
 Application 通过 `config.plugins` 安装插件工厂；每个工厂接收独立、类型安全的
-Application 配置。Page-aware 插件还会声明短 key 与独立 Page contract，由相邻
-`page.config.ts#plugins` 消费。
+Application 配置。Page-aware 插件还会声明独立 Page contract，由相邻
+`page.config.ts#plugins` 使用同一个 canonical plugin `id` 消费。
 
 Application 与 Page contract 不会彼此合并；显式值只在各自 contract 内覆盖并
 deep-merge defaults。Page setting 必须是严格静态 JSON；可执行 callback 属于
@@ -81,8 +81,8 @@ Application options 或插件代码。插件从 normalized Page 派生 Route 与
 贡献，并显式投影 runtime code 或 data。
 
 `ev prepare`、`ev dev` 与 `ev build` 会根据静态 `ev.config.ts` 类型生成
-`src/plugin-types.d.ts`，让 Page config 无需 import 插件包即可获得 key 与 value
-补全。
+`src/plugin-types.d.ts`，让 Page config 无需 import 插件包即可获得 plugin id 与
+value 补全。
 
 ## 构建阶段
 
@@ -94,18 +94,26 @@ sequenceDiagram
   participant Bundler as bundler adapter
 
   CLI->>Core: 加载配置并选择 bundler
-  Core->>Plugin: config() 并解析 Application setting
-  Core->>Plugin: setup() 与 buildStart()
-  Core->>Core: 解析 Page setting 并创建 CoreGraph/BuildPlan
-  Core->>Plugin: contributions(framework view)
+  Core->>Plugin: configure() 并解析 Application setting
+  Core->>Plugin: setup()
+  Core->>Core: 解析 Page setting 并创建 CoreGraph
+  Core->>Plugin: emitIR(FrameworkView)
+  Core->>Core: 创建 BuildPlan
   Core->>Core: 物化 .ev
-  Core->>Plugin: bundlerConfig()
+  Core->>Plugin: configureBundler()
   Core->>Bundler: build(BuildPlan)
-  Bundler-->>Core: build facts
+  Bundler-->>Core: fresh build facts
+  Core->>Plugin: beforeBuild()
   Core->>Core: link BuildOutput
-  Core->>Plugin: buildOutput()
-  Core->>Plugin: transformHtml() 与 buildEnd()
+  Core->>Plugin: transformOutput()
+  Core->>Plugin: transformHtml()
+  Core->>Core: 发布 canonical output
+  Core->>Plugin: afterBuild()
 ```
+
+`beforeBuild()` 在 fresh bundler facts 到达后、evjs 链接或发射 canonical output 前
+执行。成功的初次输出与 rebuild output cycle 会用相同 `isRebuild` 与 `afterBuild()`
+配对；`prepare` 与 `inspect` 都不会触发这两个 hook。
 
 `ev prepare` 在物化 generated framework IR 后停止：
 

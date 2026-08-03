@@ -51,7 +51,7 @@ export interface RequestContext {
 
 export interface TransportAdapter {
   /** Execute a server function call. */
-  send?(
+  send(
     fnId: string,
     args: unknown[],
     context?: RequestContext,
@@ -415,6 +415,42 @@ function readServerFunctionSuccessResult(payload: Record<string, unknown>) {
 let _runtime: TransportRuntime | null = null;
 let _runtimeSource: "default" | "global" | "client-runtime" | "user" | null =
   null;
+let _frameworkTransportFingerprint: string | null = null;
+
+interface RuntimeTransportSnapshot {
+  options: RuntimeTransportOptions;
+  fingerprint: string;
+}
+
+function snapshotRuntimeTransport(
+  transport: RuntimeTransportOptions | undefined,
+): RuntimeTransportSnapshot {
+  const headerEntries = transport?.headers
+    ? [...new Headers(transport.headers).entries()].sort(([left], [right]) =>
+        left.localeCompare(right),
+      )
+    : [];
+  const headers =
+    headerEntries.length > 0
+      ? Object.freeze(Object.fromEntries(headerEntries))
+      : undefined;
+  const options = Object.freeze({
+    ...(transport?.baseUrl !== undefined ? { baseUrl: transport.baseUrl } : {}),
+    ...(transport?.credentials !== undefined
+      ? { credentials: transport.credentials }
+      : {}),
+    ...(headers ? { headers } : {}),
+  }) satisfies RuntimeTransportOptions;
+
+  return {
+    options,
+    fingerprint: JSON.stringify([
+      options.baseUrl ?? null,
+      options.credentials ?? null,
+      headerEntries,
+    ]),
+  };
+}
 
 function createTransportRuntime(options: TransportOptions): TransportRuntime {
   const endpoint = options.functions?.endpoint ?? getFunctionEndpoint();
@@ -432,7 +468,9 @@ function createTransportRuntime(options: TransportOptions): TransportRuntime {
 function getRuntime(): TransportRuntime {
   if (!_runtime) {
     const transport = getGlobalRuntimeTransport();
-    _runtime = createTransportRuntime(transport ?? {});
+    _runtime = createTransportRuntime(
+      snapshotRuntimeTransport(transport).options,
+    );
     _runtimeSource = transport ? "global" : "default";
   }
   return _runtime;
@@ -452,23 +490,38 @@ export function initTransport(options: TransportOptions = {}): void {
   }
   _runtime = createTransportRuntime(options);
   _runtimeSource = "user";
+  _frameworkTransportFingerprint = null;
 }
 
 /**
  * Initialize the default HTTP transport from the generated client runtime.
  *
- * Framework-managed runtimes call this before loading user modules. Explicit
- * initTransport() calls still win, so custom adapters are not overwritten.
+ * Framework-managed runtimes call this before loading user modules. Embedded
+ * runtime metadata wins over global defaults; absent both, the default
+ * transport is captured. The first framework call owns that configuration for
+ * the realm. Explicit initTransport() calls still win and are never rewritten.
  */
 export function initTransportFromRuntime(
   runtime: Pick<ClientRuntime, "runtime">,
 ): void {
   const transport =
     readClientRuntimeTransport(runtime) ?? getGlobalRuntimeTransport();
-  if (!transport || _runtimeSource === "user") return;
+  const snapshot = snapshotRuntimeTransport(transport);
+  if (_runtimeSource === "user") return;
 
-  _runtime = createTransportRuntime(transport);
+  if (_runtimeSource === "client-runtime") {
+    if (_frameworkTransportFingerprint === snapshot.fingerprint) return;
+    throw new Error(
+      "[evjs] initTransportFromRuntime() received transport configuration " +
+        "that conflicts with an existing framework runtime in the same " +
+        "JavaScript realm. Use one shared runtime transport or an explicit " +
+        "initTransport() override.",
+    );
+  }
+
+  _runtime = createTransportRuntime(snapshot.options);
   _runtimeSource = "client-runtime";
+  _frameworkTransportFingerprint = snapshot.fingerprint;
 }
 
 /**
@@ -482,13 +535,7 @@ export async function callServer(
   context?: RequestContext,
 ): Promise<unknown> {
   assertServerFunctionCall(fnId, args);
-  const runtime = getRuntime();
-  const send = runtime.adapter.send;
-  if (!send) {
-    throw new Error("[evjs] Transport adapter does not implement send().");
-  }
-
-  return send(fnId, args, context);
+  return getRuntime().adapter.send(fnId, args, context);
 }
 
 /** Minimal callable shape for server function stubs. */
@@ -767,10 +814,8 @@ function assertTransportAdapter(
     throw new Error("[evjs] initTransport() adapter must be an object.");
   }
 
-  if (adapter.send !== undefined && typeof adapter.send !== "function") {
-    throw new Error(
-      "[evjs] initTransport() adapter.send must be a function when provided.",
-    );
+  if (typeof adapter.send !== "function") {
+    throw new Error("[evjs] initTransport() adapter.send must be a function.");
   }
 
   for (const key of ["flight", "render"] as const) {
@@ -877,6 +922,7 @@ function hasServerFunctionMetadata<TArgs extends unknown[], TData>(
 export function __resetForTesting(): void {
   _runtime = null;
   _runtimeSource = null;
+  _frameworkTransportFingerprint = null;
   delete globalThis.__EVJS_TRANSPORT__;
   fnNameRegistry.clear();
 }

@@ -4,12 +4,16 @@ import type {
   CoreApplicationPluginSettings,
 } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
-import type { PluginContext } from "../../plugin/index.js";
+import type { PluginSetupContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
 import { materializeFrameworkIR } from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
-import { type CreateBuildPlanOptions, createBuildPlan } from "./plan/index.js";
+import {
+  type CreateBuildPlanOptions,
+  createBuildGenerationId,
+  createBuildPlan,
+} from "./plan/index.js";
 import {
   createPluginSettingsResolutionSession,
   type PluginSettingsRegistry,
@@ -19,14 +23,15 @@ import { syncPluginTypes } from "./plugin-types.js";
 export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
-  command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
-  pluginContext: PluginContext<TBundlerCfg>;
+  pluginContext: PluginSetupContext<TBundlerCfg>;
   pluginSettings: PluginSettingsRegistry;
   applicationPluginSettings: CoreApplicationPluginSettings;
   plan?: CreateBuildPlanOptions;
   write?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
+  beforeSourceRead?: (file: string) => void;
+  onSourceDependency?: (file: string) => void;
 }
 
 export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
@@ -35,21 +40,25 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
   analysis: GraphAnalysisResult;
   plan: BuildPlan;
 }> {
+  const planOptions: CreateBuildPlanOptions = {
+    mode: options.mode,
+    ...options.plan,
+    buildId:
+      options.plan?.buildId ??
+      createBuildGenerationId(options.plan?.mode ?? options.mode),
+  };
+
   async function materialize(
     analysis: GraphAnalysisResult,
   ): Promise<BuildPlan> {
     return materializeFrameworkIR({
       cwd: options.cwd,
       mode: options.mode,
-      command: options.command,
       config: options.config,
       graph: analysis.graph,
       plugins: options.config.plugins,
       pluginContext: options.pluginContext,
-      plan: createBuildPlan(options.config, analysis.graph, {
-        mode: options.mode,
-        ...options.plan,
-      }),
+      plan: createBuildPlan(options.config, analysis.graph, planOptions),
       write: options.write,
     });
   }
@@ -59,6 +68,10 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       ? await resolvePageConfigModules(
           options.cwd,
           options.config.routing.metadata,
+          {
+            beforeSourceRead: options.beforeSourceRead,
+            onSourceDependency: options.onSourceDependency,
+          },
         )
       : undefined;
   if (options.write !== false) {
@@ -76,6 +89,8 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       pluginSettings: options.pluginSettings,
       applicationPluginSettings: options.applicationPluginSettings,
       pluginSettingsSession,
+      beforeSourceRead: options.beforeSourceRead,
+      onSourceDependency: options.onSourceDependency,
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);

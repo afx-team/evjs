@@ -8,11 +8,12 @@ import {
   assertSafeBuildOwnedOutputPath,
   assertSafeBundlerCleanOutputPath,
   canonicalPortableArtifactPathKey,
+  createPluginConfigView,
   type ResolvedBuildOutputPaths,
   resolveBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
-import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
+import type { ConfigureBundlerContext, PluginHooks } from "@evjs/ev/plugin";
 import type {
   BuildEntry,
   BuildPlan,
@@ -50,21 +51,22 @@ type RscClientReferenceConfig =
       include?: RegExp;
     };
 
-export type WebpackConfig = Configuration | Configuration[];
+/** The complete set of webpack compiler configurations for one evjs build. */
+export type WebpackConfigs = Configuration[];
 
 export async function createWebpackConfigs(
-  config: ResolvedConfig<WebpackConfig>,
+  config: ResolvedConfig<WebpackConfigs>,
   plan: BuildPlan,
   cwd: string,
-  hooks: PluginHooks<WebpackConfig>[],
+  hooks: PluginHooks<WebpackConfigs>[],
   options: {
     clean?: boolean;
     addWatchFile?: (file: string) => void;
   } = {},
-): Promise<Configuration[]> {
+): Promise<WebpackConfigs> {
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
-  const configs: Configuration[] = [];
+  const configs: WebpackConfigs = [];
   const clientEntries = plan.entries.filter(
     (entry) => entry.environment === "client",
   );
@@ -197,11 +199,10 @@ export async function createWebpackConfigs(
     return expectation ? [expectation] : [];
   });
 
-  const ctx: BundlerCtx<WebpackConfig> = {
+  const ctx: ConfigureBundlerContext<WebpackConfigs> = Object.freeze({
     mode: plan.mode,
-    command: plan.mode === "production" ? "build" : "dev",
     cwd,
-    config,
+    config: createPluginConfigView(config),
     bundlerName: "webpack",
     environment:
       clientEntries.length > 0 && serverEntries.length > 0
@@ -211,11 +212,11 @@ export async function createWebpackConfigs(
           : "server",
     logger,
     addWatchFile: options.addWatchFile ?? missingFrameworkWatchCollector,
-  };
+  });
 
   for (const h of hooks) {
-    if (h.bundlerConfig) {
-      await h.bundlerConfig(configs, ctx);
+    if (h.configureBundler) {
+      await h.configureBundler(configs, ctx);
       await assertFrameworkWebpackOutputs(
         cwd,
         configs,
@@ -267,7 +268,7 @@ export async function createWebpackConfigs(
 
 async function assertFrameworkWebpackOutputs(
   cwd: string,
-  configs: Configuration[],
+  configs: WebpackConfigs,
   expectations: FrameworkWebpackOutputExpectation[],
   outputPaths: ResolvedBuildOutputPaths,
 ): Promise<void> {
@@ -277,7 +278,7 @@ async function assertFrameworkWebpackOutputs(
     );
     if (matches.length !== 1) {
       throw new Error(
-        `[evjs] Webpack bundlerConfig hooks must preserve exactly one framework config named "${expectation.configName}"; found ${matches.length}.`,
+        `[evjs] Webpack configureBundler hooks must preserve exactly one framework config named "${expectation.configName}"; found ${matches.length}.`,
       );
     }
     await assertFrameworkWebpackOutput(
@@ -287,14 +288,89 @@ async function assertFrameworkWebpackOutputs(
       outputPaths,
     );
   }
+  await assertIndependentWebpackOutputs(cwd, configs, expectations);
   assertPortableWebpackArtifactNames(configs);
+}
+
+async function assertIndependentWebpackOutputs(
+  cwd: string,
+  configs: WebpackConfigs,
+  expectations: FrameworkWebpackOutputExpectation[],
+): Promise<void> {
+  const frameworkConfigNames = new Set(
+    expectations.map((expectation) => expectation.configName),
+  );
+  const frameworkOutputs = await Promise.all(
+    expectations.map(async (expectation) => ({
+      expectation,
+      path: await resolveEffectiveOutputPath(cwd, expectation.path),
+    })),
+  );
+
+  for (const config of configs) {
+    if (config.name && frameworkConfigNames.has(config.name)) continue;
+
+    const configName = config.name ?? "unnamed";
+    const configuredPath = config.output?.path;
+    if (!configuredPath) {
+      throw new Error(
+        `[evjs] Independent Webpack config "${configName}" must define an explicit output.path outside framework-owned outputs.`,
+      );
+    }
+
+    const candidatePath = await resolveEffectiveOutputPath(cwd, configuredPath);
+    for (const { expectation, path: frameworkPath } of frameworkOutputs) {
+      if (!outputPathsOverlap(candidatePath, frameworkPath)) continue;
+      throw new Error(
+        `[evjs] Independent Webpack config "${configName}" output "${formatProjectRelativeOutputPath(cwd, configuredPath)}" must not overlap framework-owned ${expectation.field} directory "${formatProjectRelativeOutputPath(cwd, expectation.path)}".`,
+      );
+    }
+  }
+}
+
+async function resolveEffectiveOutputPath(
+  cwd: string,
+  configuredPath: string,
+): Promise<string> {
+  let existingAncestor = path.resolve(cwd, configuredPath);
+  const missingSegments: string[] = [];
+
+  while (true) {
+    try {
+      const realAncestor = await fs.promises.realpath(existingAncestor);
+      return path.resolve(realAncestor, ...missingSegments);
+    } catch (error) {
+      const parent = path.dirname(existingAncestor);
+      if (!isMissingOutputPathError(error) || parent === existingAncestor) {
+        throw new Error(
+          `[evjs] Cannot safely inspect Webpack output path "${formatProjectRelativeOutputPath(cwd, configuredPath)}".`,
+          { cause: error },
+        );
+      }
+      missingSegments.unshift(path.basename(existingAncestor));
+      existingAncestor = parent;
+    }
+  }
+}
+
+function isMissingOutputPathError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
 }
 
 interface FrameworkWebpackOutputExpectation {
   configName: string;
   field: "output.client" | "output.server" | "build-only output";
   path: string;
-  entryNames: string[];
+  mode: unknown;
+  target: unknown;
+  clean: unknown;
+  publicPath: unknown;
+  crossOriginLoading: unknown;
+  entryImports: ReadonlyMap<string, string>;
   templates: WebpackOutputTemplateSnapshot;
   cssPlugin?: MiniCssExtractPlugin;
   cssTemplates?: MiniCssOutputTemplateSnapshot;
@@ -332,7 +408,12 @@ function getFrameworkWebpackOutputExpectation(
       plugin instanceof MiniCssExtractPlugin,
   );
   const outputExpectation = {
-    entryNames: readExplicitWebpackEntryNames(config) ?? [],
+    mode: config.mode,
+    target: config.target,
+    clean: config.output?.clean,
+    publicPath: config.output?.publicPath,
+    crossOriginLoading: config.output?.crossOriginLoading,
+    entryImports: snapshotFrameworkWebpackEntryImports(config),
     templates,
     ...(cssPlugin
       ? {
@@ -379,11 +460,12 @@ async function assertFrameworkWebpackOutput(
   const expectedPath = expectation.path;
   if (actualPath !== expectedPath) {
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" output.path "${actualPath ? formatProjectRelativeOutputPath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${expectation.field} directory "${formatProjectRelativeOutputPath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by bundlerConfig hooks.`,
+      `[evjs] Webpack config "${expectation.configName}" output.path "${actualPath ? formatProjectRelativeOutputPath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${expectation.field} directory "${formatProjectRelativeOutputPath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by configureBundler hooks.`,
     );
   }
 
-  assertFrameworkWebpackEntryNames(config, expectation);
+  assertFrameworkWebpackIdentity(config, expectation);
+  assertFrameworkWebpackEntries(config, expectation);
   assertWebpackOutputTemplates(config, expectation);
   assertSelfContainedServerEntrypoints(config, expectation);
 
@@ -397,56 +479,98 @@ async function assertFrameworkWebpackOutput(
   }
 }
 
+function assertFrameworkWebpackIdentity(
+  config: Configuration,
+  expectation: FrameworkWebpackOutputExpectation,
+): void {
+  for (const [field, actual, expected] of [
+    ["mode", config.mode, expectation.mode],
+    ["target", config.target, expectation.target],
+    ["output.clean", config.output?.clean, expectation.clean],
+    ["output.publicPath", config.output?.publicPath, expectation.publicPath],
+    [
+      "output.crossOriginLoading",
+      config.output?.crossOriginLoading,
+      expectation.crossOriginLoading,
+    ],
+  ] as const) {
+    if (Object.is(actual, expected)) continue;
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" ${field} ${formatOutputTemplate(actual)} must remain the framework-owned value ${formatOutputTemplate(expected)}. configureBundler hooks cannot override framework runtime identity.`,
+    );
+  }
+}
+
 function assertSelfContainedServerEntrypoints(
   config: Configuration,
   expectation: FrameworkWebpackOutputExpectation,
 ): void {
   if (expectation.configName === "client") return;
+  if (config.output?.asyncChunks !== false) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" output.asyncChunks must remain false because evjs server loaders import one self-contained entry asset.`,
+    );
+  }
   const optimization = config.optimization;
-  if (!optimization) return;
-  if (
-    optimization.runtimeChunk !== undefined &&
-    optimization.runtimeChunk !== false
-  ) {
+  if (!optimization || optimization.runtimeChunk !== false) {
     throw new Error(
       `[evjs] Webpack config "${expectation.configName}" optimization.runtimeChunk must remain false because evjs server loaders import one self-contained entry asset.`,
     );
   }
-  if (
-    optimization.splitChunks !== undefined &&
-    optimization.splitChunks !== false
-  ) {
+  if (optimization.splitChunks !== false) {
     throw new Error(
       `[evjs] Webpack config "${expectation.configName}" optimization.splitChunks must remain disabled because evjs server loaders import one self-contained entry asset.`,
     );
   }
 }
 
-function assertFrameworkWebpackEntryNames(
+function assertFrameworkWebpackEntries(
   config: Configuration,
   expectation: FrameworkWebpackOutputExpectation,
 ): void {
-  const actualNames = readExplicitWebpackEntryNames(config);
-  if (!actualNames) {
+  const actualEntries = readExplicitWebpackEntries(config);
+  if (!actualEntries) {
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" must keep a static entry object so framework entry names can be validated after bundlerConfig hooks.`,
+      `[evjs] Webpack config "${expectation.configName}" must keep a static entry object so framework entry names can be validated after configureBundler hooks.`,
     );
   }
 
-  for (const expectedName of expectation.entryNames) {
-    if (actualNames.includes(expectedName)) continue;
+  const actualNames = Object.keys(actualEntries);
+  const actualNameSet = new Set(actualNames);
+  assertPortableWebpackNames(
+    actualNames,
+    `Webpack config "${expectation.configName}" entry`,
+  );
+  for (const expectedName of expectation.entryImports.keys()) {
+    if (actualNameSet.has(expectedName)) continue;
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" must preserve framework entry name "${expectedName}" after bundlerConfig hooks.`,
+      `[evjs] Webpack config "${expectation.configName}" must preserve framework entry name "${expectedName}" after configureBundler hooks.`,
+    );
+  }
+
+  for (const actualName of actualNames) {
+    if (expectation.entryImports.has(actualName)) continue;
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" cannot add entry "${actualName}" because framework entries must remain the exact BuildPlan-owned set after configureBundler hooks. Add an independent Webpack config for plugin-owned entries.`,
+    );
+  }
+
+  for (const [entryName, expectedImport] of expectation.entryImports) {
+    const actualEntry = Reflect.get(actualEntries, entryName);
+    const actualImport = readSingleWebpackEntryImport(actualEntry);
+    if (actualImport === expectedImport) continue;
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" entry "${entryName}" import ${formatWebpackEntryImport(actualEntry)} must remain the exact single framework-owned BuildPlan import ${JSON.stringify(expectedImport)}. configureBundler hooks cannot override framework entry imports.`,
     );
   }
 }
 
-function assertPortableWebpackArtifactNames(configs: Configuration[]): void {
+function assertPortableWebpackArtifactNames(configs: WebpackConfigs): void {
   for (const config of configs) {
     const configName = config.name ?? "unnamed";
     if (typeof config.entry === "function") {
       throw new Error(
-        `[evjs] Webpack config "${configName}" must use static entries so evjs can validate emitted entry names after bundlerConfig hooks.`,
+        `[evjs] Webpack config "${configName}" must use static entries so evjs can validate emitted entry names after configureBundler hooks.`,
       );
     }
 
@@ -511,7 +635,7 @@ function assertStaticWebpackChunkName(value: unknown, field: string): void {
   if (value === undefined || value === false) return;
   if (typeof value !== "string") {
     throw new Error(
-      `[evjs] ${field} must be a static portable relative artifact path so evjs can validate it after bundlerConfig hooks.`,
+      `[evjs] ${field} must be a static portable relative artifact path so evjs can validate it after configureBundler hooks.`,
     );
   }
   assertPortableRelativeArtifactPath(value, field);
@@ -520,11 +644,65 @@ function assertStaticWebpackChunkName(value: unknown, field: string): void {
 function readExplicitWebpackEntryNames(
   config: Configuration,
 ): string[] | undefined {
+  const entry = readExplicitWebpackEntries(config);
+  return entry ? Object.keys(entry) : undefined;
+}
+
+function readExplicitWebpackEntries(
+  config: Configuration,
+): EntryObject | undefined {
   const entry = config.entry;
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
     return undefined;
   }
-  return Object.keys(entry);
+  return entry;
+}
+
+function snapshotFrameworkWebpackEntryImports(
+  config: Configuration,
+): ReadonlyMap<string, string> {
+  const entries = readExplicitWebpackEntries(config);
+  if (!entries) {
+    throw new Error(
+      `[evjs] Webpack config "${config.name ?? "unnamed"}" must define framework entries as a static entry object.`,
+    );
+  }
+
+  return new Map(
+    Object.entries(entries).map(([entryName, entry]) => {
+      const entryImport = readSingleWebpackEntryImport(entry);
+      if (entryImport === undefined) {
+        throw new Error(
+          `[evjs] Webpack config "${config.name ?? "unnamed"}" framework entry "${entryName}" must have exactly one BuildPlan import.`,
+        );
+      }
+      return [entryName, entryImport];
+    }),
+  );
+}
+
+function readSingleWebpackEntryImport(entry: unknown): string | undefined {
+  const entryImport = readWebpackEntryImport(entry);
+  if (typeof entryImport === "string") return entryImport;
+  if (Array.isArray(entryImport)) {
+    return entryImport.length === 1 && typeof entryImport[0] === "string"
+      ? entryImport[0]
+      : undefined;
+  }
+  return undefined;
+}
+
+function formatWebpackEntryImport(entry: unknown): string {
+  const entryImport = readWebpackEntryImport(entry);
+  if (typeof entryImport === "string" || Array.isArray(entryImport)) {
+    return JSON.stringify(entryImport);
+  }
+  return "<missing>";
+}
+
+function readWebpackEntryImport(entry: unknown): unknown {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+  return Reflect.get(entry as Record<PropertyKey, unknown>, "import");
 }
 
 function snapshotWebpackOutputTemplates(
@@ -547,7 +725,7 @@ function assertWebpackOutputTemplates(
     const expected = expectation.templates[field];
     if (Object.is(actual, expected)) continue;
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" output.${field} ${formatOutputTemplate(actual)} must remain the framework-owned template ${formatOutputTemplate(expected)}. bundlerConfig hooks cannot override framework output file templates.`,
+      `[evjs] Webpack config "${expectation.configName}" output.${field} ${formatOutputTemplate(actual)} must remain the framework-owned template ${formatOutputTemplate(expected)}. configureBundler hooks cannot override framework output file templates.`,
     );
   }
 
@@ -565,7 +743,7 @@ function assertWebpackOutputTemplates(
       continue;
     }
     throw new Error(
-      `[evjs] Webpack config "${expectation.configName}" MiniCssExtractPlugin ${field} ${formatOutputTemplate(actualCssTemplates[field])} must remain the framework-owned template ${formatOutputTemplate(expectation.cssTemplates[field])}. bundlerConfig hooks cannot override framework CSS output file templates.`,
+      `[evjs] Webpack config "${expectation.configName}" MiniCssExtractPlugin ${field} ${formatOutputTemplate(actualCssTemplates[field])} must remain the framework-owned template ${formatOutputTemplate(expectation.cssTemplates[field])}. configureBundler hooks cannot override framework CSS output file templates.`,
     );
   }
 }
@@ -632,18 +810,21 @@ function isStrictDescendantOutputPath(
   root: string,
   candidate: string,
 ): boolean {
-  const relative = path.relative(root, candidate);
-  return (
-    relative !== "" &&
-    !path.isAbsolute(relative) &&
-    relative !== ".." &&
-    !relative.startsWith(`..${path.sep}`)
+  const rootKey = canonicalOutputPathKey(root);
+  const candidateKey = canonicalOutputPathKey(candidate);
+  const descendantPrefix = rootKey.endsWith("/") ? rootKey : `${rootKey}/`;
+  return candidateKey !== rootKey && candidateKey.startsWith(descendantPrefix);
+}
+
+function canonicalOutputPathKey(outputPath: string): string {
+  return canonicalPortableArtifactPathKey(
+    path.resolve(outputPath).split(path.sep).join("/"),
   );
 }
 
 function outputPathsOverlap(left: string, right: string): boolean {
   return (
-    left === right ||
+    canonicalOutputPathKey(left) === canonicalOutputPathKey(right) ||
     isStrictDescendantOutputPath(left, right) ||
     isStrictDescendantOutputPath(right, left)
   );
@@ -720,6 +901,7 @@ function createWebpackConfig(options: {
               type: "commonjs2",
             }
           : undefined,
+      asyncChunks: options.target === "node" ? false : undefined,
     },
     externals: createWebpackExternals(options),
     devtool: isProduction ? false : "source-map",
@@ -820,14 +1002,13 @@ function createWebpackConfig(options: {
     ],
     stats: {
       assets: true,
-      chunks: true,
       entrypoints: true,
-      modules: true,
     },
     infrastructureLogging: isProduction ? undefined : { level: "warn" },
     optimization: {
       moduleIds: "deterministic",
       runtimeChunk: false,
+      splitChunks: options.target === "node" ? false : undefined,
     },
   };
 }

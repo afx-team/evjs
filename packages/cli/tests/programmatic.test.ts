@@ -2,9 +2,36 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BundlerAdapter } from "@evjs/ev/_internal/build";
+import type { Config } from "@evjs/ev/config";
 import { describe, expect, it } from "vitest";
 import type { DefaultBundlerConfig } from "../src/index.js";
-import { build, prepare } from "../src/index.js";
+import { build, dev, loadConfig, prepare } from "../src/index.js";
+
+type CustomBundlerConfig = { customFlag: boolean };
+
+function assertCustomBundlerRequiresAdapter(
+  bundler: BundlerAdapter<CustomBundlerConfig>,
+): void {
+  // @ts-expect-error custom build config cannot silently use Utoopack
+  void build<CustomBundlerConfig>({}, { cwd: "/tmp/evjs-cli-type-test" });
+  // @ts-expect-error custom dev config cannot silently use Utoopack
+  void dev<CustomBundlerConfig>({}, { cwd: "/tmp/evjs-cli-type-test" });
+  void dev<CustomBundlerConfig>(undefined, {
+    cwd: "/tmp/evjs-cli-type-test",
+    fallbackBundler: bundler,
+  });
+}
+
+void assertCustomBundlerRequiresAdapter;
+
+function assertLoadConfigUsesCliDefault(): void {
+  const loaded: Promise<Config<DefaultBundlerConfig> | undefined> = loadConfig(
+    "/tmp/evjs-cli-type-test",
+  );
+  void loaded;
+}
+
+void assertLoadConfigUsesCliDefault;
 
 async function createProject() {
   const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-cli-"));
@@ -64,11 +91,6 @@ describe("programmatic API", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
-          },
-          serverEntry: "server.js",
-          serverAssets: { js: ["server.js"], css: [] },
         };
       },
       async dev() {
@@ -89,7 +111,6 @@ describe("programmatic API", () => {
 
   it("supports explicit non-default bundler config types", async () => {
     const cwd = await createProject();
-    type CustomBundlerConfig = { customFlag: boolean };
     const events: string[] = [];
     const bundler: BundlerAdapter<CustomBundlerConfig> = {
       name: "custom",
@@ -109,11 +130,6 @@ describe("programmatic API", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
-          },
-          serverEntry: "server.js",
-          serverAssets: { js: ["server.js"], css: [] },
         };
       },
       async dev() {

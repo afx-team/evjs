@@ -8,17 +8,21 @@ export {
   type BundlerBuildCapability,
   type BundlerBuildContext,
   type BundlerBuildFacts,
+  type BundlerBuildFactsDisposition,
   type BundlerCapabilities,
   type BundlerCapability,
   type BundlerCapabilityGap,
   type BundlerDevCapability,
   type BundlerDevContext,
   type BundlerDevController,
+  type BundlerDevGeneration,
   type BundlerDevUpdateOptions,
+  type BundlerDevUpdateTransition,
   type BundlerEmittedFiles,
   isArtifactOnlyBuildPlanUpdate,
   isEmptyBuildPlanUpdate,
   resolveBundlerClientEntryAssets,
+  resolveBundlerServerEntryAssets,
 } from "./bundler.js";
 export { assertBundlerEmittedFiles } from "./bundler-output-files.js";
 export {
@@ -85,6 +89,7 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
+export { createPluginConfigView } from "./plugin-lifecycle.js";
 export type {
   PluginSettingsRegistry,
   PluginSettingsResolutionSession,

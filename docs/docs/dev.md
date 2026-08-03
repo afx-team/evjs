@@ -144,8 +144,28 @@ paths, so app-specific API proxies can keep their own routing behavior.
    to the server dev runtime.
 3. Exact fn/RSC endpoints and active PPR subtrees from the BuildPlan are proxied
    automatically; `server.basePath` is not itself a proxy namespace.
-4. Browser and server rebuilds happen as files change; restart `ev dev` after
-   changing configured entries or route topology.
+4. Browser and server rebuilds happen as files change, and file-convention Page
+   and API Route topology is discovered live. Restart `ev dev` after changing
+   plugin identity or ports, or when the selected bundler reports that a plan
+   update requires a restart.
+
+Framework control-plane dependencies—such as config files and their
+project-local imports, Page and Route declarations, and plugin-added watch
+files—share native directory watchers.
+If the operating system exhausts native watcher resources, `ev dev` logs a
+warning, moves the affected watcher set to dependency polling, and creates
+later framework watcher sets in polling mode. Bundler HMR watching remains
+adapter-owned. Permission and unknown watcher failures stop the dev session
+after cleanup rather than continuing with incomplete coverage.
+
+Framework plan updates are transactional. evjs reserves the bundler generation
+before changing generated `.ev` input, then publishes canonical manifests and
+HTML only from fresh facts for the selected generation. If analysis, plugin
+hooks, linking, or output emission fails, evjs restores the previous generated
+and canonical output state before resuming that generation. Adapter settlement
+also has a commit boundary: fallible finalization preparation runs while output
+is still restorable, and the adapter releases deferred compiler work only after
+Core commits the selected canonical output.
 
 ## Programmatic API
 
@@ -178,6 +198,13 @@ capabilities before starting the adapter.
 
 `@evjs/cli` also exports programmatic helpers that inject the default Utoopack
 adapter, matching the `ev dev` and `ev build` commands.
+
+For programmatic `dev()`, a supplied config is authoritative by default and is
+not replaced by a config file during startup. Calling `dev(undefined, options)`
+loads the discovered config, while `reloadInitialConfig: true` explicitly asks
+the provided or default `loadConfig` function to replace a supplied startup
+config. A custom `loadConfig` can still be retained for later watched reloads
+with `reloadInitialConfig: false`.
 
 ## Transport
 

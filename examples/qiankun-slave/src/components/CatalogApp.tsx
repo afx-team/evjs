@@ -1,3 +1,4 @@
+import { Link } from "@evjs/ev/navigation";
 import "../styles.css";
 
 export function CatalogApp() {
@@ -19,6 +20,9 @@ export function CatalogApp() {
           <span>$18.4k today</span>
         </article>
       </div>
+      <Link className="button" to="/details">
+        View catalog details
+      </Link>
     </main>
   );
 }

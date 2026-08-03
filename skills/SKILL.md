@@ -24,7 +24,7 @@ description: Develop, migrate, review, or debug evjs applications and framework 
 - Publish Pages only with `src/pages/**/page.{ts,tsx,js,jsx}`. The containing
   directory owns Page-private source and determines the URL.
 - Put static `title`, named `meta`, `render`, `hydrate`, `prerender`, `rsc`,
-  and the generated short-keyed Page `plugins` map in adjacent build-time
+  and the generated Page `plugins` map keyed by canonical plugin id in adjacent build-time
   `page.config.ts`.
 - Use `$param`, terminal `$...splat`, and `(group)` directories for dynamic,
   catch-all, and pathless client segments.

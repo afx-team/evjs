@@ -107,7 +107,7 @@ export function applyPageWrapperContributions(
         ? "client or server"
         : contribution.runtime;
     throw new Error(
-      `[evjs] Plugin "${contribution.pluginName}" page.wrapper contribution "${contribution.id}" targets ${target}, but no ${runtime} Page runtime projection exists for that target.`,
+      `[evjs] Plugin "${contribution.pluginId}" page.wrapper contribution "${contribution.id}" targets ${target}, but no ${runtime} Page runtime projection exists for that target.`,
     );
   }
 }

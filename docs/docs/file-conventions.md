@@ -131,8 +131,8 @@ export default definePageConfig({
 
 The module is evaluated synchronously at build time. It default-exports a plain
 object containing static JSON data. Core owns `title`, named `meta`, `render`,
-`hydrate`, `prerender`, and `rsc`; installed Page-aware plugins use generated
-short keys under `plugins`. Omitted `render` always means CSR, which must omit
+`hydrate`, `prerender`, and `rsc`; installed Page-aware plugins use their
+canonical ids under `plugins`. Omitted `render` always means CSR, which must omit
 `hydrate`; explicit SSR/SSG Pages may select `"load"` or `"none"`. `meta` maps
 string keys and values only to
 `<meta name="key" content="value">`. It does not provide `property`, `charset`,

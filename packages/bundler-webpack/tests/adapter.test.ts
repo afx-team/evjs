@@ -3,7 +3,11 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
+import type {
+  BundlerBuildFacts,
+  BundlerDevController,
+  BundlerDevGeneration,
+} from "@evjs/ev/_internal/build";
 import {
   buildHtml,
   createBuildPlan,
@@ -17,8 +21,8 @@ import { resolveConfig } from "@evjs/ev/config";
 import type { PluginHooks } from "@evjs/ev/plugin";
 import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
+  assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import { Volume } from "memfs";
@@ -32,7 +36,7 @@ import {
   createFrameworkRuntime,
   type FrameworkRuntimeOutput,
 } from "../../ev/src/_internal/build/framework-runtime.js";
-import type { WebpackConfig } from "../src/adapter/create-config.js";
+import type { WebpackConfigs } from "../src/adapter/create-config.js";
 import { __testing as webpackAdapterTesting } from "../src/adapter/index.js";
 import { __testing as serverPublicAssetTesting } from "../src/adapter/server-public-assets.js";
 import { webpackAdapter } from "../src/index.js";
@@ -75,6 +79,49 @@ function devIt(name: string, run: () => void | Promise<void>) {
   it(name, run, WEBPACK_DEV_TEST_TIMEOUT);
 }
 
+async function waitForCondition(
+  check: () => boolean | Promise<boolean>,
+  message: string,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await check())) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function createTestDevGeneration(): BundlerDevGeneration {
+  return {} as BundlerDevGeneration;
+}
+
+async function createTestDevUpdateOptions(
+  controller: BundlerDevController<WebpackConfigs> | undefined,
+  config: ResolvedConfig<WebpackConfigs>,
+  configChanged = false,
+) {
+  if (!controller) throw new Error("Expected webpack dev controller");
+  const transition = await controller.beginUpdate();
+  return {
+    activate: vi.fn(),
+    config,
+    configChanged,
+    generation: createTestDevGeneration(),
+    transition,
+  };
+}
+
+async function settleTestDevUpdate(
+  options: Awaited<ReturnType<typeof createTestDevUpdateOptions>>,
+  outcome: "accept" | "rollback",
+): Promise<void> {
+  if (outcome === "accept") await options.transition.accept();
+  else await options.transition.rollback();
+  await options.transition.resume();
+  await options.transition.prepareFinalize();
+  options.transition.finalize();
+}
+
 function buildIt(name: string, run: () => void | Promise<void>) {
   it(name, run, WEBPACK_BUILD_TEST_TIMEOUT);
 }
@@ -91,8 +138,8 @@ function getSinglePprRegionId(
 
 async function resolveProjectConfig(
   cwd: string,
-  config: Config<WebpackConfig>,
-): Promise<ResolvedConfig<WebpackConfig>> {
+  config: Config<WebpackConfigs>,
+): Promise<ResolvedConfig<WebpackConfigs>> {
   return withPageRoutingDefaults(resolveConfig(config), config, cwd);
 }
 
@@ -110,11 +157,11 @@ afterEach(async () => {
 });
 
 async function buildWithFrameworkArtifacts(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
-  hooks?: PluginHooks<WebpackConfig>[];
+  hooks?: PluginHooks<WebpackConfigs>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
 }) {
   const hooks = options.hooks ?? [];
@@ -139,7 +186,7 @@ async function buildWithFrameworkArtifacts(options: {
 }
 
 async function materializeTestPlan(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
@@ -147,14 +194,12 @@ async function materializeTestPlan(options: {
   return materializeFrameworkIR({
     cwd: options.cwd,
     mode: options.plan.mode,
-    command: options.plan.mode === "production" ? "build" : "dev",
     config: options.config,
     graph: options.graph,
     plan: options.plan,
     plugins: [],
     pluginContext: {
       mode: options.plan.mode,
-      command: options.plan.mode === "production" ? "build" : "dev",
       cwd: options.cwd,
       config: options.config,
       logger: console as never,
@@ -164,11 +209,11 @@ async function materializeTestPlan(options: {
 }
 
 function createFrameworkCallbacks(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
-  hooks?: PluginHooks<WebpackConfig>[];
+  hooks?: PluginHooks<WebpackConfigs>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
   onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
   onServerBundleReady?: () => void | Promise<void>;
@@ -184,8 +229,9 @@ function createFrameworkCallbacks(options: {
     },
     callbacks: {
       async onBuildFacts(
+        _generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
-        callbackOptions?: { isRebuild?: boolean },
+        callbackOptions: { isRebuild: boolean },
       ) {
         await emitFrameworkArtifacts({
           config: options.config,
@@ -195,8 +241,9 @@ function createFrameworkCallbacks(options: {
           hooks,
           facts,
           onBuildOutput: options.onBuildOutput,
-          isRebuild: callbackOptions?.isRebuild,
+          isRebuild: callbackOptions.isRebuild,
         });
+        return "published" as const;
       },
       onDevServerReady: options.onDevServerReady,
       onServerBundleReady:
@@ -209,11 +256,11 @@ function createFrameworkCallbacks(options: {
 }
 
 async function emitFrameworkArtifacts(options: {
-  config: ResolvedConfig<WebpackConfig>;
+  config: ResolvedConfig<WebpackConfigs>;
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
-  hooks: PluginHooks<WebpackConfig>[];
+  hooks: PluginHooks<WebpackConfigs>[];
   facts: BundlerBuildFacts;
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
   isRebuild?: boolean;
@@ -223,9 +270,6 @@ async function emitFrameworkArtifacts(options: {
     plan: options.plan,
     clientEntryAssets: options.facts.clientEntryAssets,
     serverEntryAssets: options.facts.serverEntryAssets,
-    serverEntry: options.facts.serverEntry,
-    serverAssets: options.facts.serverAssets,
-    serverModules: options.facts.serverModules,
   });
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.facts.rscManifests,
@@ -272,7 +316,6 @@ async function emitFrameworkArtifacts(options: {
       hooks: options.hooks,
       pluginContext: {
         mode: options.plan.mode,
-        command: options.plan.mode === "production" ? "build" : "dev",
         cwd: options.cwd,
         config: options.config,
         logger: console as never,
@@ -320,9 +363,102 @@ function embedClientRuntime(
   body.appendChild(script);
 }
 
+function createPrototypeEntryPlan(
+  entryName: string,
+  environment: "client" | "server",
+): BuildPlan {
+  return {
+    version: 1,
+    buildId: `prototype-entry-${environment}`,
+    mode: "production",
+    distDir: "dist",
+    output: {
+      clientDir: "dist/client",
+      serverDir: "dist/server",
+    },
+    entries: [
+      environment === "client"
+        ? {
+            name: entryName,
+            import: "./src/client.ts",
+            environment,
+            runtime: "browser",
+            kind: "app-client",
+          }
+        : {
+            name: entryName,
+            import: "./src/server.ts",
+            environment,
+            runtime: "node",
+            kind: "server-runtime",
+          },
+    ],
+    html: [],
+    server: environment === "server" ? { entry: "./src/server.ts" } : {},
+    runtime: {
+      publicPath: "/",
+      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+    },
+    dev: {
+      clientRoutes: [],
+      serverRequestRoutePaths: [],
+      serverRenderedPagePaths: [],
+      hasPpr: false,
+    },
+  };
+}
+
 describe("webpack stats ownership", () => {
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped stats entrypoint %s", (entryName) => {
+    const clientAsset = `${entryName}.js`;
+    const clientFacts = new WebpackManifestGenerator(
+      process.cwd(),
+      createPrototypeEntryPlan(entryName, "client"),
+      {
+        entrypoints: Object.fromEntries([
+          [entryName, { assets: [clientAsset] }],
+        ]),
+      },
+    ).collectBuildFacts();
+    const serverAsset = `${entryName}.cjs`;
+    const serverFacts = new WebpackManifestGenerator(
+      process.cwd(),
+      createPrototypeEntryPlan(entryName, "server"),
+      undefined,
+      {
+        assets: [serverAsset],
+        entrypoints: Object.fromEntries([
+          [entryName, { assets: [serverAsset] }],
+        ]),
+      },
+    ).collectBuildFacts();
+
+    expect(Object.getPrototypeOf(clientFacts.clientEntryAssets)).toBe(
+      Object.prototype,
+    );
+    expect(Object.hasOwn(clientFacts.clientEntryAssets ?? {}, entryName)).toBe(
+      true,
+    );
+    expect(Reflect.get(clientFacts.clientEntryAssets ?? {}, entryName)).toEqual(
+      { js: [clientAsset], css: [] },
+    );
+    expect(Object.getPrototypeOf(serverFacts.serverEntryAssets)).toBe(
+      Object.prototype,
+    );
+    expect(Object.hasOwn(serverFacts.serverEntryAssets ?? {}, entryName)).toBe(
+      true,
+    );
+    expect(Reflect.get(serverFacts.serverEntryAssets ?? {}, entryName)).toEqual(
+      { js: [serverAsset], css: [] },
+    );
+  });
+
   it("bypasses only BuildPlan-owned routes and runtime endpoints", () => {
-    const config = resolveConfig<WebpackConfig>({
+    const config = resolveConfig<WebpackConfigs>({
       server: {
         basePath: "/_ev",
         rsc: {
@@ -451,7 +587,7 @@ describe("webpack stats ownership", () => {
   });
 
   it("proxies a server-rendered root route without catching every asset", () => {
-    const config = resolveConfig<WebpackConfig>();
+    const config = resolveConfig<WebpackConfigs>();
     const plan: BuildPlan = {
       version: 1,
       buildId: "test",
@@ -488,7 +624,7 @@ describe("webpack stats ownership", () => {
   });
 
   it("proxies a dynamic root request route without swallowing deeper SPA paths", () => {
-    const config = resolveConfig<WebpackConfig>();
+    const config = resolveConfig<WebpackConfigs>();
     const plan: BuildPlan = {
       version: 1,
       buildId: "test",
@@ -527,50 +663,22 @@ describe("webpack stats ownership", () => {
     expect(requestRouteRule?.frameworkPageRender).toBeUndefined();
   });
 
-  it("namespaces server-rsc chunks and de-dupes modules while merging server stats", () => {
+  it("merges server entrypoint facts without module-stat ownership", () => {
     const serverStats: WebpackStatsLike = {
+      assets: ["server.cjs"],
       entrypoints: {
         server: {
           assets: ["server.cjs"],
         },
       },
-      chunks: [
-        {
-          id: 1,
-          names: ["server"],
-          files: ["server.cjs"],
-        },
-      ],
-      modules: [
-        {
-          identifier: "/project/src/shared.ts",
-          chunks: [1],
-        },
-      ],
     };
     const rscStats: WebpackStatsLike = {
+      assets: ["insights-rsc.cjs"],
       entrypoints: {
         "insights-rsc": {
           assets: ["insights-rsc.cjs"],
         },
       },
-      chunks: [
-        {
-          id: 1,
-          names: ["insights-rsc"],
-          files: ["insights-rsc.cjs"],
-        },
-      ],
-      modules: [
-        {
-          identifier: "/project/src/shared.ts",
-          chunks: [1],
-        },
-        {
-          identifier: "/project/src/Insights.tsx",
-          chunks: [1],
-        },
-      ],
     };
 
     const merged = webpackAdapterTesting.mergeWebpackStats(
@@ -579,28 +687,11 @@ describe("webpack stats ownership", () => {
       "server-rsc",
     );
 
-    expect(merged.chunks).toEqual([
-      {
-        id: 1,
-        names: ["server"],
-        files: ["server.cjs"],
-      },
-      {
-        id: "server-rsc:1",
-        names: ["server-rsc:insights-rsc"],
-        files: ["insights-rsc.cjs"],
-      },
-    ]);
-    expect(merged.modules).toEqual([
-      {
-        identifier: "/project/src/shared.ts",
-        chunks: [1],
-      },
-      {
-        identifier: "/project/src/Insights.tsx",
-        chunks: ["server-rsc:1"],
-      },
-    ]);
+    expect(merged.assets).toEqual(["server.cjs", "insights-rsc.cjs"]);
+    expect(merged.entrypoints).toEqual({
+      server: { assets: ["server.cjs"] },
+      "insights-rsc": { assets: ["insights-rsc.cjs"] },
+    });
   });
 
   it("reports complete portable asset inventories exposed by webpack stats", () => {
@@ -654,11 +745,7 @@ describe("webpack stats ownership", () => {
         entrypoints: { main: { assets: ["main.js"] } },
       },
       {
-        assets: [
-          { name: "./server.cjs" },
-          { name: "server.css" },
-          { name: "chunks/lazy.cjs" },
-        ],
+        assets: [{ name: "./server.cjs" }, { name: "server.css" }],
         entrypoints: {
           server: { assets: ["server.cjs", "server.css"] },
         },
@@ -673,8 +760,33 @@ describe("webpack stats ownership", () => {
         "server.css",
         "stats.json",
       ],
-      server: ["server.cjs", "server.css", "chunks/lazy.cjs", "stats.json"],
+      server: ["server.cjs", "server.css", "stats.json"],
     });
+
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        { assets: ["main.js"], entrypoints: { main: { assets: ["main.js"] } } },
+        {
+          assets: ["server.cjs", "chunks/lazy.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Webpack runtime server stats emitted unowned JavaScript asset "chunks/lazy.cjs"',
+    );
+
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        { assets: ["main.js"], entrypoints: { main: { assets: ["main.js"] } } },
+        { entrypoints: { server: { assets: ["server.cjs"] } } },
+      ).collectBuildFacts(),
+    ).toThrow(
+      "Webpack runtime server stats must provide a complete emitted asset inventory",
+    );
 
     expect(() =>
       new WebpackManifestGenerator(process.cwd(), plan, undefined, {
@@ -706,7 +818,7 @@ describe("webpack stats ownership", () => {
         },
       ).collectBuildFacts(),
     ).toThrow(
-      'Webpack server stats do not identify BuildPlan entrypoint "server" uniquely',
+      'Webpack server stats do not identify server BuildPlan entrypoint "server" exactly',
     );
     expect(() =>
       new WebpackManifestGenerator(
@@ -717,7 +829,10 @@ describe("webpack stats ownership", () => {
             main: { assets: ["runtime.js", "vendor.js"] },
           },
         },
-        { entrypoints: { server: { assets: ["server.cjs"] } } },
+        {
+          assets: ["server.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
       ).collectBuildFacts(),
     ).toThrow(
       'client BuildPlan entry "main" do not identify one JavaScript entry asset',
@@ -731,7 +846,10 @@ describe("webpack stats ownership", () => {
           assets: ["assets", "assets-extra.js", "assets/main.js"],
           entrypoints: { main: { assets: ["assets/main.js"] } },
         },
-        { entrypoints: { server: { assets: ["server.cjs"] } } },
+        {
+          assets: ["server.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
       ).collectBuildFacts(),
     ).toThrow(
       'Bundler emittedFiles.client asset "assets/main.js" conflicts with "assets"',
@@ -744,7 +862,10 @@ describe("webpack stats ownership", () => {
           assets: ["chunks/Foo.js", "chunks/foo.js"],
           entrypoints: { main: { assets: ["chunks/Foo.js"] } },
         },
-        { entrypoints: { server: { assets: ["server.cjs"] } } },
+        {
+          assets: ["server.cjs"],
+          entrypoints: { server: { assets: ["server.cjs"] } },
+        },
       ).collectBuildFacts(),
     ).toThrow(
       'Bundler emittedFiles.client asset "chunks/foo.js" conflicts with "chunks/Foo.js"',
@@ -774,16 +895,12 @@ describe("webpack stats ownership", () => {
       {
         assets: ["server.cjs"],
         entrypoints: { server: { assets: ["server.cjs"] } },
-        chunks: [{ id: 1, files: ["server.cjs"] }],
-        modules: [{ name: "src/runtime.ts", chunks: [1] }],
       },
       {
-        assets: ["page-server.cjs", "chunks/lazy.cjs"],
+        assets: ["page-server.cjs"],
         entrypoints: {
           "page-server": { assets: ["page-server.cjs"] },
         },
-        chunks: [{ id: 1, files: ["page-server.cjs"] }],
-        modules: [{ name: "src/build-page.ts", chunks: [1] }],
       },
       "server-build",
     );
@@ -793,11 +910,6 @@ describe("webpack stats ownership", () => {
       server: { assets: ["server.cjs"] },
       "page-server": { assets: ["page-server.cjs"] },
     });
-    expect(merged.chunks).toEqual([
-      { id: 1, files: ["server.cjs"] },
-      { id: "server-build:1", files: ["page-server.cjs"] },
-    ]);
-
     const plan: BuildPlan = {
       version: 1,
       buildId: "mixed-server-roots",
@@ -840,16 +952,36 @@ describe("webpack stats ownership", () => {
       undefined,
       merged,
     ).collectBuildFacts();
-    expect(facts.serverModules).toEqual([
+    expect(facts.serverEntryAssets).toEqual({
+      server: { js: ["server.cjs"], css: [] },
+      "page-server": { js: ["page-server.cjs"], css: [] },
+    });
+    expect(facts.emittedFiles?.server).toEqual(["server.cjs", "stats.json"]);
+    expect(facts).not.toHaveProperty("serverModules");
+
+    const unownedBuildChunk = webpackAdapterTesting.mergeWebpackStats(
       {
-        moduleId: "src/runtime.ts",
-        assets: { js: ["server.cjs"], css: [] },
+        assets: ["server.cjs"],
+        entrypoints: { server: { assets: ["server.cjs"] } },
       },
       {
-        moduleId: "src/build-page.ts",
-        assets: { js: ["page-server.cjs"], css: [] },
+        assets: ["page-server.cjs", "chunks/lazy.cjs"],
+        entrypoints: {
+          "page-server": { assets: ["page-server.cjs"] },
+        },
       },
-    ]);
+      "server-build",
+    );
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        undefined,
+        unownedBuildChunk,
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Webpack build-only server stats emitted unowned JavaScript asset "chunks/lazy.cjs"',
+    );
   });
 
   it("does not overwrite a stats.json symbolic link", async () => {
@@ -1537,9 +1669,11 @@ describe("webpack build-only memory modules", () => {
     await expect(loadB()).resolves.toEqual({ source: "b" });
   });
 
-  buildIt("loads webpack-generated dynamic chunks from memory", async () => {
-    const cwd = await createFixture({
-      "src/a/entry.ts": `
+  buildIt(
+    "inlines webpack dynamic imports into self-contained entries",
+    async () => {
+      const cwd = await createFixture({
+        "src/a/entry.ts": `
         export async function load() {
           const value = await import(
             /* webpackChunkName: "chunks/a/lazy" */ "./lazy"
@@ -1547,8 +1681,8 @@ describe("webpack build-only memory modules", () => {
           return value.default;
         }
       `,
-      "src/a/lazy.ts": 'export default "a";',
-      "src/b/entry.ts": `
+        "src/a/lazy.ts": 'export default "a";',
+        "src/b/entry.ts": `
         export async function load() {
           const value = await import(
             /* webpackChunkName: "chunks/b/lazy" */ "./lazy"
@@ -1556,71 +1690,76 @@ describe("webpack build-only memory modules", () => {
           return value.default;
         }
       `,
-      "src/b/lazy.ts": 'export default "b";',
-    });
-    const config = resolveConfig<WebpackConfig>({});
-    const plan: BuildPlan = {
-      version: 1,
-      buildId: "memory-chunks",
-      mode: "development",
-      distDir: "dist",
-      output: {
-        clientDir: "dist/client",
-        serverDir: "dist/server",
-      },
-      entries: [
-        {
-          name: "renderer-a",
-          import: "./src/a/entry.ts",
-          environment: "server",
-          runtime: "node",
-          kind: "page-server",
-          phase: "build",
-          owner: { pageId: "a" },
+        "src/b/lazy.ts": 'export default "b";',
+      });
+      const config = resolveConfig<WebpackConfigs>({});
+      const plan: BuildPlan = {
+        version: 1,
+        buildId: "memory-chunks",
+        mode: "development",
+        distDir: "dist",
+        output: {
+          clientDir: "dist/client",
+          serverDir: "dist/server",
         },
-        {
-          name: "renderer-b",
-          import: "./src/b/entry.ts",
-          environment: "server",
-          runtime: "node",
-          kind: "page-server",
-          phase: "build",
-          owner: { pageId: "b" },
+        entries: [
+          {
+            name: "renderer-a",
+            import: "./src/a/entry.ts",
+            environment: "server",
+            runtime: "node",
+            kind: "page-server",
+            phase: "build",
+            owner: { pageId: "a" },
+          },
+          {
+            name: "renderer-b",
+            import: "./src/b/entry.ts",
+            environment: "server",
+            runtime: "node",
+            kind: "page-server",
+            phase: "build",
+            owner: { pageId: "b" },
+          },
+        ],
+        html: [],
+        server: {},
+        runtime: {
+          publicPath: "/",
+          server: { basePath: "/__evjs", fn: "__evjs/fn" },
         },
-      ],
-      html: [],
-      server: {},
-      runtime: {
-        publicPath: "/",
-        server: { basePath: "/__evjs", fn: "__evjs/fn" },
-      },
-      dev: {
-        clientRoutes: [],
-        serverRequestRoutePaths: [],
-        serverRenderedPagePaths: [],
-        hasPpr: false,
-      },
-    };
+        dev: {
+          clientRoutes: [],
+          serverRequestRoutePaths: [],
+          serverRenderedPagePaths: [],
+          hasPpr: false,
+        },
+      };
 
-    const facts = await webpackAdapter.build({
-      config,
-      cwd,
-      plan,
-      hooks: [],
-    });
-    const loadModule = facts.loadServerModule;
-    expect(loadModule).toBeTypeOf("function");
-    const rendererA = (await loadModule?.("renderer-a.cjs")) as {
-      load(): Promise<string>;
-    };
-    const rendererB = (await loadModule?.("renderer-b.cjs")) as {
-      load(): Promise<string>;
-    };
+      const facts = await webpackAdapter.build({
+        config,
+        cwd,
+        plan,
+        hooks: [],
+      });
+      const loadModule = facts.loadServerModule;
+      expect(loadModule).toBeTypeOf("function");
+      const rendererA = (await loadModule?.("renderer-a.cjs")) as {
+        load(): Promise<string>;
+      };
+      const rendererB = (await loadModule?.("renderer-b.cjs")) as {
+        load(): Promise<string>;
+      };
 
-    await expect(rendererA.load()).resolves.toBe("a");
-    await expect(rendererB.load()).resolves.toBe("b");
-    expect(facts.emittedFiles?.server).toBeUndefined();
-  });
+      await expect(rendererA.load()).resolves.toBe("a");
+      await expect(rendererB.load()).resolves.toBe("b");
+      expect(facts.serverEntryAssets).toEqual({
+        "renderer-a": { js: ["renderer-a.cjs"], css: [] },
+        "renderer-b": { js: ["renderer-b.cjs"], css: [] },
+      });
+      expect(facts.emittedFiles?.server).toBeUndefined();
+    },
+  );
 });
 
 describe("webpackAdapter build", () => {
@@ -1686,9 +1825,8 @@ describe("webpackAdapter build", () => {
           plan,
           hooks: [
             {
-              bundlerConfig(configs) {
-                const items = Array.isArray(configs) ? configs : [configs];
-                const client = items.find((item) => item.name === "client");
+              configureBundler(configs) {
+                const client = configs.find((item) => item.name === "client");
                 if (client?.output) client.output.path = path.join(cwd, "src");
               },
             },
@@ -1728,9 +1866,8 @@ describe("webpackAdapter build", () => {
           plan,
           hooks: [
             {
-              bundlerConfig(configs) {
-                const items = Array.isArray(configs) ? configs : [configs];
-                const client = items.find((item) => item.name === "client");
+              configureBundler(configs) {
+                const client = configs.find((item) => item.name === "client");
                 if (client?.output) {
                   client.output.filename = "../../escape.js";
                 }
@@ -1776,7 +1913,7 @@ describe("webpackAdapter build", () => {
         hooks: [],
       });
 
-      const manifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "Webpack MPA BuildOutput");
       const html = await fs.readFile(
         path.join(cwd, "dist/client/home/index.html"),
         "utf-8",
@@ -1792,15 +1929,10 @@ describe("webpackAdapter build", () => {
         component: "./src/pages/home/page.tsx",
         mount: "#root",
       });
-      expect(manifest).not.toHaveProperty("assets");
-      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
-      }
-      expect(manifest.routing.pages.home).toMatchObject({
+      expect(output.pages.home).toMatchObject({
         assets: { js: ["page-client-home.js"], css: [] },
         render: "csr",
       });
-      expect("module" in manifest.routing.pages.home).toBe(false);
       expect(output.pages.home).toMatchObject({
         render: "csr",
         module: {
@@ -1952,7 +2084,7 @@ describe("webpackAdapter build", () => {
           "utf-8",
         ),
       );
-      const publicManifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "Webpack BuildOutput");
       const html = await fs.readFile(
         path.join(cwd, "dist/client/index.html"),
         "utf-8",
@@ -1997,28 +2129,17 @@ describe("webpackAdapter build", () => {
       expect(output.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
       expect("apps" in deploymentMetadata).toBe(false);
       expect("pages" in deploymentMetadata).toBe(false);
-      expect("app" in publicManifest).toBe(false);
-      if (
-        !("routing" in publicManifest) ||
-        publicManifest.routing.kind !== "spa"
-      ) {
-        throw new Error("Expected SPA public manifest.");
-      }
-      expect("assets" in publicManifest).toBe(true);
-      if (!("assets" in publicManifest)) {
-        throw new Error("Expected SPA public manifest assets.");
-      }
-      expect(publicManifest.assets).toEqual({
+      expect(output.assets).toMatchObject({
         main: {
           js: ["main.js"],
           css: [],
         },
       });
-      expect(publicManifest.routing.routes).toContainEqual({
+      expect(output.routes).toContainEqual({
         id: "dashboard",
         path: "/dashboard",
+        appId: "default",
         pageId: "dashboard",
-        render: "ssr",
       });
       await expect(
         fs.access(path.join(cwd, "dist/manifest.json")),
@@ -2362,6 +2483,7 @@ describe("webpackAdapter dev", () => {
         webpackAdapter.dev({
           config,
           cwd,
+          generation: createTestDevGeneration(),
           plan,
           hooks: [],
           callbacks: {
@@ -2412,10 +2534,11 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: {
-        async onBuildFacts(facts, options) {
+        async onBuildFacts(_generation, facts, options) {
           await linkAndEmitBuildOutput({
             bundlerFacts: facts,
             graph: analysis.graph,
@@ -2425,14 +2548,14 @@ describe("webpackAdapter dev", () => {
             hooks: [],
             pluginCtx: {
               mode: "development",
-              command: "dev",
               cwd,
               config: frameworkConfig,
               logger: console as never,
               addWatchFile() {},
             },
-            isRebuild: options?.isRebuild ?? false,
+            isRebuild: options.isRebuild,
           });
+          return "published" as const;
         },
         async onServerBundleReady() {},
       },
@@ -2493,6 +2616,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: framework.callbacks,
@@ -2501,7 +2625,7 @@ describe("webpackAdapter dev", () => {
     try {
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
       if (!output) throw new Error("Expected linked BuildOutput.");
-      const manifest = createPublicManifest(output);
+      assertFrameworkManifestShape(output, "Webpack dev MPA BuildOutput");
       const html = await fetchDevText(
         `http://127.0.0.1:${port}/home/index.html`,
       );
@@ -2513,14 +2637,7 @@ describe("webpackAdapter dev", () => {
       expect(onDevServerReady).toHaveBeenCalledWith({
         origin: `http://localhost:${port}`,
       });
-      expect("distDir" in manifest).toBe(false);
-      expect(manifest).not.toHaveProperty("assets");
-      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
-      }
-      expect(manifest.routing.pages.home.assets.js).toEqual([
-        "page-client-home.js",
-      ]);
+      expect(output.pages.home.assets.js).toEqual(["page-client-home.js"]);
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
       expect(html).toContain('src="/page-client-home.js"');
@@ -2531,12 +2648,19 @@ describe("webpackAdapter dev", () => {
       await expect(
         fs.access(path.join(cwd, "dist/runtime.json")),
       ).rejects.toThrow();
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        config,
+        true,
+      );
       await expect(
-        controller.updatePlan(diffBuildPlan(plan, plan, "config"), {
-          config,
-          configChanged: true,
-        }),
+        controller.updatePlan(
+          diffBuildPlan(plan, plan, "config"),
+          updateOptions,
+        ),
       ).rejects.toThrow("Restart ev dev to apply the updated config");
+      await settleTestDevUpdate(updateOptions, "rollback");
+      expect(updateOptions.activate).not.toHaveBeenCalled();
     } finally {
       await controller.close?.();
     }
@@ -2610,12 +2734,9 @@ describe("webpackAdapter dev", () => {
         );
       },
     };
-    const hooks: PluginHooks<WebpackConfig>[] = [
+    const hooks: PluginHooks<WebpackConfigs>[] = [
       {
-        bundlerConfig(bundlerConfig) {
-          const configs = Array.isArray(bundlerConfig)
-            ? bundlerConfig
-            : [bundlerConfig];
+        configureBundler(configs) {
           for (const webpackConfig of configs) {
             webpackConfig.plugins = [
               ...(webpackConfig.plugins ?? []),
@@ -2640,15 +2761,20 @@ describe("webpackAdapter dev", () => {
     const callbacks = {
       ...framework.callbacks,
       async onBuildFacts(
+        generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
-        options?: { isRebuild?: boolean },
+        options: { isRebuild: boolean },
       ) {
         activeBuildFacts += 1;
         maxActiveBuildFacts = Math.max(maxActiveBuildFacts, activeBuildFacts);
-        rebuildFlags.push(options?.isRebuild ?? false);
+        rebuildFlags.push(options.isRebuild);
         try {
           await new Promise((resolve) => setTimeout(resolve, 100));
-          await framework.callbacks.onBuildFacts(facts, options);
+          return await framework.callbacks.onBuildFacts(
+            generation,
+            facts,
+            options,
+          );
         } finally {
           activeBuildFacts -= 1;
         }
@@ -2658,6 +2784,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks,
       callbacks,
@@ -2711,6 +2838,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: framework.callbacks,
@@ -2779,9 +2907,9 @@ describe("webpackAdapter dev", () => {
       }),
     });
     let failBundlerConfig = false;
-    const hooks: PluginHooks<WebpackConfig>[] = [
+    const hooks: PluginHooks<WebpackConfigs>[] = [
       {
-        bundlerConfig() {
+        configureBundler() {
           if (failBundlerConfig) {
             throw new Error("html-only update should not rebuild webpack");
           }
@@ -2799,6 +2927,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks,
       callbacks: framework.callbacks,
@@ -2810,6 +2939,10 @@ describe("webpackAdapter dev", () => {
         routing: { mode: "mpa", html: "./next.html", mount: "#root" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        nextConfig,
+      );
       const nextPlan = await materializeTestPlan({
         config: nextConfig,
         cwd,
@@ -2822,7 +2955,8 @@ describe("webpackAdapter dev", () => {
 
       failBundlerConfig = true;
       framework.update(nextAnalysis.graph, nextPlan);
-      await controller?.updatePlan(update);
+      await controller?.updatePlan(update, updateOptions);
+      await settleTestDevUpdate(updateOptions, "accept");
 
       const html = await fetchDevText(
         `http://127.0.0.1:${port}/home/index.html`,
@@ -2831,12 +2965,182 @@ describe("webpackAdapter dev", () => {
       expect(update.entries.added).toHaveLength(0);
       expect(update.entries.changed).toHaveLength(0);
       expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
+      expect(updateOptions.activate).toHaveBeenCalledTimes(1);
       expect(html).toContain("next-shell");
       expect(html).toContain('src="/page-client-home.js"');
     } finally {
       await controller?.close?.();
     }
   });
+
+  devIt(
+    "publishes a candidate after superseding an invalidated transition compile",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/home/page.tsx": `
+          import { createElement } from "react";
+
+          export default function Home() {
+            return createElement("h1", null, "Home");
+          }
+        `,
+        "src/pages/home/page.config.ts": 'export default { render: "ssr" };',
+      });
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        dev: { port },
+        routing: { mode: "mpa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = await materializeTestPlan({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan: createBuildPlan(config, analysis.graph, {
+          mode: "development",
+        }),
+      });
+
+      let clientCompiler: Compiler | undefined;
+      let observeTransitionRuns = false;
+      let transitionWatchRuns = 0;
+      let blockNextClientMake = false;
+      let markBlockedClientMake!: () => void;
+      const blockedClientMake = new Promise<void>((resolve) => {
+        markBlockedClientMake = resolve;
+      });
+      let releaseBlockedClientMake!: () => void;
+      const blockedClientMakeGate = new Promise<void>((resolve) => {
+        releaseBlockedClientMake = resolve;
+      });
+      const blockTransitionCompilePlugin = {
+        apply(compiler: Compiler) {
+          if (compiler.options.name !== "client") return;
+          clientCompiler = compiler;
+          compiler.hooks.watchRun.tap("EvjsTestTransitionCompileRuns", () => {
+            if (observeTransitionRuns) transitionWatchRuns += 1;
+          });
+          compiler.hooks.make.tapPromise(
+            "EvjsTestBlockTransitionCompile",
+            async () => {
+              if (!blockNextClientMake) return;
+              blockNextClientMake = false;
+              markBlockedClientMake();
+              await blockedClientMakeGate;
+            },
+          );
+        },
+      };
+      const hooks: PluginHooks<WebpackConfigs>[] = [
+        {
+          configureBundler(configs) {
+            const clientConfig = configs.find(
+              (webpackConfig) => webpackConfig.name === "client",
+            );
+            if (!clientConfig) throw new Error("Expected client config.");
+            clientConfig.plugins = [
+              ...(clientConfig.plugins ?? []),
+              blockTransitionCompilePlugin,
+            ];
+          },
+        },
+      ];
+      const onBuildOutput = vi.fn();
+      const onServerBundleReady = vi.fn();
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks,
+        onBuildOutput,
+        onServerBundleReady,
+      });
+
+      const controller = await webpackAdapter.dev({
+        config,
+        cwd,
+        generation: createTestDevGeneration(),
+        plan,
+        hooks,
+        callbacks: framework.callbacks,
+      });
+      let resumePromise: Promise<void> | undefined;
+      try {
+        onBuildOutput.mockClear();
+        onServerBundleReady.mockClear();
+        const nextGraph = structuredClone(analysis.graph);
+        const page = nextGraph.pages.home;
+        if (!page) throw new Error("Expected home Page.");
+        page.metadata = { title: "Updated home" };
+        const updateOptions = await createTestDevUpdateOptions(
+          controller,
+          config,
+        );
+
+        observeTransitionRuns = true;
+        blockNextClientMake = true;
+        const nextPlan = await materializeTestPlan({
+          config,
+          cwd,
+          graph: nextGraph,
+          plan: createBuildPlan(config, nextGraph, {
+            mode: "development",
+          }),
+        });
+        const update = diffBuildPlan(plan, nextPlan, "config");
+
+        framework.update(nextGraph, nextPlan);
+        await controller?.updatePlan(update, updateOptions);
+        const watching = clientCompiler?.watching;
+        if (!watching) throw new Error("Expected client compiler watching.");
+        watching.invalidate();
+        await blockedClientMake;
+
+        await updateOptions.transition.accept();
+        let resumeSettled = false;
+        const selectedResume = Promise.resolve(
+          updateOptions.transition.resume(),
+        );
+        resumePromise = selectedResume;
+        const observedResume = selectedResume.then(
+          () => {
+            resumeSettled = true;
+          },
+          () => {
+            resumeSettled = true;
+          },
+        );
+        releaseBlockedClientMake();
+
+        await waitForCondition(
+          () => resumeSettled,
+          "Webpack did not replace the invalidated transition compile.",
+          5_000,
+        );
+        await observedResume;
+        await selectedResume;
+        await updateOptions.transition.prepareFinalize();
+        updateOptions.transition.finalize();
+
+        expect(transitionWatchRuns).toBeGreaterThanOrEqual(2);
+        expect(update.generatedChanged).toBe(true);
+        expect(updateOptions.activate).toHaveBeenCalledTimes(1);
+        expect(onBuildOutput).toHaveBeenCalledTimes(1);
+        expect(onBuildOutput.mock.calls[0]?.[0].pages.home?.metadata).toEqual({
+          title: "Updated home",
+        });
+        expect(onServerBundleReady).toHaveBeenCalledTimes(1);
+      } finally {
+        releaseBlockedClientMake();
+        await controller?.close?.();
+        await resumePromise?.catch(() => {});
+      }
+    },
+  );
 
   devIt(
     "refreshes the server runtime after page metadata-only plan updates",
@@ -2868,7 +3172,21 @@ describe("webpackAdapter dev", () => {
           mode: "development",
         }),
       });
-      const onServerBundleReady = vi.fn();
+      let blockNextServerReady = false;
+      let markBlockedServerReady!: () => void;
+      const blockedServerReady = new Promise<void>((resolve) => {
+        markBlockedServerReady = resolve;
+      });
+      let releaseServerReady!: () => void;
+      const serverReadyGate = new Promise<void>((resolve) => {
+        releaseServerReady = resolve;
+      });
+      const onServerBundleReady = vi.fn(async () => {
+        if (!blockNextServerReady) return;
+        blockNextServerReady = false;
+        markBlockedServerReady();
+        await serverReadyGate;
+      });
       const framework = createFrameworkCallbacks({
         config,
         cwd,
@@ -2880,12 +3198,14 @@ describe("webpackAdapter dev", () => {
       const controller = await webpackAdapter.dev({
         config,
         cwd,
+        generation: createTestDevGeneration(),
         plan,
         hooks: [],
         callbacks: framework.callbacks,
       });
       try {
         onServerBundleReady.mockClear();
+        blockNextServerReady = true;
         const nextGraph = structuredClone(analysis.graph);
         const page = nextGraph.pages.home;
         if (!page) throw new Error("Expected home Page.");
@@ -2893,6 +3213,10 @@ describe("webpackAdapter dev", () => {
           title: "Updated home",
           meta: { description: "Updated description" },
         };
+        const updateOptions = await createTestDevUpdateOptions(
+          controller,
+          config,
+        );
         const nextPlan = await materializeTestPlan({
           config,
           cwd,
@@ -2904,7 +3228,37 @@ describe("webpackAdapter dev", () => {
         const update = diffBuildPlan(plan, nextPlan, "config");
 
         framework.update(nextGraph, nextPlan);
-        await controller?.updatePlan(update);
+        await controller?.updatePlan(update, updateOptions);
+        const settling = settleTestDevUpdate(updateOptions, "accept");
+        await blockedServerReady;
+
+        await fs.writeFile(
+          path.join(cwd, "src/pages/home/page.tsx"),
+          `
+            import { createElement } from "react";
+
+            export default function Home() {
+              return createElement("h1", null, "late-transition-source");
+            }
+          `,
+          "utf-8",
+        );
+        const clientBundle = path.join(cwd, "dist/client/page-client-home.js");
+        await waitForCondition(
+          async () =>
+            (await fs.readFile(clientBundle, "utf-8").catch(() => "")).includes(
+              "late-transition-source",
+            ),
+          "Webpack did not finish the late transition compile.",
+        );
+
+        releaseServerReady();
+        await settling;
+        await waitForCondition(
+          () => onServerBundleReady.mock.calls.length >= 2,
+          "Webpack did not republish dirty transition input after finalize.",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
         expect(update.entries.added).toHaveLength(0);
         expect(update.entries.removed).toHaveLength(0);
@@ -2914,8 +3268,10 @@ describe("webpackAdapter dev", () => {
         expect(update.serverCompilationChanged).toBe(false);
         expect(update.serverDocumentsChanged).toBe(true);
         expect(update.devRoutingChanged).toBe(false);
-        expect(onServerBundleReady).toHaveBeenCalled();
+        expect(updateOptions.activate).toHaveBeenCalledTimes(1);
+        expect(onServerBundleReady).toHaveBeenCalledTimes(2);
       } finally {
+        releaseServerReady();
         await controller?.close?.();
       }
     },
@@ -2949,9 +3305,9 @@ describe("webpackAdapter dev", () => {
       }),
     });
     let failBundlerConfig = false;
-    const hooks: PluginHooks<WebpackConfig>[] = [
+    const hooks: PluginHooks<WebpackConfigs>[] = [
       {
-        bundlerConfig() {
+        configureBundler() {
           if (failBundlerConfig) {
             throw new Error("forced update failure");
           }
@@ -2969,6 +3325,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks,
       callbacks: framework.callbacks,
@@ -2992,6 +3349,10 @@ describe("webpackAdapter dev", () => {
         routing: { mode: "mpa", mount: "#root" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        nextConfig,
+      );
       const nextPlan = await materializeTestPlan({
         config: nextConfig,
         cwd,
@@ -3003,9 +3364,12 @@ describe("webpackAdapter dev", () => {
       const update = diffBuildPlan(plan, nextPlan, "config");
 
       failBundlerConfig = true;
-      await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "cannot safely replace persistent compiler entries",
-      );
+      await expect(
+        controller?.updatePlan(update, updateOptions),
+      ).rejects.toThrow("cannot safely replace persistent compiler entries");
+      framework.update(analysis.graph, plan);
+      await settleTestDevUpdate(updateOptions, "rollback");
+      expect(updateOptions.activate).not.toHaveBeenCalled();
 
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
@@ -3057,6 +3421,7 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
+      generation: createTestDevGeneration(),
       plan,
       hooks: [],
       callbacks: framework.callbacks,
@@ -3081,6 +3446,10 @@ describe("webpackAdapter dev", () => {
         routing: { mode: "mpa", mount: "#root" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+      const updateOptions = await createTestDevUpdateOptions(
+        controller,
+        nextConfig,
+      );
       const nextPlan = await materializeTestPlan({
         config: nextConfig,
         cwd,
@@ -3093,14 +3462,19 @@ describe("webpackAdapter dev", () => {
       const buildOutputCallsBeforeUpdate = onBuildOutput.mock.calls.length;
 
       framework.update(nextAnalysis.graph, nextPlan);
-      await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "cannot safely replace persistent compiler entries",
-      );
+      await expect(
+        controller?.updatePlan(update, updateOptions),
+      ).rejects.toThrow("cannot safely replace persistent compiler entries");
+      framework.update(analysis.graph, plan);
+      await settleTestDevUpdate(updateOptions, "rollback");
+      expect(updateOptions.activate).not.toHaveBeenCalled();
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         createPageClientBuildEntryName("about"),
       ]);
-      expect(onBuildOutput).toHaveBeenCalledTimes(buildOutputCallsBeforeUpdate);
+      expect(onBuildOutput).toHaveBeenCalledTimes(
+        buildOutputCallsBeforeUpdate + 1,
+      );
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
       };

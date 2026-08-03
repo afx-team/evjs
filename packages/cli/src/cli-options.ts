@@ -20,8 +20,9 @@ function setFlag(
   name: string,
   value: boolean | string,
 ): void {
-  const current = flags[name];
-  if (current === undefined) {
+  const hasCurrent = Object.hasOwn(flags, name);
+  const current = hasCurrent ? flags[name] : undefined;
+  if (!hasCurrent || current === undefined) {
     flags[name] = value;
   } else if (Array.isArray(current)) {
     current.push(value);
@@ -38,7 +39,7 @@ function setFlag(
  * and repeated flags as arrays.
  */
 export function parseCliFlags(args: readonly string[]): CliFlags {
-  const flags: CliFlags = {};
+  const flags = Object.create(null) as CliFlags;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -51,11 +52,12 @@ export function parseCliFlags(args: readonly string[]): CliFlags {
     const equalsIndex = rawFlag.indexOf("=");
     if (equalsIndex >= 0) {
       const name = toFlagName(rawFlag.slice(0, equalsIndex));
+      if (!name) continue;
       setFlag(flags, name, coerceFlagValue(rawFlag.slice(equalsIndex + 1)));
       continue;
     }
     const nextArg = args[index + 1];
-    if (nextArg && !nextArg.startsWith("-")) {
+    if (nextArg && !nextArg.startsWith("--")) {
       setFlag(flags, toFlagName(rawFlag), coerceFlagValue(nextArg));
       index++;
     } else {

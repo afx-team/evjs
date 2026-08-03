@@ -3,16 +3,15 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DefaultBundlerConfig } from "@evjs/ev/config";
 import {
-  type ContributionContext,
   definePlugin,
-  type FrameworkIRView,
+  type FrameworkView,
   type GeneratedModuleRef,
   type HtmlDocument,
-  type PluginContext,
+  type PluginEmitIRContext,
   type PluginHooks,
-  pluginConfig,
+  type PluginSetupContext,
+  pluginOptions,
 } from "@evjs/ev/plugin";
 
 export interface QiankunModuleRefObject {
@@ -86,8 +85,8 @@ interface GeneratedSourceHelpers {
   importFile(file: string): string;
 }
 
-const masterPluginName = "@evjs/plugin-qiankun:master";
-const slavePluginName = "@evjs/plugin-qiankun:slave";
+const masterPluginId = "qiankun-master";
+const slavePluginId = "qiankun-slave";
 const qiankunRuntime = resolveQiankunRuntimeModulePath();
 const qiankunRuntimeImport = "@evjs/plugin-qiankun/runtime";
 const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
@@ -97,10 +96,8 @@ const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
  *
  * This is the composable form of {@link evPluginQiankunMaster}.
  */
-export async function contributeQiankunMaster<
-  TBundlerCfg = DefaultBundlerConfig,
->(
-  ctx: ContributionContext<TBundlerCfg>,
+export async function emitQiankunMasterIR<TBundlerCfg = unknown>(
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
 ): Promise<void> {
   const state = createMasterState(ctx, options);
@@ -134,10 +131,8 @@ export async function contributeQiankunMaster<
  *
  * This is the composable form of {@link evPluginQiankunSlave}.
  */
-export async function contributeQiankunSlave<
-  TBundlerCfg = DefaultBundlerConfig,
->(
-  ctx: ContributionContext<TBundlerCfg>,
+export async function emitQiankunSlaveIR<TBundlerCfg = unknown>(
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions = {},
 ): Promise<void> {
   const state = await createSlaveState(ctx, options);
@@ -167,11 +162,11 @@ export async function contributeQiankunSlave<
 }
 
 export const evPluginQiankunMaster = definePlugin({
-  id: masterPluginName,
-  application: pluginConfig<QiankunMasterPluginOptions>(),
+  id: masterPluginId,
+  application: pluginOptions<QiankunMasterPluginOptions>(),
   enforce: "pre",
-  async contributions(ctx) {
-    await contributeQiankunMaster(ctx, ctx.options);
+  async emitIR(ctx) {
+    await emitQiankunMasterIR(ctx, ctx.options);
   },
   setup() {
     return createQiankunMasterHooks();
@@ -179,11 +174,11 @@ export const evPluginQiankunMaster = definePlugin({
 });
 
 export const evPluginQiankunSlave = definePlugin({
-  id: slavePluginName,
-  application: pluginConfig<QiankunSlavePluginOptions>({ defaults: {} }),
+  id: slavePluginId,
+  application: pluginOptions<QiankunSlavePluginOptions>({ defaults: {} }),
   enforce: "pre",
-  async contributions(ctx) {
-    await contributeQiankunSlave(ctx, ctx.options);
+  async emitIR(ctx) {
+    await emitQiankunSlaveIR(ctx, ctx.options);
   },
   async setup(ctx) {
     return createQiankunSlaveHooks(ctx, ctx.options);
@@ -193,17 +188,15 @@ export const evPluginQiankunSlave = definePlugin({
 /** Lifecycle hooks reused by standalone and platform-composed master plugins. */
 export function createQiankunMasterHooks(): PluginHooks {
   return {
-    bundlerConfig(_config, bundlerCtx) {
+    configureBundler(_config, bundlerCtx) {
       assertSupportedBundler(bundlerCtx.bundlerName);
     },
   };
 }
 
 /** Lifecycle hooks reused by standalone and platform-composed slave plugins. */
-export async function createQiankunSlaveHooks<
-  TBundlerCfg = DefaultBundlerConfig,
->(
-  ctx: PluginContext<TBundlerCfg>,
+export async function createQiankunSlaveHooks<TBundlerCfg = unknown>(
+  ctx: PluginSetupContext<TBundlerCfg>,
   options: Pick<QiankunSlavePluginOptions, "name"> = {},
 ): Promise<PluginHooks> {
   const state: QiankunSlaveState = {
@@ -211,7 +204,7 @@ export async function createQiankunSlaveHooks<
     appName: options.name ?? (await readPackageName(ctx.cwd)),
   };
   return {
-    bundlerConfig(config, bundlerCtx) {
+    configureBundler(config, bundlerCtx) {
       applyQiankunSlaveBundlerConfig(config, bundlerCtx.bundlerName, state);
     },
     transformHtml(doc) {
@@ -221,7 +214,7 @@ export async function createQiankunSlaveHooks<
 }
 
 function resolveSingleAppEntry(
-  framework: FrameworkIRView,
+  framework: FrameworkView,
   role: "master" | "slave",
 ): ResolvedAppEntry {
   if (framework.applications.length !== 1) {
@@ -322,7 +315,7 @@ function resolveModulePath(cwd: string, specifier: string): string {
 }
 
 function createMasterState<TBundlerCfg>(
-  ctx: ContributionContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunMasterPluginOptions,
 ): MasterEntryWrapperState {
   const entry = resolveSingleAppEntry(ctx.framework, "master");
@@ -336,7 +329,7 @@ function createMasterState<TBundlerCfg>(
 }
 
 async function createSlaveState<TBundlerCfg>(
-  ctx: ContributionContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
   options: QiankunSlavePluginOptions,
 ): Promise<SlaveEntryWrapperState> {
   const entry = resolveSingleAppEntry(ctx.framework, "slave");
@@ -354,7 +347,7 @@ async function createSlaveState<TBundlerCfg>(
 }
 
 function addQiankunExternalContribution<TBundlerCfg>(
-  ctx: ContributionContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
 ): void {
   ctx.slot("resolve.external").add({
     id: "qiankun-external",
@@ -389,7 +382,7 @@ function createMasterEntryWrapperSource(
 }
 
 function emitOriginalEntryModule<TBundlerCfg>(
-  ctx: ContributionContext<TBundlerCfg>,
+  ctx: PluginEmitIRContext<TBundlerCfg>,
 ): GeneratedModuleRef {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) {
@@ -483,15 +476,19 @@ function applyQiankunSlaveBundlerConfig(
 ): void {
   assertSupportedBundler(bundlerName);
   if (bundlerName === "webpack") {
-    applyWebpackSlaveLibraryToConfig(config, state);
+    applyWebpackSlaveLibraryToConfigs(config, state);
   }
 }
 
-function applyWebpackSlaveLibraryToConfig(
-  config: unknown,
+function applyWebpackSlaveLibraryToConfigs(
+  configs: unknown,
   state: QiankunSlaveState,
 ): void {
-  const configs = Array.isArray(config) ? config : [config];
+  if (!Array.isArray(configs)) {
+    throw new Error(
+      "[evjs:plugin-qiankun] Webpack configureBundler expected an array of configurations.",
+    );
+  }
   for (const webpackConfig of configs) {
     if (!isRecord(webpackConfig)) continue;
     if (webpackConfig.target === "node") continue;
@@ -567,7 +564,7 @@ async function assertFileExists(
  * Rewrite qiankun slave HTML and install the lifecycle proxy.
  *
  * The lifecycle hooks and generated entry resolve the same deterministic
- * application name independently because setup precedes contributions.
+ * application name independently because setup precedes contribution emission.
  */
 function applyQiankunSlaveHtmlTransform(
   doc: HtmlDocument,

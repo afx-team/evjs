@@ -11,11 +11,15 @@ import {
   assertFrameworkRuntime,
   type FrameworkRuntime,
 } from "../src/framework-rendering/framework.js";
+import type * as ServerReact from "../src/framework-rendering/react.js";
 import {
   createReactRscFlightAdapter,
   createReactServerRenderAdapter,
   renderReactPageMetadata,
 } from "../src/framework-rendering/react-renderer.js";
+
+// @ts-expect-error The removed debug JSON payload is not public React API.
+export type HiddenReactRscDebugPayload = ServerReact.ReactRscDebugPayload;
 
 interface PageProps {
   params: Record<string, string>;
@@ -1005,11 +1009,6 @@ describe("createReactRscFlightAdapter", () => {
       "[evjs] createReactRscFlightAdapter() loadModule must be a function.",
     );
     expect(() =>
-      createReactRscFlightAdapter({ createProps: "props" } as never),
-    ).toThrow(
-      "[evjs] createReactRscFlightAdapter() createProps must be a function.",
-    );
-    expect(() =>
       createReactRscFlightAdapter({ renderFlight: "render" } as never),
     ).toThrow(
       "[evjs] createReactRscFlightAdapter() renderFlight must be a function.",
@@ -1091,7 +1090,7 @@ describe("createReactRscFlightAdapter", () => {
     await expect(response.text()).resolves.toBe("flight:dashboard");
   });
 
-  it("does not pretend JSON debug payloads are React Flight", async () => {
+  it("returns 501 when no Flight renderer is configured", async () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/__evjs",
@@ -1112,6 +1111,37 @@ describe("createReactRscFlightAdapter", () => {
     await expect(response.text()).resolves.toContain(
       "RSC Flight renderer is not configured",
     );
+  });
+
+  it("does not execute legacy HTML fallbacks in loaded Flight modules", async () => {
+    const manifest = createManifest();
+    const renderRsc = vi.fn(() => "legacy RSC HTML");
+    const renderComponent = vi.fn(() => createElement("h1", null, "Legacy"));
+    const renderer = {
+      kind: "rsc-page" as const,
+      owner: { pageId: "dashboard" },
+      assets: { js: ["dashboard-rsc.js"], css: [] },
+    };
+    const adapter = createReactRscFlightAdapter({
+      async loadModule() {
+        return { renderRsc, default: renderComponent };
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      runtime: manifest,
+      pageId: "dashboard",
+      rscPage: {
+        renderer: "dashboard-rsc",
+        assets: { js: ["dashboard-rsc.js"], css: [] },
+      },
+      renderer,
+    });
+
+    expect(response.status).toBe(501);
+    expect(renderRsc).not.toHaveBeenCalled();
+    expect(renderComponent).not.toHaveBeenCalled();
   });
 
   it("rejects successful non-Flight responses from custom renderers", async () => {
@@ -1302,43 +1332,6 @@ describe("createReactRscFlightAdapter", () => {
     expect(consoleError).toHaveBeenCalledWith(
       "[evjs] RSC Flight render failed:",
       error,
-    );
-  });
-
-  it("reports non-object custom RSC render props", async () => {
-    const manifest = createManifest();
-    const renderer = {
-      kind: "rsc-page" as const,
-      owner: { pageId: "dashboard" },
-      assets: { js: ["dashboard-rsc.js"], css: [] },
-    };
-    const adapter = createReactRscFlightAdapter({
-      createProps() {
-        return null as never;
-      },
-      async loadModule() {
-        return {
-          default() {
-            return createElement("h1", null, "Dashboard");
-          },
-        };
-      },
-    });
-
-    const response = await adapter.renderFlight({
-      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
-      runtime: manifest,
-      pageId: "dashboard",
-      rscPage: {
-        renderer: "dashboard-rsc",
-        assets: { js: ["dashboard-rsc.js"], css: [] },
-      },
-      renderer,
-    });
-
-    expect(response.status).toBe(500);
-    await expect(response.text()).resolves.toContain(
-      "[evjs] createReactRscFlightAdapter() createProps() must return an object.",
     );
   });
 

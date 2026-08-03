@@ -21,6 +21,7 @@ const templateCopyExcludedBasenames = new Set([
 ]);
 
 const generatedFrameworkTypeFiles = ["route-types.d.ts", "plugin-types.d.ts"];
+const packagedTemplateGitignore = "_gitignore";
 
 export function shouldDerefTemplatePath(src) {
   return !src
@@ -41,9 +42,23 @@ export function withGeneratedFrameworkIgnores(source) {
   return `${source}${separator}${missing.join(lineEnding)}${lineEnding}`;
 }
 
-function dereferenceTemplates() {
-  for (const entry of fs.readdirSync(templatesDir)) {
-    const entryPath = path.join(templatesDir, entry);
+export function preparePackagedTemplateGitignore(templateDir) {
+  const gitignorePath = path.join(templateDir, ".gitignore");
+  if (!fs.existsSync(gitignorePath)) return;
+
+  const source = withGeneratedFrameworkIgnores(
+    fs.readFileSync(gitignorePath, "utf-8"),
+  );
+  fs.writeFileSync(path.join(templateDir, packagedTemplateGitignore), source);
+  // Preserve template-specific npm exclusions while keeping the portable
+  // `_gitignore` copy in the published package.
+  fs.writeFileSync(path.join(templateDir, ".npmignore"), source);
+  fs.rmSync(gitignorePath);
+}
+
+export function dereferenceTemplates(templatesRoot = templatesDir) {
+  for (const entry of fs.readdirSync(templatesRoot)) {
+    const entryPath = path.join(templatesRoot, entry);
     const stat = fs.lstatSync(entryPath);
 
     if (stat.isSymbolicLink()) {
@@ -54,14 +69,7 @@ function dereferenceTemplates() {
         recursive: true,
         filter: shouldDerefTemplatePath,
       });
-      const gitignorePath = path.join(entryPath, ".gitignore");
-      if (fs.existsSync(gitignorePath)) {
-        const gitignore = fs.readFileSync(gitignorePath, "utf-8");
-        fs.writeFileSync(
-          gitignorePath,
-          withGeneratedFrameworkIgnores(gitignore),
-        );
-      }
+      preparePackagedTemplateGitignore(entryPath);
     }
   }
 }

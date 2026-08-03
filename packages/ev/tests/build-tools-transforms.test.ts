@@ -560,37 +560,18 @@ describe("transformServerFile", () => {
       expect(result.code).toContain("export async function getUsers");
     });
 
-    it("appends registerServerReference calls", async () => {
+    it("does not inject runtime registration side effects", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
         isServer: true,
       });
 
-      expect(result.code).toContain(runtime.registerServerReference);
-      expect(result.code).toContain(`${runtime.registerServerReference}(`);
-      // One registration per exported function
-      const registerCount = (
-        result.code.match(new RegExp(runtime.registerServerReference, "g")) ||
-        []
-      ).length;
-      // import + 2 registrations = 3
-      expect(registerCount).toBe(3);
+      expect(result.code).not.toContain("registerServerReference");
+      expect(result.code).not.toContain("@evjs/ev/_internal/server");
     });
 
-    it("imports registerServerReference from server module", async () => {
-      const result = await transformServerFile(SERVER_FILE, {
-        resourcePath: FILE,
-        rootContext: ROOT,
-        isServer: true,
-      });
-
-      expect(result.code).toContain(
-        `import { ${runtime.registerServerReference} } from "${runtime.serverModule}"`,
-      );
-    });
-
-    it("preserves server directives before injected registration imports", async () => {
+    it("preserves server directive ordering", async () => {
       const result = await transformServerFile(
         `"use strict";
         "use server";
@@ -606,11 +587,7 @@ describe("transformServerFile", () => {
         },
       );
 
-      expect(result.code).toMatch(
-        new RegExp(
-          `^"use strict";\\n"use server";\\nimport \\{ ${runtime.registerServerReference} \\}`,
-        ),
-      );
+      expect(result.code).toMatch(/^"use strict";\n"use server";/);
     });
 
     it("calls onServerFn callback for manifest reporting", async () => {
@@ -628,7 +605,7 @@ describe("transformServerFile", () => {
       );
     });
 
-    it("registers same-module aliases with their local implementation", async () => {
+    it("preserves same-module aliases without registration code", async () => {
       const result = await transformServerFile(
         `"use server";
 
@@ -643,23 +620,9 @@ describe("transformServerFile", () => {
         },
       );
 
-      const registrations = [
-        ...result.code.matchAll(
-          new RegExp(
-            `${runtime.registerServerReference}\\(saveUser, "([a-f0-9]{16})"\\);`,
-            "g",
-          ),
-        ),
-      ];
-      expect(registrations).toHaveLength(2);
-      expect(
-        new Set(registrations.map((registration) => registration[1])).size,
-      ).toBe(2);
       expect(result.code).toContain("export { saveUser as updateUser };");
       expect(result.code).toContain('export { saveUser as "save-user" };');
-      expect(result.code).not.toContain(
-        `${runtime.registerServerReference}(updateUser,`,
-      );
+      expect(result.code).not.toContain("registerServerReference");
     });
 
     it("rejects default exports and non-function exports", async () => {
@@ -719,20 +682,19 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      const serverResult = await transformServerFile(SERVER_FILE, {
+      const onServerFn = vi.fn();
+      await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
         isServer: true,
+        onServerFn,
       });
 
-      // Extract hex IDs from both outputs
       const hexPattern = /"([a-f0-9]{16})"/g;
       const clientIds = [...clientResult.code.matchAll(hexPattern)].map(
         (m) => m[1],
       );
-      const serverIds = [...serverResult.code.matchAll(hexPattern)].map(
-        (m) => m[1],
-      );
+      const serverIds = onServerFn.mock.calls.map(([id]) => id as string);
 
       expect(clientIds.length).toBeGreaterThan(0);
       const uniqueClientIds = [...new Set(clientIds)].sort();

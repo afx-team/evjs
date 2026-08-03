@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app/app.js";
 import type { FrameworkRuntime } from "../src/framework-rendering/framework.js";
 import {
@@ -11,20 +11,13 @@ import {
   waitUntil,
 } from "../src/request-context/context.js";
 import { createRoute } from "../src/routes/index.js";
-import {
-  registerServerReference,
-  registry,
-} from "../src/server-functions/register.js";
+import { createServerFunctionRegistry } from "../src/server-functions/registry.js";
 
 type SpaFrameworkRuntime = FrameworkRuntime & {
   routing: Extract<FrameworkRuntime["routing"], { kind: "spa" }>;
 };
 
 describe("Server Request Context", () => {
-  beforeEach(() => {
-    registry.clear();
-  });
-
   it("should throw when used outside a request lifecycle", () => {
     const message = [
       "[evjs] Server context helpers (request(), headers(), cookie helpers, waitUntil()) must be called during a request lifecycle.",
@@ -58,11 +51,12 @@ describe("Server Request Context", () => {
       };
     }
 
-    // 2. Register it so dispatch() can find it
-    registerServerReference(myServerFn, "myServerFn");
+    // 2. Register it in the app-owned function registry.
+    const serverFunctions = createServerFunctionRegistry();
+    serverFunctions.register("myServerFn", myServerFn);
 
     // 3. Create the app and perform a test request
-    const app = createApp();
+    const app = createApp({ serverFunctions });
 
     const reqbody = JSON.stringify({ fnId: "myServerFn", args: [] });
     const response = await app.request("/__evjs/fn", {
@@ -94,10 +88,11 @@ describe("Server Request Context", () => {
   });
 
   it("reports invalid waitUntil tasks with a framework error", async () => {
-    registerServerReference(() => {
+    const serverFunctions = createServerFunctionRegistry();
+    serverFunctions.register("invalidWaitUntil", () => {
       waitUntil("not-a-promise" as never);
-    }, "invalidWaitUntil");
-    const app = createApp();
+    });
+    const app = createApp({ serverFunctions });
 
     const response = await app.request("/__evjs/fn", {
       method: "POST",

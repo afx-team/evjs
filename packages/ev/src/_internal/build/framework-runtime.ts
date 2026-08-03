@@ -237,6 +237,18 @@ export function createFrameworkRuntime(
   });
 }
 
+/**
+ * Serialize a runtime for generated JavaScript without interpreting JSON keys
+ * such as `__proto__` as object-literal syntax.
+ */
+export function serializeFrameworkRuntimeExpression(
+  runtime: FrameworkRuntimeOutput | undefined,
+): string {
+  const json = JSON.stringify(runtime);
+  if (json === undefined) return "undefined";
+  return `JSON.parse(${JSON.stringify(json)})`;
+}
+
 function createFrameworkRuntimePages(
   output: BuildOutput,
   documentShells: FrameworkRuntimeOptions["documentShells"],

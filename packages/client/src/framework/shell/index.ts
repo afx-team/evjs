@@ -18,5 +18,4 @@ export type {
   ShellErrorContext,
   ShellModuleRegistration,
   ShellOptions,
-  ShellWarningContext,
 } from "./types.js";

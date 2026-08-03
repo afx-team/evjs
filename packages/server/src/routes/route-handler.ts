@@ -62,11 +62,9 @@ export interface RouteHandler {
   /** The path pattern for this handler (e.g. `/api/users/:id`). */
   path: string;
   /** The normalized HTTP method handlers. */
-  methods: Partial<Record<HttpMethod, RouteHandlerFn<string>>>;
+  methods: Readonly<Partial<Record<HttpMethod, RouteHandlerFn<string>>>>;
   /** Route-level middleware. */
   middlewares: MiddlewareHandler[];
-  /** Allowed HTTP methods for this route (used for 405 responses). */
-  allowedMethods: HttpMethod[];
 }
 
 const SUPPORTED_DEFINITION_KEYS = `${HTTP_METHOD_LIST_DESCRIPTION} or "middlewares"`;
@@ -108,32 +106,23 @@ export function createRoute<const T extends string>(
   const routeDefinition = definition as RouteHandlerDefinition<T>;
   const { middlewares = [], ...methods } = routeDefinition;
 
-  // Collect defined method names for auto-OPTIONS and HEAD derivation.
-  const definedMethods: HttpMethod[] = [];
-  for (const key of Object.keys(methods)) {
-    if (isHttpMethod(key)) {
-      definedMethods.push(key);
-    }
-  }
-  if (definedMethods.length === 0) {
+  if (collectRouteMethods(methods).length === 0) {
     throw new Error(
       "[evjs] createRoute() must declare at least one HTTP method handler.",
     );
   }
 
   // Auto-implement OPTIONS if not explicitly defined.
-  if (!methods.OPTIONS && definedMethods.length > 0) {
-    definedMethods.push("OPTIONS");
+  if (!methods.OPTIONS) {
     methods.OPTIONS = () =>
       new Response(null, {
         status: 204,
-        headers: { Allow: definedMethods.join(", ") },
+        headers: { Allow: collectRouteMethods(methods).join(", ") },
       });
   }
 
   // Auto-derive HEAD from GET if GET is defined but HEAD is not.
   if (methods.GET && !methods.HEAD) {
-    definedMethods.push("HEAD");
     const getHandler = methods.GET;
     methods.HEAD = async (req, ctx) => {
       const res = await getHandler(req, ctx);
@@ -146,10 +135,22 @@ export function createRoute<const T extends string>(
 
   return {
     path,
-    methods: methods as Partial<Record<HttpMethod, RouteHandlerFn<string>>>,
+    methods: Object.freeze(
+      methods as Partial<Record<HttpMethod, RouteHandlerFn<string>>>,
+    ),
     middlewares,
-    allowedMethods: definedMethods,
   };
+}
+
+function collectRouteMethods(
+  methods: Partial<Record<HttpMethod, RouteHandlerFn<string>>>,
+): HttpMethod[] {
+  return Object.entries(methods)
+    .filter(
+      (entry): entry is [HttpMethod, RouteHandlerFn<string>] =>
+        isHttpMethod(entry[0]) && typeof entry[1] === "function",
+    )
+    .map(([method]) => method);
 }
 
 function getCreateRoutePathError(path: unknown): string | undefined {

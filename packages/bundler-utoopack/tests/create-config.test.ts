@@ -207,7 +207,7 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.optimization).toBeUndefined();
   });
 
-  it("lets bundlerConfig hooks override production module concatenation", async () => {
+  it("lets configureBundler hooks override production module concatenation", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config, { mode: "production" });
 
@@ -217,7 +217,7 @@ describe("createUtoopackConfig", () => {
       process.cwd(),
       [
         {
-          bundlerConfig(config) {
+          configureBundler(config) {
             config.optimization ??= {};
             config.optimization.concatenateModules = false;
           },
@@ -230,8 +230,8 @@ describe("createUtoopackConfig", () => {
 
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
-      name: "generated-alias",
-      contributions(ctx) {
+      id: "generated-alias",
+      emitIR(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
           scope: { kind: "application" },
@@ -737,6 +737,35 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.server?.entry).toBe("./.ev/entries/server.ts");
+    expect(utoopackConfig.server?.function).toEqual({
+      clientProxy: "@evjs/ev/_internal/client/server-functions",
+      serverRegister: "@evjs/ev/_internal/server/server-reference",
+    });
+  });
+
+  it("configures both transform runtimes for discovered server functions", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverFunctions: [
+        {
+          id: "canonical-id",
+          module: "src/apis/actions.server.ts",
+          exportName: "runAction",
+        },
+      ],
+    });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.server?.function).toEqual({
+      clientProxy: "@evjs/ev/_internal/client/server-functions",
+      serverRegister: "@evjs/ev/_internal/server/server-reference",
+    });
   });
 
   it("does not add SPA history fallback for MPA builds", async () => {
@@ -845,14 +874,12 @@ describe("createUtoopackConfig", () => {
     const plan = await materializeFrameworkIR({
       cwd: process.cwd(),
       mode: "development",
-      command: "dev",
       config,
       graph,
       plugins: [],
       pluginContext: {
         cwd: process.cwd(),
         mode: "development",
-        command: "dev",
         config,
         logger: {} as never,
         addWatchFile() {},
@@ -893,7 +920,7 @@ describe("createUtoopackConfig", () => {
     ]);
   });
 
-  it("awaits async bundlerConfig hooks before returning config", async () => {
+  it("awaits async configureBundler hooks before returning config", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const watchedFiles: string[] = [];
@@ -904,21 +931,30 @@ describe("createUtoopackConfig", () => {
       process.cwd(),
       [
         {
-          async bundlerConfig(cfg, ctx) {
+          async configureBundler(cfg, ctx) {
             await Promise.resolve();
-            cfg.output ??= {};
-            cfg.output.publicPath = "runtime";
+            cfg.define = { ...cfg.define, __PLUGIN_ASYNC__: "true" };
             ctx.addWatchFile("./utoopack-plugin.config.ts");
+            expect(ctx.mode).toBe("development");
+            expect(ctx).not.toHaveProperty("command");
             expect(ctx.bundlerName).toBe("utoopack");
             expect(ctx.environment).toBe("client");
+            expect(Object.isFrozen(ctx.config)).toBe(true);
+            expect(Object.isFrozen(ctx.config.plugins)).toBe(true);
+            expect(() => {
+              (ctx.config.plugins as unknown as unknown[]).push({
+                name: "late-plugin",
+              });
+            }).toThrow(TypeError);
           },
         },
       ],
       (file) => watchedFiles.push(file),
     );
 
-    expect(utoopackConfig.output?.publicPath).toBe("runtime");
+    expect(utoopackConfig.define?.__PLUGIN_ASYNC__).toBe("true");
     expect(watchedFiles).toEqual(["./utoopack-plugin.config.ts"]);
+    expect(config.plugins).toEqual([]);
   });
 
   it("rejects a plugin output override that targets the canonical server output", async () => {
@@ -928,7 +964,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) {
               utoopackConfig.output.path = path.resolve(
                 process.cwd(),
@@ -943,7 +979,7 @@ describe("createUtoopackConfig", () => {
     );
   });
 
-  it("validates output ownership after each bundlerConfig hook", async () => {
+  it("validates output ownership after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const events: string[] = [];
@@ -951,7 +987,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("mutate");
             if (utoopackConfig.output) {
               utoopackConfig.output.path = path.resolve(
@@ -962,7 +998,7 @@ describe("createUtoopackConfig", () => {
           },
         },
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("restore");
             if (utoopackConfig.output) {
               utoopackConfig.output.path = path.resolve(
@@ -979,7 +1015,7 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("validates output file templates after each bundlerConfig hook", async () => {
+  it("validates output file templates after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const events: string[] = [];
@@ -987,7 +1023,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("mutate");
             if (utoopackConfig.output) {
               utoopackConfig.output.filename = "../../escape.js";
@@ -995,7 +1031,7 @@ describe("createUtoopackConfig", () => {
           },
         },
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("restore");
             if (utoopackConfig.output) {
               utoopackConfig.output.filename = "[name].js";
@@ -1009,7 +1045,59 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("rejects portable artifact escapes in added entry names after each bundlerConfig hook", async () => {
+  it("preserves framework runtime identity after configureBundler hooks", async () => {
+    const cases: Array<{
+      expected: string;
+      mutate(config: ConfigComplete): void;
+    }> = [
+      {
+        expected:
+          'Utoopack mode "production" must remain the framework-owned value "development"',
+        mutate(config) {
+          config.mode = "production";
+        },
+      },
+      {
+        expected:
+          "Utoopack output.clean false must remain the framework-owned value true",
+        mutate(config) {
+          if (config.output) config.output.clean = false;
+        },
+      },
+      {
+        expected:
+          'Utoopack output.publicPath "/plugin/" must remain the framework-owned value "auto"',
+        mutate(config) {
+          if (config.output) config.output.publicPath = "/plugin/";
+        },
+      },
+      {
+        expected:
+          'Utoopack output.crossOriginLoading "use-credentials" must remain the framework-owned value "anonymous"',
+        mutate(config) {
+          if (config.output) {
+            config.output.crossOriginLoading = "use-credentials";
+          }
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const config = createResolvedConfig();
+      const plan = await createPlan(config);
+      await expect(
+        createUtoopackConfig(config, plan, process.cwd(), [
+          {
+            configureBundler(utoopackConfig) {
+              testCase.mutate(utoopackConfig);
+            },
+          },
+        ]),
+      ).rejects.toThrow(testCase.expected);
+    }
+  });
+
+  it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const events: string[] = [];
@@ -1017,7 +1105,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             events.push("mutate");
             utoopackConfig.entry.push({
               import: "./src/plugin-entry.ts",
@@ -1026,7 +1114,7 @@ describe("createUtoopackConfig", () => {
           },
         },
         {
-          bundlerConfig() {
+          configureBundler() {
             events.push("restore");
           },
         },
@@ -1037,7 +1125,7 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
-  it("validates entry names even when no bundlerConfig hook runs", async () => {
+  it("validates entry names even when no configureBundler hook runs", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
     const [entry] = plan.entries;
@@ -1064,7 +1152,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             utoopackConfig.optimization = {
               ...utoopackConfig.optimization,
               splitChunks,
@@ -1077,14 +1165,14 @@ describe("createUtoopackConfig", () => {
     );
   });
 
-  it("preserves framework entry names across bundlerConfig hooks", async () => {
+  it("preserves framework entry names across configureBundler hooks", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
 
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             utoopackConfig.entry = utoopackConfig.entry.filter(
               (entry) => entry.name !== "main",
             );
@@ -1092,8 +1180,156 @@ describe("createUtoopackConfig", () => {
         },
       ]),
     ).rejects.toThrow(
-      'Utoopack bundlerConfig hooks must preserve framework entry name "main" exactly once; found 0',
+      'Utoopack configureBundler hooks must preserve framework entry name "main" exactly once; found 0',
     );
+  });
+
+  it("preserves framework entry imports after each configureBundler hook", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const events: string[] = [];
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          configureBundler(utoopackConfig) {
+            events.push("mutate");
+            const entry = utoopackConfig.entry.find(
+              (candidate) => candidate.name === "main",
+            );
+            if (entry) entry.import = "./src/plugin-entry.ts";
+          },
+        },
+        {
+          configureBundler(utoopackConfig) {
+            events.push("restore");
+            const entry = utoopackConfig.entry.find(
+              (candidate) => candidate.name === "main",
+            );
+            if (entry) entry.import = "./.ev/entries/main.ts";
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Utoopack entry "main" import "./src/plugin-entry.ts" must remain the exact framework-owned BuildPlan import "./.ev/entries/main.ts"',
+    );
+    expect(events).toEqual(["mutate"]);
+  });
+
+  it("rejects client entries that are not in the BuildPlan", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          configureBundler(utoopackConfig) {
+            utoopackConfig.entry.push({
+              import: "./src/plugin-entry.ts",
+              name: "plugin-entry",
+            });
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Utoopack configureBundler hooks cannot add unplanned client entries: "plugin-entry"',
+    );
+  });
+
+  it("preserves the exact framework server entry after each configureBundler hook", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+    const baseline = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    const expectedServerEntry = baseline.server?.entry;
+    if (!expectedServerEntry) throw new Error("Expected a server entry.");
+    const events: string[] = [];
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          configureBundler(utoopackConfig) {
+            events.push("mutate");
+            if (utoopackConfig.server) {
+              utoopackConfig.server.entry = "./src/plugin-server.ts";
+            }
+          },
+        },
+        {
+          configureBundler(utoopackConfig) {
+            events.push("restore");
+            if (utoopackConfig.server) {
+              utoopackConfig.server.entry = expectedServerEntry;
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      `[evjs] Utoopack server.entry "./src/plugin-server.ts" must remain the exact framework-owned BuildPlan server.entry ${JSON.stringify(expectedServerEntry)}. configureBundler hooks cannot override the framework server entry.`,
+    );
+    expect(events).toEqual(["mutate"]);
+  });
+
+  it("preserves framework-owned server function runtimes", async () => {
+    const cases: Array<{
+      expected: string;
+      mutate(config: ConfigComplete): void;
+    }> = [
+      {
+        expected:
+          'Utoopack server.function.clientProxy "./plugin-client-proxy" must remain the framework-owned value "@evjs/ev/_internal/client/server-functions"',
+        mutate(config) {
+          if (config.server?.function) {
+            config.server.function.clientProxy = "./plugin-client-proxy";
+          }
+        },
+      },
+      {
+        expected:
+          'Utoopack server.function.serverRegister <unset> must remain the framework-owned value "@evjs/ev/_internal/server/server-reference"',
+        mutate(config) {
+          if (config.server?.function) {
+            delete config.server.function.serverRegister;
+          }
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const config = createResolvedConfig();
+      const plan = await createPlan(config, {
+        serverFunctions: [
+          {
+            id: "canonical-id",
+            module: "src/apis/actions.server.ts",
+            exportName: "runAction",
+          },
+        ],
+      });
+
+      await expect(
+        createUtoopackConfig(config, plan, process.cwd(), [
+          {
+            configureBundler(utoopackConfig) {
+              testCase.mutate(utoopackConfig);
+            },
+          },
+        ]),
+      ).rejects.toThrow(testCase.expected);
+    }
   });
 
   it("rejects a relative spelling of the BuildPlan output path", async () => {
@@ -1103,7 +1339,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) {
               utoopackConfig.output.clean = false;
               utoopackConfig.output.path = "dist/client";
@@ -1132,7 +1368,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) {
               utoopackConfig.output.clean = false;
               utoopackConfig.output.path = path.resolve(
@@ -1150,7 +1386,7 @@ describe("createUtoopackConfig", () => {
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
         {
-          bundlerConfig(utoopackConfig) {
+          configureBundler(utoopackConfig) {
             if (utoopackConfig.output) utoopackConfig.output.clean = false;
             if (utoopackConfig.server?.output) {
               utoopackConfig.server.output.path = path.resolve(
@@ -1298,10 +1534,12 @@ function createPlan(
     distDir?: string;
     mode?: "development" | "production";
     serverRoutes?: ServerRouteNode[];
+    serverFunctions?: CoreGraph["serverFunctions"];
   } = {},
 ): Promise<BuildPlan> {
   const graph = createGraph(config, {
     serverRoutes: options.serverRoutes,
+    serverFunctions: options.serverFunctions,
   });
   const buildConfig = {
     ...config,
@@ -1315,14 +1553,12 @@ function createPlan(
   return materializeFrameworkIR({
     cwd: process.cwd(),
     mode,
-    command: mode === "development" ? "dev" : "build",
     config,
     graph,
     plugins: config.plugins,
     pluginContext: {
       cwd: process.cwd(),
       mode,
-      command: mode === "development" ? "dev" : "build",
       config,
       logger: {} as never,
       addWatchFile() {},
@@ -1346,7 +1582,11 @@ interface TestPage {
 
 function createGraph(
   config: Parameters<typeof createUtoopackConfig>[0],
-  options: { pages?: TestPage[]; serverRoutes?: ServerRouteNode[] } = {},
+  options: {
+    pages?: TestPage[];
+    serverRoutes?: ServerRouteNode[];
+    serverFunctions?: CoreGraph["serverFunctions"];
+  } = {},
 ): CoreGraph {
   const documentTemplate = config.routing?.html ?? "./index.html";
   const routingPages = (config.routing?.routes ?? []).flatMap<TestPage>(
@@ -1451,7 +1691,7 @@ function createGraph(
           ]),
     ),
     plugins: { entries: {} },
-    serverFunctions: [],
+    serverFunctions: options.serverFunctions ?? [],
     serverRoutes: options.serverRoutes ?? [],
   };
 }

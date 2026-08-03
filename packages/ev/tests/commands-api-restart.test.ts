@@ -7,12 +7,130 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
+  BundlerBuildFactsDisposition,
+  BundlerDevController,
+  BundlerDevUpdateTransition,
 } from "../src/_internal/build/bundler.js";
 import { dev } from "../src/_internal/build/commands.js";
 import type { Config } from "../src/config/index.js";
 
 const API_READY_MARKER = "__EVJS_API_READY__";
 const updateTimeoutMs = 10_000;
+
+type TestDevTransitionOutcome = "accept" | "rollback";
+
+function createTestDevController(
+  implementation: Omit<
+    BundlerDevController<Record<string, never>>,
+    "beginUpdate"
+  >,
+  hooks: {
+    onBegin?(): void | Promise<void>;
+    onPrepareFinalize?(): void | Promise<void>;
+    onFinalize?(): unknown;
+    onResume?(outcome: TestDevTransitionOutcome): void | Promise<void>;
+  } = {},
+): BundlerDevController<Record<string, never>> {
+  let active:
+    | {
+        outcome?: TestDevTransitionOutcome;
+        prepared: boolean;
+        resumed: boolean;
+        resumeFailed: boolean;
+        transition: BundlerDevUpdateTransition;
+      }
+    | undefined;
+
+  return {
+    ...implementation,
+    async beginUpdate() {
+      if (active) {
+        throw new Error("Test bundler received overlapping update boundaries.");
+      }
+      const transition: BundlerDevUpdateTransition = {
+        accept() {
+          select("accept");
+        },
+        rollback() {
+          select("rollback");
+        },
+        async resume() {
+          if (!active?.outcome) {
+            throw new Error(
+              "Test bundler resumed an update before selecting an outcome.",
+            );
+          }
+          if (active.resumed) {
+            throw new Error("Test bundler resumed an update outcome twice.");
+          }
+          const outcome = active.outcome;
+          try {
+            await hooks.onResume?.(outcome);
+            if (active) active.resumed = true;
+          } catch (error) {
+            if (active) active.resumeFailed = true;
+            throw error;
+          }
+        },
+        async prepareFinalize() {
+          if (!active?.resumed) {
+            throw new Error(
+              "Test bundler prepared finalization before a successful resume.",
+            );
+          }
+          await hooks.onPrepareFinalize?.();
+          if (active) active.prepared = true;
+        },
+        finalize() {
+          if (!active?.prepared) {
+            throw new Error(
+              "Test bundler finalized an update before successful preparation.",
+            );
+          }
+          const result = hooks.onFinalize?.();
+          active = undefined;
+          return result as undefined;
+        },
+      };
+      const select = (outcome: TestDevTransitionOutcome) => {
+        if (!active) {
+          throw new Error("Test bundler selected a settled update boundary.");
+        }
+        if (
+          active.outcome &&
+          !(
+            active.outcome === "accept" &&
+            outcome === "rollback" &&
+            (active.resumeFailed || active.resumed) &&
+            !active.prepared
+          )
+        ) {
+          throw new Error("Test bundler selected an update outcome twice.");
+        }
+        active.outcome = outcome;
+        active.prepared = false;
+        active.resumed = false;
+        active.resumeFailed = false;
+      };
+      active = {
+        prepared: false,
+        resumed: false,
+        resumeFailed: false,
+        transition,
+      };
+      await hooks.onBegin?.();
+      return transition;
+    },
+    async updatePlan(update, options) {
+      if (!active || options.transition !== active.transition) {
+        throw new Error(
+          "Test bundler updatePlan() did not receive its active transition.",
+        );
+      }
+      await implementation.updatePlan(update, options);
+    },
+  };
+}
 
 const mockedExeca = vi.hoisted(() => {
   const state: {
@@ -117,20 +235,25 @@ function createServerFacts(plan: BuildPlan): BundlerBuildFacts {
         { js: [`${entry.name}.js`], css: [] },
       ]),
     ),
-    serverEntry: `${runtimeEntry.name}.js`,
-    serverAssets: { js: [`${runtimeEntry.name}.js`], css: [] },
   };
 }
 
 async function emitServerBuild(
   cwd: string,
   plan: BuildPlan,
-  onBuildFacts: (facts: BundlerBuildFacts) => void | Promise<void>,
+  onBuildFacts: (
+    facts: BundlerBuildFacts,
+  ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>,
 ): Promise<void> {
   const facts = createServerFacts(plan);
-  if (!facts.serverEntry) throw new Error("Expected a server entry asset.");
+  const runtimeEntry = plan.entries.find(
+    (entry) => entry.kind === "server-runtime",
+  );
+  if (!runtimeEntry) throw new Error("Expected a server runtime entry.");
+  const serverEntry = facts.serverEntryAssets?.[runtimeEntry.name]?.js[0];
+  if (!serverEntry) throw new Error("Expected a server entry asset.");
   await writeFile(
-    path.resolve(cwd, plan.output.serverDir, facts.serverEntry),
+    path.resolve(cwd, plan.output.serverDir, serverEntry),
     "export default { fetch() { return new Response('ok'); } };",
   );
   await onBuildFacts(facts);
@@ -173,11 +296,11 @@ describe("dev API restart rollback", () => {
       async build() {
         return {};
       },
-      async dev({ callbacks, plan }) {
+      async dev({ callbacks, generation, plan }) {
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(facts),
+          callbacks.onBuildFacts(generation, facts, { isRebuild: false }),
         );
-        await callbacks.onServerBundleReady();
+        await callbacks.onServerBundleReady(generation);
       },
     };
 
@@ -233,20 +356,39 @@ describe("dev API restart rollback", () => {
       async build() {
         return {};
       },
-      async dev({ callbacks, plan }) {
+      async dev({ callbacks, generation, plan }) {
+        let currentGeneration = generation;
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(facts),
+          callbacks.onBuildFacts(currentGeneration, facts, {
+            isRebuild: false,
+          }),
         );
-        await callbacks.onServerBundleReady();
+        await callbacks.onServerBundleReady(currentGeneration);
         events.push("initial-api-ready");
-        return {
-          async updatePlan() {
-            await emitServerBuild(cwd, plan, (facts) =>
-              callbacks.onBuildFacts(facts, { isRebuild: true }),
-            );
-            await callbacks.onServerBundleReady();
+        let selectedPlan = plan;
+        return createTestDevController(
+          {
+            async updatePlan(update, options) {
+              options.activate();
+              currentGeneration = options.generation;
+              selectedPlan = update.next;
+            },
           },
-        };
+          {
+            async onResume(outcome) {
+              if (outcome === "rollback") {
+                currentGeneration = generation;
+                selectedPlan = plan;
+              }
+              await emitServerBuild(cwd, selectedPlan, (facts) =>
+                callbacks.onBuildFacts(currentGeneration, facts, {
+                  isRebuild: true,
+                }),
+              );
+              await callbacks.onServerBundleReady(currentGeneration);
+            },
+          },
+        );
       },
     };
 

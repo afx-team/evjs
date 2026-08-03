@@ -8,16 +8,19 @@ or development capabilities.
 
 To switch a project to webpack, pass the adapter explicitly:
 
+The typed `webpack()` helper always receives the complete `Configuration[]`
+set because one evjs plan may create separate client and server compilers.
+
 ```ts
 import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/ev";
 import { definePlugin } from "@evjs/ev/plugin";
 
 const webpackCustomization = definePlugin({
-  id: "@example/webpack-customization",
+  id: "webpack-customization",
   setup() {
     return {
-      bundlerConfig: webpack((configs) => {
+      configureBundler: webpack((configs) => {
         for (const cfg of configs) {
           cfg.resolve ??= {};
         }
