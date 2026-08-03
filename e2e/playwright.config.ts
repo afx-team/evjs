@@ -10,6 +10,9 @@ export default defineConfig<ExtTestOptions>({
     : "list",
   timeout: 60_000,
   retries: 0,
+  // Example fixtures load and exercise the same built workspace packages.
+  // Serialize CI bootstrap so workers cannot race on that shared module graph.
+  workers: process.env.CI ? 1 : undefined,
   use: {
     headless: true,
   },

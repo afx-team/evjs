@@ -1,4 +1,9 @@
-import { useLocation } from "@evjs/ev/navigation";
+import {
+  createBrowserHistory,
+  createHashHistory,
+  type RouterHistory,
+  useLocation,
+} from "@evjs/ev/navigation";
 import type { AppConfiguration, LifeCycleFn, LifeCycles } from "qiankun";
 import {
   createElement,
@@ -136,7 +141,7 @@ interface NormalizedQiankunMasterOptions {
 interface GeneratedPagesAppRuntimeUpdate {
   routes?: QiankunRuntimePageDefinition[];
   basepath?: string;
-  history?: QiankunHistoryOptions;
+  history?: QiankunHistoryOptions | RouterHistory;
 }
 
 interface QiankunMicroAppInstance {
@@ -302,6 +307,7 @@ export function createQiankunSlaveLifecycles(options: {
   let hasMountedEntry = false;
   let entryMounted = false;
   let lifecycleQueue = Promise.resolve();
+  let scopedHistory: RouterHistory | undefined;
   let runtimeProjection: SlaveRuntimeProjection = {
     basepath: "/",
     history: { type: "browser" },
@@ -347,7 +353,10 @@ export function createQiankunSlaveLifecycles(options: {
     }
   }
 
-  async function runMount(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runMount(
+    props: QiankunLifecycleProps = {},
+    useStandaloneDefaults = false,
+  ): Promise<void> {
     if (entryMounted) return;
     currentContainer = resolveMountContainer(props, options.mount);
     const context = ctx();
@@ -359,16 +368,26 @@ export function createQiankunSlaveLifecycles(options: {
     let projectionAttempted = false;
     let runtimeMountAttempted = false;
     let entryMountAttempted = false;
+    let nextScopedHistory: RouterHistory | undefined;
+    let rollbackScopedHistory: RouterHistory | undefined;
     let entryModule: unknown;
 
     try {
       runtimeMountAttempted = runtime.mount !== undefined;
       await runtime.mount?.(props, context);
       entryModule = await context.loadEntry();
-      nextProjection = resolveSlaveRuntimeProjection(props, previousProjection);
+      nextProjection = resolveSlaveRuntimeProjection(
+        props,
+        previousProjection,
+        useStandaloneDefaults,
+      );
+      nextScopedHistory = useStandaloneDefaults
+        ? undefined
+        : createScopedSlaveHistory(nextProjection.history.type);
       const projectionOptions = createSlaveRuntimeProjectionUpdate(
         previousProjection,
         nextProjection,
+        nextScopedHistory,
       );
       if (projectionOptions) {
         projectionUpdate = resolveRequiredSlavePagesAppUpdate(entryModule);
@@ -399,14 +418,22 @@ export function createQiankunSlaveLifecycles(options: {
         );
       }
       if (projectionAttempted && projectionUpdate) {
+        rollbackScopedHistory = useStandaloneDefaults
+          ? undefined
+          : createScopedSlaveHistory(previousProjection.history.type);
         const rollbackProjection = createSlaveRuntimeProjectionUpdate(
           nextProjection,
           previousProjection,
+          rollbackScopedHistory ?? previousProjection.history,
         );
         if (rollbackProjection) {
-          await collectQiankunCleanupError(rollbackErrors, () =>
-            projectionUpdate?.(rollbackProjection),
-          );
+          try {
+            await projectionUpdate(rollbackProjection);
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+            rollbackScopedHistory?.destroy();
+            rollbackScopedHistory = undefined;
+          }
         }
       }
       if (runtimeMountAttempted) {
@@ -417,6 +444,15 @@ export function createQiankunSlaveLifecycles(options: {
       await collectQiankunCleanupError(rollbackErrors, () =>
         clearContainer(currentContainer),
       );
+      await collectQiankunCleanupError(rollbackErrors, () =>
+        nextScopedHistory?.destroy(),
+      );
+      if (projectionAttempted) {
+        if (rollbackScopedHistory !== scopedHistory) {
+          scopedHistory?.destroy();
+        }
+        scopedHistory = rollbackScopedHistory;
+      }
       currentContainer = undefined;
       entryMounted = false;
       throwQiankunMountError(error, rollbackErrors);
@@ -424,11 +460,20 @@ export function createQiankunSlaveLifecycles(options: {
 
     hasMountedEntry = true;
     entryMounted = true;
+    if (scopedHistory !== nextScopedHistory) {
+      scopedHistory?.destroy();
+    }
+    scopedHistory = nextScopedHistory;
     runtimeProjection = nextProjection;
   }
 
   async function runUnmount(props: QiankunLifecycleProps = {}): Promise<void> {
-    if (!entryMounted) return;
+    if (!entryMounted) {
+      scopedHistory?.destroy();
+      scopedHistory = undefined;
+      currentContainer = undefined;
+      return;
+    }
     const context = ctx();
     const errors: unknown[] = [];
     await collectQiankunCleanupError(errors, () =>
@@ -440,6 +485,8 @@ export function createQiankunSlaveLifecycles(options: {
     await collectQiankunCleanupError(errors, () =>
       clearContainer(currentContainer),
     );
+    await collectQiankunCleanupError(errors, () => scopedHistory?.destroy());
+    scopedHistory = undefined;
     currentContainer = undefined;
     entryMounted = false;
     throwQiankunCleanupErrors(errors);
@@ -449,12 +496,45 @@ export function createQiankunSlaveLifecycles(options: {
     if (!entryMounted) return;
     await runtime.update?.(props, ctx());
     if (!loadedEntryModule) return;
-    runtimeProjection = await configureSlaveEntry(
-      loadedEntryModule,
+    const previousProjection = runtimeProjection;
+    const nextProjection = resolveSlaveRuntimeProjection(
       props,
-      runtimeProjection,
+      previousProjection,
       false,
     );
+    const historyChanged = !equalHistoryOptions(
+      nextProjection.history,
+      previousProjection.history,
+    );
+    const refreshScopedHistory = shouldRefreshScopedHistory(
+      nextProjection.history.type,
+      scopedHistory,
+    );
+    const nextScopedHistory =
+      historyChanged || refreshScopedHistory
+        ? createScopedSlaveHistory(nextProjection.history.type)
+        : scopedHistory;
+    const updateOptions = createSlaveRuntimeProjectionUpdate(
+      previousProjection,
+      nextProjection,
+      historyChanged || refreshScopedHistory ? nextScopedHistory : undefined,
+    );
+    if (!updateOptions) return;
+
+    const update = resolveRequiredSlavePagesAppUpdate(loadedEntryModule);
+    try {
+      await update(updateOptions);
+    } catch (error) {
+      if (nextScopedHistory !== scopedHistory) {
+        nextScopedHistory?.destroy();
+      }
+      throw error;
+    }
+    if (nextScopedHistory !== scopedHistory) {
+      scopedHistory?.destroy();
+    }
+    scopedHistory = nextScopedHistory;
+    runtimeProjection = nextProjection;
   }
 
   function enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
@@ -480,7 +560,7 @@ export function createQiankunSlaveLifecycles(options: {
     mount,
     unmount,
     update,
-    standalone: () => mount({}),
+    standalone: () => enqueueLifecycle(() => runMount({}, true)),
     isPoweredByQiankun,
   };
 }
@@ -666,14 +746,20 @@ function createQiankunRouteComponent(
     const containerRef = useRef<HTMLDivElement>(null);
     const microAppRef = useRef<QiankunMicroAppInstance | undefined>(undefined);
     const mountedBaseRef = useRef<string | undefined>(undefined);
+    const mountedHrefRef = useRef<string | undefined>(undefined);
     const latestBaseRef = useRef<string | undefined>(undefined);
+    const latestHrefRef = useRef<string | undefined>(undefined);
     const updateQueueRef = useRef(Promise.resolve());
     const [error, setError] = useState<unknown>();
     const routePathname = useLocation({
       select: (location) => location.pathname,
     });
+    const routeHref = useLocation({
+      select: (location) => location.href,
+    });
     const base = resolveQiankunSlaveBase(master.base, route, routePathname);
     latestBaseRef.current = base;
+    latestHrefRef.current = routeHref;
 
     useEffect(() => {
       const container = containerRef.current;
@@ -711,6 +797,7 @@ function createQiankunRouteComponent(
           );
           microAppRef.current = microApp;
           mountedBaseRef.current = mountedBase;
+          mountedHrefRef.current = latestHrefRef.current;
           void microApp.mountPromise
             ?.then(() => prefetchQiankunApps(master, "after-mount", app.name))
             .catch(reportError);
@@ -737,7 +824,11 @@ function createQiankunRouteComponent(
 
     useEffect(() => {
       const microApp = microAppRef.current;
-      if (!microApp?.update || mountedBaseRef.current === base) {
+      if (
+        !microApp?.update ||
+        (mountedBaseRef.current === base &&
+          mountedHrefRef.current === routeHref)
+      ) {
         return;
       }
 
@@ -745,7 +836,13 @@ function createQiankunRouteComponent(
         await microApp.mountPromise;
         if (microAppRef.current !== microApp) return;
         const nextBase = latestBaseRef.current ?? base;
-        if (mountedBaseRef.current === nextBase) return;
+        const nextHref = latestHrefRef.current ?? routeHref;
+        if (
+          mountedBaseRef.current === nextBase &&
+          mountedHrefRef.current === nextHref
+        ) {
+          return;
+        }
         const appProps = splitAppProps(app.props);
         const routeProps = splitRouteProps(route.microAppProps);
         await microApp.update?.(
@@ -757,12 +854,13 @@ function createQiankunRouteComponent(
           ),
         );
         mountedBaseRef.current = nextBase;
+        mountedHrefRef.current = nextHref;
       });
       updateQueueRef.current = update.catch(() => {});
       void update.catch((updateError) => {
         if (microAppRef.current === microApp) setError(updateError);
       });
-    }, [base]);
+    }, [base, routeHref]);
 
     if (error) throw error;
     return createElement("div", {
@@ -938,25 +1036,6 @@ function isQiankunRedirectRoute(
   return typeof route.redirect === "string";
 }
 
-async function configureSlaveEntry(
-  entryModule: unknown,
-  props: QiankunLifecycleProps,
-  current: SlaveRuntimeProjection,
-  useStandaloneDefaults = true,
-): Promise<SlaveRuntimeProjection> {
-  const next = resolveSlaveRuntimeProjection(
-    props,
-    current,
-    useStandaloneDefaults,
-  );
-  const updateOptions = createSlaveRuntimeProjectionUpdate(current, next);
-  if (!updateOptions) return next;
-
-  const update = resolveRequiredSlavePagesAppUpdate(entryModule);
-  await update(updateOptions);
-  return next;
-}
-
 function resolveSlaveRuntimeProjection(
   props: QiankunLifecycleProps,
   current: SlaveRuntimeProjection,
@@ -986,14 +1065,105 @@ function resolveSlaveBasepath(
 function createSlaveRuntimeProjectionUpdate(
   current: SlaveRuntimeProjection,
   next: SlaveRuntimeProjection,
+  historyOverride?: QiankunHistoryOptions | RouterHistory,
 ): GeneratedPagesAppRuntimeUpdate | undefined {
+  let history: QiankunHistoryOptions | RouterHistory | undefined;
+  if (historyOverride) {
+    history = historyOverride;
+  } else if (!equalHistoryOptions(next.history, current.history)) {
+    history = next.history;
+  }
   const updateOptions: GeneratedPagesAppRuntimeUpdate = {
     ...(next.basepath !== current.basepath ? { basepath: next.basepath } : {}),
-    ...(!equalHistoryOptions(next.history, current.history)
-      ? { history: next.history }
-      : {}),
+    ...(history ? { history } : {}),
   };
   return Object.keys(updateOptions).length > 0 ? updateOptions : undefined;
+}
+
+/**
+ * Create a browser-backed history whose TanStack method interception is scoped
+ * to the slave instead of replacing the host's global history methods.
+ *
+ * @internal
+ */
+export function createQiankunSlaveHistory(
+  type: Exclude<QiankunHistoryType, "memory">,
+  win: Window = globalThis.window,
+): RouterHistory {
+  const scopedWindow = createScopedHistoryWindow(win);
+  return type === "hash"
+    ? createHashHistory({ window: scopedWindow })
+    : createBrowserHistory({ window: scopedWindow });
+}
+
+function createScopedSlaveHistory(
+  type: QiankunHistoryType,
+): RouterHistory | undefined {
+  if (type === "memory" || typeof globalThis.window === "undefined") {
+    return undefined;
+  }
+  return createQiankunSlaveHistory(type);
+}
+
+function shouldRefreshScopedHistory(
+  type: QiankunHistoryType,
+  history: RouterHistory | undefined,
+): boolean {
+  if (type === "memory" || typeof globalThis.window === "undefined") {
+    return false;
+  }
+  if (!history) return true;
+  return (
+    history.location.href !== readWindowHistoryHref(type, globalThis.window)
+  );
+}
+
+function readWindowHistoryHref(
+  type: Exclude<QiankunHistoryType, "memory">,
+  win: Window,
+): string {
+  if (type === "browser") {
+    return `${win.location.pathname}${win.location.search}${win.location.hash}`;
+  }
+  const hashParts = win.location.hash.split("#").slice(1);
+  const pathname = hashParts[0] ?? "/";
+  const nestedHash =
+    hashParts.length > 1 ? `#${hashParts.slice(1).join("#")}` : "";
+  return `${pathname}${win.location.search}${nestedHash}`;
+}
+
+function createScopedHistoryWindow(win: Window) {
+  const history = {
+    get length() {
+      return win.history.length;
+    },
+    get state() {
+      return win.history.state;
+    },
+    back() {
+      win.history.back();
+    },
+    forward() {
+      win.history.forward();
+    },
+    go(delta?: number) {
+      win.history.go(delta);
+    },
+    pushState(data: unknown, unused: string, url?: string | URL | null) {
+      win.history.pushState(data, unused, url);
+    },
+    replaceState(data: unknown, unused: string, url?: string | URL | null) {
+      win.history.replaceState(data, unused, url);
+    },
+  };
+  return {
+    history,
+    get location() {
+      return win.location;
+    },
+    addEventListener: win.addEventListener.bind(win),
+    removeEventListener: win.removeEventListener.bind(win),
+  };
 }
 
 function resolveRequiredSlavePagesAppUpdate(
