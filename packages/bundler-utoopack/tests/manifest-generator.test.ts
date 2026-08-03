@@ -282,7 +282,7 @@ describe("UtoopackManifestGenerator", () => {
     });
   });
 
-  it("rejects extra JavaScript emitted beside a native server runtime entry", async () => {
+  it("keeps shared JavaScript emitted beside a native server runtime entry", async () => {
     const cwd = await makeProject();
     await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
@@ -299,9 +299,14 @@ describe("UtoopackManifestGenerator", () => {
 
     await expect(
       new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
-    ).rejects.toThrow(
-      'Utoopack server stats emitted unowned JavaScript asset "chunks/lazy.js"',
-    );
+    ).resolves.toMatchObject({
+      serverEntryAssets: {
+        server: { js: ["index.12345678.js"], css: [] },
+      },
+      emittedFiles: {
+        server: ["index.12345678.js", "chunks/lazy.js", "stats.json"],
+      },
+    });
   });
 
   it("rejects a server entrypoint without a JavaScript asset", async () => {
@@ -324,7 +329,7 @@ describe("UtoopackManifestGenerator", () => {
     await expect(
       new UtoopackManifestGenerator(cwd, plan).build(),
     ).rejects.toThrow(
-      'Utoopack server stats entrypoint "server" must emit exactly one self-contained JavaScript asset',
+      'Utoopack server stats entrypoint "server" must identify exactly one JavaScript entry asset; found 0 JavaScript assets and 0 named candidates',
     );
   });
 
@@ -349,7 +354,149 @@ describe("UtoopackManifestGenerator", () => {
     await expect(
       new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
     ).rejects.toThrow(
-      'Utoopack server stats entrypoint "server" must emit exactly one self-contained JavaScript asset; found 2',
+      'Utoopack server stats entrypoint "server" must identify exactly one JavaScript entry asset; found 2 JavaScript assets and 0 named candidates',
+    );
+  });
+
+  it("maps named server entries without exposing shared chunks as entry files", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        assets: [
+          { name: "server.11111111.js" },
+          { name: "page-server-dashboard.22222222.js" },
+          { name: "page-server-detail.33333333.js" },
+          { name: "server-shared.aaaaaaaa.js" },
+        ],
+        entrypoints: {
+          server: {
+            assets: [
+              { name: "server.11111111.js" },
+              { name: "server-shared.aaaaaaaa.js" },
+            ],
+          },
+          "page-server-dashboard": {
+            assets: [
+              { name: "page-server-dashboard.22222222.js" },
+              { name: "server-shared.aaaaaaaa.js" },
+            ],
+          },
+          "page-server-detail": {
+            assets: [
+              { name: "page-server-detail.33333333.js" },
+              { name: "server-shared.aaaaaaaa.js" },
+            ],
+          },
+        },
+      }),
+    );
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [
+        {
+          id: "dashboard",
+          routeId: "dashboard",
+          path: "/dashboard",
+          module: "./src/pages/dashboard/page.tsx",
+          render: "ssr",
+        },
+        {
+          id: "detail",
+          routeId: "detail",
+          path: "/detail",
+          module: "./src/pages/detail/page.tsx",
+          render: "ssr",
+        },
+      ],
+    });
+    const plan = createPlan(graph);
+    const renderers = [
+      {
+        name: "page-server-dashboard",
+        import: "./src/pages/dashboard/page.tsx",
+        kind: "page-server" as const,
+        owner: { pageId: "dashboard", routeId: "dashboard" },
+      },
+      {
+        name: "page-server-detail",
+        import: "./src/pages/detail/page.tsx",
+        kind: "page-server" as const,
+        owner: { pageId: "detail", routeId: "detail" },
+      },
+    ];
+    plan.entries.splice(
+      plan.entries.length - 1,
+      0,
+      ...renderers.map((renderer) => ({
+        ...renderer,
+        environment: "server" as const,
+        runtime: "node" as const,
+      })),
+    );
+    plan.server.renderers = renderers;
+
+    const facts = await new UtoopackManifestGenerator(cwd, plan).build();
+    const manifest = linkTestManifest(graph, plan, facts);
+
+    expect(facts.serverEntryAssets).toEqual({
+      server: { js: ["server.11111111.js"], css: [] },
+      "page-server-dashboard": {
+        js: ["page-server-dashboard.22222222.js"],
+        css: [],
+      },
+      "page-server-detail": {
+        js: ["page-server-detail.33333333.js"],
+        css: [],
+      },
+    });
+    expect(facts.emittedFiles?.server).toContain("server-shared.aaaaaaaa.js");
+    expect(manifest.server.renderers).toMatchObject({
+      "page-server-dashboard": {
+        kind: "page-server",
+        assets: { js: ["page-server-dashboard.22222222.js"], css: [] },
+      },
+      "page-server-detail": {
+        kind: "page-server",
+        assets: { js: ["page-server-detail.33333333.js"], css: [] },
+      },
+    });
+  });
+
+  it("does not fall back to the runtime when a page-server entry is missing", async () => {
+    const cwd = await makeProject();
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [
+        {
+          id: "dashboard",
+          routeId: "dashboard",
+          path: "/dashboard",
+          module: "./src/pages/dashboard/page.tsx",
+          render: "ssr",
+        },
+      ],
+    });
+    const plan = createPlan(graph);
+    const renderer = {
+      name: "page-server-dashboard",
+      import: "./src/pages/dashboard/page.tsx",
+      kind: "page-server" as const,
+      owner: { pageId: "dashboard", routeId: "dashboard" },
+    };
+    plan.entries.splice(plan.entries.length - 1, 0, {
+      ...renderer,
+      environment: "server",
+      runtime: "node",
+    });
+    plan.server.renderers = [renderer];
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, plan).build(),
+    ).rejects.toThrow(
+      'Utoopack server stats do not identify server BuildPlan entrypoint "page-server-dashboard" exactly',
     );
   });
 
@@ -604,9 +751,14 @@ describe("UtoopackManifestGenerator", () => {
         },
       }),
     );
-    await expect(generator.build()).rejects.toThrow(
-      'Utoopack server stats emitted unowned JavaScript asset "chunks/server-lazy.js"',
-    );
+    await expect(generator.build()).resolves.toMatchObject({
+      serverEntryAssets: {
+        server: { js: ["server.js"], css: [] },
+      },
+      emittedFiles: {
+        server: ["server.js", "chunks/server-lazy.js", "stats.json"],
+      },
+    });
   });
 
   it("reads stats from the build plan distDir", async () => {
