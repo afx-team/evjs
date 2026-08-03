@@ -1405,7 +1405,7 @@ describe("createUtoopackConfig", () => {
     );
   });
 
-  it("fails clearly when the plan contains framework server renderer entries", async () => {
+  it("maps server-runtime and page-server entries to named Utoopack server entries", async () => {
     const config = createResolvedConfig({
       server: {
         basePath: "/__evjs",
@@ -1448,20 +1448,26 @@ describe("createUtoopackConfig", () => {
         },
       ],
     });
-    const message = await expectRejectedMessage(() =>
-      createUtoopackConfig(config, plan, process.cwd(), []),
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
     );
 
-    expect(message).toContain(
-      "Utoopack adapter cannot build framework server page entries",
-    );
-    expect(message).toContain(
-      'page-server-dashboard (page-server, page "dashboard", route "dashboard")',
-    );
-    expect(message).toContain("Unsupported entry kinds: page-server");
+    expect(utoopackConfig.server?.entry).toEqual([
+      {
+        name: "server",
+        import: require.resolve("@evjs/ev/_internal/server/fetch"),
+      },
+      {
+        name: "page-server-dashboard",
+        import: "./src/pages/Dashboard.tsx",
+      },
+    ]);
   });
 
-  it("rejects framework server page entries without multi-entry support", async () => {
+  it("continues to reject unsupported RSC and PPR server entries", async () => {
     const config = createResolvedConfig({
       server: {
         basePath: "/__evjs",
@@ -1514,9 +1520,7 @@ describe("createUtoopackConfig", () => {
       createUtoopackConfig(config, plan, process.cwd(), []),
     );
 
-    expect(message).toContain(
-      'dashboard-server (page-server, page "dashboard")',
-    );
+    expect(message).not.toContain("dashboard-server");
     expect(message).toContain('insights-rsc (rsc-page, page "insights")');
     expect(message).toContain(
       'campaign-ppr-shell (ppr-shell, page "campaign")',
@@ -1525,9 +1529,36 @@ describe("createUtoopackConfig", () => {
       'campaign-offer-ppr-region (ppr-region, page "campaign", region "offer")',
     );
     expect(message).toContain(
-      "Unsupported entry kinds: page-server, rsc-page, ppr-shell, ppr-region",
+      "Unsupported entry kinds: rsc-page, ppr-shell, ppr-region",
     );
-    expect(message).toContain("SSR/PPR/RSC validation");
+    expect(message).toContain("PPR/RSC validation");
+  });
+
+  it("rejects multiple server-runtime entries", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+    plan.entries.push({
+      name: "server-secondary",
+      import: "./src/server-secondary.ts",
+      environment: "server",
+      runtime: "node",
+      kind: "server-runtime",
+    });
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      'Utoopack adapter supports exactly one server-runtime entry; found 2: "server", "server-secondary"',
+    );
   });
 });
 
