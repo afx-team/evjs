@@ -17,6 +17,9 @@ import {
 } from "@evjs/shared/manifest";
 
 export interface WebpackStatsAsset {
+  info?: {
+    hotModuleReplacement?: boolean;
+  };
   name?: string;
 }
 
@@ -47,7 +50,13 @@ export class WebpackManifestGenerator {
 
   collectBuildFacts(): BundlerBuildFacts {
     const outputPaths = resolveBuildOutputPaths(this.cwd, this.plan);
-    const clientEntrypoints = readEntrypointAssets(this.clientStats);
+    const excludedClientAssets =
+      this.plan.mode === "development"
+        ? readWebpackHotUpdateAssetNames(this.clientStats)
+        : undefined;
+    const clientEntrypoints = readEntrypointAssets(this.clientStats, {
+      excludedJavaScriptAssets: excludedClientAssets,
+    });
     this.clientEntryAssets = resolveBundlerClientEntryAssets(
       this.plan,
       clientEntrypoints,
@@ -202,6 +211,7 @@ function includeAdapterStatsFile(files: string[]): string[] {
 
 function readEntrypointAssets(
   stats: WebpackStatsLike | undefined,
+  options: { excludedJavaScriptAssets?: ReadonlySet<string> } = {},
 ): Record<string, AssetGroup> {
   const byName: Record<string, AssetGroup> = {};
 
@@ -212,7 +222,11 @@ function readEntrypointAssets(
         typeof asset === "string"
           ? normalizeAssetName(asset)
           : normalizeAssetName(asset.name);
-      if (assetName && isJavaScriptAsset(assetName)) {
+      if (
+        assetName &&
+        isJavaScriptAsset(assetName) &&
+        !options.excludedJavaScriptAssets?.has(assetName)
+      ) {
         assets.js.push(assetName);
       } else if (assetName?.endsWith(".css")) {
         assets.css.push(assetName);
@@ -223,6 +237,20 @@ function readEntrypointAssets(
   }
 
   return byName;
+}
+
+function readWebpackHotUpdateAssetNames(
+  stats: WebpackStatsLike | undefined,
+): Set<string> {
+  const names = new Set<string>();
+  for (const asset of stats?.assets ?? []) {
+    if (typeof asset === "string" || !asset.info?.hotModuleReplacement) {
+      continue;
+    }
+    const name = normalizeAssetName(asset.name);
+    if (name) names.add(name);
+  }
+  return names;
 }
 
 function emptyAssets(): AssetGroup {

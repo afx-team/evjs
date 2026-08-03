@@ -13600,14 +13600,19 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       async dev() {
         events.push("bundler.dev");
         return createTestDevController({
-          async updatePlan() {
+          async updatePlan(_update, options) {
             const candidateRouteTypes = await fs.promises.readFile(
               path.join(cwd, "src/route-types.d.ts"),
               "utf-8",
             );
-            events.push(
-              `candidate-types:${candidateRouteTypes.includes(JSON.stringify("/about"))}`,
+            const includesAbout = candidateRouteTypes.includes(
+              JSON.stringify("/about"),
             );
+            if (!includesAbout) {
+              options.activate();
+              return;
+            }
+            events.push("candidate-types:true");
             events.push("update:throw");
             throw new Error("mock update failure");
           },

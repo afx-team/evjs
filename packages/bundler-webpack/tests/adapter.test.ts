@@ -190,6 +190,7 @@ async function materializeTestPlan(options: {
   cwd: string;
   graph: CoreGraph;
   plan: BuildPlan;
+  write?: boolean;
 }): Promise<BuildPlan> {
   return materializeFrameworkIR({
     cwd: options.cwd,
@@ -198,6 +199,7 @@ async function materializeTestPlan(options: {
     graph: options.graph,
     plan: options.plan,
     plugins: [],
+    write: options.write,
     pluginContext: {
       mode: options.plan.mode,
       cwd: options.cwd,
@@ -698,7 +700,7 @@ describe("webpack stats ownership", () => {
     const plan: BuildPlan = {
       version: 1,
       buildId: "inventory",
-      mode: "production",
+      mode: "development",
       distDir: "dist",
       output: {
         clientDir: "dist/client",
@@ -739,10 +741,16 @@ describe("webpack stats ownership", () => {
       {
         assets: [
           { name: "./main.js" },
+          {
+            name: "./main.refresh.js",
+            info: { hotModuleReplacement: true },
+          },
           { name: "chunks/lazy.js" },
           { name: "assets/logo.svg" },
         ],
-        entrypoints: { main: { assets: ["main.js"] } },
+        entrypoints: {
+          main: { assets: ["main.js", "main.refresh.js"] },
+        },
       },
       {
         assets: [{ name: "./server.cjs" }, { name: "server.css" }],
@@ -755,12 +763,32 @@ describe("webpack stats ownership", () => {
     expect(facts.emittedFiles).toEqual({
       client: [
         "main.js",
+        "main.refresh.js",
         "chunks/lazy.js",
         "assets/logo.svg",
         "server.css",
         "stats.json",
       ],
       server: ["server.cjs", "server.css", "stats.json"],
+    });
+    expect(facts.clientEntryAssets).toEqual({
+      main: { js: ["main.js"], css: [] },
+    });
+
+    const unmarkedSuffixFacts = new WebpackManifestGenerator(
+      process.cwd(),
+      plan,
+      {
+        assets: [{ name: "main.hot-update.js" }],
+        entrypoints: { main: { assets: ["main.hot-update.js"] } },
+      },
+      {
+        assets: [{ name: "server.cjs" }],
+        entrypoints: { server: { assets: ["server.cjs"] } },
+      },
+    ).collectBuildFacts();
+    expect(unmarkedSuffixFacts.clientEntryAssets).toEqual({
+      main: { js: ["main.hot-update.js"], css: [] },
     });
 
     expect(() =>
@@ -3203,6 +3231,7 @@ describe("webpackAdapter dev", () => {
         hooks: [],
         callbacks: framework.callbacks,
       });
+      let settling: Promise<void> | undefined;
       try {
         onServerBundleReady.mockClear();
         blockNextServerReady = true;
@@ -3224,13 +3253,20 @@ describe("webpackAdapter dev", () => {
           plan: createBuildPlan(config, nextGraph, {
             mode: "development",
           }),
+          // Page metadata does not change the generated entry source. Keep
+          // this test focused on transition publication and server refresh.
+          write: false,
         });
         const update = diffBuildPlan(plan, nextPlan, "config");
 
         framework.update(nextGraph, nextPlan);
         await controller?.updatePlan(update, updateOptions);
-        const settling = settleTestDevUpdate(updateOptions, "accept");
-        await blockedServerReady;
+        settling = settleTestDevUpdate(updateOptions, "accept");
+        const transitionState = await Promise.race([
+          blockedServerReady.then(() => "blocked" as const),
+          settling.then(() => "settled" as const),
+        ]);
+        expect(transitionState).toBe("blocked");
 
         await fs.writeFile(
           path.join(cwd, "src/pages/home/page.tsx"),
@@ -3273,6 +3309,7 @@ describe("webpackAdapter dev", () => {
       } finally {
         releaseServerReady();
         await controller?.close?.();
+        await settling?.catch(() => {});
       }
     },
   );

@@ -1,10 +1,58 @@
 import { execSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+const SCAFFOLD_TEST_TIMEOUT = 12 * 60_000;
+const SCAFFOLD_INSTALL_TIMEOUT = 8 * 60_000;
+const DEV_PROCESS_STOP_TIMEOUT = 5_000;
+
+function waitForChildExit(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (exited: boolean) => {
+      if (settled) return;
+      settled = true;
+      child.off("exit", onExit);
+      clearTimeout(timeout);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    const timeout = setTimeout(() => finish(false), timeoutMs);
+    timeout.unref();
+    child.once("exit", onExit);
+    if (child.exitCode !== null || child.signalCode !== null) finish(true);
+  });
+}
+
+async function stopChildProcess(
+  child: ReturnType<typeof spawn> | undefined,
+): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+  const exitedAfterTerminate = waitForChildExit(
+    child,
+    DEV_PROCESS_STOP_TIMEOUT,
+  );
+  child.kill("SIGTERM");
+  if (await exitedAfterTerminate) return;
+
+  const exitedAfterKill = waitForChildExit(child, DEV_PROCESS_STOP_TIMEOUT);
+  child.kill("SIGKILL");
+  if (!(await exitedAfterKill)) {
+    throw new Error("Dev process did not exit after SIGKILL");
+  }
+}
 
 async function getAvailablePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -17,7 +65,7 @@ async function getAvailablePort(): Promise<number> {
 }
 
 test.describe("Scaffolding CLI E2E", () => {
-  test.setTimeout(180_000);
+  test.setTimeout(SCAFFOLD_TEST_TIMEOUT);
 
   // Generate unique directory name without pre-creating it
   const targetDir = path.join(
@@ -28,8 +76,11 @@ test.describe("Scaffolding CLI E2E", () => {
     import.meta.dirname,
     "../../packages/create-app/bin/create-evjs-app.js",
   );
+  let activeDevProcess: ReturnType<typeof spawn> | undefined;
 
-  test.afterAll(() => {
+  test.afterAll(async () => {
+    await stopChildProcess(activeDevProcess);
+    activeDevProcess = undefined;
     if (fs.existsSync(targetDir)) {
       fs.rmSync(targetDir, { recursive: true, force: true });
     }
@@ -66,6 +117,12 @@ test.describe("Scaffolding CLI E2E", () => {
     // 2. Pack monorepo packages into tarballs for clean isolation
     console.log("Packing monorepo packages to tarballs...");
     const packagesDir = path.resolve(import.meta.dirname, "../../packages");
+    const workspaceUtooPackRequire = createRequire(
+      path.join(packagesDir, "bundler-utoopack", "package.json"),
+    );
+    const workspaceUtooPackPackage = workspaceUtooPackRequire(
+      "@utoo/pack/package.json",
+    ) as { version: string };
     const packageTgzMap: Record<string, string> = {};
     for (const pkg of fs.readdirSync(packagesDir)) {
       const pkgPath = path.join(packagesDir, pkg);
@@ -107,19 +164,46 @@ test.describe("Scaffolding CLI E2E", () => {
     for (const [name, ref] of Object.entries(packageTgzMap)) {
       scaffoldPkg.overrides[name] = ref;
     }
+    // Keep the isolated fixture on the native dependency graph validated by
+    // the workspace install instead of re-resolving a newer compatible pack.
+    scaffoldPkg.overrides["@utoo/pack"] = workspaceUtooPackPackage.version;
     fs.writeFileSync(pkgJsonPath, JSON.stringify(scaffoldPkg, null, 2));
 
-    // 3. Install dependencies (use a fresh npm cache to avoid stale 0.0.0 tarballs)
+    // 3. Reuse the runner cache for registry dependencies. Workspace tarballs
+    // live under this unique fixture directory, so their file paths cannot
+    // collide with a previous 0.0.0 package.
     console.log("Installing dependencies...");
-    const npmCache = path.join(targetDir, ".npm-cache");
     execSync(
-      `npm install --include=dev --include=optional --no-fund --no-audit --cache ${npmCache}`,
+      "npm install --include=dev --include=optional --no-fund --no-audit",
       {
         cwd: targetDir,
         stdio: "inherit",
         env: cleanEnv,
+        timeout: SCAFFOLD_INSTALL_TIMEOUT,
       },
     );
+
+    const installedEvBuildEntry = path.join(
+      targetDir,
+      "node_modules",
+      "@evjs",
+      "ev",
+      "esm",
+      "_internal",
+      "build",
+      "index.js",
+    );
+    expect(fs.existsSync(installedEvBuildEntry)).toBe(true);
+    const fixtureBundlerRequire = createRequire(
+      path.join(
+        targetDir,
+        "node_modules",
+        "@evjs",
+        "bundler-utoopack",
+        "package.json",
+      ),
+    );
+    expect(() => fixtureBundlerRequire("@utoo/pack")).not.toThrow();
 
     // Allocate real free ports; deterministic offsets can collide with local
     // processes or with stale servers from a previous failed run.
@@ -137,6 +221,7 @@ test.describe("Scaffolding CLI E2E", () => {
       stdio: "inherit",
       env: cleanEnv,
     });
+    expect(fs.existsSync(installedEvBuildEntry)).toBe(true);
 
     expect(
       fs.existsSync(path.join(targetDir, "dist", "client", "index.html")),
@@ -158,6 +243,7 @@ test.describe("Scaffolding CLI E2E", () => {
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
+      activeDevProcess = devProcess;
 
       let settled = false;
       let closed = false;
@@ -209,6 +295,7 @@ test.describe("Scaffolding CLI E2E", () => {
 
       devProcess.on("close", (code: number | null) => {
         closed = true;
+        if (activeDevProcess === devProcess) activeDevProcess = undefined;
         clearTimeout(timeout);
         if (code !== 0 && code !== null && !settled) {
           settle(() =>
