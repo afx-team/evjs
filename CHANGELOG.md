@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.2] — 2026-08-03
+
 ### ⚠️ Breaking Changes
 
 - **Single plugin configuration model** — Applications install typed plugin
