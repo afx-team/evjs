@@ -210,11 +210,17 @@ import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
 
 export default defineQiankunSlaveRuntime({
   mount(props, ctx) {
-    console.log(`${ctx.name} mounted`, {
+    console.log(`${ctx.name} preparing to mount`, {
       container: props.container,
       base: props.base,
       history: props.history,
     });
+  },
+  afterMount(_props, ctx) {
+    console.log(`${ctx.name} mounted`);
+  },
+  afterUpdate(_props, ctx) {
+    console.log(`${ctx.name} updated`);
   },
   unmount() {
     console.log("slave unmounted");
@@ -354,14 +360,23 @@ interface QiankunLifecycleProps {
 interface QiankunSlaveRuntime {
   bootstrap?(props, ctx): void | Promise<void>;
   mount?(props, ctx): void | Promise<void>;
-  unmount?(props, ctx): void | Promise<void>;
+  afterMount?(props, ctx): void | Promise<void>;
   update?(props, ctx): void | Promise<void>;
+  afterUpdate?(props, ctx): void | Promise<void>;
+  unmount?(props, ctx): void | Promise<void>;
 }
 ```
 
 `ctx.loadEntry()` 会加载原始生成 entry，但不会启动它。在 `bootstrap()` 中调用是安全
 的。首次 `mount()` 会先配置 runtime base/history，再调用 `start()`；后续重新挂载
 复用已加载模块，并在当前 container 中调用其 render 路径。
+
+`mount()` 和 `update()` 在框架持有的 entry 工作之前运行。只有 base/history 投影及
+entry `start()` 或 `render()` 成功完成后，才会调用 `afterMount()`。投影成功提交后会
+调用 `afterUpdate()`；已挂载应用即使本次 update 没有改变投影，也会调用它。所有
+lifecycle 操作仍然串行：排队的 update 或 unmount 会等待前一个后置 lifecycle 完成。
+`afterMount()` 失败会参与 mount 回滚；`afterUpdate()` 失败会拒绝本次 update，但不会
+回滚已经提交的投影。
 
 ## Qiankun 打包方式
 

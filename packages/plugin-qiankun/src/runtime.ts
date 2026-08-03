@@ -104,8 +104,12 @@ export type QiankunSlaveLifecycle = (
 export interface QiankunSlaveRuntime {
   bootstrap?: QiankunSlaveLifecycle;
   mount?: QiankunSlaveLifecycle;
-  unmount?: QiankunSlaveLifecycle;
+  /** Runs after runtime projection and entry mounting complete successfully. */
+  afterMount?: QiankunSlaveLifecycle;
   update?: QiankunSlaveLifecycle;
+  /** Runs after a mounted update settles, including projection-neutral updates. */
+  afterUpdate?: QiankunSlaveLifecycle;
+  unmount?: QiankunSlaveLifecycle;
 }
 
 type QiankunRuntimePageKind = "page" | "layout" | "group" | "redirect";
@@ -304,7 +308,7 @@ export function createQiankunSlaveLifecycles(options: {
   let loadedEntryModule: unknown;
   let currentContainer: Element | undefined;
   let bootstrapped = false;
-  let hasMountedEntry = false;
+  let entryInitialized = false;
   let entryMounted = false;
   let lifecycleQueue = Promise.resolve();
   let scopedHistory: RouterHistory | undefined;
@@ -366,14 +370,14 @@ export function createQiankunSlaveLifecycles(options: {
       | ((update: GeneratedPagesAppRuntimeUpdate) => MaybePromise<void>)
       | undefined;
     let projectionAttempted = false;
-    let runtimeMountAttempted = false;
+    let runtimeHookAttempted = false;
     let entryMountAttempted = false;
     let nextScopedHistory: RouterHistory | undefined;
     let rollbackScopedHistory: RouterHistory | undefined;
     let entryModule: unknown;
 
     try {
-      runtimeMountAttempted = runtime.mount !== undefined;
+      runtimeHookAttempted = runtime.mount !== undefined;
       await runtime.mount?.(props, context);
       entryModule = await context.loadEntry();
       nextProjection = resolveSlaveRuntimeProjection(
@@ -394,7 +398,7 @@ export function createQiankunSlaveLifecycles(options: {
         projectionAttempted = true;
         await projectionUpdate(projectionOptions);
       }
-      const start = hasMountedEntry
+      const start = entryInitialized
         ? undefined
         : resolveEntryStart(entryModule);
       if (start) {
@@ -409,6 +413,11 @@ export function createQiankunSlaveLifecycles(options: {
         }
         entryMountAttempted = true;
         await render(currentContainer ?? options.mount);
+      }
+      entryInitialized = true;
+      if (runtime.afterMount) {
+        runtimeHookAttempted = true;
+        await runtime.afterMount(props, context);
       }
     } catch (error) {
       const rollbackErrors: unknown[] = [];
@@ -436,7 +445,7 @@ export function createQiankunSlaveLifecycles(options: {
           }
         }
       }
-      if (runtimeMountAttempted) {
+      if (runtimeHookAttempted) {
         await collectQiankunCleanupError(rollbackErrors, () =>
           runtime.unmount?.(props, context),
         );
@@ -458,7 +467,6 @@ export function createQiankunSlaveLifecycles(options: {
       throwQiankunMountError(error, rollbackErrors);
     }
 
-    hasMountedEntry = true;
     entryMounted = true;
     if (scopedHistory !== nextScopedHistory) {
       scopedHistory?.destroy();
@@ -494,7 +502,8 @@ export function createQiankunSlaveLifecycles(options: {
 
   async function runUpdate(props: QiankunLifecycleProps = {}): Promise<void> {
     if (!entryMounted) return;
-    await runtime.update?.(props, ctx());
+    const context = ctx();
+    await runtime.update?.(props, context);
     if (!loadedEntryModule) return;
     const previousProjection = runtimeProjection;
     const nextProjection = resolveSlaveRuntimeProjection(
@@ -519,22 +528,23 @@ export function createQiankunSlaveLifecycles(options: {
       nextProjection,
       historyChanged || refreshScopedHistory ? nextScopedHistory : undefined,
     );
-    if (!updateOptions) return;
-
-    const update = resolveRequiredSlavePagesAppUpdate(loadedEntryModule);
-    try {
-      await update(updateOptions);
-    } catch (error) {
-      if (nextScopedHistory !== scopedHistory) {
-        nextScopedHistory?.destroy();
+    if (updateOptions) {
+      const update = resolveRequiredSlavePagesAppUpdate(loadedEntryModule);
+      try {
+        await update(updateOptions);
+      } catch (error) {
+        if (nextScopedHistory !== scopedHistory) {
+          nextScopedHistory?.destroy();
+        }
+        throw error;
       }
-      throw error;
+      if (nextScopedHistory !== scopedHistory) {
+        scopedHistory?.destroy();
+      }
+      scopedHistory = nextScopedHistory;
+      runtimeProjection = nextProjection;
     }
-    if (nextScopedHistory !== scopedHistory) {
-      scopedHistory?.destroy();
-    }
-    scopedHistory = nextScopedHistory;
-    runtimeProjection = nextProjection;
+    await runtime.afterUpdate?.(props, context);
   }
 
   function enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
