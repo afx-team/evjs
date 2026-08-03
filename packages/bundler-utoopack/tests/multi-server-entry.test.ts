@@ -73,14 +73,21 @@ describe("Utoopack multi-server entries", () => {
       "server",
     ]);
 
-    const sharedAssets = [
-      ...new Set(
-        Object.values(stats.entrypoints)
-          .flatMap((entrypoint) => entrypoint.assets)
-          .map((asset) => asset.name.replace(/^\.\//, ""))
-          .filter((asset) => /(?:^|\/)server-shared(?:[-.])/.test(asset)),
-      ),
-    ];
+    const assetReferenceCounts = new Map<string, number>();
+    for (const entrypoint of Object.values(stats.entrypoints)) {
+      const entrypointAssets = new Set(
+        entrypoint.assets.map((asset) => asset.name.replace(/^\.\//, "")),
+      );
+      for (const asset of entrypointAssets) {
+        assetReferenceCounts.set(
+          asset,
+          (assetReferenceCounts.get(asset) ?? 0) + 1,
+        );
+      }
+    }
+    const sharedAssets = [...assetReferenceCounts]
+      .filter(([, references]) => references > 1)
+      .map(([asset]) => asset);
     expect(sharedAssets.length).toBeGreaterThan(0);
     await expect(
       Promise.all(
@@ -222,15 +229,15 @@ async function writeFixture(cwd: string): Promise<void> {
     ),
     fs.promises.writeFile(
       path.join(sourceDir, "server.ts"),
-      'import { sharedPrimary } from "./shared-primary";\nconsole.log("server", sharedPrimary);\n',
+      'import { sharedPrimary } from "./shared-primary";\nexport const serverEntry = sharedPrimary;\n',
     ),
     fs.promises.writeFile(
       path.join(sourceDir, "dashboard.server.ts"),
-      'import { sharedPrimary } from "./shared-primary";\nconsole.log("dashboard", sharedPrimary);\n',
+      'import { sharedPrimary } from "./shared-primary";\nexport const dashboardEntry = sharedPrimary;\n',
     ),
     fs.promises.writeFile(
       path.join(sourceDir, "detail.server.ts"),
-      'import { sharedAll } from "./shared-all";\nconsole.log("detail", sharedAll);\n',
+      'import { sharedAll } from "./shared-all";\nexport const detailEntry = sharedAll;\n',
     ),
   ]);
 }

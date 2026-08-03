@@ -1286,6 +1286,41 @@ describe("createUtoopackConfig", () => {
     expect(events).toEqual(["mutate"]);
   });
 
+  it("rejects in-place mutation of framework-owned server entries", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+    plan.entries.push({
+      name: "page-server-dashboard",
+      import: "./src/pages/Dashboard.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "page-server",
+      owner: { pageId: "dashboard", routeId: "dashboard" },
+    });
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          configureBundler(utoopackConfig) {
+            const entry = utoopackConfig.server?.entry;
+            if (Array.isArray(entry)) entry.splice(0, 1);
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      "configureBundler hooks cannot override the framework server entry",
+    );
+  });
+
   it("preserves framework-owned server function runtimes", async () => {
     const cases: Array<{
       expected: string;

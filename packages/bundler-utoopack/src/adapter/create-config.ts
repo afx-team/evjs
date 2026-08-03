@@ -109,6 +109,7 @@ export async function createUtoopackConfig(
   ];
 
   const finalServerEntry = resolveServerEntries(plan);
+  const expectedServerEntry = snapshotUtoopackServerEntry(finalServerEntry);
 
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
@@ -225,7 +226,7 @@ export async function createUtoopackConfig(
   for (const h of hooks) {
     if (h.configureBundler) {
       await h.configureBundler(utoopackConfig, ctx);
-      assertUtoopackServerEntryMatchesPlan(utoopackConfig, finalServerEntry);
+      assertUtoopackServerEntryMatchesPlan(utoopackConfig, expectedServerEntry);
       assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
         requireServerOutput: finalServerEntry !== undefined,
       });
@@ -235,7 +236,7 @@ export async function createUtoopackConfig(
     }
   }
 
-  assertUtoopackServerEntryMatchesPlan(utoopackConfig, finalServerEntry);
+  assertUtoopackServerEntryMatchesPlan(utoopackConfig, expectedServerEntry);
   assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
     requireServerOutput: finalServerEntry !== undefined,
   });
@@ -626,6 +627,12 @@ function formatBuildEntryOwner(
 type UtoopackServerEntry = NonNullable<
   NonNullable<ConfigComplete["server"]>["entry"]
 >;
+
+function snapshotUtoopackServerEntry(
+  entry: UtoopackServerEntry | undefined,
+): UtoopackServerEntry | undefined {
+  return Array.isArray(entry) ? entry.map((item) => ({ ...item })) : entry;
+}
 
 function resolveServerEntries(
   plan: BuildPlan,
