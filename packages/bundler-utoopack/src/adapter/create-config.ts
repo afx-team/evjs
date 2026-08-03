@@ -140,6 +140,17 @@ export async function createUtoopackConfig(
     externals: createResolveExternals(plan),
     sourceMaps: !isProduction,
     stats: true,
+    ...(isProduction
+      ? {
+          optimization: {
+            // Utoopack applies this option to both client and server outputs.
+            // Scope hoisting can drop the server entry export in mixed builds.
+            concatenateModules: finalServerEntry === undefined,
+            removeUnusedExports: true,
+            removeUnusedImports: true,
+          },
+        }
+      : {}),
     react: {
       runtime: "automatic",
     },

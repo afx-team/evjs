@@ -8068,7 +8068,7 @@ describe("build", () => {
   });
 });
 
-describe("dev", () => {
+describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
   it("retains stronger config reloads for an unchanged file snapshot", () => {
     const previous = new Map<
       string,

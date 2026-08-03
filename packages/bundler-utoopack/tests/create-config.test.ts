@@ -146,6 +146,88 @@ describe("createUtoopackConfig", () => {
     ).resolves.toMatchObject({ mode: "production" });
   });
 
+  it("enables production optimizations for client-only builds", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode: "production" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.optimization).toMatchObject({
+      concatenateModules: true,
+      removeUnusedExports: true,
+      removeUnusedImports: true,
+    });
+  });
+
+  it("disables module concatenation for mixed production builds", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      mode: "production",
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.server?.entry).toBeDefined();
+    expect(utoopackConfig.optimization).toMatchObject({
+      concatenateModules: false,
+      removeUnusedExports: true,
+      removeUnusedImports: true,
+    });
+  });
+
+  it("does not enable production optimizations for development", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode: "development" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.optimization).toBeUndefined();
+  });
+
+  it("lets configureBundler hooks override production module concatenation", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode: "production" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [
+        {
+          configureBundler(config) {
+            config.optimization ??= {};
+            config.optimization.concatenateModules = false;
+          },
+        },
+      ],
+    );
+
+    expect(utoopackConfig.optimization?.concatenateModules).toBe(false);
+  });
+
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
       id: "generated-alias",

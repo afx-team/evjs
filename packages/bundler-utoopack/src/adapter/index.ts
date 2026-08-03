@@ -47,6 +47,9 @@ import {
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 const require = createRequire(import.meta.url);
+const { version: utoopackVersion } = require("@utoo/pack/package.json") as {
+  version: string;
+};
 type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build">;
 const INITIAL_DEV_STATS_TIMEOUT_MS = 10_000;
 const DEV_STATS_POLL_INTERVAL_MS = 25;
@@ -286,6 +289,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       addWatchFile,
     );
 
+    logger.info`Using @utoo/pack@${utoopackVersion}.`;
     logger.info`Building for production with utoopack...`;
 
     const outputPaths = resolveBuildOutputPaths(cwd, plan);
@@ -326,6 +330,7 @@ async function startUtoopackDev(
   );
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
 
+  logger.info`Using @utoo/pack@${utoopackVersion}.`;
   logger.info`Starting development server with utoopack...`;
   await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
