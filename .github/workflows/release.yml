@@ -60,6 +60,18 @@ jobs:
           }
           const registry = "https://registry.npmjs.org";
 
+          const prereleaseId = version.match(
+            /^[^-]+-([0-9A-Za-z-]+)(?:[.+]|$)/,
+          )?.[1];
+          let npmTag = "latest";
+          if (prereleaseId === "alpha" || prereleaseId === "rc") {
+            npmTag = prereleaseId;
+          } else if (prereleaseId) {
+            npmTag = "next";
+          }
+
+          console.log(`Publishing ${version} with npm dist-tag ${npmTag}.`);
+
           const wait = (ms) =>
             new Promise((resolve) => {
               setTimeout(resolve, ms);
@@ -195,6 +207,8 @@ jobs:
                 workspacePackage.dir,
                 "--access",
                 "public",
+                "--tag",
+                npmTag,
                 "--registry",
                 registry,
               ],
