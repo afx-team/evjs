@@ -1041,8 +1041,8 @@ describe("utoopackAdapter dev", () => {
 
       await vi.waitFor(() => {
         expect(onBuildOutput).toHaveBeenCalledTimes(2);
+        expect(onServerBundleReady).toHaveBeenCalledTimes(2);
       });
-      expect(onServerBundleReady).toHaveBeenCalledTimes(2);
       expect(onBuildOutput.mock.calls[1]?.[0].server.renderers).toMatchObject({
         "page-server-index": {
           kind: "page-server",
