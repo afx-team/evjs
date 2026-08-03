@@ -195,6 +195,9 @@ Memory history 仍保持隔离，不会写入浏览器 URL。
 也不需要渲染一个纠偏用的 `Navigate`。作用域 history 适配器是唯一的同步入口，因此
 浏览器原生前进/回退仍会遵守 Router blocker，并由 qiankun mount/unmount lifecycle
 统一管理。
+已挂载的 master 主动修改 URL 且不产生 `popstate` 时，route component 会通过
+qiankun update lifecycle 转发 href 变化。Slave 仅在浏览器 URL 与 Router history
+不一致时刷新作用域适配器。
 
 生成的 route types 始终描述 slave 本地源码树：其中是 `/` 与 `/details`，而不是
 外部分配的 `/catalog` 前缀。

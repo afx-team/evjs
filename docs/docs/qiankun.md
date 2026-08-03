@@ -207,6 +207,10 @@ Application layouts must not add their own `popstate` listener that compares
 `window.location` with `useLocation()` and renders a corrective `Navigate`.
 The scoped adapter is the single synchronization point, so native traversal
 continues to respect Router blockers and qiankun mount/unmount ownership.
+When a mounted master changes the URL programmatically without emitting
+`popstate`, its route component forwards the href change through the qiankun
+update lifecycle. The slave refreshes its scoped adapter only when the browser
+URL and Router history differ.
 
 The generated route types remain local to the slave source tree: they describe
 `/` and `/details`, not the externally assigned `/catalog` prefix.

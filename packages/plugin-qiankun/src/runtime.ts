@@ -369,6 +369,7 @@ export function createQiankunSlaveLifecycles(options: {
     let runtimeMountAttempted = false;
     let entryMountAttempted = false;
     let nextScopedHistory: RouterHistory | undefined;
+    let rollbackScopedHistory: RouterHistory | undefined;
     let entryModule: unknown;
 
     try {
@@ -417,14 +418,22 @@ export function createQiankunSlaveLifecycles(options: {
         );
       }
       if (projectionAttempted && projectionUpdate) {
+        rollbackScopedHistory = useStandaloneDefaults
+          ? undefined
+          : createScopedSlaveHistory(previousProjection.history.type);
         const rollbackProjection = createSlaveRuntimeProjectionUpdate(
           nextProjection,
           previousProjection,
+          rollbackScopedHistory ?? previousProjection.history,
         );
         if (rollbackProjection) {
-          await collectQiankunCleanupError(rollbackErrors, () =>
-            projectionUpdate?.(rollbackProjection),
-          );
+          try {
+            await projectionUpdate(rollbackProjection);
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+            rollbackScopedHistory?.destroy();
+            rollbackScopedHistory = undefined;
+          }
         }
       }
       if (runtimeMountAttempted) {
@@ -438,6 +447,12 @@ export function createQiankunSlaveLifecycles(options: {
       await collectQiankunCleanupError(rollbackErrors, () =>
         nextScopedHistory?.destroy(),
       );
+      if (projectionAttempted) {
+        if (rollbackScopedHistory !== scopedHistory) {
+          scopedHistory?.destroy();
+        }
+        scopedHistory = rollbackScopedHistory;
+      }
       currentContainer = undefined;
       entryMounted = false;
       throwQiankunMountError(error, rollbackErrors);
@@ -445,12 +460,20 @@ export function createQiankunSlaveLifecycles(options: {
 
     hasMountedEntry = true;
     entryMounted = true;
+    if (scopedHistory !== nextScopedHistory) {
+      scopedHistory?.destroy();
+    }
     scopedHistory = nextScopedHistory;
     runtimeProjection = nextProjection;
   }
 
   async function runUnmount(props: QiankunLifecycleProps = {}): Promise<void> {
-    if (!entryMounted) return;
+    if (!entryMounted) {
+      scopedHistory?.destroy();
+      scopedHistory = undefined;
+      currentContainer = undefined;
+      return;
+    }
     const context = ctx();
     const errors: unknown[] = [];
     await collectQiankunCleanupError(errors, () =>
@@ -483,13 +506,18 @@ export function createQiankunSlaveLifecycles(options: {
       nextProjection.history,
       previousProjection.history,
     );
-    const nextScopedHistory = historyChanged
-      ? createScopedSlaveHistory(nextProjection.history.type)
-      : scopedHistory;
+    const refreshScopedHistory = shouldRefreshScopedHistory(
+      nextProjection.history.type,
+      scopedHistory,
+    );
+    const nextScopedHistory =
+      historyChanged || refreshScopedHistory
+        ? createScopedSlaveHistory(nextProjection.history.type)
+        : scopedHistory;
     const updateOptions = createSlaveRuntimeProjectionUpdate(
       previousProjection,
       nextProjection,
-      historyChanged ? nextScopedHistory : undefined,
+      historyChanged || refreshScopedHistory ? nextScopedHistory : undefined,
     );
     if (!updateOptions) return;
 
@@ -718,14 +746,20 @@ function createQiankunRouteComponent(
     const containerRef = useRef<HTMLDivElement>(null);
     const microAppRef = useRef<QiankunMicroAppInstance | undefined>(undefined);
     const mountedBaseRef = useRef<string | undefined>(undefined);
+    const mountedHrefRef = useRef<string | undefined>(undefined);
     const latestBaseRef = useRef<string | undefined>(undefined);
+    const latestHrefRef = useRef<string | undefined>(undefined);
     const updateQueueRef = useRef(Promise.resolve());
     const [error, setError] = useState<unknown>();
     const routePathname = useLocation({
       select: (location) => location.pathname,
     });
+    const routeHref = useLocation({
+      select: (location) => location.href,
+    });
     const base = resolveQiankunSlaveBase(master.base, route, routePathname);
     latestBaseRef.current = base;
+    latestHrefRef.current = routeHref;
 
     useEffect(() => {
       const container = containerRef.current;
@@ -763,6 +797,7 @@ function createQiankunRouteComponent(
           );
           microAppRef.current = microApp;
           mountedBaseRef.current = mountedBase;
+          mountedHrefRef.current = latestHrefRef.current;
           void microApp.mountPromise
             ?.then(() => prefetchQiankunApps(master, "after-mount", app.name))
             .catch(reportError);
@@ -789,7 +824,11 @@ function createQiankunRouteComponent(
 
     useEffect(() => {
       const microApp = microAppRef.current;
-      if (!microApp?.update || mountedBaseRef.current === base) {
+      if (
+        !microApp?.update ||
+        (mountedBaseRef.current === base &&
+          mountedHrefRef.current === routeHref)
+      ) {
         return;
       }
 
@@ -797,7 +836,13 @@ function createQiankunRouteComponent(
         await microApp.mountPromise;
         if (microAppRef.current !== microApp) return;
         const nextBase = latestBaseRef.current ?? base;
-        if (mountedBaseRef.current === nextBase) return;
+        const nextHref = latestHrefRef.current ?? routeHref;
+        if (
+          mountedBaseRef.current === nextBase &&
+          mountedHrefRef.current === nextHref
+        ) {
+          return;
+        }
         const appProps = splitAppProps(app.props);
         const routeProps = splitRouteProps(route.microAppProps);
         await microApp.update?.(
@@ -809,12 +854,13 @@ function createQiankunRouteComponent(
           ),
         );
         mountedBaseRef.current = nextBase;
+        mountedHrefRef.current = nextHref;
       });
       updateQueueRef.current = update.catch(() => {});
       void update.catch((updateError) => {
         if (microAppRef.current === microApp) setError(updateError);
       });
-    }, [base]);
+    }, [base, routeHref]);
 
     if (error) throw error;
     return createElement("div", {
@@ -1019,7 +1065,7 @@ function resolveSlaveBasepath(
 function createSlaveRuntimeProjectionUpdate(
   current: SlaveRuntimeProjection,
   next: SlaveRuntimeProjection,
-  historyOverride?: RouterHistory,
+  historyOverride?: QiankunHistoryOptions | RouterHistory,
 ): GeneratedPagesAppRuntimeUpdate | undefined {
   let history: QiankunHistoryOptions | RouterHistory | undefined;
   if (historyOverride) {
@@ -1057,6 +1103,33 @@ function createScopedSlaveHistory(
     return undefined;
   }
   return createQiankunSlaveHistory(type);
+}
+
+function shouldRefreshScopedHistory(
+  type: QiankunHistoryType,
+  history: RouterHistory | undefined,
+): boolean {
+  if (type === "memory" || typeof globalThis.window === "undefined") {
+    return false;
+  }
+  if (!history) return true;
+  return (
+    history.location.href !== readWindowHistoryHref(type, globalThis.window)
+  );
+}
+
+function readWindowHistoryHref(
+  type: Exclude<QiankunHistoryType, "memory">,
+  win: Window,
+): string {
+  if (type === "browser") {
+    return `${win.location.pathname}${win.location.search}${win.location.hash}`;
+  }
+  const hashParts = win.location.hash.split("#").slice(1);
+  const pathname = hashParts[0] ?? "/";
+  const nestedHash =
+    hashParts.length > 1 ? `#${hashParts.slice(1).join("#")}` : "";
+  return `${pathname}${win.location.search}${nestedHash}`;
 }
 
 function createScopedHistoryWindow(win: Window) {

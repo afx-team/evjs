@@ -269,6 +269,71 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(win.history.replaceState).toBe(nativeReplaceState);
   });
 
+  it("refreshes scoped history after a host programmatic navigation", async () => {
+    const originalWindow = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "window",
+    );
+    const win = createHistoryWindow("/catalog");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: win,
+    });
+    const hostHistory = createBrowserHistory({ window: win });
+    let activeHistory: ReturnType<typeof createQiankunSlaveHistory> | undefined;
+    const updateRuntime = vi.fn(
+      (update: { history?: ReturnType<typeof createQiankunSlaveHistory> }) => {
+        if (update.history) activeHistory = update.history;
+      },
+    );
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start: vi.fn(),
+          app: { unmount: vi.fn() },
+        };
+      },
+    });
+
+    try {
+      await slave.mount({
+        container: createElement(),
+        base: "/catalog",
+        history: "browser",
+      });
+      const mountedHistory = activeHistory;
+      if (!mountedHistory) {
+        throw new Error("Expected the mounted slave history projection.");
+      }
+      expect(mountedHistory.location.href).toBe("/catalog");
+      const destroyMountedHistory = vi.spyOn(mountedHistory, "destroy");
+
+      hostHistory.push("/catalog/details");
+      hostHistory.flush();
+      expect(win.location.pathname).toBe("/catalog/details");
+      expect(mountedHistory?.location.href).toBe("/catalog");
+
+      await slave.update({});
+
+      expect(updateRuntime).toHaveBeenCalledTimes(2);
+      expect(activeHistory).not.toBe(mountedHistory);
+      expect(activeHistory?.location.href).toBe("/catalog/details");
+      expect(destroyMountedHistory).toHaveBeenCalledTimes(1);
+
+      await slave.unmount();
+    } finally {
+      hostHistory.destroy();
+      if (originalWindow) {
+        Object.defineProperty(globalThis, "window", originalWindow);
+      } else {
+        delete (globalThis as { window?: unknown }).window;
+      }
+    }
+  });
+
   it("keeps hash navigation synchronized with native browser history", async () => {
     const win = createHistoryWindow("/shell#/catalog");
     const hostHistory = createBrowserHistory({ window: win });
@@ -1119,6 +1184,100 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(activeHistory).toBe("hash");
   });
 
+  it("keeps a live scoped history after a browser mount rolls back", async () => {
+    const originalWindow = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "window",
+    );
+    const originalSelf = Object.getOwnPropertyDescriptor(globalThis, "self");
+    const originalDocument = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "document",
+    );
+    const win = createHistoryWindow("/catalog");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: win,
+    });
+    Object.defineProperty(globalThis, "self", {
+      configurable: true,
+      value: win,
+    });
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: {},
+    });
+    const hostHistory = createBrowserHistory({ window: win });
+    const hostPushState = win.history.pushState;
+    const hostReplaceState = win.history.replaceState;
+    const pagesApp = createPagesApp({
+      routes: [
+        { path: "/", module: { default: () => null } },
+        { path: "/$", module: { default: () => null } },
+      ],
+    });
+    const router = pagesApp.app.router as {
+      history: ReturnType<typeof createQiankunSlaveHistory>;
+    };
+    const initialHistory = router.history;
+    const mountError = new Error("entry start failed");
+    const retryError = new Error("runtime mount failed");
+    const runtimeMount = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(retryError);
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { mount: runtimeMount },
+      async loadEntry() {
+        return {
+          pagesApp,
+          app: pagesApp.app,
+          start() {
+            throw mountError;
+          },
+        };
+      },
+    });
+
+    try {
+      await expect(
+        slave.mount({
+          container: createElement(),
+          base: "/catalog",
+          history: "browser",
+        }),
+      ).rejects.toBe(mountError);
+
+      const restoredHistory = router.history;
+      expect(restoredHistory).not.toBe(initialHistory);
+      expect(restoredHistory.location.href).toBe("/catalog");
+      expect(win.history.pushState).toBe(hostPushState);
+      expect(win.history.replaceState).toBe(hostReplaceState);
+      expect(win.listenerCount("popstate")).toBe(2);
+
+      await expect(
+        slave.mount({
+          container: createElement(),
+          base: "/catalog",
+          history: "browser",
+        }),
+      ).rejects.toBe(retryError);
+      expect(router.history).toBe(restoredHistory);
+      expect(router.history.location.href).toBe("/catalog");
+      expect(win.listenerCount("popstate")).toBe(2);
+
+      await slave.unmount();
+      expect(win.listenerCount("popstate")).toBe(1);
+    } finally {
+      hostHistory.destroy();
+      restoreGlobal("window", originalWindow);
+      restoreGlobal("self", originalSelf);
+      restoreGlobal("document", originalDocument);
+    }
+  });
+
   it("resets mount state when multiple unmount steps fail", async () => {
     const calls: string[] = [];
     const container = createElement();
@@ -1308,4 +1467,15 @@ function createHistoryWindow(initialHref: string) {
       return listeners.get(type)?.size ?? 0;
     },
   };
+}
+
+function restoreGlobal(
+  key: "window" | "self" | "document",
+  descriptor: PropertyDescriptor | undefined,
+) {
+  if (descriptor) {
+    Object.defineProperty(globalThis, key, descriptor);
+  } else {
+    delete (globalThis as Record<string, unknown>)[key];
+  }
 }
