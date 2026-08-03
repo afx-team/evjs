@@ -264,7 +264,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
   capabilities: {
     build: {
-      server: false,
+      server: true,
       rsc: false,
       ppr: false,
     },
