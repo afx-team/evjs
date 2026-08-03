@@ -1,7 +1,9 @@
 import { createPagesApp } from "@evjs/ev/_internal/client";
+import { createBrowserHistory } from "@evjs/ev/navigation";
 import { describe, expect, it, vi } from "vitest";
 import {
   createQiankunMasterRoutes,
+  createQiankunSlaveHistory,
   createQiankunSlaveLifecycles,
   defineQiankunMasterResolver,
   defineQiankunSlaveRuntime,
@@ -165,6 +167,104 @@ describe("@evjs/plugin-qiankun runtime", () => {
         "/tenant/acme",
       ),
     ).toBe("/workspace");
+  });
+
+  it("shares browser navigation without replacing the host history methods", async () => {
+    const win = createHistoryWindow("/catalog");
+    const nativePushState = win.history.pushState;
+    const nativeReplaceState = win.history.replaceState;
+    const hostHistory = createBrowserHistory({ window: win });
+    const hostPushState = win.history.pushState;
+    const hostReplaceState = win.history.replaceState;
+    const slaveHistory = createQiankunSlaveHistory(
+      "browser",
+      win as unknown as Window,
+    );
+    const hostLocations: string[] = [];
+    const slaveLocations: string[] = [];
+    hostHistory.subscribe(({ location }) => hostLocations.push(location.href));
+    slaveHistory.subscribe(({ location }) =>
+      slaveLocations.push(location.href),
+    );
+
+    expect(win.history.pushState).toBe(hostPushState);
+    expect(win.history.replaceState).toBe(hostReplaceState);
+    expect(win.listenerCount("popstate")).toBe(2);
+
+    slaveHistory.push("/catalog/details?tab=all");
+    slaveHistory.flush();
+
+    expect(win.location.pathname).toBe("/catalog/details");
+    expect(win.location.search).toBe("?tab=all");
+    expect(hostHistory.location.href).toBe("/catalog/details?tab=all");
+    expect(slaveHistory.location.href).toBe("/catalog/details?tab=all");
+    expect(hostLocations).toEqual(["/catalog/details?tab=all"]);
+    expect(slaveLocations).toEqual(["/catalog/details?tab=all"]);
+
+    slaveHistory.back();
+    await Promise.resolve();
+
+    expect(win.location.pathname).toBe("/catalog");
+    expect(hostHistory.location.href).toBe("/catalog");
+    expect(slaveHistory.location.href).toBe("/catalog");
+    expect(hostLocations).toEqual(["/catalog/details?tab=all", "/catalog"]);
+    expect(slaveLocations).toEqual(["/catalog/details?tab=all", "/catalog"]);
+
+    slaveHistory.forward();
+    await Promise.resolve();
+
+    expect(win.location.pathname).toBe("/catalog/details");
+    expect(hostHistory.location.href).toBe("/catalog/details?tab=all");
+    expect(slaveHistory.location.href).toBe("/catalog/details?tab=all");
+    expect(hostLocations).toEqual([
+      "/catalog/details?tab=all",
+      "/catalog",
+      "/catalog/details?tab=all",
+    ]);
+    expect(slaveLocations).toEqual([
+      "/catalog/details?tab=all",
+      "/catalog",
+      "/catalog/details?tab=all",
+    ]);
+
+    slaveHistory.destroy();
+    expect(win.history.pushState).toBe(hostPushState);
+    expect(win.history.replaceState).toBe(hostReplaceState);
+    expect(win.listenerCount("popstate")).toBe(1);
+
+    hostHistory.destroy();
+    expect(win.history.pushState).toBe(nativePushState);
+    expect(win.history.replaceState).toBe(nativeReplaceState);
+  });
+
+  it("keeps hash navigation synchronized with native browser history", async () => {
+    const win = createHistoryWindow("/shell#/catalog");
+    const hostHistory = createBrowserHistory({ window: win });
+    const hostPushState = win.history.pushState;
+    const hostReplaceState = win.history.replaceState;
+    const slaveHistory = createQiankunSlaveHistory(
+      "hash",
+      win as unknown as Window,
+    );
+
+    slaveHistory.push("/catalog/details?tab=all");
+    slaveHistory.flush();
+
+    expect(win.location.pathname).toBe("/shell");
+    expect(win.location.hash).toBe("#/catalog/details?tab=all");
+    expect(hostHistory.location.href).toBe("/shell#/catalog/details?tab=all");
+    expect(slaveHistory.location.href).toBe("/catalog/details?tab=all");
+
+    slaveHistory.back();
+    await Promise.resolve();
+
+    expect(hostHistory.location.href).toBe("/shell#/catalog");
+    expect(slaveHistory.location.href).toBe("/catalog");
+
+    slaveHistory.destroy();
+    expect(win.history.pushState).toBe(hostPushState);
+    expect(win.history.replaceState).toBe(hostReplaceState);
+    hostHistory.destroy();
   });
 
   it("waits for a deferred route update before unmounting its micro-app", async () => {
@@ -652,6 +752,71 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
   });
 
+  it("projects and releases scoped browser history in qiankun mode", async () => {
+    const originalWindow = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "window",
+    );
+    const win = createHistoryWindow("/catalog");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: win,
+    });
+    const hostHistory = createBrowserHistory({ window: win });
+    const hostPushState = win.history.pushState;
+    const hostReplaceState = win.history.replaceState;
+
+    try {
+      const updateRuntime = vi.fn();
+      const slave = createQiankunSlaveLifecycles({
+        name: "catalog",
+        mount: "#app",
+        async loadEntry() {
+          return {
+            pagesApp: { updateRuntime },
+            start: vi.fn(),
+            app: { unmount: vi.fn() },
+          };
+        },
+      });
+
+      await slave.mount({
+        container: createElement(),
+        base: "/catalog",
+        history: "browser",
+      });
+
+      const projection = updateRuntime.mock.calls[0]?.[0] as {
+        basepath?: string;
+        history?: { push?: unknown; back?: unknown; destroy?: unknown };
+      };
+      expect(projection.basepath).toBe("/catalog");
+      expect(projection.history).toEqual(
+        expect.objectContaining({
+          push: expect.any(Function),
+          back: expect.any(Function),
+          destroy: expect.any(Function),
+        }),
+      );
+      expect(win.history.pushState).toBe(hostPushState);
+      expect(win.history.replaceState).toBe(hostReplaceState);
+      expect(win.listenerCount("popstate")).toBe(2);
+
+      await slave.unmount({ container: createElement() });
+
+      expect(win.listenerCount("popstate")).toBe(1);
+      expect(win.history.pushState).toBe(hostPushState);
+      expect(win.history.replaceState).toBe(hostReplaceState);
+    } finally {
+      hostHistory.destroy();
+      if (originalWindow) {
+        Object.defineProperty(globalThis, "window", originalWindow);
+      } else {
+        delete (globalThis as { window?: unknown }).window;
+      }
+    }
+  });
+
   it("reuses an equivalent slave runtime projection across remounts", async () => {
     const container = createElement();
     const updateRuntime = vi.fn();
@@ -1018,6 +1183,97 @@ function createDeferred(): { promise: Promise<void>; resolve(): void } {
     promise,
     resolve() {
       resolvePromise?.();
+    },
+  };
+}
+
+function createHistoryWindow(initialHref: string) {
+  type HistoryEntry = { href: string; state: Record<string, unknown> };
+  const origin = "https://evjs.test";
+  const listeners = new Map<string, Set<EventListener>>();
+  const entries: HistoryEntry[] = [
+    {
+      href: initialHref,
+      state: { __TSR_index: 0, key: "initial", __TSR_key: "initial" },
+    },
+  ];
+  let index = 0;
+  const location = {
+    pathname: "/",
+    search: "",
+    hash: "",
+  };
+
+  const applyHref = (href: string | URL | null | undefined) => {
+    const url = new URL(
+      href?.toString() ?? entries[index]?.href ?? "/",
+      origin,
+    );
+    location.pathname = url.pathname;
+    location.search = url.search;
+    location.hash = url.hash;
+    return `${url.pathname}${url.search}${url.hash}`;
+  };
+  applyHref(initialHref);
+
+  const dispatch = (type: string) => {
+    const event = new Event(type);
+    for (const listener of listeners.get(type) ?? []) listener(event);
+  };
+  const move = (delta: number) => {
+    const nextIndex = Math.min(Math.max(index + delta, 0), entries.length - 1);
+    if (nextIndex === index) return;
+    index = nextIndex;
+    applyHref(entries[index]?.href);
+    dispatch("popstate");
+  };
+
+  const history = {
+    get length() {
+      return entries.length;
+    },
+    get state() {
+      return entries[index]?.state;
+    },
+    pushState: vi.fn(
+      (
+        state: Record<string, unknown>,
+        _unused: string,
+        href?: string | URL | null,
+      ) => {
+        const nextHref = applyHref(href);
+        entries.splice(index + 1, entries.length, { href: nextHref, state });
+        index = entries.length - 1;
+      },
+    ),
+    replaceState: vi.fn(
+      (
+        state: Record<string, unknown>,
+        _unused: string,
+        href?: string | URL | null,
+      ) => {
+        const nextHref = applyHref(href);
+        entries[index] = { href: nextHref, state };
+      },
+    ),
+    go: vi.fn((delta = 0) => move(delta)),
+    back: vi.fn(() => move(-1)),
+    forward: vi.fn(() => move(1)),
+  };
+
+  return {
+    history,
+    location,
+    addEventListener(type: string, listener: EventListener) {
+      const eventListeners = listeners.get(type) ?? new Set<EventListener>();
+      eventListeners.add(listener);
+      listeners.set(type, eventListeners);
+    },
+    removeEventListener(type: string, listener: EventListener) {
+      listeners.get(type)?.delete(listener);
+    },
+    listenerCount(type: string) {
+      return listeners.get(type)?.size ?? 0;
     },
   };
 }

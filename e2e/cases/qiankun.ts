@@ -85,6 +85,22 @@ test.describe("qiankun", () => {
     await expect(page.getByText("Orders")).toBeVisible();
     await expect(page.getByText("Inventory")).toBeVisible();
     await expect(page.getByText("Revenue")).toBeVisible();
+
+    await page.getByRole("link", { name: "View catalog details" }).click();
+    await expect(page).toHaveURL(`${masterURL}/catalog/details`);
+    await expect(
+      page.getByRole("heading", { name: "Catalog details" }),
+    ).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(`${masterURL}/catalog`);
+    await expect(page.getByRole("heading", { name: "Catalog" })).toBeVisible();
+
+    await page.goForward();
+    await expect(page).toHaveURL(`${masterURL}/catalog/details`);
+    await expect(
+      page.getByRole("heading", { name: "Catalog details" }),
+    ).toBeVisible();
   });
 });
 

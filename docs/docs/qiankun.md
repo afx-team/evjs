@@ -196,6 +196,13 @@ entry's first `start()`. The router therefore observes the mounted base and
 history before the first application render. When run outside qiankun, the same
 Pages remain available under their standalone base.
 
+While mounted with browser or hash history, the slave uses a scoped history
+adapter. Slave `Link` and `useNavigate()` calls still update the shared browser
+URL, and native back/forward events update both the host and slave routers, but
+the slave does not replace the host's global `history.pushState` or
+`history.replaceState` methods. The adapter is released on unmount. Memory
+history remains isolated and does not write the browser URL.
+
 The generated route types remain local to the slave source tree: they describe
 `/` and `/details`, not the externally assigned `/catalog` prefix.
 

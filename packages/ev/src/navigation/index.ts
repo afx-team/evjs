@@ -25,6 +25,12 @@ import {
 import type { ComponentPropsWithRef, ReactElement } from "react";
 import type { Register } from "../route/index.js";
 
+export type { RouterHistory } from "@tanstack/react-router";
+export {
+  createBrowserHistory,
+  createHashHistory,
+} from "@tanstack/react-router";
+
 type RegisteredAppRouter = Register extends {
   router: infer TRouter extends RouterAnyRouter;
 }

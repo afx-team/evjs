@@ -185,6 +185,12 @@ Slave lifecycle 会加载原始生成 entry，通过 `pagesApp.updateRuntime()` 
 首次渲染前就能观察到挂载后的 base 与 history。在 qiankun 外独立运行时，同一组 Page
 仍然使用 standalone base。
 
+使用 browser 或 hash history 挂载时，slave 会使用作用域隔离的 history 适配器。
+Slave 内的 `Link` 与 `useNavigate()` 仍会更新共享的浏览器 URL，浏览器原生前进/回退
+也会同时更新 host 与 slave router，但 slave 不会替换 host 全局的
+`history.pushState` 或 `history.replaceState` 方法。适配器会在 unmount 时释放。
+Memory history 仍保持隔离，不会写入浏览器 URL。
+
 生成的 route types 始终描述 slave 本地源码树：其中是 `/` 与 `/details`，而不是
 外部分配的 `/catalog` 前缀。
 
