@@ -358,6 +358,37 @@ describe("UtoopackManifestGenerator", () => {
     );
   });
 
+  it("rejects a mismatched sole asset for a named server entry", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          server: { assets: [{ name: "server.js" }] },
+          "page-server-dashboard": {
+            assets: [{ name: "server-shared.js" }],
+          },
+        },
+      }),
+    );
+    const graph = createGraph({ cwd, routingMode: "spa", pages: [] });
+    const plan = createPlan(graph);
+    plan.entries.splice(plan.entries.length - 1, 0, {
+      name: "page-server-dashboard",
+      import: "./src/pages/dashboard/page.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "page-server",
+      owner: { pageId: "dashboard", routeId: "dashboard" },
+    });
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, plan).build(),
+    ).rejects.toThrow(
+      'Utoopack server stats entrypoint "page-server-dashboard" must identify exactly one JavaScript entry asset; found 1 JavaScript assets and 0 named candidates',
+    );
+  });
+
   it("maps named server entries without exposing shared chunks as entry files", async () => {
     const cwd = await makeProject();
     await fs.promises.writeFile(
