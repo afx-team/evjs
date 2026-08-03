@@ -203,6 +203,11 @@ the slave does not replace the host's global `history.pushState` or
 `history.replaceState` methods. The adapter is released on unmount. Memory
 history remains isolated and does not write the browser URL.
 
+Application layouts must not add their own `popstate` listener that compares
+`window.location` with `useLocation()` and renders a corrective `Navigate`.
+The scoped adapter is the single synchronization point, so native traversal
+continues to respect Router blockers and qiankun mount/unmount ownership.
+
 The generated route types remain local to the slave source tree: they describe
 `/` and `/details`, not the externally assigned `/catalog` prefix.
 

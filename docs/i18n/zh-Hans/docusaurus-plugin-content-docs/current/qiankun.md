@@ -191,6 +191,11 @@ Slave 内的 `Link` 与 `useNavigate()` 仍会更新共享的浏览器 URL，浏
 `history.pushState` 或 `history.replaceState` 方法。适配器会在 unmount 时释放。
 Memory history 仍保持隔离，不会写入浏览器 URL。
 
+业务 Layout 不需要再监听 `popstate`、比较 `window.location` 与 `useLocation()`，
+也不需要渲染一个纠偏用的 `Navigate`。作用域 history 适配器是唯一的同步入口，因此
+浏览器原生前进/回退仍会遵守 Router blocker，并由 qiankun mount/unmount lifecycle
+统一管理。
+
 生成的 route types 始终描述 slave 本地源码树：其中是 `/` 与 `/details`，而不是
 外部分配的 `/catalog` 前缀。
 

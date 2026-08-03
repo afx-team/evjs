@@ -201,7 +201,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(hostLocations).toEqual(["/catalog/details?tab=all"]);
     expect(slaveLocations).toEqual(["/catalog/details?tab=all"]);
 
-    slaveHistory.back();
+    win.history.back();
     await Promise.resolve();
 
     expect(win.location.pathname).toBe("/catalog");
@@ -210,7 +210,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(hostLocations).toEqual(["/catalog/details?tab=all", "/catalog"]);
     expect(slaveLocations).toEqual(["/catalog/details?tab=all", "/catalog"]);
 
-    slaveHistory.forward();
+    win.history.forward();
     await Promise.resolve();
 
     expect(win.location.pathname).toBe("/catalog/details");
@@ -233,6 +233,38 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(win.listenerCount("popstate")).toBe(1);
 
     hostHistory.destroy();
+    expect(win.history.pushState).toBe(nativePushState);
+    expect(win.history.replaceState).toBe(nativeReplaceState);
+  });
+
+  it("does not resurrect host history hooks when the host releases them first", async () => {
+    const win = createHistoryWindow("/catalog");
+    const nativePushState = win.history.pushState;
+    const nativeReplaceState = win.history.replaceState;
+    const hostHistory = createBrowserHistory({ window: win });
+    const slaveHistory = createQiankunSlaveHistory(
+      "browser",
+      win as unknown as Window,
+    );
+    const slaveLocations: string[] = [];
+    slaveHistory.subscribe(({ location }) =>
+      slaveLocations.push(location.href),
+    );
+
+    hostHistory.destroy();
+    expect(win.history.pushState).toBe(nativePushState);
+    expect(win.history.replaceState).toBe(nativeReplaceState);
+
+    slaveHistory.push("/catalog/details");
+    slaveHistory.flush();
+    win.history.back();
+    await Promise.resolve();
+
+    expect(win.location.pathname).toBe("/catalog");
+    expect(slaveHistory.location.href).toBe("/catalog");
+    expect(slaveLocations).toEqual(["/catalog/details", "/catalog"]);
+
+    slaveHistory.destroy();
     expect(win.history.pushState).toBe(nativePushState);
     expect(win.history.replaceState).toBe(nativeReplaceState);
   });
