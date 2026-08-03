@@ -849,6 +849,189 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
   });
 
+  it("runs slave post lifecycles after mount and every mounted update", async () => {
+    const calls: string[] = [];
+    const container = createElement();
+    const updateRuntime = vi.fn(async () => calls.push("projection"));
+    const entry = {
+      pagesApp: { updateRuntime },
+      start() {
+        calls.push("entry-start");
+      },
+    };
+    const loadEntry = vi.fn(async () => {
+      calls.push("entry");
+      return entry;
+    });
+    const afterMount = vi.fn(async (_props, context) => {
+      expect(context.container).toBe(container);
+      expect(await context.loadEntry()).toBe(entry);
+      calls.push("after-mount");
+    });
+    const afterUpdate = vi.fn(async (_props, context) => {
+      expect(context.container).toBe(container);
+      expect(await context.loadEntry()).toBe(entry);
+      calls.push("after-update");
+    });
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        mount() {
+          calls.push("runtime-mount");
+        },
+        afterMount,
+        update() {
+          calls.push("runtime-update");
+        },
+        afterUpdate,
+      },
+      loadEntry,
+    });
+
+    await slave.mount({ container, base: "/tenant/acme", history: "memory" });
+    await slave.update({ base: "/tenant/beta" });
+    await slave.update({ platformState: "ready" });
+
+    expect(calls).toEqual([
+      "runtime-mount",
+      "entry",
+      "projection",
+      "entry-start",
+      "after-mount",
+      "runtime-update",
+      "projection",
+      "after-update",
+      "runtime-update",
+      "after-update",
+    ]);
+    expect(loadEntry).toHaveBeenCalledTimes(1);
+    expect(afterMount).toHaveBeenCalledTimes(1);
+    expect(afterUpdate).toHaveBeenCalledTimes(2);
+    expect(updateRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it("rolls back a failed afterMount and remounts through render", async () => {
+    const afterMountError = new Error("after mount failed");
+    const calls: string[] = [];
+    const container = createElement();
+    let afterMountAttempts = 0;
+    const afterMount = vi.fn(async () => {
+      calls.push("after-mount");
+      afterMountAttempts += 1;
+      if (afterMountAttempts === 1) throw afterMountError;
+    });
+    const runtimeUnmount = vi.fn(() => {
+      calls.push("runtime-unmount");
+    });
+    const start = vi.fn(() => calls.push("entry-start"));
+    const render = vi.fn(() => calls.push("entry-render"));
+    const entryUnmount = vi.fn(() => calls.push("entry-unmount"));
+    const updateRuntime = vi.fn(() => calls.push("projection"));
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { afterMount, unmount: runtimeUnmount },
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start,
+          app: { render, unmount: entryUnmount },
+        };
+      },
+    });
+    const props = { container, base: "/catalog", history: "memory" as const };
+
+    await expect(slave.mount(props)).rejects.toBe(afterMountError);
+    await slave.mount(props);
+
+    expect(calls).toEqual([
+      "projection",
+      "entry-start",
+      "after-mount",
+      "entry-unmount",
+      "projection",
+      "runtime-unmount",
+      "projection",
+      "entry-render",
+      "after-mount",
+    ]);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(entryUnmount).toHaveBeenCalledTimes(1);
+    expect(runtimeUnmount).toHaveBeenCalledTimes(1);
+
+    await slave.unmount(props);
+  });
+
+  it("commits projection before afterUpdate and recovers its lifecycle queue", async () => {
+    const afterUpdateError = new Error("after update failed");
+    const container = createElement();
+    const updateRuntime = vi.fn();
+    const entryUnmount = vi.fn();
+    const afterUpdate = vi
+      .fn()
+      .mockRejectedValueOnce(afterUpdateError)
+      .mockResolvedValue(undefined);
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { afterUpdate },
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start: vi.fn(),
+          app: { unmount: entryUnmount },
+        };
+      },
+    });
+
+    await slave.mount({ container, base: "/tenant/acme", history: "memory" });
+    await expect(slave.update({ base: "/tenant/beta" })).rejects.toBe(
+      afterUpdateError,
+    );
+    await slave.update({ base: "/tenant/beta" });
+    await slave.unmount({ container });
+
+    expect(updateRuntime).toHaveBeenCalledTimes(2);
+    expect(updateRuntime).toHaveBeenNthCalledWith(2, {
+      basepath: "/tenant/beta",
+    });
+    expect(afterUpdate).toHaveBeenCalledTimes(2);
+    expect(entryUnmount).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips afterUpdate when runtime projection fails", async () => {
+    const projectionError = new Error("projection failed");
+    const updateRuntime = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(projectionError);
+    const afterUpdate = vi.fn();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { afterUpdate },
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start: vi.fn(),
+        };
+      },
+    });
+
+    await slave.mount({
+      container: createElement(),
+      base: "/tenant/acme",
+      history: "memory",
+    });
+    await expect(slave.update({ base: "/tenant/beta" })).rejects.toBe(
+      projectionError,
+    );
+
+    expect(afterUpdate).not.toHaveBeenCalled();
+  });
+
   it("projects and releases scoped browser history in qiankun mode", async () => {
     const originalWindow = Object.getOwnPropertyDescriptor(
       globalThis,
@@ -1355,6 +1538,104 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(render).toHaveBeenCalledTimes(1);
     expect(runtimeUnmount).toHaveBeenCalledTimes(1);
     expect(entryUnmount).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes queued operations after slave post lifecycles", async () => {
+    const calls: string[] = [];
+    const afterMountStarted = createDeferred();
+    const afterMountGate = createDeferred();
+    const afterUpdateStarted = createDeferred();
+    const afterUpdateGate = createDeferred();
+    const container = createElement();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        mount() {
+          calls.push("runtime-mount");
+        },
+        async afterMount() {
+          calls.push("after-mount-start");
+          afterMountStarted.resolve();
+          await afterMountGate.promise;
+          calls.push("after-mount-end");
+        },
+        update() {
+          calls.push("runtime-update");
+        },
+        async afterUpdate() {
+          calls.push("after-update-start");
+          afterUpdateStarted.resolve();
+          await afterUpdateGate.promise;
+          calls.push("after-update-end");
+        },
+        unmount() {
+          calls.push("runtime-unmount");
+        },
+      },
+      async loadEntry() {
+        return {
+          pagesApp: {
+            updateRuntime() {
+              calls.push("projection");
+            },
+          },
+          start() {
+            calls.push("entry-start");
+          },
+          app: {
+            unmount() {
+              calls.push("entry-unmount");
+            },
+          },
+        };
+      },
+    });
+
+    const mounting = slave.mount({
+      container,
+      base: "/tenant/acme",
+      history: "memory",
+    });
+    const updating = slave.update({ base: "/tenant/beta" });
+    const unmounting = slave.unmount({ container });
+
+    await afterMountStarted.promise;
+    expect(calls).toEqual([
+      "runtime-mount",
+      "projection",
+      "entry-start",
+      "after-mount-start",
+    ]);
+
+    afterMountGate.resolve();
+    await afterUpdateStarted.promise;
+    expect(calls).toEqual([
+      "runtime-mount",
+      "projection",
+      "entry-start",
+      "after-mount-start",
+      "after-mount-end",
+      "runtime-update",
+      "projection",
+      "after-update-start",
+    ]);
+
+    afterUpdateGate.resolve();
+    await Promise.all([mounting, updating, unmounting]);
+    expect(calls).toEqual([
+      "runtime-mount",
+      "projection",
+      "entry-start",
+      "after-mount-start",
+      "after-mount-end",
+      "runtime-update",
+      "projection",
+      "after-update-start",
+      "after-update-end",
+      "runtime-unmount",
+      "entry-unmount",
+    ]);
   });
 });
 

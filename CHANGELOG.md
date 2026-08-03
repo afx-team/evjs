@@ -6,6 +6,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ✨ Improvements
+
+- **Qiankun slave post lifecycles** — Optional slave runtimes can use
+  `afterMount()` after projection and entry rendering succeed, and
+  `afterUpdate()` after mounted updates settle. Post lifecycles participate in
+  the serialized slave queue without requiring integrations to wrap generated
+  entry methods.
+
 ---
 
 ## [0.3.2] — 2026-08-03
