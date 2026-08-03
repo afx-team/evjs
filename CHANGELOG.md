@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.4] — 2026-08-04
+
 ### ✨ Improvements
 
 - **Qiankun slave post lifecycles** — Optional slave runtimes can use
@@ -13,6 +17,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   `afterUpdate()` after mounted updates settle. Post lifecycles participate in
   the serialized slave queue without requiring integrations to wrap generated
   entry methods.
+
+### 🐛 Bug Fixes
+
+- **Stable Webpack development entry assets** — HMR assets are identified from
+  Webpack stats metadata and excluded from canonical client entry assets while
+  remaining in the emitted-file inventory, preventing replacement compilations
+  from failing single-entry validation.
 
 ---
 
