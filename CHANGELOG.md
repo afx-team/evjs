@@ -8,6 +8,19 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.3] — 2026-08-03
+
+### 🐛 Bug Fixes
+
+- **Qiankun sub-app browser history synchronization** — Qiankun masters now
+  forward same-base host location changes to mounted slaves, and slave Routers
+  reconcile native browser back/forward navigation without requiring an
+  application-level `popstate` workaround. Browser and hash history adapters
+  are scoped per app and retain the active wrapper during rollback, preventing
+  stale shared `window.history` restoration.
+
+---
+
 ## [0.3.2] — 2026-08-03
 
 ### ⚠️ Breaking Changes
