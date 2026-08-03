@@ -65,6 +65,11 @@ export const deleteUser = async (id: string) => {
 - Reachable `"use server"` modules are made callable from the browser.
   "Reachable" means imported by app code, page modules, server file routes, or
   server middleware; unrelated files are ignored.
+- The server transform preserves implementations without registering global
+  side effects. The generated server entry imports each reachable module,
+  registers its named exports in one application-owned registry, and passes
+  that registry to `createApp()`. Multiple evjs apps can therefore share a
+  process without exposing server functions to each other.
 
 ## Request Context Helpers
 
@@ -235,6 +240,10 @@ hosted on another origin:
 For evjs builds, prefer `transport.baseUrl` in `ev.config.ts` when the
 browser talks to the server runtime on another origin. That value is shared by
 browser-initiated requests such as server functions and RSC Flight.
+All evjs applications sharing one JavaScript realm must resolve to the same
+framework transport settings. If they intentionally share another transport,
+call `initTransport()` once with the common application-owned configuration;
+an explicit call takes precedence over embedded framework settings.
 The built-in adapter owns `Content-Type: application/json`; use `headers` only
 for additional headers such as auth, tracing, or CSRF tokens.
 

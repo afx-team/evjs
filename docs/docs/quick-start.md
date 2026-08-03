@@ -77,7 +77,7 @@ export default definePageConfig({
 
 `title` and `meta` are static core Page metadata. `meta` emits only
 `<meta name="..." content="...">` entries. Installed Page-aware plugins use
-generated short keys under `plugins`; those values are not automatically sent
+their canonical ids under `plugins`; those values are not automatically sent
 to browser runtime.
 
 ## Page-Private Code

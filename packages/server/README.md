@@ -47,8 +47,10 @@ declarations.
 
 ### 2. Server Functions
 
-Use the `"use server"` directive in reachable modules. `.server.ts` is the
-recommended naming convention, not a discovery rule:
+Framework projects use the `"use server"` directive in reachable modules. The
+generated server entry creates an application-owned function registry and
+registers every discovered export. `.server.ts` is the recommended naming
+convention, not a discovery rule:
 
 ```ts
 // src/posts.server.ts
@@ -59,6 +61,22 @@ export async function getPosts() {
   return [{ id: 1, title: "Hello World" }];
 }
 ```
+
+Standalone apps register their function implementations explicitly. The same
+registry can dispatch calls for a custom WebSocket or IPC transport:
+
+```ts
+import { createApp, createServerFunctionRegistry } from "@evjs/server";
+import { getPosts } from "./posts.server.js";
+
+const serverFunctions = createServerFunctionRegistry();
+serverFunctions.register("posts:getPosts", getPosts);
+
+export const app = createApp({ serverFunctions });
+```
+
+Registries are isolated per app, so two apps in one process may safely use the
+same function id for different implementations.
 
 ## Runtime Adapters
 
@@ -73,8 +91,11 @@ serve(app, { port: 3001 });
 
 ### Fetch (Deno/Bun/Edge)
 
+`@evjs/server/fetch` provides the zero-configuration empty app. When a
+standalone app owns routes or server functions, export that app's handler:
+
 ```ts
-import app from "@evjs/server/fetch";
+import { app } from "./app.js";
 
 Deno.serve({ port: 3001 }, app.fetch);
 ```
@@ -82,7 +103,10 @@ Deno.serve({ port: 3001 }, app.fetch);
 Worker-style hosts that discover named module exports can use the same handler:
 
 ```ts
-export { fetch } from "@evjs/server/fetch";
+import { app } from "./app.js";
+
+export const fetch = app.fetch;
+export default { fetch };
 ```
 
 ## Core APIs
@@ -90,6 +114,8 @@ export { fetch } from "@evjs/server/fetch";
 ### Routing
 - `createRoute(path, handler)`: Create a REST endpoint.
 - `createApp(options)`: Main application factory.
+- `createServerFunctionRegistry()`: Create an isolated function registry for
+  one application or custom transport.
 
 Application-facing server runtime APIs are exported from `@evjs/server` and
 its runtime subpaths. Use `@evjs/ev` when the app needs framework composition

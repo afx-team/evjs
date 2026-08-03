@@ -118,10 +118,10 @@
       "import": "./esm/_internal/generated/server/react.js",
       "default": "./esm/_internal/generated/server/react.js"
     },
-    "./_internal/server/server-functions": {
-      "types": "./esm/_internal/generated/server/server-functions.d.ts",
-      "import": "./esm/_internal/generated/server/server-functions.js",
-      "default": "./esm/_internal/generated/server/server-functions.js"
+    "./_internal/server/server-reference": {
+      "types": "./esm/_internal/generated/server/server-reference.d.ts",
+      "import": "./esm/_internal/generated/server/server-reference.js",
+      "default": "./esm/_internal/generated/server/server-reference.js"
     }
   },
   "scripts": {
@@ -150,7 +150,6 @@
     "@standard-schema/spec": "^1.1.0",
     "@swc/core": "^1.15.21",
     "@tanstack/react-router": "^1.168.3",
-    "@utoo/pack": "^1.4.27",
     "domparser-rs": "^0.1.0",
     "execa": "^9.6.1",
     "jiti": "^2.6.1"

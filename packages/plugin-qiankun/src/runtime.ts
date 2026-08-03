@@ -26,12 +26,11 @@ export type QiankunRouteProps = Record<string, unknown> & {
   lifeCycles?: QiankunLifeCycles;
 };
 
+/** Canonical app descriptor consumed by the public qiankun bridge. */
 export interface QiankunApp {
   name: string;
   entry: string;
-  credentials?: boolean;
   props?: QiankunAppProps;
-  [key: string]: unknown;
 }
 
 export interface QiankunMicroAppRoute {
@@ -56,8 +55,6 @@ export interface QiankunMasterOptions {
   apps?: QiankunApp[];
   /** Application-level route snapshot, typically supplied by a site platform. */
   routes?: QiankunRoute[];
-  /** Optional application identity field used by an external platform adapter. */
-  appNameKeyAlias?: string;
   /** Base path already owned by the master Application. */
   base?: string;
   /** History mode projected into mounted slave Applications. */
@@ -127,7 +124,6 @@ export interface QiankunRuntimePageDefinition {
 interface NormalizedQiankunMasterOptions {
   apps: QiankunApp[];
   routes: QiankunRoute[];
-  appNameKeyAlias?: string;
   base: string;
   history: QiankunHistoryType;
   settings: QiankunLoadSettings;
@@ -179,6 +175,31 @@ const qiankunLifecycleNames = [
   "afterUnmount",
 ] as const;
 
+const qiankunMasterOptionFields = [
+  "apps",
+  "routes",
+  "base",
+  "history",
+  "settings",
+  "lifeCycles",
+  "prefetch",
+  "prefetchThreshold",
+] as const;
+const qiankunAppFields = ["name", "entry", "props"] as const;
+const qiankunMicroAppRouteFields = [
+  "path",
+  "microApp",
+  "mode",
+  "microAppProps",
+] as const;
+const qiankunRedirectRouteFields = ["path", "redirect"] as const;
+const qiankunRouteParamNamePattern = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const reservedQiankunRouteParamNames = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+  "_splat",
+]);
 export function defineQiankunMasterResolver<T extends QiankunMasterResolver>(
   resolver: T,
 ): T {
@@ -277,8 +298,10 @@ export function createQiankunSlaveLifecycles(options: {
   let loadedEntry: Promise<unknown> | undefined;
   let loadedEntryModule: unknown;
   let currentContainer: Element | undefined;
+  let bootstrapped = false;
   let hasMountedEntry = false;
   let entryMounted = false;
+  let lifecycleQueue = Promise.resolve();
   let runtimeProjection: SlaveRuntimeProjection = {
     basepath: "/",
     history: { type: "browser" },
@@ -292,73 +315,140 @@ export function createQiankunSlaveLifecycles(options: {
   });
 
   async function loadEntry(): Promise<unknown> {
-    loadedEntry ??= options.loadEntry();
-    loadedEntryModule = await loadedEntry;
-    return loadedEntryModule;
+    let pendingEntry = loadedEntry;
+    if (!pendingEntry) {
+      pendingEntry = Promise.resolve().then(() => options.loadEntry());
+      loadedEntry = pendingEntry;
+    }
+    try {
+      const entryModule = await pendingEntry;
+      loadedEntryModule = entryModule;
+      return entryModule;
+    } catch (error) {
+      if (loadedEntry === pendingEntry) {
+        loadedEntry = undefined;
+        loadedEntryModule = undefined;
+      }
+      throw error;
+    }
   }
 
-  async function bootstrap(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runBootstrap(
+    props: QiankunLifecycleProps = {},
+  ): Promise<void> {
+    if (bootstrapped) return;
     currentContainer = resolveMountContainer(props, options.mount);
-    await runtime.bootstrap?.(props, ctx());
+    try {
+      await runtime.bootstrap?.(props, ctx());
+      bootstrapped = true;
+    } catch (error) {
+      currentContainer = undefined;
+      throw error;
+    }
   }
 
-  async function mount(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runMount(props: QiankunLifecycleProps = {}): Promise<void> {
     if (entryMounted) return;
     currentContainer = resolveMountContainer(props, options.mount);
     const context = ctx();
-    const restoreDocumentLookup = scopeDocumentMountLookup(
-      currentContainer,
-      options.mount,
-    );
+    const previousProjection = runtimeProjection;
+    let nextProjection = previousProjection;
+    let projectionUpdate:
+      | ((update: GeneratedPagesAppRuntimeUpdate) => MaybePromise<void>)
+      | undefined;
+    let projectionAttempted = false;
+    let runtimeMountAttempted = false;
+    let entryMountAttempted = false;
+    let entryModule: unknown;
+
     try {
+      runtimeMountAttempted = runtime.mount !== undefined;
       await runtime.mount?.(props, context);
-      const entryModule = await context.loadEntry();
-      runtimeProjection = await configureSlaveEntry(
-        entryModule,
-        props,
-        runtimeProjection,
+      entryModule = await context.loadEntry();
+      nextProjection = resolveSlaveRuntimeProjection(props, previousProjection);
+      const projectionOptions = createSlaveRuntimeProjectionUpdate(
+        previousProjection,
+        nextProjection,
       );
+      if (projectionOptions) {
+        projectionUpdate = resolveRequiredSlavePagesAppUpdate(entryModule);
+        projectionAttempted = true;
+        await projectionUpdate(projectionOptions);
+      }
       const start = hasMountedEntry
         ? undefined
         : resolveEntryStart(entryModule);
       if (start) {
+        entryMountAttempted = true;
         await start(currentContainer ?? options.mount);
       } else {
-        await mountLoadedEntry(entryModule, currentContainer, options.mount);
+        const render = resolveEntryRender(entryModule);
+        if (!render) {
+          throw new Error(
+            "[evjs:plugin-qiankun] The generated slave entry does not expose an app.render() method required for mounting.",
+          );
+        }
+        entryMountAttempted = true;
+        await render(currentContainer ?? options.mount);
       }
-      hasMountedEntry = true;
-      entryMounted = true;
-    } finally {
-      restoreDocumentLookup();
+    } catch (error) {
+      const rollbackErrors: unknown[] = [];
+      if (entryMountAttempted) {
+        await collectQiankunCleanupError(rollbackErrors, () =>
+          unmountLoadedEntry(entryModule),
+        );
+      }
+      if (projectionAttempted && projectionUpdate) {
+        const rollbackProjection = createSlaveRuntimeProjectionUpdate(
+          nextProjection,
+          previousProjection,
+        );
+        if (rollbackProjection) {
+          await collectQiankunCleanupError(rollbackErrors, () =>
+            projectionUpdate?.(rollbackProjection),
+          );
+        }
+      }
+      if (runtimeMountAttempted) {
+        await collectQiankunCleanupError(rollbackErrors, () =>
+          runtime.unmount?.(props, context),
+        );
+      }
+      await collectQiankunCleanupError(rollbackErrors, () =>
+        clearContainer(currentContainer),
+      );
+      currentContainer = undefined;
+      entryMounted = false;
+      throwQiankunMountError(error, rollbackErrors);
     }
+
+    hasMountedEntry = true;
+    entryMounted = true;
+    runtimeProjection = nextProjection;
   }
 
-  async function unmount(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runUnmount(props: QiankunLifecycleProps = {}): Promise<void> {
+    if (!entryMounted) return;
     const context = ctx();
     const errors: unknown[] = [];
-    try {
-      await runtime.unmount?.(props, context);
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      await unmountLoadedEntry(loadedEntryModule);
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      clearContainer(currentContainer);
-    } catch (error) {
-      errors.push(error);
-    }
+    await collectQiankunCleanupError(errors, () =>
+      runtime.unmount?.(props, context),
+    );
+    await collectQiankunCleanupError(errors, () =>
+      unmountLoadedEntry(loadedEntryModule),
+    );
+    await collectQiankunCleanupError(errors, () =>
+      clearContainer(currentContainer),
+    );
     currentContainer = undefined;
     entryMounted = false;
     throwQiankunCleanupErrors(errors);
   }
 
-  async function update(props: QiankunLifecycleProps = {}): Promise<void> {
+  async function runUpdate(props: QiankunLifecycleProps = {}): Promise<void> {
+    if (!entryMounted) return;
     await runtime.update?.(props, ctx());
-    if (!entryMounted || !loadedEntryModule) return;
+    if (!loadedEntryModule) return;
     runtimeProjection = await configureSlaveEntry(
       loadedEntryModule,
       props,
@@ -366,6 +456,24 @@ export function createQiankunSlaveLifecycles(options: {
       false,
     );
   }
+
+  function enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
+    const result = lifecycleQueue.then(operation);
+    lifecycleQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  const bootstrap = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runBootstrap(props));
+  const mount = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runMount(props));
+  const unmount = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runUnmount(props));
+  const update = (props: QiankunLifecycleProps = {}) =>
+    enqueueLifecycle(() => runUpdate(props));
 
   return {
     bootstrap,
@@ -385,6 +493,7 @@ function normalizeQiankunMasterOptions(
       "[evjs:plugin-qiankun] Master resolver must return an object.",
     );
   }
+  assertNoUnknownFields(value, qiankunMasterOptionFields, "options");
   const apps = value.apps ?? [];
   const routes = value.routes ?? [];
   if (!Array.isArray(apps)) {
@@ -405,6 +514,7 @@ function normalizeQiankunMasterOptions(
         `[evjs:plugin-qiankun] Master resolver apps[${index}] must be an object.`,
       );
     }
+    assertNoUnknownFields(app, qiankunAppFields, `apps[${index}]`);
     assertTrimmedString(app.name, `apps[${index}].name`);
     assertTrimmedString(app.entry, `apps[${index}].entry`);
     if (appNames.has(app.name)) {
@@ -413,11 +523,6 @@ function normalizeQiankunMasterOptions(
       );
     }
     appNames.add(app.name);
-    if (app.credentials !== undefined && typeof app.credentials !== "boolean") {
-      throw new Error(
-        `[evjs:plugin-qiankun] Master resolver apps[${index}].credentials must be a boolean.`,
-      );
-    }
     assertOptionalRecord(app.props, `apps[${index}].props`);
     if (isRecord(app.props)) {
       assertOptionalRecord(app.props.settings, `apps[${index}].props.settings`);
@@ -425,6 +530,10 @@ function normalizeQiankunMasterOptions(
   });
 
   const routePaths = new Set<string>();
+  const runtimeRouteShapes = new Map<
+    string,
+    { index: number; path: string; runtimePath: string }
+  >();
   routes.forEach((route, index) => {
     if (!isRecord(route)) {
       throw new Error(
@@ -432,12 +541,13 @@ function normalizeQiankunMasterOptions(
       );
     }
     assertAbsoluteRoutePath(route.path, `routes[${index}].path`);
-    if (routePaths.has(route.path)) {
+    const normalizedRoutePath = normalizeQiankunRoutePath(route.path);
+    if (routePaths.has(normalizedRoutePath)) {
       throw new Error(
-        `[evjs:plugin-qiankun] Master resolver contains duplicate route path "${route.path}".`,
+        `[evjs:plugin-qiankun] Master resolver contains duplicate route path "${normalizedRoutePath}".`,
       );
     }
-    routePaths.add(route.path);
+    routePaths.add(normalizedRoutePath);
 
     const hasMicroApp = Object.hasOwn(route, "microApp");
     const hasRedirect = Object.hasOwn(route, "redirect");
@@ -447,6 +557,11 @@ function normalizeQiankunMasterOptions(
       );
     }
     if (hasMicroApp) {
+      assertNoUnknownFields(
+        route,
+        qiankunMicroAppRouteFields,
+        `routes[${index}]`,
+      );
       assertTrimmedString(route.microApp, `routes[${index}].microApp`);
       if (
         route.mode !== undefined &&
@@ -472,13 +587,31 @@ function normalizeQiankunMasterOptions(
         );
       }
     } else {
+      assertNoUnknownFields(
+        route,
+        qiankunRedirectRouteFields,
+        `routes[${index}]`,
+      );
       assertTrimmedString(route.redirect, `routes[${index}].redirect`);
     }
+
+    const runtimePath = isQiankunRedirectRoute(route)
+      ? toEvjsRoutePath(route.path, false)
+      : toEvjsRoutePath(route.path, (route.mode ?? "prepend") === "prepend");
+    const runtimeShape = qiankunRuntimeRouteShape(runtimePath);
+    const previousRuntimeRoute = runtimeRouteShapes.get(runtimeShape);
+    if (previousRuntimeRoute) {
+      throw new Error(
+        `[evjs:plugin-qiankun] Master resolver routes[${index}].path "${route.path}" conflicts with routes[${previousRuntimeRoute.index}].path "${previousRuntimeRoute.path}" after runtime route normalization ("${runtimePath}" and "${previousRuntimeRoute.runtimePath}" have the same shape).`,
+      );
+    }
+    runtimeRouteShapes.set(runtimeShape, {
+      index,
+      path: route.path,
+      runtimePath,
+    });
   });
 
-  if (value.appNameKeyAlias !== undefined) {
-    assertTrimmedString(value.appNameKeyAlias, "appNameKeyAlias");
-  }
   const base = normalizeBase(value.base ?? "/", "base");
   const history = value.history ?? "browser";
   assertHistoryType(history, "history");
@@ -501,9 +634,6 @@ function normalizeQiankunMasterOptions(
     settings: value.settings ?? {},
     prefetchThreshold,
     prefetchState: { scheduled: false },
-    ...(value.appNameKeyAlias
-      ? { appNameKeyAlias: value.appNameKeyAlias }
-      : {}),
     ...(value.lifeCycles ? { lifeCycles: value.lifeCycles } : {}),
     ...(value.prefetch !== undefined ? { prefetch: value.prefetch } : {}),
   };
@@ -518,20 +648,12 @@ function resolveRouteApp(
   master: NormalizedQiankunMasterOptions,
   route: QiankunMicroAppRoute,
 ): QiankunApp {
-  const matches = master.apps.filter(
-    (app) =>
-      app.name === route.microApp ||
-      (master.appNameKeyAlias !== undefined &&
-        app[master.appNameKeyAlias] === route.microApp),
+  const app = master.apps.find(
+    (candidate) => candidate.name === route.microApp,
   );
-  if (matches.length === 1 && matches[0]) return matches[0];
-  if (matches.length === 0) {
-    throw new Error(
-      `[evjs:plugin-qiankun] Route "${route.path}" references unknown micro-app "${route.microApp}".`,
-    );
-  }
+  if (app) return app;
   throw new Error(
-    `[evjs:plugin-qiankun] Route "${route.path}" resolves micro-app "${route.microApp}" to multiple apps.`,
+    `[evjs:plugin-qiankun] Route "${route.path}" references unknown micro-app "${route.microApp}".`,
   );
 }
 
@@ -572,7 +694,6 @@ function createQiankunRouteComponent(
             ...appProps.settings,
             ...routeProps.settings,
           };
-          const fetch = createAppFetch(app, settings.fetch);
           microApp = qiankun.loadMicroApp(
             {
               name: app.name,
@@ -585,10 +706,7 @@ function createQiankunRouteComponent(
                 master.history,
               ),
             },
-            {
-              ...settings,
-              ...(fetch ? { fetch } : {}),
-            },
+            settings,
             mergeQiankunLifeCycles(master.lifeCycles, routeProps.lifeCycles),
           );
           microAppRef.current = microApp;
@@ -731,24 +849,6 @@ function toLifecycleArray(
   return Array.isArray(lifecycle) ? lifecycle : [lifecycle];
 }
 
-function createAppFetch(
-  app: QiankunApp,
-  configuredFetch: typeof globalThis.fetch | undefined,
-): typeof globalThis.fetch | undefined {
-  if (!app.credentials) return configuredFetch;
-  const baseFetch = configuredFetch ?? globalThis.fetch;
-  if (typeof baseFetch !== "function") return undefined;
-  return (input, init) => {
-    const url = getFetchInputUrl(input);
-    if (url !== app.entry) return baseFetch(input, init);
-    return baseFetch(input, {
-      ...init,
-      mode: "cors",
-      credentials: "include",
-    });
-  };
-}
-
 /** @internal */
 export function resolveQiankunSlaveBase(
   masterBase: string,
@@ -809,7 +909,7 @@ function joinBase(base: string, path: string): string {
 }
 
 function toEvjsRoutePath(path: string, prepend: boolean): string {
-  let normalized = path === "/" ? "/" : path.replace(/\/+$/, "");
+  let normalized = normalizeQiankunRoutePath(path);
   normalized = normalized
     .split("/")
     .map((segment) => {
@@ -844,33 +944,68 @@ async function configureSlaveEntry(
   current: SlaveRuntimeProjection,
   useStandaloneDefaults = true,
 ): Promise<SlaveRuntimeProjection> {
-  const next: SlaveRuntimeProjection = {
-    basepath:
-      props.base === undefined
-        ? useStandaloneDefaults
-          ? "/"
-          : current.basepath
-        : normalizeBase(props.base, "slave base"),
+  const next = resolveSlaveRuntimeProjection(
+    props,
+    current,
+    useStandaloneDefaults,
+  );
+  const updateOptions = createSlaveRuntimeProjectionUpdate(current, next);
+  if (!updateOptions) return next;
+
+  const update = resolveRequiredSlavePagesAppUpdate(entryModule);
+  await update(updateOptions);
+  return next;
+}
+
+function resolveSlaveRuntimeProjection(
+  props: QiankunLifecycleProps,
+  current: SlaveRuntimeProjection,
+  useStandaloneDefaults = true,
+): SlaveRuntimeProjection {
+  return {
+    basepath: resolveSlaveBasepath(
+      props.base,
+      current.basepath,
+      useStandaloneDefaults,
+    ),
     history:
       normalizeSlaveHistory(props.history) ??
       (useStandaloneDefaults ? { type: "browser" } : current.history),
   };
+}
+
+function resolveSlaveBasepath(
+  base: string | undefined,
+  current: string,
+  useStandaloneDefaults: boolean,
+): string {
+  if (base !== undefined) return normalizeBase(base, "slave base");
+  return useStandaloneDefaults ? "/" : current;
+}
+
+function createSlaveRuntimeProjectionUpdate(
+  current: SlaveRuntimeProjection,
+  next: SlaveRuntimeProjection,
+): GeneratedPagesAppRuntimeUpdate | undefined {
   const updateOptions: GeneratedPagesAppRuntimeUpdate = {
     ...(next.basepath !== current.basepath ? { basepath: next.basepath } : {}),
     ...(!equalHistoryOptions(next.history, current.history)
       ? { history: next.history }
       : {}),
   };
-  if (Object.keys(updateOptions).length === 0) return next;
+  return Object.keys(updateOptions).length > 0 ? updateOptions : undefined;
+}
 
+function resolveRequiredSlavePagesAppUpdate(
+  entryModule: unknown,
+): (update: GeneratedPagesAppRuntimeUpdate) => MaybePromise<void> {
   const update = resolvePagesAppUpdate(entryModule);
   if (!update) {
     throw new Error(
       "[evjs:plugin-qiankun] The generated slave entry does not expose pagesApp.updateRuntime() required for base/history projection.",
     );
   }
-  await update(updateOptions);
-  return next;
+  return update;
 }
 
 function equalHistoryOptions(
@@ -964,38 +1099,8 @@ async function prefetchQiankunApps(
   const qiankun = await importQiankun();
   qiankun.prefetchApps?.(
     selected.map(({ name, entry }) => ({ name, entry })),
-    createPrefetchFetch(master, selected),
+    master.settings.fetch,
   );
-}
-
-function createPrefetchFetch(
-  master: NormalizedQiankunMasterOptions,
-  apps: QiankunApp[],
-): typeof globalThis.fetch | undefined {
-  const credentialEntries = new Set(
-    apps.filter((app) => app.credentials).map((app) => app.entry),
-  );
-  const baseFetch = master.settings.fetch ?? globalThis.fetch;
-  if (credentialEntries.size === 0 || typeof baseFetch !== "function") {
-    return master.settings.fetch;
-  }
-  return (input, init) => {
-    const url = getFetchInputUrl(input);
-    if (!credentialEntries.has(url)) return baseFetch(input, init);
-    return baseFetch(input, {
-      ...init,
-      mode: "cors",
-      credentials: "include",
-    });
-  };
-}
-
-function getFetchInputUrl(
-  input: Parameters<typeof globalThis.fetch>[0],
-): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.href;
-  return input.url;
 }
 
 async function importQiankun(): Promise<QiankunRuntimeModule> {
@@ -1047,6 +1152,28 @@ async function unmountLoadedEntry(entryModule: unknown): Promise<void> {
   await unmount?.();
 }
 
+async function collectQiankunCleanupError(
+  errors: unknown[],
+  cleanup: () => MaybePromise<unknown>,
+): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    errors.push(error);
+  }
+}
+
+function throwQiankunMountError(
+  error: unknown,
+  rollbackErrors: unknown[],
+): never {
+  if (rollbackErrors.length === 0) throw error;
+  throw new AggregateError(
+    [error, ...rollbackErrors],
+    "[evjs:plugin-qiankun] Slave mount failed and one or more rollback steps also failed.",
+  );
+}
+
 function throwQiankunCleanupErrors(errors: unknown[]): void {
   if (errors.length === 0) return;
   if (errors.length === 1) throw errors[0];
@@ -1054,20 +1181,6 @@ function throwQiankunCleanupErrors(errors: unknown[]): void {
     errors,
     "[evjs:plugin-qiankun] Multiple slave unmount steps failed.",
   );
-}
-
-async function mountLoadedEntry(
-  entryModule: unknown,
-  container: Element | undefined,
-  mount: string,
-): Promise<void> {
-  const render = resolveEntryRender(entryModule);
-  if (!render) {
-    throw new Error(
-      "[evjs:plugin-qiankun] The generated slave entry does not expose an app.render() method required for mounting.",
-    );
-  }
-  await render(container ?? mount);
 }
 
 function resolveEntryRender(
@@ -1110,46 +1223,6 @@ function resolveEntryUnmount(
   return undefined;
 }
 
-function scopeDocumentMountLookup(
-  container: Element | undefined,
-  mount: string,
-): () => void {
-  const doc = globalThis.document;
-  if (!container || !doc) return () => {};
-
-  const originalQuerySelector = doc.querySelector;
-  const originalGetElementById = doc.getElementById;
-  const mountId = mount.startsWith("#") ? mount.slice(1) : undefined;
-
-  if (typeof originalQuerySelector === "function") {
-    doc.querySelector = function scopedQuerySelector(
-      selector: string,
-    ): Element | null {
-      if (selector === mount) {
-        return querySelector(container, mount) ?? container;
-      }
-      return originalQuerySelector.call(this, selector);
-    };
-  }
-
-  if (mountId && typeof originalGetElementById === "function") {
-    doc.getElementById = function scopedGetElementById(
-      id: string,
-    ): HTMLElement | null {
-      if (id === mountId) {
-        const nested = querySelector(container, mount);
-        return (nested ?? container) as HTMLElement;
-      }
-      return originalGetElementById.call(this, id);
-    };
-  }
-
-  return () => {
-    doc.querySelector = originalQuerySelector;
-    doc.getElementById = originalGetElementById;
-  };
-}
-
 function normalizeBase(value: string, label: string): string {
   assertTrimmedString(value, label);
   if (!value.startsWith("/")) {
@@ -1171,15 +1244,71 @@ function assertAbsoluteRoutePath(
       `[evjs:plugin-qiankun] ${label} must not contain whitespace, a query string, or a hash.`,
     );
   }
-  const segments = splitPath(value);
-  const wildcardIndex = segments.findIndex(
-    (segment) => segment === "*" || segment === "$",
-  );
-  if (wildcardIndex >= 0 && wildcardIndex !== segments.length - 1) {
+  if (value.includes("//")) {
     throw new Error(
-      `[evjs:plugin-qiankun] ${label} wildcard must be the terminal path segment.`,
+      `[evjs:plugin-qiankun] ${label} must not contain repeated "/" separators.`,
     );
   }
+
+  const segments = splitPath(value);
+  const paramNames = new Set<string>();
+  for (const [index, segment] of segments.entries()) {
+    if (segment === "*") {
+      if (index !== segments.length - 1) {
+        throw new Error(
+          `[evjs:plugin-qiankun] ${label} wildcard must be the terminal path segment.`,
+        );
+      }
+      continue;
+    }
+    if (segment.includes("*")) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} wildcard must be "*" as a complete terminal path segment.`,
+      );
+    }
+    if (segment.startsWith("$")) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} must use ":param" or "*" syntax instead of evjs "$" route segments.`,
+      );
+    }
+    if (!segment.startsWith(":")) continue;
+
+    const name = segment.slice(1);
+    if (!name) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} contains dynamic segment ":" without a param name.`,
+      );
+    }
+    if (!qiankunRouteParamNamePattern.test(name)) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} dynamic segment "${segment}" must use ":param" with an identifier-style param name.`,
+      );
+    }
+    if (reservedQiankunRouteParamNames.has(name)) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} uses reserved dynamic param name "${name}".`,
+      );
+    }
+    if (paramNames.has(name)) {
+      throw new Error(
+        `[evjs:plugin-qiankun] ${label} uses duplicate dynamic param name "${name}".`,
+      );
+    }
+    paramNames.add(name);
+  }
+}
+
+function normalizeQiankunRoutePath(path: string): string {
+  return path === "/" ? "/" : path.replace(/\/$/, "");
+}
+
+function qiankunRuntimeRouteShape(path: string): string {
+  return path
+    .split("/")
+    .map((segment) =>
+      segment !== "$" && segment.startsWith("$") ? "$param" : segment,
+    )
+    .join("/");
 }
 
 function assertTrimmedString(
@@ -1201,6 +1330,20 @@ function assertOptionalRecord(value: unknown, label: string): void {
   }
 }
 
+function assertNoUnknownFields(
+  value: object,
+  allowedFields: readonly string[],
+  label: string,
+): void {
+  const unknownField = Object.keys(value).find(
+    (field) => !allowedFields.includes(field),
+  );
+  if (unknownField === undefined) return;
+  throw new Error(
+    `[evjs:plugin-qiankun] Master resolver ${label} contains unknown field "${unknownField}".`,
+  );
+}
+
 function assertLifeCycles(value: unknown, label: string): void {
   if (value === undefined) return;
   if (!isRecord(value)) {
@@ -1208,6 +1351,7 @@ function assertLifeCycles(value: unknown, label: string): void {
       `[evjs:plugin-qiankun] Master resolver ${label} must be an object.`,
     );
   }
+  assertNoUnknownFields(value, qiankunLifecycleNames, label);
   for (const name of qiankunLifecycleNames) {
     const lifecycle = value[name];
     if (lifecycle === undefined || typeof lifecycle === "function") continue;
@@ -1256,8 +1400,9 @@ function assertMemoryHistoryOptions(history: Record<string, unknown>): void {
   }
   if (
     history.initialIndex !== undefined &&
-    (!Number.isInteger(history.initialIndex) ||
-      (history.initialIndex as number) < 0)
+    (typeof history.initialIndex !== "number" ||
+      !Number.isInteger(history.initialIndex) ||
+      history.initialIndex < 0)
   ) {
     throw new Error(
       "[evjs:plugin-qiankun] Slave memory history initialIndex must be a non-negative integer.",

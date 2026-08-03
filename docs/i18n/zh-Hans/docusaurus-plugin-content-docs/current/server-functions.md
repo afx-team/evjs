@@ -54,6 +54,9 @@ export const deleteUser = async (id: string) => {
 - 不支持默认导出、跨模块 runtime re-export，也不支持导出常量等非函数 runtime 值
 - 可达的 `"use server"` 模块会变成可从浏览器调用的服务端函数。"可达" 指由 app
   代码、页面模块、服务端文件路由或服务端中间件导入；无关文件会被忽略。
+- 服务端 transform 只保留函数实现，不再产生全局注册副作用。生成的服务端 entry
+  会导入每个可达模块，把命名导出注册到当前应用独享的 registry，再将该 registry
+  传给 `createApp()`。因此，同一进程中的多个 evjs 应用不会互相暴露 server function。
 
 ## 请求上下文 helper
 
@@ -216,6 +219,9 @@ initTransport({
 对于 evjs 构建，如果浏览器需要访问另一个 origin 上的服务端运行时，
 优先在 `ev.config.ts` 中配置 `transport.baseUrl`。这个值会被浏览器发起的请求共享，
 例如 server functions 与 RSC Flight。
+共享同一个 JavaScript realm 的 evjs 应用必须解析出相同的框架 transport 配置。
+如果这些应用需要主动共用另一套 transport，请只调用一次 `initTransport()` 并传入
+应用共同持有的配置；显式调用的优先级高于内嵌的框架配置。
 
 Fetch `mode` 不提供配置。服务端函数请求使用浏览器默认 CORS 行为；跨域
 cookie 应通过 `credentials` 和服务端 CORS 响应头配合控制。

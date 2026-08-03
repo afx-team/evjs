@@ -1,10 +1,6 @@
-import { type WebpackConfig, webpackAdapter } from "@evjs/bundler-webpack";
+import { type WebpackConfigs, webpackAdapter } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/ev";
-import type {
-  DefinedPluginApplicationInput,
-  DefinedPluginPageInput,
-  Plugin,
-} from "@evjs/ev/plugin";
+import type { Plugin } from "@evjs/ev/plugin";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   evPluginQiankunMaster,
@@ -13,18 +9,24 @@ import {
   type QiankunSlavePluginOptions,
 } from "../src/index.js";
 import type {
+  QiankunApp,
   QiankunHistoryOptions,
+  QiankunMasterOptions,
   QiankunRuntimePageDefinition,
 } from "../src/runtime.js";
 
 describe("qiankun plugin config types", () => {
   it("keeps the master contract application-only", () => {
-    type Master = ReturnType<typeof evPluginQiankunMaster>;
-
     expectTypeOf<
-      DefinedPluginApplicationInput<Master>
+      Parameters<typeof evPluginQiankunMaster>[0]
     >().toEqualTypeOf<QiankunMasterPluginOptions>();
-    expectTypeOf<DefinedPluginPageInput<Master>>().toEqualTypeOf<never>();
+    const assertNoPageContract = () => {
+      // @ts-expect-error Application-only factories do not expose forPages().
+      evPluginQiankunMaster.forPages({
+        resolver: "./src/qiankun.master.ts",
+      });
+    };
+    expect(assertNoPageContract).toBeTypeOf("function");
   });
 
   it("keeps master configuration required and slave configuration optional", () => {
@@ -34,12 +36,13 @@ describe("qiankun plugin config types", () => {
     const slave = evPluginQiankunSlave();
     const configuredSlave = evPluginQiankunSlave({ name: "catalog" });
 
-    expect(master.key).toBeUndefined();
+    expect(master.id).toBe("qiankun-master");
     expect("forPages" in evPluginQiankunMaster).toBe(false);
-    expect(slave.key).toBeUndefined();
-    expect(configuredSlave.key).toBeUndefined();
+    expect(slave.id).toBe("qiankun-slave");
+    expect("forPages" in evPluginQiankunSlave).toBe(false);
+    expect(configuredSlave.id).toBe("qiankun-slave");
     expectTypeOf<
-      DefinedPluginApplicationInput<typeof slave>
+      Exclude<Parameters<typeof evPluginQiankunSlave>[0], undefined>
     >().toEqualTypeOf<QiankunSlavePluginOptions>();
 
     const assertInvalidMasterAuthoring = () => {
@@ -47,6 +50,12 @@ describe("qiankun plugin config types", () => {
       evPluginQiankunMaster();
     };
     expect(assertInvalidMasterAuthoring).toBeTypeOf("function");
+
+    const assertNoSlavePageContract = () => {
+      // @ts-expect-error Application-only factories do not expose forPages().
+      evPluginQiankunSlave.forPages();
+    };
+    expect(assertNoSlavePageContract).toBeTypeOf("function");
   });
 
   it("installs unchanged in a webpack application config", () => {
@@ -59,8 +68,8 @@ describe("qiankun plugin config types", () => {
       plugins: [master, slave],
     });
 
-    expectTypeOf(master).toMatchTypeOf<Plugin<WebpackConfig>>();
-    expectTypeOf(slave).toMatchTypeOf<Plugin<WebpackConfig>>();
+    expectTypeOf(master).toMatchTypeOf<Plugin<WebpackConfigs>>();
+    expectTypeOf(slave).toMatchTypeOf<Plugin<WebpackConfigs>>();
     expectTypeOf(config.plugins).toEqualTypeOf<
       readonly [typeof master, typeof slave]
     >();
@@ -82,5 +91,21 @@ describe("qiankun plugin config types", () => {
     expectTypeOf<QiankunRuntimePageDefinition["redirect"]>().toEqualTypeOf<
       { kind: "path"; path: string } | { kind: "url"; href: string } | undefined
     >();
+
+    const assertStandardAppIdentity = () => {
+      const app: QiankunApp = {
+        name: "catalog",
+        entry: "https://example.com/catalog/",
+        // @ts-expect-error Extra identity fields are not part of the canonical app shape.
+        externalId: "catalog-reference",
+      };
+      const options: QiankunMasterOptions = {
+        apps: [app],
+        // @ts-expect-error The public plugin only matches route.microApp to app.name.
+        appNameKeyAlias: "externalId",
+      };
+      return options;
+    };
+    expect(assertStandardAppIdentity).toBeTypeOf("function");
   });
 });

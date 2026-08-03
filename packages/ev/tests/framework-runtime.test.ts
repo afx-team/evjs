@@ -1,6 +1,10 @@
+import vm from "node:vm";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
-import { createFrameworkRuntime } from "../src/_internal/build/framework-runtime.js";
+import {
+  createFrameworkRuntime,
+  serializeFrameworkRuntimeExpression,
+} from "../src/_internal/build/framework-runtime.js";
 
 describe("createFrameworkRuntime", () => {
   it("keeps SPA Pages inside the routing union", () => {
@@ -96,6 +100,53 @@ describe("createFrameworkRuntime", () => {
         },
       }),
     ).toThrow('Runtime document shell references missing Page "missing"');
+  });
+
+  it("preserves __proto__ Page ids when embedded in JavaScript", () => {
+    const output = createOutput(false);
+    const page = {
+      ...output.pages.dashboard,
+      path: "/__proto__",
+      routeId: "__proto__",
+    } as BuildOutput["pages"][string];
+    output.pages = Object.fromEntries([["__proto__", page]]);
+    output.routes = [
+      {
+        id: "__proto__",
+        path: "/__proto__",
+        pageId: "__proto__",
+      },
+    ];
+    const runtime = createFrameworkRuntime(output);
+
+    const embedded = vm.runInNewContext(
+      serializeFrameworkRuntimeExpression(runtime),
+    ) as typeof runtime;
+
+    expect(Object.hasOwn(embedded.routing.pages, "__proto__")).toBe(true);
+    expect(embedded.routing.pages.__proto__).toMatchObject({
+      path: "/__proto__",
+      routeId: "__proto__",
+    });
+  });
+
+  it("serializes source-sensitive values and undefined runtime state", () => {
+    const output = createOutput(false);
+    const buildId = [
+      '"',
+      "\\",
+      "\n",
+      "</script>",
+      String.fromCodePoint(0x2028, 0x2029),
+    ].join("");
+    output.buildId = buildId;
+
+    const embedded = vm.runInNewContext(
+      serializeFrameworkRuntimeExpression(createFrameworkRuntime(output)),
+    ) as ReturnType<typeof createFrameworkRuntime>;
+
+    expect(embedded.buildId).toBe(buildId);
+    expect(serializeFrameworkRuntimeExpression(undefined)).toBe("undefined");
   });
 });
 

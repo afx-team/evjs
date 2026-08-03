@@ -32,6 +32,23 @@ function createDependencies(overrides: Partial<CliProgramDependencies> = {}) {
 }
 
 describe("CLI execution", () => {
+  it("delegates dev config loading to the framework watcher handshake", async () => {
+    const loadConfig = vi.fn(async () => undefined);
+    const dev = vi.fn(async () => {});
+    const { dependencies } = createDependencies({ dev, loadConfig });
+
+    await expect(
+      runCliProgram(["node", "ev", "dev"], dependencies),
+    ).resolves.toBe(0);
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(dev).toHaveBeenCalledWith(undefined, {
+      cwd: "/project",
+      flags: {},
+      loadConfig,
+    });
+  });
+
   it("awaits an asynchronous command before resolving", async () => {
     let finishBuild: (() => void) | undefined;
     let markBuildStarted: (() => void) | undefined;

@@ -2,11 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import type { DefaultBundlerConfig } from "@evjs/cli";
-import { build } from "@evjs/cli";
+import { build, loadConfig } from "@evjs/cli";
 import type { BundlerAdapter } from "@evjs/ev/_internal/build";
 import type { Plugin } from "@evjs/ev/plugin";
 import { configure, getConsoleSink } from "@logtape/logtape";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 /**
  * E2E tests — real plugin scenarios.
@@ -25,7 +25,22 @@ const BUNDLERS: [string, BundlerAdapter<DefaultBundlerConfig>][] = [
   ["utoopack", utoopackAdapter],
 ];
 
-let savedCwd: string;
+async function buildExampleWithPlugins(
+  exampleDir: string,
+  bundler: BundlerAdapter<DefaultBundlerConfig>,
+  plugins: readonly DefaultPlugin[],
+): Promise<void> {
+  const exampleConfig = await loadConfig<DefaultBundlerConfig>(exampleDir);
+
+  await build(
+    {
+      ...exampleConfig,
+      bundler,
+      plugins: [...(exampleConfig?.plugins ?? []), ...plugins],
+    },
+    { cwd: exampleDir },
+  );
+}
 
 beforeAll(async () => {
   try {
@@ -42,55 +57,47 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(() => {
-  savedCwd = process.cwd();
-});
-afterEach(() => {
-  process.chdir(savedCwd);
-});
-
 // ─── Scenario 1: Build Notifier Plugin ──────────────────────────────────
-// A plugin that captures build metadata for CI/CD — the most common
-// real-world use case for buildStart/buildEnd hooks.
+// A plugin that captures canonical output metadata for CI/CD. beforeBuild
+// starts after fresh bundler facts arrive; afterBuild runs after publication.
 
 describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
   it("captures build metadata for CI reporting", async () => {
-    process.chdir(CSR_APP);
-
     const report = {
       started: false,
       assets: [] as string[],
       duration: 0,
+      lifecycle: [] as string[],
     };
 
     const buildNotifier: DefaultPlugin = {
-      name: "build-notifier",
+      id: "build-notifier",
       setup(_ctx) {
         let t0: number;
         return {
-          buildStart() {
+          beforeBuild(ctx) {
             t0 = Date.now();
             report.started = true;
+            report.lifecycle.push(`beforeBuild:${ctx.isRebuild}`);
           },
-          buildEnd(result) {
+          afterBuild(result) {
             report.duration = Date.now() - t0;
             report.assets = Object.values(result.output.assets).flatMap(
               (assets) => assets.js,
             );
+            report.lifecycle.push(`afterBuild:${result.isRebuild}`);
           },
         };
       },
     };
 
-    await build({
-      bundler,
-      plugins: [buildNotifier],
-    });
+    await buildExampleWithPlugins(CSR_APP, bundler, [buildNotifier]);
 
     expect(report.started).toBe(true);
     expect(report.duration).toBeGreaterThan(0);
     expect(report.assets.length).toBeGreaterThan(0);
     expect(report.assets.every((a) => a.endsWith(".js"))).toBe(true);
+    expect(report.lifecycle).toEqual(["beforeBuild:false", "afterBuild:false"]);
   }, 60_000);
 });
 
@@ -100,15 +107,13 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
 
 describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
   it("writes a deploy manifest from build results", async () => {
-    process.chdir(CSR_APP);
-
     const manifestPath = path.resolve(CSR_APP, "dist/deploy-manifest.json");
 
     const deployPlugin: DefaultPlugin = {
-      name: "deploy-manifest",
+      id: "deploy-manifest",
       setup(ctx) {
         return {
-          buildEnd(result) {
+          afterBuild(result) {
             const manifest = {
               builtAt: new Date().toISOString(),
               mode: ctx.mode,
@@ -118,7 +123,7 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
               css: Object.values(result.output.assets).flatMap(
                 (assets) => assets.css,
               ),
-              hasServer: !!result.output.server,
+              hasServer: result.output.server.entry !== undefined,
             };
             fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
           },
@@ -126,17 +131,14 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
       },
     };
 
-    await build({
-      bundler,
-      plugins: [deployPlugin],
-    });
+    await buildExampleWithPlugins(CSR_APP, bundler, [deployPlugin]);
 
     // Verify the plugin actually wrote the file
     expect(fs.existsSync(manifestPath)).toBe(true);
     const written = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
     expect(written.mode).toBe("production");
     expect(written.js.length).toBeGreaterThan(0);
-    expect(written.hasServer).toBe(false);
+    expect(written.hasServer).toBe(true);
 
     // Cleanup
     fs.unlinkSync(manifestPath);
@@ -151,28 +153,22 @@ describe.each(
   BUNDLERS,
 )("server function discovery plugin [%s]", (_name, bundler) => {
   it("discovers server functions from fullstack build manifest", async () => {
-    process.chdir(FULLSTACK_APP);
-
     let serverFnCount = 0;
     let serverEntry: string | undefined;
 
     const discoveryPlugin: DefaultPlugin = {
-      name: "fn-discovery",
+      id: "fn-discovery",
       setup() {
         return {
-          buildEnd(result) {
-            if (result.output.server) {
-              serverEntry = result.output.server.entry;
-              serverFnCount = Object.keys(
-                result.output.server.functions,
-              ).length;
-            }
+          afterBuild(result) {
+            serverEntry = result.output.server.entry;
+            serverFnCount = Object.keys(result.output.server.functions).length;
           },
         };
       },
     };
 
-    await build({ bundler, plugins: [discoveryPlugin] });
+    await buildExampleWithPlugins(FULLSTACK_APP, bundler, [discoveryPlugin]);
 
     // The basic example has server functions
     expect(serverEntry).toBeDefined();
@@ -189,10 +185,8 @@ describe.each(
   BUNDLERS,
 )("transformHtml DOM manipulation [%s]", (_name, bundler) => {
   it("injects a meta tag into the document via DOM API", async () => {
-    process.chdir(CSR_APP);
-
     const htmlPlugin: DefaultPlugin = {
-      name: "meta-injector",
+      id: "meta-injector",
       setup() {
         return {
           transformHtml(doc) {
@@ -205,10 +199,7 @@ describe.each(
       },
     };
 
-    await build({
-      bundler,
-      plugins: [htmlPlugin],
-    });
+    await buildExampleWithPlugins(CSR_APP, bundler, [htmlPlugin]);
 
     // Read the emitted index.html and verify the meta tag
     const html = fs.readFileSync(
@@ -219,10 +210,8 @@ describe.each(
   }, 60_000);
 
   it("injects a comment node via DOM API", async () => {
-    process.chdir(CSR_APP);
-
     const commentPlugin: DefaultPlugin = {
-      name: "comment-injector",
+      id: "comment-injector",
       setup() {
         return {
           transformHtml(doc, ctx) {
@@ -234,10 +223,7 @@ describe.each(
       },
     };
 
-    await build({
-      bundler,
-      plugins: [commentPlugin],
-    });
+    await buildExampleWithPlugins(CSR_APP, bundler, [commentPlugin]);
 
     const html = fs.readFileSync(
       path.join(CSR_APP, "dist", "client", "index.html"),
@@ -253,10 +239,8 @@ describe.each(
 
 describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
   it("multiple plugins accumulate DOM mutations", async () => {
-    process.chdir(CSR_APP);
-
     const plugin1: DefaultPlugin = {
-      name: "meta-1",
+      id: "meta-1",
       setup: () => ({
         transformHtml(doc) {
           const meta = doc.createElement("meta");
@@ -268,7 +252,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
     };
 
     const plugin2: DefaultPlugin = {
-      name: "meta-2",
+      id: "meta-2",
       setup: () => ({
         transformHtml(doc) {
           const meta = doc.createElement("meta");
@@ -279,10 +263,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
       }),
     };
 
-    await build({
-      bundler,
-      plugins: [plugin1, plugin2],
-    });
+    await buildExampleWithPlugins(CSR_APP, bundler, [plugin1, plugin2]);
 
     const html = fs.readFileSync(
       path.join(CSR_APP, "dist", "client", "index.html"),

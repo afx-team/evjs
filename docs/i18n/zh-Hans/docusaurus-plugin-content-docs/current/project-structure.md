@@ -228,16 +228,17 @@ export default defineConfig({
 工厂调用是唯一的 Application 级插件配置入口。参数由插件包提供类型；插件合同
 明确允许时，也可以包含可执行选项。
 
-已安装且支持 Page 配置的插件会在相邻 `page.config.ts#plugins` map 中暴露短 key。
+已安装且支持 Page 配置的插件会在相邻 `page.config.ts#plugins` map 中暴露其
+canonical `id`。
 Application 与 Page 是两个独立合同，不会相互合并；authoring 字段只在各自合同
-内部深度合并到 defaults。普通工厂调用在 Page 有 defaults 时，会让省略 key 的
+内部深度合并到 defaults。普通工厂调用在 Page 有 defaults 时，会让省略插件项的
 Page 使用 defaults；没有 defaults 时则关闭该 Page。defaultable Page 合同还会
 暴露 `forPages()`，并始终把省略视为关闭。`false` 对当前 Page 禁用插件，`true`
 要求 Page defaults，对象则用独立类型、严格 JSON 的 Page value 启用插件。
 
 `ev prepare`、`ev dev` 与 `ev build` 生成 `src/plugin-types.d.ts`，稳定桥接
-`ev.config.ts`。Page config 无需 import 插件包即可获得 key 与字段补全；条件化或
-被 widen 的插件数组只暴露静态确定会安装的条目。声明有意生成在 `src` 而不是
+`ev.config.ts`。Page config 无需 import 插件包即可获得 plugin id 与字段补全；条件化
+或被 widen 的插件数组只暴露静态确定会安装的条目。声明有意生成在 `src` 而不是
 `.ev`，因为常规项目 `tsconfig.json` 会包含 `src`。
 
 Route 与 Document 对象不暴露单独的插件配置。Page-aware 插件根据 normalized
@@ -277,7 +278,8 @@ Core 字段包括静态 Page `title`、named `meta`、`render`、`hydrate`、
 项都会生成
 `<meta name="key" content="value">`；它不表示 `property`、`charset`、
 `link`、`script`、动态元信息或任意 head DSL。Plugin 持有的 Page value 放在
-`plugins` 下，并使用生成的短 key；解析后的 Page 对象必须是 static JSON data。
+`plugins` 下，并使用 canonical plugin id；解析后的 Page 对象必须是 static JSON
+data。
 Core title/meta 会为当前 Page 物化；插件值会进入 Page analysis，但能力所属插件
 仍须通过 generated contribution 显式投影 runtime data 或行为。
 
@@ -390,6 +392,6 @@ manifest 输入。
 - Page 私有代码放入 Page 目录。
 - 多个 Page 共用的业务模块放到各 Page 目录之外。
 - 静态文档标题和 named meta 放在 core `title` 与 `meta` 字段中；业务或插件能力
-  数据放在 `page.config.ts#plugins` 下生成的短 key 中。
+  数据放在 `page.config.ts#plugins` 下对应的 canonical plugin id 中。
 - 静态 title、named meta、渲染设置与 Page 插件值统一放在相邻的
   `page.config.ts` 模块中。

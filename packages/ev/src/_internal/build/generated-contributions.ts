@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -26,24 +26,29 @@ import type {
   ServerAppEntryMetadata,
   ServerMiddlewareNode,
 } from "@evjs/shared/manifest";
+import { assertPluginId } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type {
-  ContributionContext,
   EmitApi,
   FrameworkApplicationEntryView,
   FrameworkApplicationView,
   FrameworkEntryOwner,
   FrameworkEntryView,
-  FrameworkIRView,
   FrameworkRouteView,
   FrameworkSlot,
   FrameworkSlotInput,
+  FrameworkView,
   GeneratedModuleRef,
   HtmlDocument,
   HtmlDocumentInfo,
   Plugin,
-  PluginContext,
+  PluginSetupContext,
 } from "../../plugin/index.js";
+import {
+  type InternalPluginEmitIRContext,
+  pluginEmitIRScopeFactory,
+  type ScopedPluginEmitIRContext,
+} from "../../plugin/internal.js";
 import {
   createOriginalClientEntryFacadeSource,
   createPagesAppEntryMainSource,
@@ -51,6 +56,7 @@ import {
 } from "./generated/client-entry-source.js";
 import { applyPageWrapperContributions } from "./generated/page-wrapper-contribution.js";
 import { createReactServerPageEntrySource } from "./generated/react-server-page-source.js";
+import { createPluginConfigView } from "./plugin-lifecycle.js";
 import {
   reserveUniquePortableArtifactPath,
   sanitizePortableArtifactPathSegment,
@@ -116,7 +122,7 @@ type GeneratedSource =
 interface InternalGeneratedModule {
   key: string;
   id: string;
-  pluginName: string;
+  pluginId: string;
   scope: GeneratedScope;
   source: GeneratedSource;
   resolvedSource?: string;
@@ -145,12 +151,11 @@ type TargetedSlotPlanItem =
 interface MaterializeFrameworkIROptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
-  command: "dev" | "build";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   graph: CoreGraph;
   plan: BuildPlan;
   plugins: Plugin<TBundlerCfg>[];
-  pluginContext: PluginContext<TBundlerCfg>;
+  pluginContext: PluginSetupContext<TBundlerCfg>;
   write?: boolean;
 }
 
@@ -167,7 +172,6 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   const collector = new ContributionCollector({
     cwd: options.cwd,
     mode: options.mode,
-    command: options.command,
     config: options.config,
     graph: options.graph,
     plan,
@@ -175,7 +179,7 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   });
 
   for (const plugin of options.plugins) {
-    if (!plugin.contributions) continue;
+    if (!plugin.emitIR) continue;
     await collector.run(plugin);
   }
   collector.resolveModuleSources();
@@ -234,9 +238,9 @@ export function applyHtmlTagContributions(
 
 /**
  * Build-local linker for generated modules and framework slots. Contribution
- * ids are unique per plugin across modules and slots, refs cannot escape their
- * build, and target validation distinguishes semantic graph nodes from the
- * entries and Documents that were actually materialized for them.
+ * ids are unique per plugin and emission scope across modules and slots, refs
+ * cannot escape their build, and target validation distinguishes semantic
+ * graph nodes from the entries and Documents materialized for them.
  */
 class ContributionCollector<TBundlerCfg> {
   readonly modules: InternalGeneratedModule[] = [];
@@ -251,28 +255,30 @@ class ContributionCollector<TBundlerCfg> {
     private readonly options: {
       cwd: string;
       mode: "development" | "production";
-      command: "dev" | "build";
       config: ResolvedFrameworkConfig<TBundlerCfg>;
       graph: CoreGraph;
       plan: BuildPlan;
-      pluginContext: PluginContext<TBundlerCfg>;
+      pluginContext: PluginSetupContext<TBundlerCfg>;
     },
   ) {}
 
   async run(plugin: Plugin<TBundlerCfg>): Promise<void> {
-    const emit = this.createEmitApi(plugin.name);
-    const context: ContributionContext<TBundlerCfg> = {
+    const pluginId = plugin.id;
+    assertPluginId(pluginId, "plugin id");
+    const emit = this.createEmitApi(pluginId);
+    const context = Object.freeze({
       ...this.options.pluginContext,
       mode: this.options.mode,
-      command: this.options.command,
       cwd: this.options.cwd,
-      config: this.options.config,
-      framework: createFrameworkIRView(this.options.graph, this.options.plan),
+      config: createPluginConfigView(this.options.config),
+      framework: createFrameworkView(this.options.graph, this.options.plan),
       emit,
       slot: <K extends FrameworkSlotName>(name: K) =>
-        this.createSlot(plugin.name, name),
-    };
-    await plugin.contributions?.(context);
+        this.createSlot(pluginId, name),
+      [pluginEmitIRScopeFactory]: (namespace: string) =>
+        this.createScopedEmitContext(pluginId, namespace),
+    }) as InternalPluginEmitIRContext<TBundlerCfg>;
+    await plugin.emitIR?.(context);
   }
 
   resolveModuleSources(): void {
@@ -307,7 +313,7 @@ class ContributionCollector<TBundlerCfg> {
         !Object.hasOwn(this.options.graph.pages, module.scope.pageId)
       ) {
         throw new Error(
-          `[evjs] Plugin "${module.pluginName}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
+          `[evjs] Plugin "${module.pluginId}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
         );
       }
     }
@@ -329,7 +335,7 @@ class ContributionCollector<TBundlerCfg> {
             ? `application "${target.applicationId}"`
             : "an application";
           throw new Error(
-            `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
+            `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
           );
         }
         const pageId = target.pageId;
@@ -342,7 +348,7 @@ class ContributionCollector<TBundlerCfg> {
           ? ` It is served by shared SPA application "${route.applicationId}".`
           : "";
         throw new Error(
-          `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
+          `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
         );
       }
 
@@ -361,7 +367,7 @@ class ContributionCollector<TBundlerCfg> {
             ? `application "${target.applicationId}"`
             : "an application";
           throw new Error(
-            `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
+            `[evjs] Plugin "${slot.pluginId}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
           );
         }
         const pageId = target.pageId;
@@ -374,7 +380,7 @@ class ContributionCollector<TBundlerCfg> {
           ? ` It shares the Document owned by SPA application "${route.applicationId}".`
           : "";
         throw new Error(
-          `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
+          `[evjs] Plugin "${slot.pluginId}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
         );
       }
     }
@@ -386,7 +392,7 @@ class ContributionCollector<TBundlerCfg> {
     if (target.kind === "page") {
       if (Object.hasOwn(this.options.graph.pages, target.pageId)) return;
       throw new Error(
-        `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets unknown page "${target.pageId}".`,
+        `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets unknown page "${target.pageId}".`,
       );
     }
     if (
@@ -396,7 +402,7 @@ class ContributionCollector<TBundlerCfg> {
       return;
     }
     throw new Error(
-      `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets unknown application "${target.applicationId}".`,
+      `[evjs] Plugin "${slot.pluginId}" ${slot.slot} contribution "${slot.id}" targets unknown application "${target.applicationId}".`,
     );
   }
 
@@ -416,72 +422,96 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private createEmitApi(pluginName: string): EmitApi {
-    return {
+  private createScopedEmitContext(
+    pluginId: string,
+    namespace: string,
+  ): ScopedPluginEmitIRContext {
+    return Object.freeze({
+      emit: this.createEmitApi(pluginId, namespace),
+      slot: <K extends FrameworkSlotName>(name: K) =>
+        this.createSlot(pluginId, name, namespace),
+    });
+  }
+
+  private createEmitApi(pluginId: string, namespace?: string): EmitApi {
+    const emit: EmitApi = {
       module: (input) => {
-        const id = validateContributionId(input.id, pluginName);
-        return this.emitGeneratedModule(pluginName, {
-          id,
-          scope: input.scope,
-          source: input.source,
-          extension: input.extension ?? ".ts",
-          keyKind: "generated module",
-        });
+        const id = validateContributionId(input.id, pluginId);
+        return this.emitGeneratedModule(
+          pluginId,
+          {
+            id,
+            scope: input.scope,
+            source: input.source,
+            extension: input.extension ?? ".ts",
+            keyKind: "generated module",
+          },
+          namespace,
+        );
       },
       data: (input) => {
-        const id = validateContributionId(input.id, pluginName);
+        const id = validateContributionId(input.id, pluginId);
         assertStaticJsonValue(
           input.value,
-          `Plugin "${pluginName}" generated data "${id}" value`,
+          `Plugin "${pluginId}" generated data "${id}" value`,
         );
         const source = `${JSON.stringify(input.value, null, 2)}\n`;
-        return this.emitGeneratedModule(pluginName, {
-          id,
-          scope: input.scope,
-          source,
-          extension: ".json",
-          keyKind: "generated data",
-        });
+        return this.emitGeneratedModule(
+          pluginId,
+          {
+            id,
+            scope: input.scope,
+            source,
+            extension: ".json",
+            keyKind: "generated data",
+          },
+          namespace,
+        );
       },
       entryFacade: (input) => {
-        const id = validateContributionId(input.id, pluginName);
+        const id = validateContributionId(input.id, pluginId);
         const entry = findFrameworkEntry(
           this.options.plan,
           input.entry,
-          pluginName,
+          pluginId,
           id,
         );
         if (entry.environment !== "client") {
           throw new Error(
-            `[evjs] Plugin "${pluginName}" entry facade "${id}" can only target client entries.`,
+            `[evjs] Plugin "${pluginId}" entry facade "${id}" can only target client entries.`,
           );
         }
         if (input.autoStart === false && entry.metadata?.type !== "pages-app") {
           throw new Error(
-            `[evjs] Plugin "${pluginName}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
+            `[evjs] Plugin "${pluginId}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
           );
         }
-        return this.emitGeneratedModule(pluginName, {
-          id,
-          scope: input.scope ?? generatedScopeForEntry(entry),
-          source: ({ importFile }) =>
-            createOriginalClientEntryFacadeSource(entry, importFile, {
-              autoStart: input.autoStart,
-            }),
-          extension: ".ts",
-          keyKind: "entry facade",
-        });
+        return this.emitGeneratedModule(
+          pluginId,
+          {
+            id,
+            scope: input.scope ?? generatedScopeForEntry(entry),
+            source: ({ importFile }) =>
+              createOriginalClientEntryFacadeSource(entry, importFile, {
+                autoStart: input.autoStart,
+              }),
+            extension: ".ts",
+            keyKind: "entry facade",
+          },
+          namespace,
+        );
       },
       importOf: (ref) =>
         this.importOf(ref, {
-          from: pluginName,
+          from: pluginId,
           kind: "plugin-import-helper",
         }),
     };
+    return Object.freeze(emit);
   }
 
   private emitGeneratedModule(
-    pluginName: string,
+    pluginId: string,
     input: {
       id: string;
       scope: GeneratedScope;
@@ -489,58 +519,63 @@ class ContributionCollector<TBundlerCfg> {
       extension: string;
       keyKind: string;
     },
+    namespace?: string,
   ): GeneratedModuleRef {
     if (!SUPPORTED_GENERATED_EXTENSIONS.has(input.extension)) {
       throw new Error(
-        `[evjs] Plugin "${pluginName}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
+        `[evjs] Plugin "${pluginId}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
       );
     }
-    validateGeneratedScope(pluginName, input.id, input.scope);
-    const key = this.reserveKey(pluginName, input.id, input.keyKind);
+    const scope = snapshotGeneratedScope(pluginId, input.id, input.scope);
+    const key = this.reserveKey(pluginId, input.id, input.keyKind, namespace);
     const module = this.createGeneratedModule({
-      pluginName,
+      pluginId,
       id: input.id,
       key,
-      scope: input.scope,
+      scope,
       source: input.source,
       extension: input.extension,
     });
     this.modules.push(module);
     this.refs.set(key, module);
-    return {
+    return Object.freeze({
       __evGeneratedModuleRef: generatedModuleRefSymbol,
       key,
-    } as unknown as GeneratedModuleRef;
+    }) as unknown as GeneratedModuleRef;
   }
 
   private createSlot<K extends FrameworkSlotName>(
-    pluginName: string,
+    pluginId: string,
     name: K,
+    namespace?: string,
   ): FrameworkSlot<K> {
-    validateEnum(
-      name,
-      FRAMEWORK_SLOT_NAMES,
-      `Plugin "${pluginName}" slot name`,
-    );
-    return {
+    validateEnum(name, FRAMEWORK_SLOT_NAMES, `Plugin "${pluginId}" slot name`);
+    const slot: FrameworkSlot<K> = {
       add: (input) => {
-        assertRecord(input, `Plugin "${pluginName}" ${name} contribution`);
-        const normalized = this.normalizeSlotInput(pluginName, name, input);
+        assertRecord(input, `Plugin "${pluginId}" ${name} contribution`);
+        const normalized = this.normalizeSlotInput(
+          pluginId,
+          name,
+          input,
+          namespace,
+        );
         this.slots.push(normalized);
       },
     };
+    return Object.freeze(slot);
   }
 
   private normalizeSlotInput<K extends FrameworkSlotName>(
-    pluginName: string,
+    pluginId: string,
     name: K,
     input: FrameworkSlotInput<K>,
+    namespace?: string,
   ): FrameworkSlotPlanItem {
-    const base = this.createSlotBase(pluginName, input);
+    const base = this.createSlotBase(pluginId, input, namespace);
     switch (name) {
       case "client.entry": {
         const item = input as FrameworkSlotInput<"client.entry">;
-        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
         return {
           ...base,
           slot: name,
@@ -574,7 +609,7 @@ class ContributionCollector<TBundlerCfg> {
       }
       case "page.wrapper": {
         const item = input as FrameworkSlotInput<"page.wrapper">;
-        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
         return {
           ...base,
           slot: name,
@@ -598,7 +633,7 @@ class ContributionCollector<TBundlerCfg> {
       }
       case "server.request.middleware": {
         const item = input as FrameworkSlotInput<"server.request.middleware">;
-        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
         return {
           ...base,
           slot: name,
@@ -642,7 +677,7 @@ class ContributionCollector<TBundlerCfg> {
       case "resolve.alias": {
         const item = input as FrameworkSlotInput<"resolve.alias">;
         assertTrimmedString(item.specifier, `${base.key}.specifier`);
-        assertGeneratedModuleOrString(pluginName, item.id, item.replacement);
+        assertGeneratedModuleOrString(pluginId, item.id, item.replacement);
         return {
           ...base,
           slot: name,
@@ -677,44 +712,45 @@ class ContributionCollector<TBundlerCfg> {
       }
     }
     throw new Error(
-      `[evjs] Plugin "${pluginName}" requested unsupported slot "${String(name)}".`,
+      `[evjs] Plugin "${pluginId}" requested unsupported slot "${String(name)}".`,
     );
   }
 
   private createSlotBase(
-    pluginName: string,
+    pluginId: string,
     input: { id: string },
-  ): Pick<FrameworkSlotPlanItem, "key" | "id" | "pluginName"> {
-    const id = validateContributionId(input.id, pluginName);
+    namespace?: string,
+  ): Pick<FrameworkSlotPlanItem, "key" | "id" | "pluginId"> {
+    const id = validateContributionId(input.id, pluginId);
     return {
-      key: this.reserveKey(pluginName, id, "slot contribution"),
+      key: this.reserveKey(pluginId, id, "slot contribution", namespace),
       id,
-      pluginName,
+      pluginId,
     };
   }
 
   private createGeneratedModule(input: {
-    pluginName: string;
+    pluginId: string;
     id: string;
     key: string;
     scope: GeneratedScope;
     source: GeneratedSource;
     extension: string;
   }): InternalGeneratedModule {
-    const pluginSlug = sanitizePluginPathSegment(input.pluginName);
+    const pluginSegment = input.pluginId;
     const idSlug = sanitizePortableArtifactPathSegment(input.id);
     const specifierPath = reserveUniquePortableArtifactPath(
       this.usedGeneratedModulePathKeys,
       (attempt) =>
-        `${pluginSlug}/${collisionSafeArtifactStem(idSlug, input.key, attempt)}`,
-      `Plugin "${input.pluginName}" generated module "${input.id}" artifact path`,
+        `${pluginSegment}/${collisionSafeArtifactStem(idSlug, input.key, attempt)}`,
+      `Plugin "${input.pluginId}" generated module "${input.id}" artifact path`,
     );
     const file = `./${GENERATED_IR_DIR}/plugins/${specifierPath}${input.extension}`;
     const specifier = `evjs:generated/${specifierPath}`;
     return {
       key: input.key,
       id: input.id,
-      pluginName: input.pluginName,
+      pluginId: input.pluginId,
       scope: input.scope,
       source: input.source,
       extension: input.extension,
@@ -724,12 +760,19 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
-  private reserveKey(pluginName: string, id: string, label: string): string {
-    const key = `${pluginName}:${id}`;
+  private reserveKey(
+    pluginId: string,
+    id: string,
+    label: string,
+    namespace?: string,
+  ): string {
+    const key = namespace
+      ? `${pluginId}:@evjs/${namespace.length}:${namespace}:${id}`
+      : `${pluginId}:${id}`;
     const existing = this.seenKeys.get(key);
     if (existing) {
       throw new Error(
-        `[evjs] Duplicate contribution id "${id}" in plugin "${pluginName}". It was already used by ${existing}.`,
+        `[evjs] Duplicate contribution id "${id}" in plugin "${pluginId}". It was already used by ${existing}.`,
       );
     }
     this.seenKeys.set(key, label);
@@ -823,49 +866,68 @@ async function writeGeneratedIR(
   generated: GeneratedFrameworkPlan,
 ): Promise<void> {
   const rootDir = path.resolve(cwd, GENERATED_IR_DIR);
-  await fs.rm(rootDir, { recursive: true, force: true });
-  await fs.mkdir(rootDir, { recursive: true });
-
-  const modulesByKey = new Map(modules.map((module) => [module.key, module]));
-  await Promise.all([
-    writeGeneratedTypes(rootDir),
-    ...writeGeneratedFrameworkFiles(cwd, graph, plan),
-    ...modules.map((module) =>
-      writeGeneratedModule(cwd, rootDir, module, modulesByKey),
-    ),
-    ...generated.entries.map((entry) =>
-      writeGeneratedEntry(cwd, rootDir, plan, entry),
-    ),
-  ]);
-
-  await fs.writeFile(
-    path.join(rootDir, GENERATED_IR_MANIFEST),
-    `${JSON.stringify(createManifestView(plan, graph), null, 2)}\n`,
-    "utf-8",
+  const candidateRoot = await fs.mkdtemp(
+    path.join(cwd, `${GENERATED_IR_DIR}-candidate-`),
   );
+
+  try {
+    const modulesByKey = new Map(modules.map((module) => [module.key, module]));
+    await completeGeneratedIRWrites([
+      writeGeneratedTypes(candidateRoot),
+      ...writeGeneratedFrameworkFiles(candidateRoot, graph, plan),
+      ...modules.map((module) =>
+        writeGeneratedModule(cwd, rootDir, candidateRoot, module, modulesByKey),
+      ),
+      ...generated.entries.map((entry) =>
+        writeGeneratedEntry(cwd, rootDir, candidateRoot, plan, entry),
+      ),
+    ]);
+
+    await fs.writeFile(
+      path.join(candidateRoot, GENERATED_IR_MANIFEST),
+      `${JSON.stringify(createManifestView(plan, graph), null, 2)}\n`,
+      "utf-8",
+    );
+    await publishGeneratedIR(rootDir, candidateRoot);
+  } catch (error) {
+    await fs
+      .rm(candidateRoot, { recursive: true, force: true })
+      .catch(() => {});
+    throw error;
+  }
+}
+
+async function completeGeneratedIRWrites(
+  writes: readonly Promise<void>[],
+): Promise<void> {
+  const results = await Promise.allSettled(writes);
+  const errors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "[evjs] Multiple generated IR writes failed.",
+    );
+  }
 }
 
 function writeGeneratedFrameworkFiles(
-  cwd: string,
+  rootDir: string,
   graph: CoreGraph,
   plan: BuildPlan,
 ): Promise<void>[] {
   return [
-    writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/core-graph.json`),
-      {
-        generatedBy: "evjs",
-        graph,
-      },
-    ),
-    writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/build-plan.json`),
-      {
-        version: 1,
-        generatedBy: "evjs",
-        plan,
-      },
-    ),
+    writeJsonFile(path.join(rootDir, "framework/core-graph.json"), {
+      generatedBy: "evjs",
+      graph,
+    }),
+    writeJsonFile(path.join(rootDir, "framework/build-plan.json"), {
+      version: 1,
+      generatedBy: "evjs",
+      plan,
+    }),
   ];
 }
 
@@ -900,10 +962,15 @@ async function writeGeneratedTypes(rootDir: string): Promise<void> {
 
 async function writeGeneratedModule(
   cwd: string,
-  rootDir: string,
+  finalRoot: string,
+  candidateRoot: string,
   module: InternalGeneratedModule,
   modulesByKey: Map<string, InternalGeneratedModule>,
 ): Promise<void> {
+  const outputFile = path.join(
+    candidateRoot,
+    path.relative(finalRoot, module.absoluteFile),
+  );
   const resolvedSource =
     module.resolvedSource ??
     (typeof module.source === "function"
@@ -927,12 +994,12 @@ async function writeGeneratedModule(
           },
         })
       : module.source);
-  await fs.mkdir(path.dirname(module.absoluteFile), { recursive: true });
+  await fs.mkdir(path.dirname(outputFile), { recursive: true });
   await fs.writeFile(
-    module.absoluteFile,
+    outputFile,
     withGeneratedHeader(resolvedSource, module.extension, {
-      fromFile: module.absoluteFile,
-      rootDir,
+      fromFile: outputFile,
+      rootDir: candidateRoot,
     }),
     "utf-8",
   );
@@ -940,26 +1007,78 @@ async function writeGeneratedModule(
 
 async function writeGeneratedEntry(
   cwd: string,
-  rootDir: string,
+  finalRoot: string,
+  candidateRoot: string,
   plan: BuildPlan,
   entry: GeneratedEntryPlan,
 ): Promise<void> {
   const buildEntry = plan.entries.find((item) => item.name === entry.name);
   if (!buildEntry) return;
-  const absoluteFile = path.resolve(cwd, entry.file);
-  await fs.mkdir(path.dirname(absoluteFile), { recursive: true });
+  const logicalFile = path.resolve(cwd, entry.file);
+  const outputFile = path.join(
+    candidateRoot,
+    path.relative(finalRoot, logicalFile),
+  );
+  await fs.mkdir(path.dirname(outputFile), { recursive: true });
   await fs.writeFile(
-    absoluteFile,
+    outputFile,
     withGeneratedHeader(
       createEntrySource(cwd, buildEntry, entry, plan),
       ".ts",
       {
-        fromFile: absoluteFile,
-        rootDir,
+        fromFile: outputFile,
+        rootDir: candidateRoot,
       },
     ),
     "utf-8",
   );
+}
+
+async function publishGeneratedIR(
+  rootDir: string,
+  candidateRoot: string,
+): Promise<void> {
+  const backupRoot = path.join(
+    path.dirname(rootDir),
+    `${path.basename(rootDir)}-previous-${randomUUID()}`,
+  );
+  let previousMoved = false;
+  let published = false;
+  try {
+    try {
+      await fs.rename(rootDir, backupRoot);
+      previousMoved = true;
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+
+    try {
+      await fs.rename(candidateRoot, rootDir);
+      published = true;
+    } catch (publishError) {
+      if (!previousMoved) throw publishError;
+      try {
+        await fs.rename(backupRoot, rootDir);
+      } catch (restoreError) {
+        throw new AggregateError(
+          [publishError, restoreError],
+          "[evjs] Failed to publish generated IR and restore the previous snapshot.",
+          { cause: publishError },
+        );
+      }
+      throw publishError;
+    }
+  } finally {
+    if (previousMoved && published) {
+      // The canonical directory is already complete. Backup cleanup must not
+      // turn a successful atomic publication into a reported build failure.
+      await fs.rm(backupRoot, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
 
 /** Compact index for inspecting linked generated artifacts and plan entries. */
@@ -985,10 +1104,10 @@ function createManifestView(plan: BuildPlan, graph: CoreGraph): unknown {
  * Callers can inspect semantic ownership and materialized entries but cannot
  * mutate framework IR.
  */
-export function createFrameworkIRView(
+export function createFrameworkView(
   graph: CoreGraph,
   plan: BuildPlan,
-): FrameworkIRView {
+): FrameworkView {
   const entries = plan.entries.map(createFrameworkEntryView);
   return deepFreeze({
     applications: createFrameworkApplicationViews(graph),
@@ -1013,9 +1132,7 @@ export function createFrameworkIRView(
   });
 }
 
-function createFrameworkRouteViews(
-  graph: CoreGraph,
-): FrameworkIRView["routes"] {
+function createFrameworkRouteViews(graph: CoreGraph): FrameworkView["routes"] {
   return graph.routes.map(
     (route): FrameworkRouteView => ({
       id: route.id,
@@ -1053,7 +1170,7 @@ function createCoreApplicationView(
 
 function createFrameworkPageView(
   page: CoreGraph["pages"][string],
-): FrameworkIRView["pages"][number] {
+): FrameworkView["pages"][number] {
   return {
     id: page.id,
     applicationId: page.applicationId,
@@ -1063,7 +1180,7 @@ function createFrameworkPageView(
       provider: page.source.provider,
       ...(page.source.config ? { config: page.source.config } : {}),
     },
-    plugins: cloneJson(page.plugins),
+    plugins: createFrameworkPagePluginSettingsView(page.plugins),
     render: page.render,
     ...(page.componentModel ? { componentModel: page.componentModel } : {}),
     ...(page.hydrate ? { hydrate: page.hydrate } : {}),
@@ -1072,6 +1189,18 @@ function createFrameworkPageView(
     ...(page.metadata ? { metadata: cloneJson(page.metadata) } : {}),
     provenance: cloneJson(page.provenance),
   };
+}
+
+function createFrameworkPagePluginSettingsView(
+  settings: CoreGraph["pages"][string]["plugins"],
+): FrameworkView["pages"][number]["plugins"] {
+  return Object.fromEntries(
+    Object.entries(settings).map(([id, setting]) =>
+      setting.enabled
+        ? [id, { enabled: true, options: cloneJson(setting.options) }]
+        : [id, { enabled: false }],
+    ),
+  );
 }
 
 function createFrameworkEntryView(entry: BuildEntry): FrameworkEntryView {
@@ -1123,13 +1252,13 @@ function isFrameworkApplicationEntryView(
 function findFrameworkEntry(
   plan: BuildPlan,
   view: FrameworkEntryView,
-  pluginName: string,
+  pluginId: string,
   id: string,
 ): BuildEntry {
   const entry = plan.entries.find((item) => item.name === view.name);
   if (entry) return entry;
   throw new Error(
-    `[evjs] Plugin "${pluginName}" entry facade "${id}" references unknown framework entry "${view.name}".`,
+    `[evjs] Plugin "${pluginId}" entry facade "${id}" references unknown framework entry "${view.name}".`,
   );
 }
 
@@ -1521,10 +1650,18 @@ function createServerAppEntrySource(
   const serverFunctionModules = collectServerFunctionModules(
     metadata.serverFunctions,
   );
+  const serverFunctionModuleIndexes = new Map(
+    serverFunctionModules.map((module, index) => [module, index]),
+  );
 
   const imports = [
-    `import { createApp, createRoute } from "@evjs/ev/_internal/server";`,
+    `import { createApp, createRoute, createServerFunctionRegistry } from "@evjs/ev/_internal/server";`,
     `import { createReactFrameworkServer } from "@evjs/ev/_internal/server/react";`,
+    ...(serverFunctionModules.length > 0
+      ? [
+          `import { getServerReferenceId } from "@evjs/ev/_internal/server/server-reference";`,
+        ]
+      : []),
     ...contributionMiddlewares.map(
       (middleware) =>
         `import ${middleware.importName} from ${JSON.stringify(
@@ -1538,8 +1675,10 @@ function createServerAppEntrySource(
         )};`,
     ),
     ...serverFunctionModules.map(
-      (module) =>
-        `import ${JSON.stringify(toGeneratedImportSpecifier(cwd, fromFile, module))};`,
+      (module, index) =>
+        `import * as serverFunctionModule${index} from ${JSON.stringify(
+          toGeneratedImportSpecifier(cwd, fromFile, module),
+        )};`,
     ),
     ...metadata.routes.map(
       (route, index) =>
@@ -1579,6 +1718,30 @@ function createServerAppEntrySource(
     ...contributionMiddlewares.map((middleware) => middleware.importName),
     ...toMiddlewareReferences(middlewares, middlewareImportNames),
   ];
+  const serverFunctionRegistrations = (metadata.serverFunctions ?? []).flatMap(
+    (serverFunction, index) => {
+      const moduleIndex = serverFunctionModuleIndexes.get(
+        serverFunction.module,
+      );
+      if (moduleIndex === undefined) {
+        throw new Error(
+          `[evjs] Missing generated server function module "${serverFunction.module}".`,
+        );
+      }
+      const canonicalId = JSON.stringify(serverFunction.id);
+      const exportName = JSON.stringify(serverFunction.exportName);
+      const implementation = `serverFunctionImplementation${index}`;
+      const bundlerId = `serverFunctionBundlerId${index}`;
+      return [
+        `const ${implementation} = serverFunctionModule${moduleIndex}[${exportName}];`,
+        `serverFunctions.register(${canonicalId}, ${implementation});`,
+        `const ${bundlerId} = getServerReferenceId(${implementation}, ${exportName});`,
+        `if (${bundlerId} !== undefined && ${bundlerId} !== ${canonicalId}) {`,
+        `  serverFunctions.register(${bundlerId}, ${implementation});`,
+        `}`,
+      ];
+    },
+  );
 
   return [
     ...imports,
@@ -1586,9 +1749,11 @@ function createServerAppEntrySource(
     ...routeDefinitions,
     "",
     "const framework = createReactFrameworkServer();",
+    "const serverFunctions = createServerFunctionRegistry();",
+    ...serverFunctionRegistrations,
     `const middlewares = [${middlewareReferences.join(", ")}];`,
     `const routes = [${routeEntries.join(", ")}];`,
-    "const app = createApp({ middlewares, routes, ...(framework ? { framework } : {}) });",
+    "const app = createApp({ middlewares, routes, serverFunctions, ...(framework ? { framework } : {}) });",
     "export const fetch = app.fetch;",
     "export default { fetch };",
   ].join("\n");
@@ -1723,58 +1888,51 @@ function collisionSafeArtifactStem(
   return attempt === 1 ? `${base}-${suffix}` : `${base}-${suffix}-${attempt}`;
 }
 
-function sanitizePluginPathSegment(value: string): string {
-  const normalized = value
-    .replace(/^@evjs\/plugin-/, "")
-    .replace(/^@/, "")
-    .replace(/\/plugin-/g, "/")
-    .replace(/^plugin-/, "");
-  const segments = normalized
-    .replace(/:/g, "/")
-    .split(/[\\/]+/)
-    .map(sanitizePortableArtifactPathSegment)
-    .filter(Boolean);
-  return segments.join("/") || "generated";
-}
-
 function shortHash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 8);
 }
 
-function validateContributionId(id: string, pluginName: string): string {
+function validateContributionId(id: string, pluginId: string): string {
   if (typeof id !== "string" || id.trim() === "") {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" contribution id must be a non-empty string.`,
+      `[evjs] Plugin "${pluginId}" contribution id must be a non-empty string.`,
     );
   }
   if (id !== id.trim()) {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" contribution id "${id}" must not contain leading or trailing whitespace.`,
+      `[evjs] Plugin "${pluginId}" contribution id "${id}" must not contain leading or trailing whitespace.`,
+    );
+  }
+  if (id.startsWith("@evjs/")) {
+    throw new Error(
+      `[evjs] Plugin "${pluginId}" contribution id "${id}" uses the reserved "@evjs/" prefix.`,
     );
   }
   return id;
 }
 
-function validateGeneratedScope(
-  pluginName: string,
+function snapshotGeneratedScope(
+  pluginId: string,
   id: string,
   scope: GeneratedScope,
-): void {
+): GeneratedScope {
   if (!scope || typeof scope !== "object") {
     throw new Error(
-      `[evjs] Plugin "${pluginName}" generated module "${id}" must declare a valid scope.`,
+      `[evjs] Plugin "${pluginId}" generated module "${id}" must declare a valid scope.`,
     );
   }
-  if (scope.kind === "application" || scope.kind === "server") return;
+  if (scope.kind === "application" || scope.kind === "server") {
+    return Object.freeze({ kind: scope.kind });
+  }
   if (
     scope.kind === "page" &&
     typeof scope.pageId === "string" &&
     scope.pageId.trim()
   ) {
-    return;
+    return Object.freeze({ kind: "page", pageId: scope.pageId });
   }
   throw new Error(
-    `[evjs] Plugin "${pluginName}" generated module "${id}" has an invalid scope.`,
+    `[evjs] Plugin "${pluginId}" generated module "${id}" has an invalid scope.`,
   );
 }
 
@@ -1797,12 +1955,12 @@ function validateContributionTarget(
 }
 
 function assertGeneratedModuleOrString(
-  pluginName: string,
+  pluginId: string,
   id: string,
   value: GeneratedModuleRef | string,
 ): void {
   if (typeof value === "string") {
-    assertTrimmedString(value, `${pluginName}:${id}.module`);
+    assertTrimmedString(value, `${pluginId}:${id}.module`);
     return;
   }
   assertGeneratedModuleRef(value);
@@ -1890,7 +2048,7 @@ function toGeneratedModulePlan(
   return {
     key: module.key,
     id: module.id,
-    pluginName: module.pluginName,
+    pluginId: module.pluginId,
     scope: module.scope,
     file: module.file,
     specifier: module.specifier,

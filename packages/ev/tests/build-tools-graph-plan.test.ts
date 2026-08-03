@@ -6,7 +6,7 @@ import {
   linkBuildOutput,
   PAGE_ANCHOR_PROVIDER_ID,
 } from "@evjs/shared/manifest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPageClientBuildEntryName,
   createPageServerBuildEntryName,
@@ -39,6 +39,34 @@ afterEach(async () => {
 });
 
 describe("canonical CoreGraph and BuildPlan integration", () => {
+  it("assigns a unique identity to each production generation", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+
+    const first = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const second = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const development = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+    const explicit = createBuildPlan(config, analysis.graph, {
+      buildId: "release-42",
+      mode: "production",
+    });
+
+    expect(first.buildId).toMatch(/^build-[a-f0-9-]{36}$/);
+    expect(second.buildId).not.toBe(first.buildId);
+    expect(development.buildId).toBe("development");
+    expect(explicit.buildId).toBe("release-42");
+  });
+
   it("keeps recursively cleaned outputs inside the BuildPlan distDir", async () => {
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",
@@ -363,6 +391,11 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     const analysis = await createCoreGraph(config, cwd);
     const graphWithPluginDocument: CoreGraph = {
       ...analysis.graph,
+      plugins: {
+        entries: {
+          "test-plugin": {},
+        },
+      },
       applications: {
         ...analysis.graph.applications,
         default: {
@@ -377,9 +410,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           template: "./plugin.html",
           output: "plugin.html",
           applicationId: "default",
-          owner: { kind: "plugin", pluginId: "@test/plugin" },
+          owner: { kind: "plugin", pluginId: "test-plugin" },
           provenance: {
-            producer: { kind: "plugin", id: "@test/plugin" },
+            producer: { kind: "plugin", id: "test-plugin" },
           },
         },
       },
@@ -1553,6 +1586,107 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         import: "@evjs/ev/_internal/server/fetch",
         kind: "server-runtime",
       }),
+    );
+  });
+
+  it("fails closed when a discovered framework source cannot be read", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": `
+        import { value } from "./helper";
+        void value;
+        export default function Home() { return null; }
+      `,
+      "src/pages/helper.js": "export const value = 1;",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const helper = path.join(cwd, "src/pages/helper.js");
+    const originalReadFile = fs.readFile.bind(fs);
+    const readFileSpy = vi.spyOn(fs, "readFile").mockImplementation((async (
+      ...args: Parameters<typeof fs.readFile>
+    ) => {
+      if (path.resolve(String(args[0])) === helper) {
+        throw Object.assign(new Error("permission denied"), {
+          code: "EACCES",
+        });
+      }
+      return originalReadFile(...args);
+    }) as typeof fs.readFile);
+
+    try {
+      await expect(createCoreGraph(config, cwd)).rejects.toMatchObject({
+        code: "EACCES",
+      });
+    } finally {
+      readFileSpy.mockRestore();
+    }
+  });
+
+  it("does not bypass an inaccessible higher-priority source candidate", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": `
+        import { value } from "./helper";
+        void value;
+        export default function Home() { return null; }
+      `,
+      "src/pages/helper.js": "export const value = 1;",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const inaccessibleCandidate = path.join(cwd, "src/pages/helper.ts");
+    const originalStat = fs.stat.bind(fs);
+    const statSpy = vi.spyOn(fs, "stat").mockImplementation((async (
+      ...args: Parameters<typeof fs.stat>
+    ) => {
+      if (path.resolve(String(args[0])) === inaccessibleCandidate) {
+        throw Object.assign(new Error("permission denied"), {
+          code: "EACCES",
+        });
+      }
+      return originalStat(...args);
+    }) as typeof fs.stat);
+
+    try {
+      await expect(createCoreGraph(config, cwd)).rejects.toMatchObject({
+        code: "EACCES",
+      });
+    } finally {
+      statSpy.mockRestore();
+    }
+  });
+
+  it("reports every project-local source candidate for extensionless aliases", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": `
+        import { value } from "@/shared/helper";
+        void value;
+        export default function Home() { return null; }
+      `,
+      "src/shared/helper.js": "export const value = 1;",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const observed = new Set<string>();
+
+    await createCoreGraph(config, cwd, {
+      onSourceDependency(file) {
+        observed.add(path.resolve(file));
+      },
+    });
+
+    const base = path.join(cwd, "src/shared/helper");
+    expect([...observed]).toEqual(
+      expect.arrayContaining([
+        base,
+        `${base}.ts`,
+        `${base}.tsx`,
+        `${base}.js`,
+        `${base}.jsx`,
+        path.join(base, "index.ts"),
+        path.join(base, "index.tsx"),
+        path.join(base, "index.js"),
+        path.join(base, "index.jsx"),
+      ]),
     );
   });
 

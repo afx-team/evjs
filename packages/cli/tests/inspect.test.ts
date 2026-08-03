@@ -58,6 +58,8 @@ describe("inspect", () => {
     );
 
     expect(hasInspectErrors(result)).toBe(false);
+    expect(result.mode).toBe("production");
+    expect(result).not.toHaveProperty("command");
     expect(result.routing).toMatchObject({
       routingMode: "spa",
       pageRoot: "./src/pages",
@@ -110,6 +112,7 @@ describe("inspect", () => {
       ppr: "__evjs/ppr",
     });
     const text = formatInspectText(result);
+    expect(text).toContain("Mode: production");
     expect(text).toContain("config=./src/pages/page.config.ts");
     expect(text).toContain(
       'metadata={"title":"Home","meta":{"description":"Inspect metadata"}}',
@@ -415,7 +418,6 @@ describe("inspect", () => {
     );
     expect(result.routeFiles).toEqual([]);
     result.graph.plugins.entries.analytics = {
-      id: "@company/analytics",
       application: { schemaVersion: "1" },
       page: { schemaVersion: "2", defaultable: true },
     };
@@ -424,7 +426,7 @@ describe("inspect", () => {
     expect(text).not.toContain("provider=@evjs/provider/config-route");
     expect(text).toContain("Plugins");
     expect(text).toContain(
-      "analytics: id=@company/analytics, contracts=application,page, pageDefaultable=true",
+      "analytics: contracts=application,page, pageDefaultable=true",
     );
     expect(text).not.toContain("owners=");
     expect(text).not.toMatch(/CoreGraph v\d+/);
@@ -437,9 +439,25 @@ describe("inspect", () => {
       "index.html": '<div id="app"></div>',
       "src/main.tsx": "console.log('app');",
     });
+    const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
-      name: "inspect-contribution",
-      contributions(ctx) {
+      id: "inspect-contribution",
+      setup() {
+        events.push("setup");
+        return {
+          beforeBuild() {
+            events.push("beforeBuild");
+          },
+          afterBuild() {
+            events.push("afterBuild");
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+      emitIR(ctx) {
+        events.push("emitIR");
         const module = ctx.emit.module({
           id: "entry",
           scope: { kind: "application" },
@@ -465,7 +483,7 @@ describe("inspect", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "entry",
-          pluginName: "inspect-contribution",
+          pluginId: "inspect-contribution",
         }),
       ]),
     );
@@ -477,6 +495,7 @@ describe("inspect", () => {
         }),
       ]),
     );
+    expect(events).toEqual(["setup", "emitIR", "dispose"]);
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 

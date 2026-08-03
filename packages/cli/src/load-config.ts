@@ -1,7 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfigFile } from "@evjs/ev/_internal/build";
-import type { Config, DefaultBundlerConfig } from "@evjs/ev/config";
+import type { utoopackAdapter } from "@evjs/bundler-utoopack";
+import {
+  type BundlerAdapter,
+  type LoadConfigFileOptions,
+  loadConfigFile,
+} from "@evjs/ev/_internal/build";
+import type { Config } from "@evjs/ev/config";
+
+export type DefaultBundlerConfig =
+  typeof utoopackAdapter extends BundlerAdapter<infer TBundlerCfg>
+    ? TBundlerCfg
+    : never;
 
 export const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
 
@@ -13,16 +23,23 @@ export const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
  */
 export async function loadConfig<TBundlerCfg = DefaultBundlerConfig>(
   cwd: string,
+  options: LoadConfigFileOptions = {},
 ): Promise<Config<TBundlerCfg> | undefined> {
   const configPath = resolveConfigPath(cwd);
   if (!configPath) return undefined;
-  return loadConfigFile<TBundlerCfg>(configPath);
+  return loadConfigFile<TBundlerCfg>(configPath, options);
 }
 
 export function resolveConfigPath(cwd: string): string | undefined {
   for (const filename of CONFIG_FILES) {
     const configPath = path.resolve(cwd, filename);
-    if (fs.existsSync(configPath)) return configPath;
+    try {
+      fs.lstatSync(configPath);
+      return configPath;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    }
   }
 
   return undefined;

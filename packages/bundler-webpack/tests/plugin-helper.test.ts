@@ -1,50 +1,50 @@
 import {
-  type BundlerCtx,
+  type ConfigureBundlerContext,
   definePlugin,
   type Plugin,
   type PluginHooks,
 } from "@evjs/ev/plugin";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { WebpackConfig } from "../src/index.js";
+import type { WebpackConfigs } from "../src/index.js";
 import { webpack } from "../src/plugin-helper.js";
 
 describe("webpack plugin helper", () => {
-  function createCtx(bundlerName: string): BundlerCtx<WebpackConfig> {
+  function createCtx(
+    bundlerName: string,
+  ): ConfigureBundlerContext<WebpackConfigs> {
     return {
       mode: "production",
-      command: "build",
       cwd: process.cwd(),
-      config: {} as BundlerCtx<WebpackConfig>["config"],
+      config: {} as ConfigureBundlerContext<WebpackConfigs>["config"],
       bundlerName,
-      logger: {} as BundlerCtx<WebpackConfig>["logger"],
+      logger: {} as ConfigureBundlerContext<WebpackConfigs>["logger"],
       addWatchFile() {},
     };
   }
 
   it("runs only for the webpack adapter", async () => {
     const events: string[] = [];
-    const hook = webpack((config, ctx) => {
-      events.push(`${ctx.bundlerName}:${Array.isArray(config)}`);
+    const hook = webpack((configs, ctx) => {
+      expectTypeOf(configs).toEqualTypeOf<WebpackConfigs>();
+      events.push(`${ctx.bundlerName}:${configs.length}`);
     });
 
     expectTypeOf(hook).toMatchTypeOf<
-      NonNullable<PluginHooks<{ output: string }>["bundlerConfig"]>
+      NonNullable<PluginHooks<{ output: string }>["configureBundler"]>
     >();
     await hook([], createCtx("utoopack"));
     await hook([], createCtx("webpack"));
 
-    expect(events).toEqual(["webpack:true"]);
+    expect(events).toEqual(["webpack:0"]);
   });
 
   it("keeps a default definePlugin factory bundler-agnostic", () => {
     const factory = definePlugin({
-      id: "@test/webpack-helper",
+      id: "webpack-helper",
       setup() {
         return {
-          bundlerConfig: webpack((config) => {
-            for (const webpackConfig of Array.isArray(config)
-              ? config
-              : [config]) {
+          configureBundler: webpack((configs) => {
+            for (const webpackConfig of configs) {
               webpackConfig.resolve ??= {};
             }
           }),
@@ -53,6 +53,6 @@ describe("webpack plugin helper", () => {
     });
 
     const plugin: Plugin<{ output: string }> = factory();
-    expect(plugin.name).toBe("@test/webpack-helper");
+    expect(plugin.id).toBe("webpack-helper");
   });
 });

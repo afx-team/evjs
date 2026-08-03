@@ -271,7 +271,7 @@ export default definePageConfig({
 `title`、named `meta`、`render`、`hydrate`、`prerender` 与 `rsc`。`meta`
 接受字符串 key/value，并且只生成 `<meta name="key" content="value">`；
 `property`、`charset`、link、script、动态元信息和通用 head DSL 不属于该
-contract。已安装的 Page-aware 插件使用 `plugins` 下生成的短 key。
+contract。已安装的 Page-aware 插件使用 `plugins` 下各自的 canonical id。
 
 求值后的配置在 SPA 与 MPA 中附着到同一个 normalized Page identity。在 SPA
 mode 下，最深层 active Page 持有 title/meta，不继承父 Page metadata。route

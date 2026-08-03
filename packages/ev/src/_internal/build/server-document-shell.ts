@@ -6,8 +6,8 @@ import type {
 import type { ResolvedConfig } from "../../config/index.js";
 import type {
   HtmlDocumentInfo,
-  PluginContext,
   PluginHooks,
+  PluginSetupContext,
 } from "../../plugin/index.js";
 import {
   CLIENT_RUNTIME_SCRIPT_ID,
@@ -26,7 +26,7 @@ export async function compileServerDocumentShells<TBundlerCfg>(options: {
   cwd: string;
   config: ResolvedConfig<TBundlerCfg>;
   hooks: PluginHooks<TBundlerCfg>[];
-  pluginCtx: PluginContext<TBundlerCfg>;
+  pluginCtx: PluginSetupContext<TBundlerCfg>;
   output: BuildOutput;
   plan: BuildPlan;
   isRebuild: boolean;

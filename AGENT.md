@@ -23,7 +23,8 @@
 - `routing.mode` selects SPA or MPA materialization without changing semantic
   Application, Page, Route, or Document identity.
 - adjacent `page.config.ts` supplies static Page metadata, rendering settings,
-  and a generated short-keyed `plugins` map for installed Page-aware plugins.
+  and a generated `plugins` map keyed by canonical ids for installed Page-aware
+  plugins.
 - top-level `config.plugins` installs plugin factories and supplies each
   plugin's independent Application configuration. Route and Document behavior
   is derived from normalized Pages rather than configured on separate owners.

@@ -10,7 +10,7 @@ describe("utoopack plugin helpers", () => {
     });
 
     expectTypeOf(hook).toMatchTypeOf<
-      NonNullable<PluginHooks<{ output: string }>["bundlerConfig"]>
+      NonNullable<PluginHooks<{ output: string }>["configureBundler"]>
     >();
   });
 

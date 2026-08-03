@@ -1,8 +1,6 @@
 import {
-  BUILD_IDENTIFIER_DESCRIPTION,
   findBestPageRoute,
   getRscFlightClientPageUrlParam,
-  isBuildIdentifier,
   matchPageRouteParams,
   type PageSearchParams,
   parsePageSearch,
@@ -16,13 +14,8 @@ import {
 } from "../framework/page/page-context.js";
 import type { AppContext, AppModule } from "../framework/shell/index.js";
 import {
-  assertFetchErrorResponseStatus,
-  assertFetchResponseJson,
-  assertFetchResponseJsonContentType,
   assertFetchResponseObject,
-  formatFetchErrorResponseDetail,
   getFetchResponseContentType,
-  readFetchErrorResponseBody,
 } from "../shared/fetch-response.js";
 import {
   assertClientRuntime,
@@ -71,42 +64,18 @@ export interface RscFlightFetchOptions {
   fetch?: typeof fetch;
 }
 
-export interface RscDebugPayload {
-  version: 1;
-  type: "evjs.rsc";
-  buildId: string;
-  endpoint?: string;
-  pageId?: string;
-  renderer?: string;
-  html?: string;
-  assets?: {
-    js: string[];
-    css: string[];
-  };
-  pages?: Record<
-    string,
-    {
-      renderer: string;
-      assets: {
-        js: string[];
-        css: string[];
-      };
-      routeId?: string;
-    }
-  >;
+interface MountedReactRoot {
+  ownerToken: symbol;
+  root: Root;
 }
 
-export interface RscDebugPayloadMountOptions {
-  payload: RscDebugPayload;
-  mount: string | Element;
-}
-
-const rootByMountPoint = new WeakMap<Element, Root>();
+const rootByMountPoint = new WeakMap<Element, MountedReactRoot>();
 
 export function createReactPageModule(
   options: ReactPageMountOptions,
 ): AppModule {
   assertReactPageMountOptions(options, "createReactPageModule()");
+  const ownerToken = Symbol("ReactPageModule");
 
   return {
     mount(mountPoint, ctx) {
@@ -115,6 +84,7 @@ export function createReactPageModule(
         mountPoint,
         options.component,
         resolvePageProps(options, ctx),
+        ownerToken,
         options.route,
       );
     },
@@ -122,13 +92,25 @@ export function createReactPageModule(
       if (options.hydrate === "none") return;
       const props = resolvePageProps(options, ctx);
       if (shouldHydrate(options)) {
-        hydrateReactRoot(mountPoint, options.component, props, options.route);
+        hydrateReactRoot(
+          mountPoint,
+          options.component,
+          props,
+          ownerToken,
+          options.route,
+        );
         return;
       }
-      mountReactRoot(mountPoint, options.component, props, options.route);
+      mountReactRoot(
+        mountPoint,
+        options.component,
+        props,
+        ownerToken,
+        options.route,
+      );
     },
     unmount(mountPoint) {
-      unmountMountedReactRoot(mountPoint);
+      unmountOwnedReactRoot(mountPoint, ownerToken);
     },
   };
 }
@@ -137,6 +119,7 @@ function mountReactRoot(
   mountPoint: Element,
   component: ReactComponentExport,
   props: Record<string, unknown>,
+  ownerToken: symbol,
   route?: ReactPageRouteContext,
 ) {
   unmountMountedReactRoot(mountPoint);
@@ -156,13 +139,14 @@ function mountReactRoot(
       `[evjs] React page root.render failed${formatErrorDetail(error)}`,
     );
   }
-  rootByMountPoint.set(mountPoint, root);
+  rootByMountPoint.set(mountPoint, { ownerToken, root });
 }
 
 function hydrateReactRoot(
   mountPoint: Element,
   component: ReactComponentExport,
   props: Record<string, unknown>,
+  ownerToken: symbol,
   route?: ReactPageRouteContext,
 ): void {
   unmountMountedReactRoot(mountPoint);
@@ -177,20 +161,26 @@ function hydrateReactRoot(
       `[evjs] React page hydrateRoot failed${formatErrorDetail(error)}`,
     );
   }
-  rootByMountPoint.set(mountPoint, root);
+  rootByMountPoint.set(mountPoint, { ownerToken, root });
 }
 
 function unmountMountedReactRoot(mountPoint: Element): void {
-  const root = rootByMountPoint.get(mountPoint);
-  if (!root) return;
+  const mounted = rootByMountPoint.get(mountPoint);
+  if (!mounted) return;
   rootByMountPoint.delete(mountPoint);
   try {
-    root.unmount();
+    mounted.root.unmount();
   } catch (error) {
     throw new Error(
       `[evjs] React page root.unmount failed${formatErrorDetail(error)}`,
     );
   }
+}
+
+function unmountOwnedReactRoot(mountPoint: Element, ownerToken: symbol): void {
+  const mounted = rootByMountPoint.get(mountPoint);
+  if (mounted?.ownerToken !== ownerToken) return;
+  unmountMountedReactRoot(mountPoint);
 }
 
 function tryUnmountReactRoot(root: Root): void {
@@ -312,6 +302,14 @@ function assertReactPageString(value: unknown, path: string): void {
 export async function fetchRscFlight(
   options: RscFlightFetchOptions,
 ): Promise<Response> {
+  return fetchRscFlightWithSignal(options);
+}
+
+/** @internal Used by the RSC mount runtime to cancel superseded requests. */
+export async function fetchRscFlightWithSignal(
+  options: RscFlightFetchOptions,
+  signal?: AbortSignal,
+): Promise<Response> {
   assertRscFlightFetchOptions(options);
   const endpoint = getClientRuntimeServer(options.runtime)?.rsc;
   if (!endpoint) {
@@ -327,7 +325,7 @@ export async function fetchRscFlight(
 
   const transport = resolveClientRuntimeTransport(options.runtime);
   const requestUrl = resolveRscFlightUrl(endpoint, options, transport);
-  const requestInit = resolveRscFlightRequestInit(transport);
+  const requestInit = resolveRscFlightRequestInit(transport, signal);
   let response: unknown;
   try {
     response =
@@ -356,20 +354,26 @@ export function assertRscFlightFetchOptions(
 
 function resolveRscFlightRequestInit(
   transport: ClientRuntimeTransport | undefined,
+  signal?: AbortSignal,
 ): RequestInit | undefined {
-  if (!transport) return undefined;
+  if (!transport && !signal) return undefined;
 
   const init: RequestInit = {};
-  if (transport.credentials !== undefined) {
+  if (transport?.credentials !== undefined) {
     init.credentials = transport.credentials;
   }
 
-  const headers = new Headers(transport.headers);
+  const headers = new Headers(transport?.headers);
   if ([...headers.keys()].length > 0) {
     init.headers = headers;
   }
+  if (signal) {
+    init.signal = signal;
+  }
 
-  return init.credentials !== undefined || init.headers !== undefined
+  return init.credentials !== undefined ||
+    init.headers !== undefined ||
+    init.signal !== undefined
     ? init
     : undefined;
 }
@@ -393,34 +397,6 @@ function assertOptionalRscFlightUrl(value: unknown, path: string): void {
 }
 
 const RSC_FLIGHT_FETCH_ERROR_PREFIX = "[evjs] RSC Flight";
-const RSC_DEBUG_RESPONSE_ERROR_PREFIX = "[evjs] RSC debug payload response";
-
-export async function fetchRscDebugPayload(
-  options: RscFlightFetchOptions,
-): Promise<RscDebugPayload> {
-  const response = await fetchRscFlight(options);
-  if (!response.ok) {
-    assertFetchErrorResponseStatus(response, RSC_FLIGHT_FETCH_ERROR_PREFIX);
-    const responseBody = await readFetchErrorResponseBody(response);
-    throw new Error(
-      `[evjs] RSC debug payload request failed: ${formatFetchErrorResponseDetail(
-        response,
-        responseBody,
-      )}`,
-    );
-  }
-
-  let payload: unknown;
-  assertFetchResponseJson(response, RSC_DEBUG_RESPONSE_ERROR_PREFIX);
-  assertFetchResponseJsonContentType(response, RSC_DEBUG_RESPONSE_ERROR_PREFIX);
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error("[evjs] RSC debug payload response is not valid JSON.");
-  }
-  assertRscDebugPayload(payload, "RSC debug payload response");
-  return payload;
-}
 
 function assertRscFetchResponseObject(
   value: unknown,
@@ -432,22 +408,6 @@ export function getRscFetchResponseContentType(
   response: Response,
 ): string | null {
   return getFetchResponseContentType(response);
-}
-
-export function mountRscDebugPayload(
-  options: RscDebugPayloadMountOptions,
-): void {
-  assertRscDebugPayloadMountOptions(options);
-  const mountPoint = resolveMountPoint(options.mount);
-  mountPoint.innerHTML = options.payload.html ?? "";
-}
-
-export async function loadRscDebugPage(
-  options: RscFlightFetchOptions & { mount: string | Element },
-): Promise<RscDebugPayload> {
-  const payload = await fetchRscDebugPayload(options);
-  mountRscDebugPayload({ payload, mount: options.mount });
-  return payload;
 }
 
 function resolveRscFlightUrl(
@@ -706,112 +666,6 @@ function readLocationSearch(): PageSearchParams {
 function isStringRecord(value: unknown): value is Record<string, string> {
   if (!isRecord(value)) return false;
   return Object.values(value).every((entry) => typeof entry === "string");
-}
-
-function assertRscDebugPayloadMountOptions(
-  options: unknown,
-): asserts options is RscDebugPayloadMountOptions {
-  if (!isRecord(options)) {
-    throw new Error("[evjs] mountRscDebugPayload() options must be an object.");
-  }
-  assertRscDebugPayload(options.payload, "mountRscDebugPayload() payload");
-  assertReactPageMountOption(options.mount, "mountRscDebugPayload() mount");
-}
-
-function assertRscDebugPayload(
-  value: unknown,
-  source: string,
-): asserts value is RscDebugPayload {
-  if (!isRecord(value) || value.version !== 1 || value.type !== "evjs.rsc") {
-    throw new Error(`[evjs] ${source} is not an evjs RSC debug payload.`);
-  }
-
-  assertRscDebugBuildIdentifier(value.buildId, `${source}.buildId`);
-  assertOptionalRscDebugString(value.endpoint, `${source}.endpoint`);
-  assertOptionalRscDebugBuildIdentifier(value.pageId, `${source}.pageId`);
-  assertOptionalRscDebugBuildIdentifier(value.renderer, `${source}.renderer`);
-  assertOptionalRscDebugHtml(value.html, `${source}.html`);
-  if (value.assets !== undefined) {
-    assertRscDebugAssets(value.assets, `${source}.assets`);
-  }
-  assertOptionalRscDebugRecord(value.pages, `${source}.pages`);
-}
-
-function assertRscDebugBuildIdentifier(value: unknown, path: string): void {
-  if (typeof value !== "string" || !value) {
-    throw new Error(`[evjs] ${path} must be a non-empty string.`);
-  }
-  if (value.trim() !== value) {
-    throw new Error(
-      `[evjs] ${path} must not include leading or trailing whitespace.`,
-    );
-  }
-  if (!isBuildIdentifier(value)) {
-    throw new Error(
-      `[evjs] ${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
-    );
-  }
-}
-
-function assertOptionalRscDebugBuildIdentifier(
-  value: unknown,
-  path: string,
-): void {
-  if (value === undefined) return;
-  assertRscDebugBuildIdentifier(value, path);
-}
-
-function assertOptionalRscDebugString(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (typeof value !== "string") {
-    throw new Error(`[evjs] ${path} must be a string when provided.`);
-  }
-  if (!value) {
-    throw new Error(`[evjs] ${path} must be a non-empty string.`);
-  }
-  if (value.trim() !== value) {
-    throw new Error(
-      `[evjs] ${path} must not include leading or trailing whitespace.`,
-    );
-  }
-}
-
-function assertOptionalRscDebugHtml(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (typeof value !== "string") {
-    throw new Error(`[evjs] ${path} must be a string when provided.`);
-  }
-}
-
-function assertRscDebugAssets(value: unknown, path: string): void {
-  if (!isRecord(value)) {
-    throw new Error(`[evjs] ${path} must be an object.`);
-  }
-  assertRscDebugStringArray(value.js, `${path}.js`);
-  assertRscDebugStringArray(value.css, `${path}.css`);
-}
-
-function assertRscDebugStringArray(value: unknown, path: string): void {
-  if (!Array.isArray(value)) {
-    throw new Error(`[evjs] ${path} must contain only non-empty strings.`);
-  }
-  for (const item of value) {
-    if (typeof item !== "string" || !item) {
-      throw new Error(`[evjs] ${path} must contain only non-empty strings.`);
-    }
-    if (item.trim() !== item) {
-      throw new Error(
-        `[evjs] ${path} item "${item}" must not contain leading or trailing whitespace.`,
-      );
-    }
-  }
-}
-
-function assertOptionalRscDebugRecord(value: unknown, path: string): void {
-  if (value === undefined) return;
-  if (!isRecord(value)) {
-    throw new Error(`[evjs] ${path} must be an object when provided.`);
-  }
 }
 
 function shouldHydrate(options: {

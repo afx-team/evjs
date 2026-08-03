@@ -31,10 +31,8 @@ if (!serverEntryPath || !distDir || !port || !frameworkRuntimeJson) {
   process.exit(1);
 }
 
-// Load the server bundle — this registers all server functions
-// and exports the fetch handler (app.fetch) as `default`.
-// We use the bundle's own fetch handler to ensure it shares the same
-// server function registry that registerServerReference populated.
+// Load the server bundle. Its generated entry owns the server function
+// registry and exports the matching fetch handler (app.fetch) as `default`.
 globalThis.__EVJS_FRAMEWORK_RUNTIME__ = JSON.parse(frameworkRuntimeJson);
 const serverDir = path.dirname(serverEntryPath);
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {

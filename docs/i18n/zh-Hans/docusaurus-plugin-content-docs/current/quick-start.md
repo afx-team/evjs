@@ -76,7 +76,7 @@ export default definePageConfig({
 
 `title` 与 `meta` 是静态 core Page 元信息；`meta` 只生成
 `<meta name="..." content="...">`。已安装的 Page-aware 插件使用 `plugins`
-下生成的短 key，这些值不会自动发送到浏览器 runtime。
+下各自的 canonical id，这些值不会自动发送到浏览器 runtime。
 
 ## Page 私有代码
 

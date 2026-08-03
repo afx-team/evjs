@@ -1,6 +1,9 @@
 import { ServerError } from "@evjs/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "../src/app/app.js";
+import {
+  type CreateAppOptions,
+  createApp as createServerApp,
+} from "../src/app/app.js";
 import type {
   FrameworkRuntime,
   PprRegionCacheEntry,
@@ -13,18 +16,34 @@ import {
 import { createReactFrameworkServer } from "../src/framework-rendering/react.js";
 import { requestLogger } from "../src/index.js";
 import {
-  registerServerReference,
-  registry,
-} from "../src/server-functions/register.js";
+  createServerFunctionRegistry,
+  type ServerFn,
+  type ServerFunctionRegistry,
+} from "../src/server-functions/registry.js";
 
 type SpaFrameworkRuntime = FrameworkRuntime & {
   routing: Extract<FrameworkRuntime["routing"], { kind: "spa" }>;
 };
 
 describe("createApp", () => {
+  let serverFunctions: ServerFunctionRegistry;
+
   beforeEach(() => {
-    registry.clear();
+    serverFunctions = createServerFunctionRegistry();
   });
+
+  const registerServerFunction = (fn: ServerFn, id: string) =>
+    serverFunctions.register(id, fn);
+
+  function createApp(options?: CreateAppOptions) {
+    if (options === undefined) {
+      return createServerApp({ serverFunctions });
+    }
+    if (!options || typeof options !== "object" || Array.isArray(options)) {
+      return createServerApp(options);
+    }
+    return createServerApp({ ...options, serverFunctions });
+  }
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -34,7 +53,7 @@ describe("createApp", () => {
 
   it("uses the build-time endpoint define by default", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
 
     const app = createApp();
     const res = await app.request("/api/rpc", {
@@ -47,10 +66,48 @@ describe("createApp", () => {
     expect(await res.json()).toEqual({ result: "ok" });
   });
 
+  it("isolates server functions between apps in the same realm", async () => {
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
+    const firstFunctions = createServerFunctionRegistry();
+    const secondFunctions = createServerFunctionRegistry();
+    firstFunctions.register("shared", () => "first");
+    firstFunctions.register("first-only", () => "first-only");
+    secondFunctions.register("shared", () => "second");
+    secondFunctions.register("second-only", () => "second-only");
+    const firstApp = createServerApp({ serverFunctions: firstFunctions });
+    const secondApp = createServerApp({ serverFunctions: secondFunctions });
+    const call = (app: ReturnType<typeof createServerApp>, fnId: string) =>
+      app.request("/api/rpc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fnId, args: [] }),
+      });
+
+    const firstShared = await call(firstApp, "shared");
+    const secondShared = await call(secondApp, "shared");
+    expect(await firstShared.json()).toEqual({ result: "first" });
+    expect(await secondShared.json()).toEqual({ result: "second" });
+
+    const firstCannotCallSecond = await call(firstApp, "second-only");
+    const secondCannotCallFirst = await call(secondApp, "first-only");
+    expect(firstCannotCallSecond.status).toBe(404);
+    expect(await firstCannotCallSecond.json()).toEqual({
+      error: 'Server function "second-only" not found',
+      fnId: "second-only",
+      status: 404,
+    });
+    expect(secondCannotCallFirst.status).toBe(404);
+    expect(await secondCannotCallFirst.json()).toEqual({
+      error: 'Server function "first-only" not found',
+      fnId: "first-only",
+      status: 404,
+    });
+  });
+
   it("keeps server function endpoints exact without collapsing empty segments", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
     const serverFunction = vi.fn(async () => "ok");
-    registerServerReference(serverFunction, "fn1");
+    registerServerFunction(serverFunction, "fn1");
     const app = createApp();
     const request = (path: string) =>
       app.request(path, {
@@ -71,7 +128,7 @@ describe("createApp", () => {
 
   it("uses the framework runtime server function endpoint when available", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/stale/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/framework",
@@ -101,7 +158,7 @@ describe("createApp", () => {
 
   it("defaults omitted server function RPC args to an empty array", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference((...args: unknown[]) => args, "fn1");
+    registerServerFunction((...args: unknown[]) => args, "fn1");
 
     const app = createApp();
     const res = await app.request("/api/rpc", {
@@ -116,7 +173,7 @@ describe("createApp", () => {
 
   it("accepts server function RPC requests with JSON content type parameters", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
 
     const app = createApp();
     const res = await app.request("/api/rpc", {
@@ -131,7 +188,7 @@ describe("createApp", () => {
 
   it("rejects server function RPC requests without a JSON content type", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
 
     const app = createApp();
     const unsupported = await app.request("/api/rpc", {
@@ -162,7 +219,7 @@ describe("createApp", () => {
 
   it("returns structured success JSON for undefined server function results", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => undefined, "void-fn");
+    registerServerFunction(async () => undefined, "void-fn");
 
     const app = createApp();
     const res = await app.request("/api/rpc", {
@@ -177,7 +234,7 @@ describe("createApp", () => {
 
   it("rejects malformed server function RPC request bodies", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
     const app = createApp();
 
     const invalidJson = await app.request("/api/rpc", {
@@ -206,7 +263,7 @@ describe("createApp", () => {
 
   it("rejects malformed server function RPC payloads", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
     const app = createApp();
 
     const missingFn = await app.request("/api/rpc", {
@@ -258,28 +315,9 @@ describe("createApp", () => {
     });
   });
 
-  it("returns structured JSON for malformed server function registry entries", async () => {
-    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registry.set("fn1", "not a function" as never);
-    const app = createApp();
-
-    const res = await app.request("/api/rpc", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fnId: "fn1", args: [] }),
-    });
-
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({
-      error: '[evjs] Server function "fn1" registry entry must be a function.',
-      fnId: "fn1",
-      status: 500,
-    });
-  });
-
   it("returns structured JSON for oversized server function RPC payloads", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => "ok", "fn1");
+    registerServerFunction(async () => "ok", "fn1");
     const app = createApp();
 
     const res = await app.request("/api/rpc", {
@@ -301,8 +339,8 @@ describe("createApp", () => {
 
   it("returns structured JSON when server function results are not serializable", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
-    registerServerReference(async () => 1n, "big-result");
-    registerServerReference(async () => {
+    registerServerFunction(async () => 1n, "big-result");
+    registerServerFunction(async () => {
       throw new ServerError("Invalid data", {
         status: 400,
         data: { value: 1n },
@@ -385,6 +423,9 @@ describe("createApp", () => {
     );
     expect(() => createApp({ middlewares: [null as never] })).toThrow(
       "[evjs] createApp() middlewares must be an array of middleware functions.",
+    );
+    expect(() => createServerApp({ serverFunctions: {} as never })).toThrow(
+      "[evjs] createApp() serverFunctions must be created by createServerFunctionRegistry().",
     );
     expect(() => createApp({ framework: [] as never })).toThrow(
       "[evjs] createApp() framework must be a framework server object.",
@@ -755,6 +796,27 @@ describe("createApp", () => {
     );
   });
 
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["NaN", Number.NaN],
+    ["infinite", Number.POSITIVE_INFINITY],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+    ["non-number", "2"],
+  ])("rejects a %s PPR region cache entry limit", (_name, limit) => {
+    expect(() =>
+      createApp({
+        framework: {
+          runtime: createManifest(),
+          ppr: { maxRegionCacheEntries: limit },
+        } as never,
+      }),
+    ).toThrow(
+      "[evjs] createApp() framework.ppr.maxRegionCacheEntries must be a positive integer.",
+    );
+  });
+
   it("rejects ambiguous runtime path encodings before mounting handlers", () => {
     const unicodeBasePath = createManifest();
     unicodeBasePath.runtime.server.basePath = "/运行时";
@@ -784,7 +846,6 @@ describe("createApp", () => {
             path: "",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           },
         ],
       }),
@@ -796,7 +857,6 @@ describe("createApp", () => {
             path: "api/items",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -808,7 +868,6 @@ describe("createApp", () => {
             path: "/api/items ",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -820,7 +879,6 @@ describe("createApp", () => {
             path: "/api/items?filter=all",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -834,7 +892,6 @@ describe("createApp", () => {
             path: "/api/items/:",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -848,7 +905,6 @@ describe("createApp", () => {
             path: "/api/items/:constructor",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -862,7 +918,6 @@ describe("createApp", () => {
             path: "/api/users/:userId/posts/:userId",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -876,7 +931,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: null,
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -888,7 +942,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { get: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -902,7 +955,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { GET: "not a function" },
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -914,7 +966,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: {},
             middlewares: [],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -928,7 +979,6 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { GET: async () => new Response("ok") },
             middlewares: [null],
-            allowedMethods: ["GET"],
           } as never,
         ],
       }),
@@ -942,69 +992,11 @@ describe("createApp", () => {
             path: "/api/items",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["CONNECT"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      "[evjs] createApp() routes[0].allowedMethods must be a non-empty array of supported HTTP methods.",
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["POST"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      '[evjs] createApp() routes[0].allowedMethods must include method handler "GET".',
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["GET", "GET"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      '[evjs] createApp() routes[0].allowedMethods must not contain duplicate method "GET".',
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["GET", "POST"],
-          } as never,
-        ],
-      }),
-    ).toThrow(
-      '[evjs] createApp() routes[0].allowedMethods includes method "POST" without a handler.',
-    );
-    expect(() =>
-      createApp({
-        routes: [
-          {
-            path: "/api/items",
-            methods: { GET: async () => new Response("ok") },
-            middlewares: [],
-            allowedMethods: ["GET"],
           },
           {
             path: "/api/items",
             methods: { POST: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["POST"],
           },
         ],
       }),
@@ -1018,13 +1010,11 @@ describe("createApp", () => {
             path: "/api/items/:id",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           },
           {
             path: "/api/items/:itemId",
             methods: { POST: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["POST"],
           },
         ],
       }),
@@ -1038,13 +1028,11 @@ describe("createApp", () => {
             path: "/users",
             methods: { GET: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["GET"],
           },
           {
             path: "/%75sers",
             methods: { POST: async () => new Response("ok") },
             middlewares: [],
-            allowedMethods: ["POST"],
           },
         ],
       }),
@@ -2221,11 +2209,77 @@ describe("createApp", () => {
     });
 
     const res = await app.request("/dashboard");
+    const head = await app.request("/dashboard", { method: "HEAD" });
+    const personalized = await app.request("/dashboard", {
+      headers: { Cookie: "session=user" },
+    });
 
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("s-maxage=15");
     expect(res.headers.get("x-evjs-ppr")).toBe("merged");
     expect(await res.text()).toBe("<main><p>hero</p><p>inventory</p></main>");
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await head.text()).toBe("");
+    expect(personalized.status).toBe(200);
+    expect(personalized.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("keeps merged PPR pages private when a region response is private", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return '<main><div data-evjs-ppr-region="hero">fallback</div></main>';
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default() {
+                  return new Response("<p>private hero</p>", {
+                    headers: {
+                      "Cache-Control": "private, max-age=5",
+                      "Content-Type": "text/html",
+                    },
+                  });
+                },
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const response = await app.request("/dashboard");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("Cache-Control")).not.toContain("s-maxage");
+    await expect(response.text()).resolves.toBe(
+      "<main><p>private hero</p></main>",
+    );
   });
 
   it("sets no-store cache headers on PPR pages with dynamic regions", async () => {
@@ -2272,11 +2326,11 @@ describe("createApp", () => {
     const head = await app.request("/dashboard", { method: "HEAD" });
 
     expect(page.status).toBe(200);
-    expect(page.headers.get("Cache-Control")).toBe("no-store");
+    expect(page.headers.get("Cache-Control")).toBe("private, no-store");
     expect(page.headers.get("x-evjs-ppr")).toBe("merged");
     expect(await page.text()).toBe("<main><p>1</p></main>");
     expect(head.status).toBe(200);
-    expect(head.headers.get("Cache-Control")).toBe("no-store");
+    expect(head.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await head.text()).toBe("");
     expect(regionRenderCount).toBe(1);
   });
@@ -2336,7 +2390,63 @@ describe("createApp", () => {
     expect(await res.text()).toBe("<main><p>hero</p></main>");
   });
 
-  it("derives streamed PPR page cache headers from region revalidate policies", async () => {
+  it("keeps PPR pages private when the shell sets a cookie", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return new Response(
+                    '<main><div data-evjs-ppr-region="hero">fallback</div></main>',
+                    {
+                      headers: {
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Set-Cookie": "session=shell; Path=/",
+                      },
+                    },
+                  );
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => "<p>hero</p>",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const response = await app.request("/dashboard");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("Set-Cookie")).toBe("session=shell; Path=/");
+    await expect(response.text()).resolves.toBe("<main><p>hero</p></main>");
+  });
+
+  it("keeps streamed PPR pages private until region headers are known", async () => {
     const manifest = createManifest();
     manifest.routing.pages.dashboard.ppr = {
       delivery: "stream",
@@ -2383,7 +2493,7 @@ describe("createApp", () => {
     const res = await app.request("/dashboard");
 
     expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toBe("s-maxage=30");
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(res.headers.get("x-evjs-ppr")).toBe("stream");
     const html = await res.text();
     expect(html).toContain('data-evjs-ppr-stream-region="hero"');
@@ -2936,7 +3046,117 @@ describe("createApp", () => {
     expect(renderCount).toBe(1);
   });
 
-  it("uses a custom PPR region cache when provided", async () => {
+  it("evicts the least recently used built-in PPR cache entry", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        ppr: { maxRegionCacheEntries: 2 },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default: () => `<p>${++renderCount}</p>`,
+              }),
+            },
+          },
+        }),
+      },
+    });
+    const regionUrl = (view: string) =>
+      `/__evjs/ppr/dashboard/inventory?url=${encodeURIComponent(
+        `/dashboard?view=${view}`,
+      )}`;
+
+    const first = await app.request(regionUrl("first"));
+    const second = await app.request(regionUrl("second"));
+    const promotedFirst = await app.request(regionUrl("first"));
+    const third = await app.request(regionUrl("third"));
+    const evictedSecond = await app.request(regionUrl("second"));
+
+    expect(first.headers.get("x-evjs-cache")).toBe("MISS");
+    await expect(first.text()).resolves.toBe("<p>1</p>");
+    expect(second.headers.get("x-evjs-cache")).toBe("MISS");
+    await expect(second.text()).resolves.toBe("<p>2</p>");
+    expect(promotedFirst.headers.get("x-evjs-cache")).toBe("HIT");
+    await expect(promotedFirst.text()).resolves.toBe("<p>1</p>");
+    expect(third.headers.get("x-evjs-cache")).toBe("MISS");
+    await expect(third.text()).resolves.toBe("<p>3</p>");
+    expect(evictedSecond.headers.get("x-evjs-cache")).toBe("MISS");
+    await expect(evictedSecond.text()).resolves.toBe("<p>4</p>");
+    expect(renderCount).toBe(4);
+  });
+
+  it("isolates cached PPR regions by request origin", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default(ctx: ServerRenderContext) {
+                  renderCount += 1;
+                  return `<p>${new URL(ctx.request.url).origin}</p>`;
+                },
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const tenantA = await app.request(
+      "https://tenant-a.test/__evjs/ppr/dashboard/inventory",
+    );
+    const tenantB = await app.request(
+      "https://tenant-b.test/__evjs/ppr/dashboard/inventory",
+    );
+    const tenantAHit = await app.request(
+      "https://tenant-a.test/__evjs/ppr/dashboard/inventory",
+    );
+
+    expect(tenantA.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await tenantA.text()).toBe("<p>https://tenant-a.test</p>");
+    expect(tenantB.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await tenantB.text()).toBe("<p>https://tenant-b.test</p>");
+    expect(tenantAHit.headers.get("x-evjs-cache")).toBe("HIT");
+    expect(await tenantAHit.text()).toBe("<p>https://tenant-a.test</p>");
+    expect(renderCount).toBe(2);
+  });
+
+  it("bypasses shared PPR cache for Cookie and Authorization requests", async () => {
     const manifest = createManifest();
     manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
@@ -2968,6 +3188,254 @@ describe("createApp", () => {
               kind: "ppr-region",
               owner: { pageId: "dashboard", regionId: "inventory" },
               load: async () => ({
+                default(ctx: ServerRenderContext) {
+                  renderCount += 1;
+                  const cookie = ctx.request.headers.get("Cookie");
+                  const authorization =
+                    ctx.request.headers.get("Authorization");
+                  const identity = cookie ?? authorization ?? "anonymous";
+                  const headers = new Headers({
+                    "Content-Type": "text/html",
+                  });
+                  if (cookie) {
+                    headers.set(
+                      "Set-Cookie",
+                      `seen=${encodeURIComponent(cookie)}; Path=/`,
+                    );
+                  }
+                  return new Response(`<p>${renderCount}:${identity}</p>`, {
+                    headers,
+                  });
+                },
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const publicMiss = await app.request("/__evjs/ppr/dashboard/inventory");
+    const userA = await app.request("/__evjs/ppr/dashboard/inventory", {
+      headers: { Cookie: "user=A" },
+    });
+    const userB = await app.request("/__evjs/ppr/dashboard/inventory", {
+      headers: { Cookie: "user=B" },
+    });
+    const authorized = await app.request("/__evjs/ppr/dashboard/inventory", {
+      headers: { Authorization: "Bearer secret" },
+    });
+    const publicHit = await app.request("/__evjs/ppr/dashboard/inventory");
+
+    expect(publicMiss.headers.get("x-evjs-cache")).toBe("MISS");
+    await expect(publicMiss.text()).resolves.toBe("<p>1:anonymous</p>");
+    expect(userA.headers.get("x-evjs-cache")).toBeNull();
+    expect(userA.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(userA.headers.get("Set-Cookie")).toBe("seen=user%3DA; Path=/");
+    await expect(userA.text()).resolves.toBe("<p>2:user=A</p>");
+    expect(userB.headers.get("x-evjs-cache")).toBeNull();
+    expect(userB.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(userB.headers.get("Set-Cookie")).toBe("seen=user%3DB; Path=/");
+    await expect(userB.text()).resolves.toBe("<p>3:user=B</p>");
+    expect(authorized.headers.get("x-evjs-cache")).toBeNull();
+    expect(authorized.headers.get("Cache-Control")).toBe("private, no-store");
+    await expect(authorized.text()).resolves.toBe("<p>4:Bearer secret</p>");
+    expect(publicHit.headers.get("x-evjs-cache")).toBe("HIT");
+    await expect(publicHit.text()).resolves.toBe("<p>1:anonymous</p>");
+    expect(regionCache.get).toHaveBeenCalledTimes(2);
+    expect(regionCache.set).toHaveBeenCalledTimes(1);
+    expect(renderCount).toBe(4);
+  });
+
+  it("does not store PPR responses that forbid shared caching", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const regionCache = {
+      get: vi.fn(() => undefined),
+      set: vi.fn(),
+    };
+    const restrictedHeaders: Array<Record<string, string>> = [
+      { "Set-Cookie": "session=first; Path=/" },
+      { "Cache-Control": "PRIVATE, max-age=5" },
+      { "Cache-Control": "No-Store" },
+      { "Cache-Control": "No-Cache" },
+      { "Cache-Control": "public, max-age=0" },
+      { Vary: "*" },
+      { Vary: "Accept-Language" },
+      { Pragma: "no-cache" },
+    ];
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        ppr: { regionCache },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default() {
+                  renderCount += 1;
+                  const headers = new Headers({
+                    "Content-Type": "text/html",
+                    ...restrictedHeaders[renderCount - 1],
+                  });
+                  return new Response(`<p>${renderCount}</p>`, { headers });
+                },
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const setCookie = await app.request("/__evjs/ppr/dashboard/inventory");
+    const privateResponse = await app.request(
+      "/__evjs/ppr/dashboard/inventory",
+    );
+    const noStore = await app.request("/__evjs/ppr/dashboard/inventory");
+    const noCache = await app.request("/__evjs/ppr/dashboard/inventory");
+    const zeroFreshness = await app.request("/__evjs/ppr/dashboard/inventory");
+    const varyAll = await app.request("/__evjs/ppr/dashboard/inventory");
+    const varyHeader = await app.request("/__evjs/ppr/dashboard/inventory");
+    const legacyNoCache = await app.request("/__evjs/ppr/dashboard/inventory");
+
+    expect(setCookie.headers.get("Set-Cookie")).toBe("session=first; Path=/");
+    expect(setCookie.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(setCookie.headers.get("x-evjs-cache")).toBeNull();
+    await expect(setCookie.text()).resolves.toBe("<p>1</p>");
+    expect(privateResponse.headers.get("Cache-Control")).toBe(
+      "PRIVATE, max-age=5",
+    );
+    expect(privateResponse.headers.get("x-evjs-cache")).toBeNull();
+    await expect(privateResponse.text()).resolves.toBe("<p>2</p>");
+    expect(noStore.headers.get("Cache-Control")).toBe("No-Store");
+    expect(noStore.headers.get("x-evjs-cache")).toBeNull();
+    await expect(noStore.text()).resolves.toBe("<p>3</p>");
+    for (const [index, response] of [
+      noCache,
+      zeroFreshness,
+      varyAll,
+      varyHeader,
+      legacyNoCache,
+    ].entries()) {
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(response.headers.get("x-evjs-cache")).toBeNull();
+      await expect(response.text()).resolves.toBe(`<p>${index + 4}</p>`);
+    }
+    expect(varyAll.headers.get("Vary")).toBe("*");
+    expect(varyHeader.headers.get("Vary")).toBe("Accept-Language");
+    expect(legacyNoCache.headers.get("Pragma")).toBe("no-cache");
+    expect(regionCache.get).toHaveBeenCalledTimes(restrictedHeaders.length);
+    expect(regionCache.set).not.toHaveBeenCalled();
+  });
+
+  it("rejects private entries returned by a PPR cache provider", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const encoder = new TextEncoder();
+    let entry: PprRegionCacheEntry | undefined = {
+      expiresAt: Date.now() + 60_000,
+      status: 200,
+      statusText: "",
+      headers: [
+        ["cache-control", "private, no-store"],
+        ["content-type", "text/html; charset=utf-8"],
+        ["set-cookie", "session=user-a; Path=/"],
+      ],
+      body: encoder.encode("<p>user-a</p>").buffer,
+    };
+    const regionCache = {
+      get: vi.fn(() => entry),
+      set: vi.fn((_key: string, nextEntry: PprRegionCacheEntry) => {
+        entry = nextEntry;
+      }),
+      delete: vi.fn(() => {
+        entry = undefined;
+      }),
+    };
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        ppr: { regionCache },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default: () => "<p>fresh</p>",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const response = await app.request("/__evjs/ppr/dashboard/inventory");
+
+    expect(response.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(response.headers.get("Cache-Control")).toBe("s-maxage=60");
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    await expect(response.text()).resolves.toBe("<p>fresh</p>");
+    expect(regionCache.delete).toHaveBeenCalledTimes(1);
+    expect(regionCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a custom PPR region cache when provided", async () => {
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const entries = new Map<string, PprRegionCacheEntry>();
+    const regionCache = {
+      get: vi.fn((key: string) => entries.get(key)),
+      set: vi.fn((key: string, entry: PprRegionCacheEntry) => {
+        entries.set(key, entry);
+      }),
+    };
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        ppr: { maxRegionCacheEntries: 1, regionCache },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
                 default: () => `<p>${++renderCount}</p>`,
               }),
             },
@@ -2976,16 +3444,26 @@ describe("createApp", () => {
       },
     });
 
-    const first = await app.request("/__evjs/ppr/dashboard/inventory");
-    const second = await app.request("/__evjs/ppr/dashboard/inventory");
+    const first = await app.request(
+      "/__evjs/ppr/dashboard/inventory?url=%2Fdashboard%3Fview%3Dfirst",
+    );
+    const second = await app.request(
+      "/__evjs/ppr/dashboard/inventory?url=%2Fdashboard%3Fview%3Dsecond",
+    );
+    const firstHit = await app.request(
+      "/__evjs/ppr/dashboard/inventory?url=%2Fdashboard%3Fview%3Dfirst",
+    );
 
     expect(first.headers.get("x-evjs-cache")).toBe("MISS");
     expect(await first.text()).toBe("<p>1</p>");
-    expect(second.headers.get("x-evjs-cache")).toBe("HIT");
-    expect(await second.text()).toBe("<p>1</p>");
-    expect(renderCount).toBe(1);
-    expect(regionCache.get).toHaveBeenCalledTimes(2);
-    expect(regionCache.set).toHaveBeenCalledTimes(1);
+    expect(second.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await second.text()).toBe("<p>2</p>");
+    expect(firstHit.headers.get("x-evjs-cache")).toBe("HIT");
+    expect(await firstHit.text()).toBe("<p>1</p>");
+    expect(entries.size).toBe(2);
+    expect(renderCount).toBe(2);
+    expect(regionCache.get).toHaveBeenCalledTimes(3);
+    expect(regionCache.set).toHaveBeenCalledTimes(2);
   });
 
   it("serves stale PPR regions while refreshing the cache", async () => {

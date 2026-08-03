@@ -280,7 +280,7 @@ static JSON data. Core owns `title`, named `meta`, `render`, `hydrate`,
 `prerender`, and `rsc`. `meta` accepts string key/value pairs and creates only
 `<meta name="key" content="value">`; `property`, `charset`, links, scripts,
 dynamic metadata, and a general head DSL are outside this contract. Installed
-Page-aware plugins use generated short keys under `plugins`.
+Page-aware plugins use their canonical ids under `plugins`.
 
 The resolved config is attached to the same normalized Page identity in SPA
 and MPA. In SPA mode, the deepest active Page owns title/meta with no parent

@@ -244,20 +244,20 @@ The factory call is the only Application-level plugin configuration surface.
 Its argument is typed by the plugin package and may contain executable options
 when that package explicitly supports them.
 
-A Page-aware installed plugin exposes a short key in the adjacent
+A Page-aware installed plugin exposes its canonical `id` in the adjacent
 `page.config.ts#plugins` map. Application and Page contracts are independent
 and never merge with each other. Authored fields deep-merge over defaults
-within their own contract. With a normal factory call, an omitted Page key uses
-Page defaults when they exist and otherwise disables that Page. A defaultable
+within their own contract. With a normal factory call, an omitted plugin entry
+uses Page defaults when they exist and otherwise disables that Page. A defaultable
 Page contract also exposes `forPages()`, where omission always disables the
 Page. `false` disables the plugin for a Page, `true` requires Page defaults,
 and an object enables it with an independently typed, strict-JSON Page value.
 
 `ev prepare`, `ev dev`, and `ev build` generate `src/plugin-types.d.ts` as a
-stable bridge to `ev.config.ts`. TypeScript config provides Page key and value
-completion without a plugin import; conditional or widened plugin arrays expose
-only entries that are statically certain to install. The declaration lives in
-`src`, not `.ev`, because normal project tsconfigs include `src`.
+stable bridge to `ev.config.ts`. TypeScript config provides plugin id and value
+completion without a plugin import; conditional or widened plugin arrays
+expose only entries that are statically certain to install. The declaration
+lives in `src`, not `.ev`, because normal project tsconfigs include `src`.
 
 Route and Document objects do not expose separate plugin configuration. A
 Page-aware plugin derives route patterns, Document ownership, and other
@@ -297,7 +297,7 @@ omit `hydrate`; explicit SSR/SSG Pages may select `"load"` or `"none"`. Each
 `meta` entry becomes
 `<meta name="key" content="value">`; it does not represent `property`,
 `charset`, `link`, `script`, dynamic metadata, or an arbitrary head DSL.
-Plugin-owned Page values live below `plugins` and use generated short keys.
+Plugin-owned Page values live below `plugins` and use canonical plugin ids.
 The resolved Page objects must be static JSON data. Core title and meta values
 are materialized for the active Page; plugin values enter Page analysis but
 require their plugin to explicitly project runtime data or behavior through
@@ -420,7 +420,7 @@ separate SPA-only configuration input that normalizes into the same CoreGraph.
 - Keep shared business modules outside individual Page directories when several
   Pages use them.
 - Put static document title and named meta in the core `title` and `meta`
-  fields. Keep product/plugin capability data under generated short keys in
+  fields. Keep product/plugin capability data under canonical plugin ids in
   `page.config.ts#plugins`.
 - Keep static title, named meta, rendering settings, and Page plugin values
   together in the adjacent `page.config.ts` module.

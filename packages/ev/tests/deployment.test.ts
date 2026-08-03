@@ -9,8 +9,8 @@ import { createBuildResult } from "../src/_internal/build/build-result.js";
 import { createStaticPageDocumentOutput } from "../src/_internal/build/page-document-output.js";
 import {
   createLatePluginContext,
-  runBuildEndHooks,
-  runBuildOutputHooks,
+  runAfterBuildHooks,
+  runTransformOutputHooks,
 } from "../src/_internal/build/plugin-lifecycle.js";
 import {
   createDeploymentArtifact,
@@ -19,9 +19,11 @@ import {
   createStaticDeploymentFiles,
   edgeDeploymentAdapter,
   nodeDeploymentAdapter,
+  type StaticDeploymentAdapterOptions,
+  type StaticDeploymentCompatibility,
   staticDeploymentAdapter,
 } from "../src/deployment/index.js";
-import type { PluginContext, PluginHooks } from "../src/plugin/index.js";
+import type { PluginHooks, PluginSetupContext } from "../src/plugin/index.js";
 
 const tempDirs: string[] = [];
 const NFC_HANGUL_SYLLABLE = "\uac00";
@@ -44,14 +46,16 @@ describe("createDeploymentArtifact", () => {
   it("removes analysis watch capabilities from late hook contexts", () => {
     const context = {
       mode: "development",
-      command: "dev",
       cwd: "/project",
-      config: {} as PluginContext["config"],
-      logger: {} as PluginContext["logger"],
+      config: {} as PluginSetupContext["config"],
+      logger: {} as PluginSetupContext["logger"],
       addWatchFile() {},
-    } satisfies PluginContext;
+    } satisfies PluginSetupContext;
 
-    expect(createLatePluginContext(context)).not.toHaveProperty("addWatchFile");
+    const lateContext = createLatePluginContext(context);
+    expect(lateContext.mode).toBe("development");
+    expect(lateContext).not.toHaveProperty("command");
+    expect(lateContext).not.toHaveProperty("addWatchFile");
   });
 
   it("creates a platform-neutral deployment artifact from BuildOutput", () => {
@@ -259,6 +263,9 @@ describe("createDeploymentArtifact", () => {
       defaultPort: 8080,
       includeAssets: false,
     });
+    if (!files.serverModule) {
+      throw new Error("Expected the Node deployment server module.");
+    }
 
     expect(files.artifactFileName).toBe("deployment.node.json");
     expect(files.serverFileName).toBe("server.mjs");
@@ -269,14 +276,16 @@ describe("createDeploymentArtifact", () => {
     expect(files.serverModule).toContain(
       "globalThis.__EVJS_FRAMEWORK_RUNTIME__ =",
     );
-    expect(files.serverModule).toContain('"buildId": "build-1"');
+    expect(evaluateGeneratedFrameworkRuntime(files.serverModule).buildId).toBe(
+      "build-1",
+    );
     expect(files.serverModule).not.toContain('"renderers"');
     expect(files.serverModule).not.toContain("readJsonIfExists");
     expect(files.serverModule).toContain(
       "globalThis.__EVJS_SERVER_MODULE_LOADER__",
     );
     expect(files.serverModule).toContain(
-      "await import(pathToFileURL(resolveServerArtifact(serverEntry)).href)",
+      "await import(pathToFileURL(await resolveServerArtifact(serverEntry)).href)",
     );
     expect(files.serverModule).toContain("if (!serverArtifacts.has(asset))");
     expect(files.serverModule).toContain("unwrapServerHandler");
@@ -295,6 +304,23 @@ describe("createDeploymentArtifact", () => {
     );
     expect(files.serverModule).toContain("PORT");
     expect(files.serverModule).toContain("8080");
+  });
+
+  it("preserves __proto__ Page ids in generated Node and Edge runtimes", () => {
+    const output = createPrototypePageDeploymentOutput();
+    const nodeModule = createNodeDeploymentFiles(output).serverModule;
+    const edgeModule = createEdgeDeploymentFiles(output).workerModule;
+
+    expect(nodeModule).toBeDefined();
+    expect(edgeModule).toBeDefined();
+    for (const source of [nodeModule, edgeModule]) {
+      const runtime = evaluateGeneratedFrameworkRuntime(source ?? "");
+      expect(Object.hasOwn(runtime.routing.pages, "__proto__")).toBe(true);
+      expect(runtime.routing.pages.__proto__).toMatchObject({
+        path: "/__proto__",
+        routeId: "__proto__",
+      });
+    }
   });
 
   it("rejects deployment file paths and cross-platform file aliases", () => {
@@ -494,7 +520,7 @@ describe("createDeploymentArtifact", () => {
     }
   });
 
-  it("stops buildOutput hooks immediately after an invalid server artifact mutation", async () => {
+  it("stops transformOutput hooks immediately after an invalid server artifact mutation", async () => {
     const output = createServerDeploymentOutput({
       rootDir: "dist",
       publicDir: "dist/client",
@@ -503,26 +529,33 @@ describe("createDeploymentArtifact", () => {
     const events: string[] = [];
     const hooks: PluginHooks[] = [
       {
-        buildOutput(current) {
+        transformOutput(current) {
           current.server.assets.js = ["../../outside.js"];
         },
       },
       {
-        buildOutput() {
+        transformOutput() {
           events.push("second-hook");
         },
       },
     ];
+    const pluginContext = {
+      mode: "production",
+      cwd: "/project",
+      config: {} as PluginSetupContext["config"],
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
 
     await expect(
-      runBuildOutputHooks(hooks, output, {} as never, () => {
+      runTransformOutputHooks(hooks, output, pluginContext, () => {
         assertFrameworkManifestShape(
           output,
-          "BuildOutput after buildOutput hooks",
+          "BuildOutput after transformOutput hooks",
         );
       }),
     ).rejects.toThrow(
-      "BuildOutput after buildOutput hooks.server.assets.js[0] must be a non-empty portable server-relative artifact path",
+      "BuildOutput after transformOutput hooks.server.assets.js[0] must be a non-empty portable server-relative artifact path",
     );
     expect(events).toEqual([]);
   });
@@ -538,7 +571,10 @@ describe("createDeploymentArtifact", () => {
     const edgeFiles = createEdgeDeploymentFiles(output);
 
     expect(nodeFiles.serverModule).toContain(
-      'const serverDir = path.join(__dirname, "backend");',
+      "const serverDir = await resolveDeploymentDirectory(",
+    );
+    expect(nodeFiles.serverModule).toContain(
+      'path.join(deploymentRoot, "backend"),',
     );
     expect(edgeFiles.workerModule).toContain(
       'const serverAssetPrefix = "./backend/";',
@@ -550,7 +586,7 @@ describe("createDeploymentArtifact", () => {
       'await import("./backend/server.js")',
     );
     expect(nodeFiles.serverModule).not.toContain(
-      'const serverDir = path.join(__dirname, "server");',
+      'path.join(deploymentRoot, "server"),',
     );
     expect(edgeFiles.workerModule).not.toContain('import("./server/');
   });
@@ -670,6 +706,11 @@ describe("createDeploymentArtifact", () => {
       unsupportedCapabilities: [],
     });
     expect(files.artifact.metadata?.static).toEqual(files.compatibility);
+    expect(files.artifact.metadata?.static).not.toBe(files.compatibility);
+    expect(
+      (files.artifact.metadata?.static as StaticDeploymentCompatibility)
+        .unsupportedCapabilities,
+    ).not.toBe(files.compatibility.unsupportedCapabilities);
     expect(files.redirects).toBe(
       [
         "/orders/:orderId /index.html 200",
@@ -1254,7 +1295,7 @@ describe("createDeploymentArtifact", () => {
     );
   });
 
-  it("isolates earlier buildEnd mutations from deployment adapters", async () => {
+  it("isolates earlier afterBuild mutations from deployment adapters", async () => {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-deploy-"));
     const outsideDir = `${rootDir}-poisoned-build-end`;
     tempDirs.push(rootDir, outsideDir);
@@ -1270,7 +1311,7 @@ describe("createDeploymentArtifact", () => {
       functionPath: string;
     }> = [];
     const mutator: PluginHooks = {
-      buildEnd(result) {
+      afterBuild(result) {
         const route = result.output.routes[0];
         if (!route) throw new Error("Expected one client Route.");
         result.output.paths.rootDir = outsideDir;
@@ -1282,7 +1323,7 @@ describe("createDeploymentArtifact", () => {
       },
     };
     const observer: PluginHooks = {
-      buildEnd(result) {
+      afterBuild(result) {
         observations.push({
           rootDir: result.output.paths.rootDir,
           routePath: result.output.routes[0]?.path,
@@ -1296,7 +1337,7 @@ describe("createDeploymentArtifact", () => {
     } as never);
     if (!adapterHooks) throw new Error("Expected deployment adapter hooks.");
 
-    await runBuildEndHooks(
+    await runAfterBuildHooks(
       [mutator, observer, adapterHooks],
       createBuildResult(output, false),
     );
@@ -1324,7 +1365,7 @@ describe("createDeploymentArtifact", () => {
     ).rejects.toThrow();
   });
 
-  it("preflights deployment adapter outputs before any buildEnd write", async () => {
+  it("preflights deployment adapter outputs before any afterBuild write", async () => {
     for (const [nodeFileName, edgeFileName] of [
       ["shared.json", "SHARED.JSON"],
       [`${NFC_HANGUL_SYLLABLE}.json`, `${NFD_HANGUL_SYLLABLE}.json`],
@@ -1338,8 +1379,8 @@ describe("createDeploymentArtifact", () => {
       });
       const events: string[] = [];
       const observer: PluginHooks = {
-        buildEnd() {
-          events.push("buildEnd");
+        afterBuild() {
+          events.push("afterBuild");
         },
       };
       const nodeHooks = await nodeDeploymentAdapter({
@@ -1353,7 +1394,7 @@ describe("createDeploymentArtifact", () => {
       }
 
       await expect(
-        runBuildEndHooks(
+        runAfterBuildHooks(
           [observer, nodeHooks, edgeHooks],
           createBuildResult(output, false),
         ),
@@ -1381,8 +1422,8 @@ describe("createDeploymentArtifact", () => {
     });
     const events: string[] = [];
     const observer: PluginHooks = {
-      buildEnd() {
-        events.push("buildEnd");
+      afterBuild() {
+        events.push("afterBuild");
       },
     };
     const nodeHooks = await nodeDeploymentAdapter({
@@ -1396,7 +1437,7 @@ describe("createDeploymentArtifact", () => {
     }
 
     await expect(
-      runBuildEndHooks(
+      runAfterBuildHooks(
         [observer, nodeHooks, staticHooks],
         createBuildResult(output, false),
       ),
@@ -1416,8 +1457,8 @@ describe("createDeploymentArtifact", () => {
     });
     const events: string[] = [];
     const observer: PluginHooks = {
-      buildEnd() {
-        events.push("buildEnd");
+      afterBuild() {
+        events.push("afterBuild");
       },
     };
     const staticHooks = await staticDeploymentAdapter({
@@ -1426,7 +1467,7 @@ describe("createDeploymentArtifact", () => {
     if (!staticHooks) throw new Error("Expected deployment adapter hooks.");
 
     await expect(
-      runBuildEndHooks(
+      runAfterBuildHooks(
         [observer, staticHooks],
         createBuildResult(output, false),
         {
@@ -1443,6 +1484,103 @@ describe("createDeploymentArtifact", () => {
     ).rejects.toThrow();
   });
 
+  it("uses one immutable adapter-options snapshot for preflight and writes", async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-deploy-"));
+    tempDirs.push(rootDir);
+    const publicDir = path.join(rootDir, "client");
+    const serverDir = path.join(rootDir, "server");
+    const bundlerAsset = path.join(publicDir, "bundler.js");
+    await fs.mkdir(publicDir, { recursive: true });
+    await fs.writeFile(bundlerAsset, "bundler-owned\n", "utf-8");
+    const output = createServerDeploymentOutput({
+      rootDir,
+      publicDir,
+      serverDir,
+    });
+    const options: StaticDeploymentAdapterOptions = {
+      artifactFileName: "captured.static.json",
+      redirectsFileName: "captured.redirects",
+      includeAssets: false,
+      platform: "captured-static",
+    };
+    const adapter = staticDeploymentAdapter(options);
+
+    options.artifactFileName = "changed-before-setup.json";
+    options.redirectsFileName = "changed-before-setup.redirects";
+    options.includeAssets = true;
+    options.platform = "changed-before-setup";
+    const adapterHooks = await adapter.setup?.({ cwd: rootDir } as never);
+    if (!adapterHooks) throw new Error("Expected deployment adapter hooks.");
+
+    const mutator: PluginHooks = {
+      afterBuild() {
+        options.artifactFileName = "bundler.js";
+        options.redirectsFileName = "changed-after-preflight.redirects";
+        options.platform = "changed-after-preflight";
+      },
+    };
+    await runAfterBuildHooks(
+      [mutator, adapterHooks],
+      createBuildResult(output, false),
+      {
+        cwd: rootDir,
+        emittedFiles: { client: ["bundler.js"] },
+      },
+    );
+
+    await expect(fs.readFile(bundlerAsset, "utf-8")).resolves.toBe(
+      "bundler-owned\n",
+    );
+    const artifact = JSON.parse(
+      await fs.readFile(path.join(publicDir, "captured.static.json"), "utf-8"),
+    ) as { platform?: string };
+    expect(artifact.platform).toBe("captured-static");
+    await expect(
+      fs.access(path.join(publicDir, "captured.redirects")),
+    ).resolves.toBeUndefined();
+    for (const fileName of [
+      "changed-before-setup.json",
+      "changed-before-setup.redirects",
+      "changed-after-preflight.redirects",
+    ]) {
+      await expect(fs.access(path.join(publicDir, fileName))).rejects.toThrow();
+    }
+  });
+
+  it("validates deployment adapter options at the factory boundary", () => {
+    let getterCalled = false;
+    const accessorOptions = {};
+    Object.defineProperty(accessorOptions, "artifactFileName", {
+      enumerable: true,
+      get() {
+        getterCalled = true;
+        return "deployment.json";
+      },
+    });
+
+    expect(() =>
+      staticDeploymentAdapter(
+        accessorOptions as StaticDeploymentAdapterOptions,
+      ),
+    ).toThrow(
+      "staticDeploymentAdapter() options.artifactFileName must be an enumerable own data property",
+    );
+    expect(getterCalled).toBe(false);
+    expect(() => nodeDeploymentAdapter({ defaultPort: 0 } as never)).toThrow(
+      "nodeDeploymentAdapter() options.defaultPort must be an integer TCP port from 1 to 65535",
+    );
+    expect(() =>
+      edgeDeploymentAdapter({ assetsBinding: " " } as never),
+    ).toThrow(
+      "edgeDeploymentAdapter() options.assetsBinding must be a non-empty string",
+    );
+    expect(() =>
+      staticDeploymentAdapter({ unsupported: true } as never),
+    ).toThrow(
+      'staticDeploymentAdapter() options has unknown field "unsupported"',
+    );
+  });
+
   it("writes deployment adapter artifacts to explicit root and public output dirs", async () => {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-deploy-"));
     tempDirs.push(rootDir);
@@ -1454,15 +1592,15 @@ describe("createDeploymentArtifact", () => {
       serverDir,
     });
 
-    await runDeploymentBuildEnd(
+    await runDeploymentAfterBuild(
       nodeDeploymentAdapter({ includeAssets: false }),
       output,
     );
-    await runDeploymentBuildEnd(
+    await runDeploymentAfterBuild(
       staticDeploymentAdapter({ includeAssets: false }),
       output,
     );
-    await runDeploymentBuildEnd(
+    await runDeploymentAfterBuild(
       edgeDeploymentAdapter({ includeAssets: false }),
       output,
     );
@@ -1489,7 +1627,7 @@ describe("createDeploymentArtifact", () => {
 
     await expect(
       fs.readFile(path.join(rootDir, "server.mjs"), "utf-8"),
-    ).resolves.toContain('const clientRoot = path.join(__dirname, "client");');
+    ).resolves.toContain('path.join(deploymentRoot, "client"),');
   });
 
   it("rejects deployment leaf symlinks without writing through them", async () => {
@@ -1512,7 +1650,7 @@ describe("createDeploymentArtifact", () => {
     });
 
     await expect(
-      runDeploymentBuildEnd(
+      runDeploymentAfterBuild(
         nodeDeploymentAdapter({ includeAssets: false }),
         output,
       ),
@@ -1536,9 +1674,9 @@ describe("createDeploymentArtifact", () => {
       serverDir: `${relativeRoot}/backend`,
     });
 
-    await runDeploymentBuildEnd(nodeDeploymentAdapter(), output, cwd);
-    await runDeploymentBuildEnd(staticDeploymentAdapter(), output, cwd);
-    await runDeploymentBuildEnd(edgeDeploymentAdapter(), output, cwd);
+    await runDeploymentAfterBuild(nodeDeploymentAdapter(), output, cwd);
+    await runDeploymentAfterBuild(staticDeploymentAdapter(), output, cwd);
+    await runDeploymentAfterBuild(edgeDeploymentAdapter(), output, cwd);
 
     await expect(
       fs.access(path.join(cwd, relativeRoot, "deployment.node.json")),
@@ -1555,7 +1693,7 @@ describe("createDeploymentArtifact", () => {
   });
 });
 
-async function runDeploymentBuildEnd(
+async function runDeploymentAfterBuild(
   plugin: ReturnType<typeof nodeDeploymentAdapter>,
   output: BuildOutput,
   cwd?: string,
@@ -1566,7 +1704,7 @@ async function runDeploymentBuildEnd(
       ? output.paths.rootDir
       : process.cwd());
   const hooks = await plugin.setup?.({ cwd: projectCwd } as never);
-  await hooks?.buildEnd?.(createBuildResult(output, false));
+  await hooks?.afterBuild?.(createBuildResult(output, false));
 }
 
 function extractGeneratedRouteMatcher(source: string): string {
@@ -1591,6 +1729,22 @@ function evaluateGeneratedRouteMatcher(source: string): GeneratedRouteMatcher {
   return vm.runInNewContext(
     `${matcher}\n({ routePathMatches, pathIsAtOrBelow });`,
   ) as GeneratedRouteMatcher;
+}
+
+function evaluateGeneratedFrameworkRuntime(source: string): {
+  buildId: string;
+  routing: { pages: Record<string, unknown> };
+} {
+  const prefix = "globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ";
+  const start = source.indexOf(prefix);
+  const end = source.indexOf(";\n", start);
+  if (start < 0 || end < 0) {
+    throw new Error("Generated framework runtime was not found.");
+  }
+  return vm.runInNewContext(source.slice(start + prefix.length, end)) as {
+    buildId: string;
+    routing: { pages: Record<string, unknown> };
+  };
 }
 
 function extractGeneratedStringArray(source: string, name: string): string[] {
@@ -1759,4 +1913,38 @@ function createServerDeploymentOutput(paths: {
       ],
     },
   };
+}
+
+function createPrototypePageDeploymentOutput(): BuildOutput {
+  const output = createServerDeploymentOutput({
+    rootDir: "dist",
+    publicDir: "dist/client",
+    serverDir: "dist/server",
+  });
+  output.apps = {};
+  output.pages = Object.fromEntries([
+    [
+      "__proto__",
+      {
+        assets: { js: [], css: [] },
+        render: "ssr",
+        rendering: {
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "none",
+        },
+        path: "/__proto__",
+        routeId: "__proto__",
+      },
+    ],
+  ]);
+  output.routes = [
+    {
+      id: "__proto__",
+      path: "/__proto__",
+      pageId: "__proto__",
+    },
+  ];
+  return output;
 }

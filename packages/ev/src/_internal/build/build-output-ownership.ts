@@ -365,17 +365,17 @@ function assertBuildOutputIdentitiesUnchanged(
   const actual = snapshotBuildOutputIdentities(output);
   if (!arraysEqual(expected.appIds, actual.appIds)) {
     throw new Error(
-      "[evjs] buildOutput hooks cannot add, remove, or rename Applications. Application identity is owned by the CoreGraph.",
+      "[evjs] transformOutput hooks cannot add, remove, or rename Applications. Application identity is owned by the CoreGraph.",
     );
   }
   if (!arraysEqual(expected.pageIds, actual.pageIds)) {
     throw new Error(
-      "[evjs] buildOutput hooks cannot add, remove, or rename Pages. Page identity is owned by the CoreGraph.",
+      "[evjs] transformOutput hooks cannot add, remove, or rename Pages. Page identity is owned by the CoreGraph.",
     );
   }
   if (!routeIdentitiesEqual(expected.routes, actual.routes)) {
     throw new Error(
-      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership. Route identity is owned by the CoreGraph.",
+      "[evjs] transformOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership. Route identity is owned by the CoreGraph.",
     );
   }
   for (const [id, identity] of expected.pages) {
@@ -385,7 +385,7 @@ function assertBuildOutputIdentitiesUnchanged(
       candidate?.routeId !== identity.routeId
     ) {
       throw new Error(
-        `[evjs] buildOutput hooks cannot change Page "${id}" path or routeId. Page and Route identity is owned by the CoreGraph.`,
+        `[evjs] transformOutput hooks cannot change Page "${id}" path or routeId. Page and Route identity is owned by the CoreGraph.`,
       );
     }
   }
@@ -399,14 +399,14 @@ function assertBuildOutputIdentitiesUnchanged(
       continue;
     }
     throw new Error(
-      `[evjs] buildOutput hooks cannot change ${identity.owner} Document fileName or aliases. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
+      `[evjs] transformOutput hooks cannot change ${identity.owner} Document fileName or aliases. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
     );
   }
   for (const [key, identity] of actual.documents) {
     if (expected.documents.has(key) || identity.fileName === undefined)
       continue;
     throw new Error(
-      `[evjs] buildOutput hooks cannot add a Document to ${identity.owner}. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
+      `[evjs] transformOutput hooks cannot add a Document to ${identity.owner}. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
     );
   }
 }
@@ -425,7 +425,7 @@ function assertBuildOutputSemanticsUnchanged(
     return;
   }
   throw new Error(
-    "[evjs] buildOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.",
+    "[evjs] transformOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.",
   );
 }
 

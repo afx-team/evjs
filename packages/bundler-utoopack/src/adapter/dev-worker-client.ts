@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { Worker } from "node:worker_threads";
 import type {
   ConfigComplete,
@@ -55,6 +56,8 @@ export interface UtoopackDevWorkerHandle {
   /** Rejects on unexpected exit and remains pending after an intentional close. */
   failure: Promise<never>;
   throwIfFailed(): void;
+  /** Notify the persistent compiler after Core finishes generated input. */
+  invalidate(files: readonly string[]): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -152,6 +155,13 @@ export function startUtoopackDevWorker(
     throwIfFailed() {
       if (failureReason !== undefined) throw failureReason;
     },
+    async invalidate(files) {
+      for (const file of new Set(files)) {
+        const stats = await fs.promises.stat(file);
+        const nextMtimeMs = Math.max(Date.now() + 1_000, stats.mtimeMs + 1_000);
+        await fs.promises.utimes(file, stats.atime, new Date(nextMtimeMs));
+      }
+    },
     close() {
       closePromise ??= (async () => {
         closing = true;
@@ -200,7 +210,7 @@ export function prepareUtoopackDevWorkerOptions(
     };
   } catch (error) {
     throw new Error(
-      "[evjs] Utoopack development config must be structured-cloneable so its process-owned server can run in an isolated, stoppable worker. Remove non-cloneable values contributed through bundlerConfig().",
+      "[evjs] Utoopack development config must be structured-cloneable so its process-owned server can run in an isolated, stoppable worker. Remove non-cloneable values contributed through configureBundler().",
       { cause: error },
     );
   }

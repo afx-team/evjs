@@ -14,7 +14,7 @@ A contribution is a declarative unit in the framework IR. It can produce
 generated artifacts, link those artifacts together, and attach them to
 framework slots.
 
-Keep `contributions(ctx)` deterministic and free of external side effects.
+Keep `emitIR(ctx)` deterministic and free of external side effects.
 evjs may evaluate it again when contributed source aliases change the
 framework graph.
 
@@ -24,7 +24,7 @@ relationships. evjs then materializes the final `.ev` tree and manifest.
 
 ```mermaid
 flowchart TB
-  Hook["contributions(ctx)"]
+  Hook["emitIR(ctx)"]
 
   subgraph Declare["Plugin declarations"]
     Emit["ctx.emit\nmodule / data / entryFacade"]
@@ -37,7 +37,7 @@ flowchart TB
   end
 
   subgraph Materialize["Materialized .ev output"]
-    Files[".ev/plugins/<plugin>\ngenerated artifacts"]
+    Files[".ev/plugins/<id>\ngenerated artifacts"]
     Manifest[".ev/manifest.json\nmodules + slots + importEdges"]
   end
 
@@ -69,10 +69,9 @@ flowchart TB
 │   ├── main.ts
 │   └── server.ts
 ├── plugins/
-│   └── qiankun/
-│       └── slave/
-│           ├── entry-wrapper.ts
-│           └── original-entry.ts
+│   └── qiankun-slave/
+│       ├── entry-wrapper.ts
+│       └── original-entry.ts
 ├── manifest.json
 └── types.d.ts
 ```
@@ -83,11 +82,11 @@ The structure is stable and readable:
   build-plan snapshots. `core-graph.json` is the single semantic source of
   truth consumed by planning and inspection.
 - `entries/` contains framework-owned entry facades consumed by bundlers.
-- `plugins/<plugin>/` contains plugin generated artifacts.
-- Plugin names are normalized into path segments; a role suffix such as
-  `@evjs/plugin-qiankun:slave` becomes `qiankun/slave`.
+- `plugins/<id>/` contains plugin generated artifacts.
+- A plugin's canonical `id` is its generated-artifact path segment; for example,
+  `qiankun-slave` owns `plugins/qiankun-slave/`.
 - `manifest.json` ties together generated artifacts, import edges, slot items,
-  producer plugin names, scopes, and final entries.
+  producer plugin ids, scopes, and final entries.
 
 Generated files may import generated-only `@evjs/ev/_internal/*` helpers when
 they need framework runtime internals. Plugin source should not import those
@@ -99,9 +98,12 @@ Application bag contains enablement only; private factory configuration never
 enters CoreGraph. Page bags may contain the validated static Page value. A
 defined plugin normally uses its narrower `ctx.options` and `ctx.pages` views;
 each enabled Page entry is `{ page, options }`. The per-Page
-`contributePage()` form receives `ctx.pageOptions`. These flat fields preserve
-the descriptor's inferred types. Internal provenance and resolved settings are
-available before `contributions()` materializes generated code.
+`emitPageIR()` form receives `ctx.pageOptions`. These flat fields preserve
+the descriptor's inferred types. Its `ctx.emit` and `ctx.slot()` identities are
+automatically scoped to the current Page, so a plugin can reuse a local id such
+as `runtime` on every Page without manually prefixing `ctx.page.id`. Internal
+provenance and resolved settings are
+available before `emitIR()` materializes generated code.
 
 The Application view also exposes its `root`, `routingMode`, and owned Page,
 Route, and Document ids. An MPA therefore appears as one logical Application
@@ -121,14 +123,17 @@ artifacts together. The returned specifier is valid only inside generated
 source. Application source should not import `.ev` paths or
 `evjs:generated/*` specifiers.
 
+Contribution ids are local to the plugin (and, in `emitPageIR()`, to the
+current Page). The `@evjs/` prefix is reserved for framework namespacing.
+
 Generated modules use opaque refs instead of exposing filesystem paths:
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
 
 export const analytics = definePlugin({
-  id: "@company/analytics",
-  contributions(ctx) {
+  id: "analytics",
+  emitIR(ctx) {
     const runtime = ctx.emit.module({
       id: "runtime",
       scope: { kind: "application" },
@@ -155,7 +160,7 @@ When a plugin replaces an entry but still needs the original framework facade,
 use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
@@ -187,9 +192,8 @@ replacement entry owns that first `start()` call and later `app.render()`
 remounts. Other entry types cannot disable framework startup.
 
 Generated plugin paths are stable and readable. For example, a plugin with id
-`@evjs/plugin-qiankun:slave` writes modules under
-`.ev/plugins/qiankun/slave/*` and exposes specifiers such as
-`evjs:generated/qiankun/slave/entry-wrapper`.
+`qiankun-slave` writes modules under `.ev/plugins/qiankun-slave/*` and exposes
+specifiers such as `evjs:generated/qiankun-slave/entry-wrapper`.
 
 Use `ctx.slot(name).add(...)` to attach generated artifacts to the framework.
 The supported slots are:
@@ -220,7 +224,7 @@ wrap earlier contributions; route layouts and wrappers remain outside plugin
 Page wrappers.
 
 ```ts
-contributions(ctx) {
+emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
     module: "./src/plugin/AuthBoundary.tsx",
@@ -275,11 +279,11 @@ remain responsible only for transformations of real source modules.
 
 The contribution layer does not replace plugin lifecycles:
 
-- Use `config()` for framework config defaults or validation-sensitive config.
+- Use `configure()` for framework config defaults or validation-sensitive config.
 - Use `setup()` to allocate plugin state and return lifecycle hooks.
-- Use `bundlerConfig()` for low-level bundler features not modeled as slots.
+- Use `configureBundler()` for low-level bundler features not modeled as slots.
 - Use `transformHtml()` for AST-level HTML rewrites.
-- Use `buildOutput()` and `buildEnd()` for deployment metadata and final files.
+- Use `transformOutput()` and `afterBuild()` for deployment metadata and final files.
 
 This split keeps the IR readable without pretending every plugin capability is
 an entry contribution.
@@ -289,7 +293,7 @@ an entry contribution.
 For code review or debugging, inspect `.ev/manifest.json` first:
 
 1. Find the final entry under `entries`.
-2. Inspect `generated.modules` for plugin artifacts and producer plugin names.
+2. Inspect `generated.modules` for plugin artifacts and producer plugin ids.
 3. Inspect `generated.slots` to see where artifacts attach.
 4. Inspect `generated.importEdges` to understand generated-to-generated imports.
 5. Open the matching files under `.ev/entries` and `.ev/plugins`.

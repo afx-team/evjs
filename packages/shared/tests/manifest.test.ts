@@ -6,6 +6,8 @@ import type {
   BuildPlan,
   ComponentModel,
   CoreGraph,
+  FrameworkSlotPlanItem,
+  GeneratedModulePlan,
   HydrationMode,
   PageMetadata,
   PageRouteKind,
@@ -20,8 +22,6 @@ import type {
 import {
   assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
   linkBuildOutput as linkManifestBuildOutput,
 } from "../src/manifest/index.js";
 
@@ -52,6 +52,45 @@ function createMinimalBuildOutput(): BuildOutput {
       routes: [],
     },
   };
+}
+
+function createRuntimeFreeBuildOutput(): BuildOutput {
+  return {
+    ...createMinimalBuildOutput(),
+    server: {
+      assets: { js: [], css: [] },
+      functions: {},
+      routes: [],
+    },
+  };
+}
+
+function createRuntimeFreeSsgOutput(withDocument = true): BuildOutput {
+  const output = createRuntimeFreeBuildOutput();
+  output.pages.report = {
+    assets: { js: [], css: [] },
+    ...(withDocument ? { document: { fileName: "report.html" } } : {}),
+    render: "ssg",
+    rendering: {
+      component: "server",
+      html: "static",
+      prerender: "full",
+      streaming: false,
+      hydrate: "none",
+    },
+    path: "/report",
+    routeId: "report",
+  };
+  output.routes.push({ id: "report", path: "/report", pageId: "report" });
+  output.server.renderers = {
+    "report-server": {
+      kind: "page-server",
+      phase: "build",
+      owner: { pageId: "report", routeId: "report" },
+      assets: { js: ["report-server.js"], css: [] },
+    },
+  };
+  return output;
 }
 
 function createServerRuntimeEntry(): BuildPlan["entries"][number] {
@@ -86,12 +125,14 @@ function createRuntimePlan(
   };
 }
 
-function createDefaultServerEntryAssets(): {
-  server: { js: string[]; css: string[] };
-} {
-  return {
-    server: { js: ["server.js"], css: [] },
-  };
+function createDefaultServerEntryAssets(
+  plan: TestBuildPlan,
+): Record<string, { js: string[]; css: string[] }> {
+  return Object.fromEntries(
+    plan.entries
+      .filter((entry) => entry.environment === "server")
+      .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+  );
 }
 
 type TestBuildPlan = Omit<BuildPlan, "dev"> & {
@@ -202,7 +243,7 @@ function linkBuildOutput(
   },
 ): ReturnType<typeof linkManifestBuildOutput> {
   return linkManifestBuildOutput({
-    serverEntryAssets: createDefaultServerEntryAssets(),
+    serverEntryAssets: createDefaultServerEntryAssets(input.plan),
     ...input,
     graph: createCoreGraphFixture(input.graph),
     plan: {
@@ -374,10 +415,144 @@ function toCorePattern(
 }
 
 describe("assertFrameworkManifestShape", () => {
+  it("uses canonical plugin ids in generated framework plans", () => {
+    const generatedModule = {
+      key: "analytics:application:runtime",
+      id: "runtime",
+      pluginId: "analytics",
+      scope: { kind: "application" },
+      file: ".ev/plugins/analytics/application/runtime.ts",
+      specifier: "#ev/plugin/analytics/application/runtime",
+      extension: ".ts",
+      sourceHash: "hash",
+    } satisfies GeneratedModulePlan;
+    const generatedSlot = {
+      key: "analytics:resolve.alias:runtime",
+      id: "runtime",
+      pluginId: "analytics",
+      slot: "resolve.alias",
+      specifier: "analytics/runtime",
+      replacement: generatedModule.specifier,
+    } satisfies FrameworkSlotPlanItem;
+
+    expect(generatedModule.pluginId).toBe("analytics");
+    expect(generatedSlot.pluginId).toBe("analytics");
+  });
+
   it("accepts generated framework manifests", () => {
     expect(() =>
       assertFrameworkManifestShape(createMinimalBuildOutput(), "manifest"),
     ).not.toThrow();
+  });
+
+  it("requires a complete BuildOutput", () => {
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          version: 1,
+          buildId: "build",
+          publicPath: "/",
+          routing: { kind: "spa", routes: [] },
+        },
+        "manifest",
+      ),
+    ).toThrow("[evjs] manifest.paths must be an object.");
+  });
+
+  it("allows runtime-free CSR and static SSG output", () => {
+    const csr = createRuntimeFreeBuildOutput();
+    csr.pages.home = {
+      assets: { js: ["home.js"], css: [] },
+      document: { fileName: "home.html" },
+      render: "csr",
+      rendering: {
+        component: "client",
+        html: "client",
+        streaming: false,
+        hydrate: "load",
+      },
+      path: "/home",
+      routeId: "home",
+    };
+    csr.routes.push({ id: "home", path: "/home", pageId: "home" });
+    expect(() => assertFrameworkManifestShape(csr, "CSR output")).not.toThrow();
+
+    const ssg = createRuntimeFreeSsgOutput();
+    expect(() => assertFrameworkManifestShape(ssg, "SSG output")).not.toThrow();
+  });
+
+  it("rejects routed SSG Pages without a static Document", () => {
+    const runtimeFree = createRuntimeFreeSsgOutput(false);
+    const withRuntime = createRuntimeFreeSsgOutput(false);
+    withRuntime.server.entry = "server.js";
+    withRuntime.server.assets.js.push("server.js");
+
+    for (const [source, output] of [
+      ["runtime-free SSG output", runtimeFree],
+      ["server-backed SSG output", withRuntime],
+    ] as const) {
+      expect(() => assertFrameworkManifestShape(output, source)).toThrow(
+        `${source}.pages.report.document is required because ${source}.routes[0] publishes SSG Page "report"`,
+      );
+    }
+  });
+
+  it("requires a runtime entry for server runtime assets", () => {
+    const javascript = createRuntimeFreeBuildOutput();
+    javascript.server.assets.js.push("server.js");
+    expect(() =>
+      assertFrameworkManifestShape(javascript, "JavaScript runtime output"),
+    ).toThrow(
+      "JavaScript runtime output.server.entry is required because server runtime assets are present",
+    );
+
+    const css = createRuntimeFreeBuildOutput();
+    css.server.assets.css.push("server.css");
+    expect(() =>
+      assertFrameworkManifestShape(css, "CSS runtime output"),
+    ).toThrow(
+      "CSS runtime output.server.entry is required because server runtime assets are present",
+    );
+  });
+
+  it("requires a runtime entry for server Functions", () => {
+    const serverFunction = createRuntimeFreeBuildOutput();
+    serverFunction.server.functions.work = {
+      exportName: "work",
+      assets: { js: [], css: [] },
+    };
+    expect(() =>
+      assertFrameworkManifestShape(serverFunction, "function output"),
+    ).toThrow(
+      "function output.server.entry is required because server Functions are present",
+    );
+  });
+
+  it("requires a runtime entry for request-time renderers", () => {
+    const output = createRuntimeFreeBuildOutput();
+    output.server.renderers = {
+      runtime: {
+        kind: "page-server",
+        owner: {},
+        assets: { js: [], css: [] },
+      },
+    };
+
+    expect(() =>
+      assertFrameworkManifestShape(output, "runtime renderer output"),
+    ).toThrow(
+      "runtime renderer output.server.entry is required because a request-time server renderer is present",
+    );
+  });
+
+  it("requires one self-contained JavaScript artifact for the runtime entry", () => {
+    const multipleEntries = createMinimalBuildOutput();
+    multipleEntries.server.assets.js.push("server-chunk.js");
+    expect(() =>
+      assertFrameworkManifestShape(multipleEntries, "multiple entry output"),
+    ).toThrow(
+      "multiple entry output.server.assets.js must declare exactly one self-contained JavaScript artifact",
+    );
   });
 
   it("rejects ambiguous runtime path encodings at the manifest boundary", () => {
@@ -2030,7 +2205,8 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...pageServerReferenceManifest,
           server: {
-            assets: { js: [], css: [] },
+            entry: "server.js",
+            assets: { js: ["server.js"], css: [] },
             renderers: {
               "dashboard-route-server": {
                 kind: "page-server",
@@ -2129,7 +2305,8 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...createMinimalBuildOutput(),
           server: {
-            assets: { js: [], css: [] },
+            entry: "server.js",
+            assets: { js: ["server.js"], css: [] },
             functions: {
               "fn:refund": {
                 module: "./src/api/orders.server.ts",
@@ -2820,6 +2997,179 @@ describe("assertFrameworkManifestShape", () => {
 });
 
 describe("linkBuildOutput", () => {
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped BuildPlan entry name %s", (entryName) => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+
+    for (const environment of ["client", "server"] as const) {
+      const plan: TestBuildPlan = {
+        version: 1,
+        buildId: `prototype-entry-${environment}`,
+        mode: "production",
+        distDir: "dist",
+        output: { clientDir: "dist/client", serverDir: "dist/server" },
+        entries: [
+          environment === "client"
+            ? {
+                name: entryName,
+                import: "./src/client.ts",
+                environment,
+                runtime: "browser",
+                kind: "app-client",
+              }
+            : {
+                name: entryName,
+                import: "./src/server.ts",
+                environment,
+                runtime: "node",
+                kind: "server-runtime",
+              },
+        ],
+        html: [],
+        server: environment === "server" ? { entry: "./src/server.ts" } : {},
+        runtime: createRuntimePlan(),
+      };
+      const assets = Object.fromEntries([
+        [entryName, { js: [`${entryName}.js`], css: [] }],
+      ]);
+      const output = linkBuildOutput({
+        graph,
+        plan,
+        ...(environment === "client"
+          ? { clientEntryAssets: assets }
+          : { serverEntryAssets: assets }),
+      });
+
+      expect(Object.getPrototypeOf(output.assets)).toBe(Object.prototype);
+      expect(Object.hasOwn(output.assets, entryName)).toBe(true);
+      expect(Reflect.get(output.assets, entryName)).toEqual(
+        Reflect.get(assets, entryName),
+      );
+    }
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("rejects inherited BuildPlan entry facts for %s", (entryName) => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const inheritedAssets = Object.create(
+      Object.fromEntries([[entryName, { js: [`${entryName}.js`], css: [] }]]),
+    ) as Record<string, { js: string[]; css: string[] }>;
+
+    for (const environment of ["client", "server"] as const) {
+      const plan: TestBuildPlan = {
+        version: 1,
+        buildId: `inherited-entry-${environment}`,
+        mode: "production",
+        distDir: "dist",
+        output: { clientDir: "dist/client", serverDir: "dist/server" },
+        entries: [
+          environment === "client"
+            ? {
+                name: entryName,
+                import: "./src/client.ts",
+                environment,
+                runtime: "browser",
+                kind: "app-client",
+              }
+            : {
+                name: entryName,
+                import: "./src/server.ts",
+                environment,
+                runtime: "node",
+                kind: "server-runtime",
+              },
+        ],
+        html: [],
+        server: environment === "server" ? { entry: "./src/server.ts" } : {},
+        runtime: createRuntimePlan(),
+      };
+
+      expect(() =>
+        linkBuildOutput({
+          graph,
+          plan,
+          ...(environment === "client"
+            ? { clientEntryAssets: inheritedAssets }
+            : { serverEntryAssets: inheritedAssets }),
+        }),
+      ).toThrow(`BuildPlan entry "${entryName}"`);
+    }
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves the prototype-shaped server Function id %s", (functionId) => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [
+        {
+          id: functionId,
+          module: "./src/actions.ts",
+          exportName: "runAction",
+        },
+      ],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: `prototype-function-${functionId}`,
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [createServerRuntimeEntry()],
+      html: [],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({ graph, plan });
+    const linkedFunction = Reflect.get(output.server.functions, functionId);
+
+    expect(Object.getPrototypeOf(output.server.functions)).toBeNull();
+    expect(Object.hasOwn(output.server.functions, functionId)).toBe(true);
+    expect(linkedFunction).toEqual({
+      assets: { js: ["server.js"], css: [] },
+      exportName: "runAction",
+    });
+    expect(Object.keys(output.server.functions)).toEqual([functionId]);
+    expect(() =>
+      assertFrameworkManifestShape(output, "linked output"),
+    ).not.toThrow();
+    expect(createDeploymentMetadata(output).routes).toContainEqual({
+      kind: "server-function",
+      path: "/__evjs/fn",
+      methods: ["POST"],
+    });
+  });
+
   it("keeps route-derived CSR pages out of the v1 runtime manifest", () => {
     const graph: LinkerFixture = {
       version: 1,
@@ -2985,20 +3335,7 @@ describe("linkBuildOutput", () => {
         pageId: "orders",
       },
     ]);
-    expect(createPublicManifest(output)).toMatchObject({
-      routing: {
-        kind: "spa",
-        routes: [
-          {
-            id: "orders",
-            path: "/orders",
-            pageId: "orders",
-            render: "csr",
-            metadata,
-          },
-        ],
-      },
-    });
+    expect(output.pages.orders.render).toBe("csr");
 
     metadata.title = "Mutated";
     metadata.meta.description = "Mutated";
@@ -3061,7 +3398,7 @@ describe("linkBuildOutput", () => {
           id: "snapshot",
           component: "./src/pages/snapshot/page.tsx",
           html: "./index.html",
-          render: "ssg",
+          render: "ssr",
           hydrate: "load",
         },
       },
@@ -3700,49 +4037,24 @@ describe("linkBuildOutput", () => {
       '[evjs] Bundler build facts for server BuildPlan entry "server" (server-runtime) must declare exactly one self-contained JavaScript entry asset; found 0.',
     );
 
-    expect(() =>
-      linkBuildOutput({
+    for (const field of [
+      "serverEntry",
+      "serverAssets",
+      "serverModules",
+    ] as const) {
+      const legacyInput = {
         graph,
         plan,
-        serverEntry: "../../outside.js",
         serverEntryAssets: {
           server: { js: ["server.js"], css: [] },
         },
-      }),
-    ).toThrow(
-      "BuildOutput link input.serverEntry must be a non-empty portable server-relative artifact path",
-    );
+      } as Parameters<typeof linkBuildOutput>[0] & Record<string, unknown>;
+      legacyInput[field] = field === "serverEntry" ? "server.js" : {};
 
-    expect(() =>
-      linkBuildOutput({
-        graph,
-        plan,
-        serverEntry: "other.js",
-        serverEntryAssets: {
-          server: { js: ["server.js"], css: [] },
-        },
-      }),
-    ).toThrow(
-      '[evjs] Server runtime entry "other.js" must exactly match one JavaScript artifact emitted for build entry "server".',
-    );
-
-    expect(() =>
-      linkBuildOutput({
-        graph,
-        plan,
-        serverEntryAssets: {
-          server: { js: ["server.js"], css: [] },
-        },
-        serverModules: [
-          {
-            moduleId: "./src/api.ts",
-            assets: { js: ["../../outside.js"], css: [] },
-          },
-        ],
-      }),
-    ).toThrow(
-      "BuildOutput link input.serverModules[0].assets.js[0] must be a non-empty portable server-relative artifact path",
-    );
+      expect(() => linkBuildOutput(legacyInput)).toThrow(
+        `[evjs] BuildOutput link input.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
+      );
+    }
 
     const buildEntry: BuildPlan["entries"][number] = {
       name: "report-server",
@@ -3782,9 +4094,211 @@ describe("linkBuildOutput", () => {
       phase: "build",
       assets: { js: ["CHUNKS/runtime.js"], css: [] },
     });
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan: mixedRootPlan,
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+          "report-server": {
+            js: ["report-server.js", "report-server-extra.js"],
+            css: [],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] Bundler build facts for server BuildPlan entry "report-server" (page-server) must declare exactly one self-contained JavaScript entry asset; found 2.',
+    );
   });
 
-  it("isolates AssetGroups projected to distinct server owners", () => {
+  it("rejects every request-time capability when the plan omits its server runtime", () => {
+    const createRuntimeFreeGraph = (
+      overrides: Partial<LinkerFixture> = {},
+    ): LinkerFixture => ({
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      ...overrides,
+    });
+    const createRuntimeFreePlan = (options: {
+      entries?: BuildPlan["entries"];
+      html?: BuildPlan["html"];
+      renderers?: BuildPlan["server"]["renderers"];
+      runtime?: Partial<NonNullable<BuildPlan["runtime"]["server"]>>;
+    }): TestBuildPlan => ({
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: options.entries ?? [],
+      html: options.html ?? [],
+      server: options.renderers ? { renderers: options.renderers } : {},
+      runtime: createRuntimePlan(options.runtime),
+    });
+    const createPageCapabilityInput = (options: {
+      id: string;
+      page: Omit<LinkerPageFixture, "id" | "component" | "html">;
+      rendererKind: NonNullable<
+        BuildPlan["server"]["renderers"]
+      >[number]["kind"];
+      rendererPhase?: BuildPlan["entries"][number]["phase"];
+      runtime?: Partial<NonNullable<BuildPlan["runtime"]["server"]>>;
+      staticDocument?: boolean;
+    }): Parameters<typeof linkBuildOutput>[0] => {
+      const component = `./src/${options.id}.tsx`;
+      const staticDocument = options.staticDocument !== false;
+      const renderer = {
+        name: `${options.id}-${options.rendererKind}`,
+        import: component,
+        kind: options.rendererKind,
+        owner: { pageId: options.id },
+        ...(options.rendererPhase ? { phase: options.rendererPhase } : {}),
+      };
+      return {
+        graph: createRuntimeFreeGraph({
+          apps: staticDocument
+            ? {}
+            : {
+                default: {
+                  id: "default",
+                  entry: "./src/main.tsx",
+                  html: "./index.html",
+                },
+              },
+          pages: {
+            [options.id]: {
+              id: options.id,
+              component,
+              html: "./index.html",
+              ...options.page,
+            },
+          },
+          routes: [
+            {
+              id: options.id,
+              path: `/${options.id}`,
+              pageId: options.id,
+              ...(staticDocument ? {} : { appId: "default" }),
+            },
+          ],
+        }),
+        plan: createRuntimeFreePlan({
+          entries: [
+            {
+              ...renderer,
+              environment: "server",
+              runtime: "node",
+            },
+          ],
+          html: [
+            {
+              id: staticDocument ? options.id : "index",
+              template: "./index.html",
+              fileName: staticDocument ? `${options.id}.html` : "index.html",
+              owner: staticDocument
+                ? { pageId: options.id }
+                : { appId: "default" },
+            },
+          ],
+          renderers: [renderer],
+          runtime: options.runtime,
+        }),
+        serverEntryAssets: {
+          [renderer.name]: { js: [`${renderer.name}.js`], css: [] },
+        },
+      };
+    };
+    const expectMissingRuntime = (
+      label: string,
+      reason: string,
+      input: Parameters<typeof linkBuildOutput>[0],
+    ) => {
+      expect(() => linkBuildOutput(input), label).toThrow(
+        `linked BuildOutput.server.entry is required because ${reason}`,
+      );
+    };
+
+    expectMissingRuntime(
+      "SSR",
+      "an SSR Page is present",
+      createPageCapabilityInput({
+        id: "dashboard",
+        page: { render: "ssr" },
+        rendererKind: "page-server",
+      }),
+    );
+
+    expectMissingRuntime("server Function", "server Functions are present", {
+      graph: createRuntimeFreeGraph({
+        serverFunctions: [
+          { id: "work", module: "./src/work.ts", exportName: "work" },
+        ],
+      }),
+      plan: createRuntimeFreePlan({}),
+    });
+
+    expectMissingRuntime("API Route", "server request Routes are present", {
+      graph: createRuntimeFreeGraph({
+        serverRoutes: [
+          {
+            id: "health",
+            module: "./src/health.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
+      }),
+      plan: createRuntimeFreePlan({}),
+    });
+
+    expectMissingRuntime(
+      "PPR",
+      "a PPR Page is present",
+      createPageCapabilityInput({
+        id: "campaign",
+        page: {
+          render: "ssr",
+          prerender: { partial: true },
+          ppr: { delivery: "merge", regions: {} },
+        },
+        rendererKind: "ppr-shell",
+        runtime: { ppr: "__evjs/ppr" },
+      }),
+    );
+
+    expectMissingRuntime(
+      "RSC",
+      "an RSC Page is present",
+      createPageCapabilityInput({
+        id: "insights",
+        page: { render: "ssr", componentModel: "rsc" },
+        rendererKind: "rsc-page",
+        runtime: { rsc: "__evjs/rsc" },
+      }),
+    );
+
+    expect(() =>
+      linkBuildOutput(
+        createPageCapabilityInput({
+          id: "report",
+          page: { render: "ssg" },
+          rendererKind: "page-server",
+          rendererPhase: "build",
+          staticDocument: false,
+        }),
+      ),
+    ).toThrow(
+      'linked BuildOutput.pages.report.document is required because linked BuildOutput.routes[0] publishes SSG Page "report"',
+    );
+  });
+
+  it("isolates canonical runtime assets projected to server capabilities", () => {
     const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
@@ -3819,7 +4333,13 @@ describe("linkBuildOutput", () => {
       runtime: createRuntimePlan(),
     };
 
-    const output = linkBuildOutput({ graph, plan });
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      serverEntryAssets: {
+        server: { js: ["server.js"], css: ["server.css"] },
+      },
+    });
     const functionAssets = output.server.functions.work?.assets;
     const routeAssets = output.server.routes[0]?.assets;
     if (!functionAssets || !routeAssets) {
@@ -3829,12 +4349,17 @@ describe("linkBuildOutput", () => {
     expect(functionAssets).not.toBe(output.server.assets);
     expect(routeAssets).not.toBe(output.server.assets);
     expect(routeAssets).not.toBe(functionAssets);
+    expect(functionAssets).toEqual(output.server.assets);
+    expect(routeAssets).toEqual(output.server.assets);
 
     functionAssets.css.push("work.css");
 
-    expect(functionAssets.css).toEqual(["work.css"]);
-    expect(routeAssets.css).toEqual([]);
-    expect(output.server.assets).toEqual({ js: ["server.js"], css: [] });
+    expect(functionAssets.css).toEqual(["server.css", "work.css"]);
+    expect(routeAssets.css).toEqual(["server.css"]);
+    expect(output.server.assets).toEqual({
+      js: ["server.js"],
+      css: ["server.css"],
+    });
     expect(output.server.entry).toBe("server.js");
     expect(() =>
       assertFrameworkManifestShape(output, "linked output"),
@@ -4261,7 +4786,7 @@ describe("linkBuildOutput", () => {
     );
   });
 
-  it("ignores server build facts when no server runtime entry is planned", () => {
+  it("rejects server facts without an exact planned server entry", () => {
     const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
@@ -4283,22 +4808,22 @@ describe("linkBuildOutput", () => {
       runtime: createRuntimePlan(),
     };
 
-    expect(
+    expect(() =>
       linkBuildOutput({
         graph,
         plan,
-        serverAssets: { js: ["server.js"], css: [] },
-      }).server,
-    ).toEqual({
-      assets: { js: [], css: [] },
-      functions: {},
-      routes: [],
-    });
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      "[evjs] BuildOutput link input.serverEntryAssets.server does not match an exact server BuildPlan entry name.",
+    );
   });
 });
 
-describe("createPublicManifest", () => {
-  it("redacts source and server-only build metadata from the browser manifest", () => {
+describe("createDeploymentMetadata", () => {
+  it("projects the canonical deployable metadata from BuildOutput", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build",
@@ -4362,10 +4887,10 @@ describe("createPublicManifest", () => {
         },
         settlement: {
           assets: { js: [], css: ["settlement-server.css"] },
-          render: "ssg",
+          render: "ssr",
           rendering: {
             component: "server",
-            html: "static",
+            html: "server",
             prerender: "full",
             streaming: false,
             hydrate: "none",
@@ -4425,6 +4950,14 @@ describe("createPublicManifest", () => {
             owner: { pageId: "insights" },
             assets: { js: ["insights-rsc.js"], css: ["insights.css"] },
           },
+          "settlement-server": {
+            kind: "page-server",
+            owner: { pageId: "settlement", routeId: "settlement" },
+            assets: {
+              js: ["settlement-server.js"],
+              css: ["settlement-server.css"],
+            },
+          },
         },
         functions: {
           "fn:refund": {
@@ -4455,111 +4988,6 @@ describe("createPublicManifest", () => {
         publicAsset: "dashboard.js",
       },
     };
-
-    const manifest = createPublicManifest(output);
-    const serialized = JSON.stringify(manifest);
-
-    expect(() =>
-      assertFrameworkManifestShape(manifest, "public manifest", {
-        server: "optional",
-        pageRendererReferences: "optional",
-        pprRendererReferences: "optional",
-        rscRendererReferences: "optional",
-      }),
-    ).not.toThrow();
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...manifest,
-          assets: { insights: { js: ["evjs-rsc-client.js"], css: [] } },
-        },
-        "public manifest",
-        {
-          server: "optional",
-          pageRendererReferences: "optional",
-          pprRendererReferences: "optional",
-          rscRendererReferences: "optional",
-        },
-      ),
-    ).toThrow(
-      '[evjs] public manifest.assets must be omitted when routing.kind is "mpa".',
-    );
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...manifest,
-          pages: {},
-          routes: [],
-        },
-        "public manifest",
-        {
-          server: "optional",
-          pageRendererReferences: "optional",
-          pprRendererReferences: "optional",
-          rscRendererReferences: "optional",
-        },
-      ),
-    ).toThrow(
-      "[evjs] public manifest.pages is not supported in public manifests.",
-    );
-    if (!("routing" in manifest)) {
-      throw new Error("Expected routed public manifest.");
-    }
-    const { routing: _routing, ...manifestWithoutRouting } = manifest;
-    expect(() =>
-      assertFrameworkManifestShape(manifestWithoutRouting, "public manifest", {
-        server: "optional",
-        pageRendererReferences: "optional",
-        pprRendererReferences: "optional",
-        rscRendererReferences: "optional",
-      }),
-    ).toThrow(
-      "[evjs] public manifest must define either routing or documents.",
-    );
-    expect(serialized).not.toContain(".tsx");
-    expect(serialized).not.toContain(".ts");
-    expect(serialized).not.toContain("file://");
-    expect(serialized).not.toContain("/Users/");
-    if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-      throw new Error("Expected MPA public manifest.");
-    }
-    const pages = manifest.routing.pages;
-    expect(pages.insights.assets).toEqual({
-      js: ["evjs-rsc-client.js"],
-      css: ["insights.css"],
-    });
-    expect(pages.insights.render).toBe("ssr");
-    expect(pages.insights.metadata).toEqual({
-      title: "Insights",
-      meta: { description: "Business insights" },
-    });
-    expect(pages.landing.render).toBe("ssg");
-    expect(pages.landing.document).toEqual({
-      fileName: "landing.html",
-      aliases: ["legacy/landing.html"],
-    });
-    expect("module" in pages.insights).toBe(false);
-    expect("runtime" in manifest).toBe(false);
-    expect("pages" in manifest).toBe(false);
-    expect("routes" in manifest).toBe(false);
-    expect("app" in manifest).toBe(false);
-    expect("assets" in manifest).toBe(false);
-    expect(pages.insights.document).toEqual({
-      fileName: "insights.html",
-    });
-    expect(pages.campaign.assets).toEqual({ js: [], css: [] });
-    expect(pages.campaign.document).toEqual({
-      fileName: "campaign.html",
-    });
-    expect(pages.settlement.document).toBeUndefined();
-    expect("hydrate" in pages.campaign).toBe(false);
-    expect("rendering" in pages.campaign).toBe(false);
-    expect("ppr" in pages.campaign).toBe(false);
-    expect("server" in manifest).toBe(false);
-    expect("rsc" in manifest).toBe(false);
-    expect("distDir" in manifest).toBe(false);
-    expect("paths" in manifest).toBe(false);
-    expect("deployment" in manifest).toBe(false);
 
     const deployment = createDeploymentMetadata(output);
     expect(deployment.documents).toEqual([
@@ -4632,7 +5060,7 @@ describe("createPublicManifest", () => {
     expect(JSON.stringify(deployment)).not.toContain("insights-rsc");
   });
 
-  it("keeps top-level assets for SPA manifests", () => {
+  it("keeps top-level public assets in deployment metadata", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       assets: {
@@ -4653,18 +5081,23 @@ describe("createPublicManifest", () => {
       ],
     };
 
-    expect(createPublicManifest(output)).toMatchObject({
+    expect(createDeploymentMetadata(output)).toMatchObject({
       assets: {
         main: { js: ["main.js"], css: ["main.css"] },
       },
-      routing: {
-        kind: "spa",
-        routes: [{ id: "home", path: "/" }],
-      },
+      documents: [
+        {
+          kind: "app",
+          id: "default",
+          fileName: "index.html",
+          fallback: "/",
+          assets: { js: ["main.js"], css: ["main.css"] },
+        },
+      ],
     });
   });
 
-  it("keeps wildcard SPA routes in public manifests", () => {
+  it("keeps wildcard SPA fallbacks in deployment metadata", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       apps: {
@@ -4682,15 +5115,16 @@ describe("createPublicManifest", () => {
       ],
     };
 
-    expect(createPublicManifest(output)).toMatchObject({
-      routing: {
-        kind: "spa",
-        routes: [{ id: "docs_splat", path: "/docs/$" }],
-      },
+    expect(createDeploymentMetadata(output).documents).toContainEqual({
+      kind: "app",
+      id: "default",
+      fileName: "index.html",
+      fallback: "/docs/$",
+      assets: { js: ["main.js"], css: [] },
     });
   });
 
-  it("keeps route-owned SSG page documents in SPA manifests", () => {
+  it("keeps route-owned SSG documents in deployment metadata", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       assets: {
@@ -4732,29 +5166,35 @@ describe("createPublicManifest", () => {
       ],
     };
 
-    expect(createPublicManifest(output)).toMatchObject({
+    expect(output.pages.report.metadata).toEqual({
+      title: "Report",
+      meta: { description: "Annual report" },
+    });
+    expect(createDeploymentMetadata(output)).toMatchObject({
       assets: {
         main: { js: ["main.js"], css: [] },
       },
-      routing: {
-        kind: "spa",
-        routes: [
-          {
-            id: "report",
-            path: "/report",
-            pageId: "report",
-            render: "ssg",
-            metadata: {
-              title: "Report",
-              meta: { description: "Annual report" },
-            },
-          },
-        ],
-      },
+      documents: expect.arrayContaining([
+        {
+          kind: "page",
+          id: "report",
+          fileName: "report.html",
+        },
+      ]),
+      routes: [
+        {
+          kind: "static-page",
+          path: "/report",
+          pageId: "report",
+          documentId: "report",
+          render: "ssg",
+          methods: ["GET", "HEAD"],
+        },
+      ],
     });
   });
 
-  it("keeps static-only SSG SPA manifests minimal", () => {
+  it("keeps static-only SSG deployment metadata minimal", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       assets: {},
@@ -4806,23 +5246,6 @@ describe("createPublicManifest", () => {
       },
     };
 
-    expect(createPublicManifest(output)).toEqual({
-      version: 1,
-      buildId: "build",
-      publicPath: "/",
-      documents: [
-        {
-          id: "report",
-          path: "/report",
-          fileName: "report.html",
-          render: "ssg",
-          metadata: {
-            title: "Report",
-            meta: { robots: "noindex" },
-          },
-        },
-      ],
-    });
     expect(createDeploymentMetadata(output)).toEqual({
       version: 1,
       buildId: "build",
@@ -4851,15 +5274,160 @@ describe("createPublicManifest", () => {
       ],
       server: {},
     });
-    expect(createServerManifest(output)).toEqual({
-      version: 1,
-      routes: [],
+  });
+
+  it("rejects request-time output without a canonical server runtime entry", () => {
+    const output = createRuntimeFreeBuildOutput();
+    output.server.routes.push({
+      path: "/health",
+      methods: ["GET"],
+      assets: { js: [], css: [] },
+    });
+
+    expect(() => createDeploymentMetadata(output)).toThrow(
+      "BuildOutput.server.entry is required because server request Routes are present",
+    );
+    expect(() =>
+      createDeploymentMetadata(createRuntimeFreeSsgOutput(false)),
+    ).toThrow(
+      'BuildOutput.pages.report.document is required because BuildOutput.routes[0] publishes SSG Page "report"',
+    );
+  });
+
+  it("rejects lossy or unsafe plugin-owned metadata", () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const getter = {};
+    Object.defineProperty(getter, "value", {
+      enumerable: true,
+      get() {
+        return "hidden";
+      },
+    });
+    const unsafeKey = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(unsafeKey, "__proto__", {
+      enumerable: true,
+      value: "unsafe",
+      writable: true,
+    });
+
+    const cases: Array<[label: string, metadata: unknown, error: string]> = [
+      ["function", { handler() {} }, "must be JSON-serializable"],
+      ["bigint", { value: 1n }, "must be JSON-serializable"],
+      ["non-finite number", { value: Number.NaN }, "finite numbers"],
+      ["negative zero", { value: -0 }, "must not contain negative zero"],
+      ["cycle", cycle, "must not contain cycles"],
+      ["getter", getter, "enumerable own data property"],
+      ["unsafe key", unsafeKey, "is not a safe config field"],
+    ];
+
+    for (const [label, metadata, error] of cases) {
+      const output = createMinimalBuildOutput();
+      output.deployment = metadata as BuildOutput["deployment"];
+      expect(
+        () => assertFrameworkManifestShape(output, `${label} BuildOutput`),
+        label,
+      ).toThrow(error);
+      expect(() => createDeploymentMetadata(output), label).toThrow(error);
+    }
+  });
+
+  it("rejects a deployment metadata accessor without invoking it", () => {
+    const output = createMinimalBuildOutput();
+    let invoked = false;
+    Object.defineProperty(output, "deployment", {
+      enumerable: true,
+      get() {
+        invoked = true;
+        return { platform: "test" };
+      },
+    });
+
+    expect(() => assertFrameworkManifestShape(output, "BuildOutput")).toThrow(
+      "BuildOutput.deployment must be an enumerable own data property",
+    );
+    expect(() => createDeploymentMetadata(output)).toThrow(
+      "BuildOutput.deployment must be an enumerable own data property",
+    );
+    expect(invoked).toBe(false);
+  });
+
+  it("clones deployment metadata without invoking inherited toJSON", () => {
+    const output = createMinimalBuildOutput();
+    let invoked = false;
+    const channels = ["stable"];
+    Object.setPrototypeOf(channels, {
+      toJSON() {
+        invoked = true;
+        return ["replaced"];
+      },
+    });
+    output.deployment = { channels };
+
+    const metadata = createDeploymentMetadata(output);
+
+    expect(invoked).toBe(false);
+    expect(metadata.metadata).toEqual({ channels: ["stable"] });
+  });
+
+  it("returns projections isolated from the linked BuildOutput and each other", () => {
+    const output = createMinimalBuildOutput();
+    output.deployment = {
+      platform: "test",
+      nested: { region: "primary" },
+    };
+    output.apps.default = {
+      assets: { js: ["app.js"], css: ["app.css"] },
+      document: { fileName: "index.html" },
+    };
+
+    const first = createDeploymentMetadata(output);
+    const second = createDeploymentMetadata(output);
+    first.paths.rootDir = "changed";
+    first.documents[0]?.assets?.js.push("changed.js");
+    const firstMetadata = first.metadata as Record<string, unknown>;
+    (firstMetadata.nested as Record<string, unknown>).region = "changed";
+
+    expect(output.paths.rootDir).toBe("dist");
+    expect(output.apps.default.assets.js).toEqual(["app.js"]);
+    expect(output.deployment).toEqual({
+      platform: "test",
+      nested: { region: "primary" },
+    });
+    expect(second.paths.rootDir).toBe("dist");
+    expect(second.documents[0]?.assets?.js).toEqual(["app.js"]);
+    expect(second.metadata).toEqual({
+      platform: "test",
+      nested: { region: "primary" },
+    });
+
+    output.paths.rootDir = "source-changed";
+    output.apps.default.assets.js.push("source-changed.js");
+    (output.deployment.nested as Record<string, unknown>).region =
+      "source-changed";
+    expect(second.paths.rootDir).toBe("dist");
+    expect(second.documents[0]?.assets?.js).toEqual(["app.js"]);
+    expect(second.metadata).toEqual({
+      platform: "test",
+      nested: { region: "primary" },
     });
   });
 });
 
-describe("createServerManifest", () => {
-  it("projects BuildOutput into the server manifest shape", () => {
+describe("server deployment metadata", () => {
+  it("rejects request-time output without a canonical server runtime entry", () => {
+    const output = createRuntimeFreeBuildOutput();
+    output.server.functions.work = {
+      exportName: "work",
+      assets: { js: [], css: [] },
+    };
+
+    expect(() => createDeploymentMetadata(output)).toThrow(
+      "BuildOutput.server.entry is required because server Functions are present",
+    );
+  });
+
+  it("projects server routes without implementation details", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       runtime: {
@@ -4941,9 +5509,10 @@ describe("createServerManifest", () => {
       },
     };
 
-    expect(createServerManifest(output)).toEqual({
-      version: 1,
-      entry: "server.js",
+    const deployment = createDeploymentMetadata(output);
+
+    expect(deployment).toMatchObject({
+      server: { entry: "server.js" },
       routes: [
         {
           kind: "server-page",
@@ -4983,18 +5552,19 @@ describe("createServerManifest", () => {
         },
       ],
     });
-    const serverManifestText = JSON.stringify(createServerManifest(output));
-    expect(serverManifestText).not.toContain("fn:getUser");
-    expect(serverManifestText).not.toContain('"assets"');
-    expect(serverManifestText).not.toContain('"renderers"');
-    expect(serverManifestText).not.toContain("dashboard-rsc");
+    const serverProjection = JSON.stringify({
+      routes: deployment.routes,
+      server: deployment.server,
+    });
+    expect(serverProjection).not.toContain("fn:getUser");
+    expect(serverProjection).not.toContain('"assets"');
+    expect(serverProjection).not.toContain('"renderers"');
+    expect(serverProjection).not.toContain("dashboard-rsc");
   });
 
-  it("projects the minimal server output into the server manifest shape", () => {
-    expect(createServerManifest(createMinimalBuildOutput())).toEqual({
-      version: 1,
-      entry: "server.js",
-      routes: [],
-    });
+  it("projects the minimal server entry", () => {
+    expect(createDeploymentMetadata(createMinimalBuildOutput()).server).toEqual(
+      { entry: "server.js" },
+    );
   });
 });

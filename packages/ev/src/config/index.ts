@@ -9,14 +9,15 @@ import {
   type PathPatternListValidationError,
   type PathPatternValidationError,
 } from "@evjs/shared";
-import type {
-  HydrationMode,
-  PageMetadata,
-  PageRouteNode,
-  PrerenderConfig,
-  RenderMode,
-  ServerMiddlewareNode,
-  ServerRouteNode,
+import {
+  assertPluginId,
+  type HydrationMode,
+  type PageMetadata,
+  type PageRouteNode,
+  type PrerenderConfig,
+  type RenderMode,
+  type ServerMiddlewareNode,
+  type ServerRouteNode,
 } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "../_internal/build/bundler.js";
 import {
@@ -26,37 +27,25 @@ import {
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
 import {
   copyDefinedPluginRuntime,
-  isDefinedPluginRuntimePropertyKey,
+  definedPluginRuntimeMetadata,
 } from "../plugin/defined.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
-import type {
-  PagePluginConfigValues,
-  PagePluginConfigValuesCheck,
-} from "./plugins.js";
+import type { PagePluginOptions, PagePluginOptionsCheck } from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
+export { type ConfigPatch, merge } from "./merge.js";
 export type {
   ExtractInstalledPlugin,
   InstalledPluginRegistry,
-  PagePluginConfigValues,
-  PagePluginConfigValuesCheck,
+  PagePluginOptions,
+  PagePluginOptionsCheck,
 } from "./plugins.js";
 export type {
   StaticConfigCompatible,
   StaticConfigObject,
   StaticConfigValue,
 } from "./static.js";
-
-/**
- * Default bundler config shape used by framework-core APIs.
- *
- * Utoopack is the default bundler path. Projects that switch bundlers can pass
- * a narrower generic or use the typed helper exported by that adapter.
- */
-export type DefaultBundlerConfig = import("@utoo/pack").ConfigComplete;
-
-export { type ConfigPatch, merge } from "./merge.js";
 
 /** Resolved dev server configuration (all defaults applied). */
 export interface ResolvedDevConfig {
@@ -115,7 +104,7 @@ export interface ResolvedServerRuntimeConfig {
 /**
  * A version of Config where all fields with defaults are guaranteed.
  */
-export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
+export interface ResolvedConfig<TBundlerCfg = unknown> {
   /** Whether framework file conventions are enabled. */
   conventions: boolean;
   /** Emitted HTML and asset-tag output options. */
@@ -130,7 +119,7 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   server: ResolvedServerConfig;
   /** Browser-to-server transport configuration. */
   transport: ResolvedTransportConfig;
-  /** Bundler adapter. When omitted, defaults to utoopack. */
+  /** Bundler adapter. Core leaves this unset; `@evjs/cli` supplies Utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
   /** Active plugins. */
   plugins: Plugin<TBundlerCfg>[];
@@ -142,13 +131,13 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
  * This is the config snapshot exposed to setup, lifecycle, contribution, and
  * bundler contexts.
  */
-export type ResolvedFrameworkConfig<TBundlerCfg = DefaultBundlerConfig> =
+export type ResolvedFrameworkConfig<TBundlerCfg = unknown> =
   ResolvedConfig<TBundlerCfg>;
 
 /**
  * evjs framework configuration.
  */
-export interface Config<TBundlerCfg = DefaultBundlerConfig> {
+export interface Config<TBundlerCfg = unknown> {
   /**
    * Enable framework file conventions.
    *
@@ -197,11 +186,14 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    */
   application?: ConfigRouteApplication;
 
-  /** Bundler adapter. When omitted, defaults to utoopack. */
+  /** Bundler adapter. Core leaves this unset; `@evjs/cli` supplies Utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
 
   /**
-   * Framework plugins to extend behavior or modify the bundler config.
+   * Application-owned framework plugin installation.
+   *
+   * Plugins may extend framework behavior or modify bundler configuration,
+   * but their configure hooks cannot change this list.
    */
   plugins?: readonly (Plugin<TBundlerCfg> | false | null | undefined)[];
 }
@@ -315,7 +307,7 @@ interface PageFileConfigBase extends PageMetadata {
   /** Enable React Server Components. Requires `render: "ssr"`. */
   readonly rsc?: true;
   /** Settings for plugins installed by `ev.config.ts`. */
-  readonly plugins?: PagePluginConfigValues;
+  readonly plugins?: PagePluginOptions;
   /**
    * Static HTML Document output owned by this Page.
    *
@@ -351,7 +343,7 @@ export type PageFileConfig = PageFileConfigBase & PageFileRenderingConfig;
 
 type PageFileConfigPluginCheck<TConfig extends PageFileConfig> =
   TConfig extends { readonly plugins: infer TPlugins }
-    ? { readonly plugins: PagePluginConfigValuesCheck<TPlugins> }
+    ? { readonly plugins: PagePluginOptionsCheck<TPlugins> }
     : unknown;
 
 export interface PageFileDocumentConfig {
@@ -537,16 +529,14 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "changeOrigin",
   "secure",
 ]);
-const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
-  "name",
+const PUBLIC_PLUGIN_KEYS = new Set([
   "id",
-  "key",
   "dependencies",
   "optionalDependencies",
   "enforce",
-  "config",
+  "configure",
   "setup",
-  "contributions",
+  "emitIR",
 ]);
 const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
   "name",
@@ -594,7 +584,7 @@ function resolveRscEndpoint(rsc: ServerConfig["rsc"]): string | undefined {
  * Source discovery and plugin setting resolution happen in later build
  * phases; this function only produces their normalized input state.
  */
-export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
+export function resolveConfig<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
 ): ResolvedConfig<TBundlerCfg> {
   const config = resolveRootConfig(userConfig);
@@ -707,7 +697,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   };
 }
 
-export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
+export function resolvePluginsConfig<TBundlerCfg = unknown>(
   plugins: unknown,
 ): Plugin<TBundlerCfg>[] {
   if (plugins === undefined) return [];
@@ -716,51 +706,57 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   }
   assertConfigArray(plugins, "plugins");
   const resolved: Plugin<TBundlerCfg>[] = [];
+  const ids = new Set<string>();
   for (let index = 0; index < plugins.length; index++) {
     const plugin = plugins[index];
     if (plugin === false || plugin === null || plugin === undefined) continue;
-    resolved.push(resolvePluginConfig<TBundlerCfg>(plugin, index));
+    const resolvedPlugin = resolvePlugin<TBundlerCfg>(plugin, index);
+    if (ids.has(resolvedPlugin.id)) {
+      throw new Error(
+        `[evjs] Duplicate plugin id "${resolvedPlugin.id}". Plugin ids must be globally unique.`,
+      );
+    }
+    ids.add(resolvedPlugin.id);
+    resolved.push(resolvedPlugin);
   }
   return resolved;
 }
 
-function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
+function resolvePlugin<TBundlerCfg = unknown>(
   plugin: unknown,
   index: number,
 ): Plugin<TBundlerCfg> {
   const path = `plugins[${index}]`;
-  const pluginConfig = assertPlainConfigRecord(
+  const pluginDescriptor = assertPlainConfigRecord(
     plugin,
     path,
     "a plugin object",
-    isDefinedPluginRuntimePropertyKey,
+    definedPluginRuntimeMetadata,
   );
   assertKnownConfigKeys(
-    pluginConfig,
-    PUBLIC_PLUGIN_CONFIG_KEYS,
+    pluginDescriptor,
+    PUBLIC_PLUGIN_KEYS,
     path,
-    "name, id, key, dependencies, optionalDependencies, enforce, config, setup, or contributions",
+    "id, dependencies, optionalDependencies, enforce, configure, setup, or emitIR",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
         : undefined,
   );
   const {
-    name: rawName,
     id: rawId,
-    key: rawKey,
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
     enforce: rawEnforce,
-    config: rawConfig,
+    configure: rawConfigure,
     setup: rawSetup,
-    contributions: rawContributions,
-  } = pluginConfig;
+    emitIR: rawEmitIR,
+  } = pluginDescriptor;
 
-  if (rawConfig !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["config"]>>(
-      rawConfig,
-      `${path}.config`,
+  if (rawConfigure !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["configure"]>>(
+      rawConfigure,
+      `${path}.configure`,
     );
   }
   if (rawSetup !== undefined) {
@@ -769,50 +765,57 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       `${path}.setup`,
     );
   }
-  if (rawContributions !== undefined) {
-    assertFunction<NonNullable<Plugin<TBundlerCfg>["contributions"]>>(
-      rawContributions,
-      `${path}.contributions`,
+  if (rawEmitIR !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["emitIR"]>>(
+      rawEmitIR,
+      `${path}.emitIR`,
     );
   }
+  assertPluginId(rawId, `${path}.id`);
   const dependencies =
     rawDependencies === undefined
       ? undefined
-      : cloneStringArray(rawDependencies, `${path}.dependencies`);
+      : clonePluginIdArray(rawDependencies, `${path}.dependencies`);
   const optionalDependencies =
     rawOptionalDependencies === undefined
       ? undefined
-      : cloneStringArray(
+      : clonePluginIdArray(
           rawOptionalDependencies,
           `${path}.optionalDependencies`,
         );
   if (dependencies !== undefined && optionalDependencies !== undefined) {
     assertDisjointPluginDependencies(dependencies, optionalDependencies, path);
   }
+  if (dependencies?.includes(rawId)) {
+    throw new Error(
+      `[evjs] ${path}.dependencies must not contain the plugin's own id "${rawId}".`,
+    );
+  }
+  if (optionalDependencies?.includes(rawId)) {
+    throw new Error(
+      `[evjs] ${path}.optionalDependencies must not contain the plugin's own id "${rawId}".`,
+    );
+  }
 
   const resolved: Plugin<TBundlerCfg> = {
-    name: assertTrimmedNonEmptyString(rawName, `${path}.name`),
-    ...(rawId !== undefined
-      ? { id: assertTrimmedNonEmptyString(rawId, `${path}.id`) }
+    id: rawId,
+    ...(dependencies !== undefined
+      ? { dependencies: Object.freeze(dependencies) }
       : {}),
-    ...(rawKey !== undefined
-      ? { key: assertTrimmedNonEmptyString(rawKey, `${path}.key`) }
+    ...(optionalDependencies !== undefined
+      ? { optionalDependencies: Object.freeze(optionalDependencies) }
       : {}),
-    ...(dependencies !== undefined ? { dependencies } : {}),
-    ...(optionalDependencies !== undefined ? { optionalDependencies } : {}),
     ...(rawEnforce !== undefined
       ? {
           enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
         }
       : {}),
-    ...(rawConfig !== undefined ? { config: rawConfig } : {}),
+    ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
-    ...(rawContributions !== undefined
-      ? { contributions: rawContributions }
-      : {}),
+    ...(rawEmitIR !== undefined ? { emitIR: rawEmitIR } : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
-  return resolved;
+  return Object.freeze(resolved);
 }
 
 function assertDisjointPluginDependencies(
@@ -831,7 +834,7 @@ function assertDisjointPluginDependencies(
   }
 }
 
-export function resolveBundlerConfig<TBundlerCfg = DefaultBundlerConfig>(
+export function resolveBundlerConfig<TBundlerCfg = unknown>(
   bundler: unknown,
   path = "bundler",
 ): BundlerAdapter<TBundlerCfg> | undefined {
@@ -840,7 +843,7 @@ export function resolveBundlerConfig<TBundlerCfg = DefaultBundlerConfig>(
   return bundler;
 }
 
-function assertBundlerAdapter<TBundlerCfg = DefaultBundlerConfig>(
+function assertBundlerAdapter<TBundlerCfg = unknown>(
   value: unknown,
   path: string,
 ): asserts value is BundlerAdapter<TBundlerCfg> {
@@ -927,7 +930,7 @@ function assertRequiredBoolean(
   throw new Error(`[evjs] ${path} must be a boolean.`);
 }
 
-function resolveRootConfig<TBundlerCfg = DefaultBundlerConfig>(
+function resolveRootConfig<TBundlerCfg = unknown>(
   config: Config<TBundlerCfg> | undefined,
 ): Config<TBundlerCfg> {
   if (config === undefined) return {};
@@ -1422,10 +1425,10 @@ function assertPlainConfigRecord(
   value: unknown,
   path: string,
   description: string,
-  allowPropertyKey?: (key: PropertyKey) => boolean,
+  allowedSymbol?: symbol,
 ): Record<string, unknown> {
   if (isPlainConfigRecord(value)) {
-    assertEnumerableStringOwnKeys(value, path, allowPropertyKey);
+    assertEnumerableStringOwnKeys(value, path, allowedSymbol);
     return value;
   }
   throw new Error(`[evjs] ${path} must be ${description}.`);
@@ -1434,11 +1437,16 @@ function assertPlainConfigRecord(
 function assertEnumerableStringOwnKeys(
   value: object,
   path: string,
-  allowPropertyKey?: (key: PropertyKey) => boolean,
+  allowedSymbol?: symbol,
 ): void {
   for (const key of Reflect.ownKeys(value)) {
-    if (allowPropertyKey?.(key)) continue;
     if (typeof key !== "string") {
+      if (key === allowedSymbol) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor && !descriptor.enumerable && "value" in descriptor) {
+          continue;
+        }
+      }
       throw new Error(`[evjs] ${path} must not contain symbol fields.`);
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -1856,21 +1864,21 @@ function assertPluginEnforce(value: unknown, path: string): Plugin["enforce"] {
   throw new Error(`[evjs] ${path} must be "pre", "normal", or "post".`);
 }
 
-function cloneStringArray(value: unknown, path: string): string[] {
+function clonePluginIdArray(value: unknown, path: string): string[] {
   if (!Array.isArray(value)) {
-    throw new Error(`[evjs] ${path} must be an array of plugin names.`);
+    throw new Error(`[evjs] ${path} must be an array of plugin ids.`);
   }
   assertConfigArray(value, path);
   const seen = new Set<string>();
   return value.map((item, index) => {
-    const pluginName = assertTrimmedNonEmptyString(item, `${path}[${index}]`);
-    if (seen.has(pluginName)) {
+    assertPluginId(item, `${path}[${index}]`);
+    if (seen.has(item)) {
       throw new Error(
-        `[evjs] ${path} must not contain duplicate plugin name "${pluginName}".`,
+        `[evjs] ${path} must not contain duplicate plugin id "${item}".`,
       );
     }
-    seen.add(pluginName);
-    return pluginName;
+    seen.add(item);
+    return item;
   });
 }
 

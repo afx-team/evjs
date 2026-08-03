@@ -20,8 +20,6 @@ import type {
   ServerRouteNode,
 } from "@evjs/shared/manifest";
 import { assertCoreGraph } from "@evjs/shared/manifest";
-import { parseSync } from "@swc/core";
-import type { ModuleItem } from "@swc/types";
 import type {
   PageRouteDiscoveryMetadata,
   ResolvedConfigRouteApplication,
@@ -58,6 +56,7 @@ import {
 } from "../server-fns.js";
 import { CANONICAL_SERVER_ROUTE_ROOT } from "../server-route-conventions.js";
 import type { DiscoveredServerRouteNode } from "../server-routes.js";
+import { extractRuntimeModuleSpecifiers } from "../static-imports.js";
 import {
   detectUseServer,
   hashServerFunction,
@@ -70,6 +69,11 @@ import {
   createConfigRouteGraph,
 } from "./config-route.js";
 import { applyResolvedPageConfigs, createPageAnchorGraph } from "./core.js";
+import {
+  isMissingSourcePathError,
+  isProjectSourceModule,
+  registerProjectSourceResolutionCandidates,
+} from "./source-resolution.js";
 
 export interface GraphAnalysisResult {
   graph: CoreGraph;
@@ -88,6 +92,10 @@ export interface CreateCoreGraphOptions {
   pageConfigs?: ResolvedPageFileConfigs;
   /** Page plugin setting snapshots reused during one alias-convergence analysis. */
   pluginSettingsSession?: PluginSettingsResolutionSession;
+  /** @internal Captures a baseline immediately before framework source reads. */
+  beforeSourceRead?: (file: string) => void;
+  /** @internal Reports source dependencies discovered by delegated loaders. */
+  onSourceDependency?: (file: string) => void;
 }
 
 interface FrameworkAnalysisFacts {
@@ -126,7 +134,6 @@ export interface GraphConfig {
   };
 }
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const DEFAULT_SOURCE_ALIAS = "@/";
 
 interface FrameworkSourceFiles {
@@ -143,14 +150,25 @@ export async function createCoreGraph(
   options: CreateCoreGraphOptions = {},
 ): Promise<GraphAnalysisResult> {
   const configRouteGraph = config.application
-    ? await createConfigRouteGraph(config, cwd)
+    ? await createConfigRouteGraph(
+        config,
+        cwd,
+        options.beforeSourceRead,
+        options.onSourceDependency,
+      )
     : undefined;
   const pageConfigs =
     options.pageConfigs ??
     (hasPageAnchorDiscovery(config)
-      ? await resolvePageConfigModules(cwd, config.routing.metadata)
+      ? await resolvePageConfigModules(cwd, config.routing.metadata, {
+          beforeSourceRead: options.beforeSourceRead,
+          onSourceDependency: options.onSourceDependency,
+        })
       : configRouteGraph
-        ? await resolveCorePageConfigModules(cwd, configRouteGraph)
+        ? await resolveCorePageConfigModules(cwd, configRouteGraph, {
+            beforeSourceRead: options.beforeSourceRead,
+            onSourceDependency: options.onSourceDependency,
+          })
         : { pages: {}, dependencies: [] });
   const diagnostics: Diagnostic[] = [];
   const configuredPageRoutes = validateConfiguredPageRoutes(
@@ -173,6 +191,8 @@ export async function createCoreGraph(
     configRouteGraph
       ? collectConfigRouteCoreSourceModules(configRouteGraph)
       : [],
+    options.beforeSourceRead,
+    options.onSourceDependency,
   );
   diagnostics.push(...sourceFiles.diagnostics);
   // Watch explicit graph roots and files that already declare framework
@@ -235,7 +255,12 @@ export async function createCoreGraph(
   }
 
   for (const file of sourceFiles.analysisFiles) {
-    const source = sourceCache.get(file) ?? (await fs.readFile(file, "utf-8"));
+    const source = await readFrameworkSource(
+      file,
+      sourceCache,
+      options.beforeSourceRead,
+    );
+    if (source === undefined) continue;
     if (
       sourceFiles.explicitDependencyFiles.has(file) ||
       isFrameworkDependencySource(source)
@@ -324,6 +349,8 @@ export async function createCoreGraph(
     diagnostics,
     fileDependencies,
     options.resolve?.alias,
+    options.beforeSourceRead,
+    options.onSourceDependency,
   );
   validateCoreGraphPageContracts(graph, diagnostics);
   await diagnosePageModuleRouteLifecycleExports(
@@ -331,6 +358,8 @@ export async function createCoreGraph(
     cwd,
     sourceCache,
     diagnostics,
+    options.beforeSourceRead,
+    options.onSourceDependency,
   );
   const pluginSettings =
     options.pluginSettings ?? collectPluginSettingsRegistry([]);
@@ -401,11 +430,17 @@ async function mergePprRegionsIntoCoreGraph(
   diagnostics: Diagnostic[],
   fileDependencies: Set<string>,
   aliases?: Record<string, string>,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<void> {
   for (const page of Object.values(graph.pages)) {
     const ppr = page.ppr ?? derivePprConfig(page.prerender);
     if (!ppr) continue;
-    const root = await resolveProjectSourceAbsolute(cwd, page.source.module);
+    const root = await resolveProjectSourceAbsolute(
+      cwd,
+      page.source.module,
+      onSourceDependency,
+    );
     if (!root) continue;
     const analysis = await collectPprRegionsFromPageClosure(
       cwd,
@@ -413,6 +448,8 @@ async function mergePprRegionsIntoCoreGraph(
       sourceCache,
       fileDependencies,
       aliases,
+      beforeSourceRead,
+      onSourceDependency,
     );
     diagnostics.push(...analysis.diagnostics);
     if (Object.keys(analysis.regions).length === 0) {
@@ -423,6 +460,8 @@ async function mergePprRegionsIntoCoreGraph(
       cwd,
       analysis.regions,
       sourceCache,
+      beforeSourceRead,
+      onSourceDependency,
     );
     diagnostics.push(...resolved.diagnostics);
     page.ppr = {
@@ -508,22 +547,23 @@ async function diagnosePageModuleRouteLifecycleExports(
   cwd: string,
   sourceCache: Map<string, string>,
   diagnostics: Diagnostic[],
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<void> {
   for (const page of Object.values(graph.pages)) {
     const absolute = await resolveProjectSourceAbsolute(
       cwd,
       page.source.module,
+      onSourceDependency,
     );
     if (!absolute) continue;
 
-    let source: string;
-    try {
-      source =
-        sourceCache.get(absolute) ?? (await fs.readFile(absolute, "utf-8"));
-      sourceCache.set(absolute, source);
-    } catch {
-      continue;
-    }
+    const source = await readFrameworkSource(
+      absolute,
+      sourceCache,
+      beforeSourceRead,
+    );
+    if (source === undefined) continue;
 
     const exports = analyzePageModuleExports(source);
     if (exports.renderingConfig.length > 0) {
@@ -563,6 +603,8 @@ async function collectPprRegionsFromPageClosure(
   sourceCache: Map<string, string>,
   fileDependencies: Set<string>,
   aliases?: Record<string, string>,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<{
   regions: PprRegionConfigMap;
   diagnostics: Diagnostic[];
@@ -576,13 +618,12 @@ async function collectPprRegionsFromPageClosure(
     visited.add(file);
     fileDependencies.add(file);
 
-    let source: string;
-    try {
-      source = sourceCache.get(file) ?? (await fs.readFile(file, "utf-8"));
-      sourceCache.set(file, source);
-    } catch {
-      return;
-    }
+    const source = await readFrameworkSource(
+      file,
+      sourceCache,
+      beforeSourceRead,
+    );
+    if (source === undefined) return;
 
     const sourceRel = toPosixPath(path.relative(cwd, file));
     const analysis = extractPprRegions(source, sourceRel);
@@ -611,6 +652,7 @@ async function collectPprRegionsFromPageClosure(
         file,
         specifier,
         aliases,
+        onSourceDependency,
       );
       if (dependency) {
         await visit(dependency);
@@ -630,6 +672,8 @@ async function resolvePprRegionComponents(
   cwd: string,
   regions: PprRegionConfigMap,
   sourceCache: Map<string, string>,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<{
   regions: PprRegionConfigMap;
   diagnostics: Diagnostic[];
@@ -638,11 +682,17 @@ async function resolvePprRegionComponents(
   const diagnostics: Diagnostic[] = [];
 
   for (const [id, region] of Object.entries(regions)) {
-    const component = await resolveProjectSourcePath(cwd, region.component);
+    const component = await resolveProjectSourcePath(
+      cwd,
+      region.component,
+      onSourceDependency,
+    );
     const moduleConfig = await readPprRegionModuleConfig(
       cwd,
       component,
       sourceCache,
+      beforeSourceRead,
+      onSourceDependency,
     );
     diagnostics.push(...moduleConfig.diagnostics);
     resolved[id] = {
@@ -659,23 +709,27 @@ async function readPprRegionModuleConfig(
   cwd: string,
   component: string,
   sourceCache: Map<string, string>,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<{
   config: Partial<Omit<PprRegionConfigMap[string], "component">>;
   diagnostics: Diagnostic[];
 }> {
   const empty = { config: {}, diagnostics: [] };
   if (!component.startsWith(".")) return empty;
-  const absolute = await resolveProjectSourceAbsolute(cwd, component);
+  const absolute = await resolveProjectSourceAbsolute(
+    cwd,
+    component,
+    onSourceDependency,
+  );
   if (!absolute) return empty;
 
-  let source: string;
-  try {
-    source =
-      sourceCache.get(absolute) ?? (await fs.readFile(absolute, "utf-8"));
-    sourceCache.set(absolute, source);
-  } catch {
-    return empty;
-  }
+  const source = await readFrameworkSource(
+    absolute,
+    sourceCache,
+    beforeSourceRead,
+  );
+  if (source === undefined) return empty;
 
   const analysis = extractPprRegionModuleConfig(source);
   const file = toPosixPath(path.relative(cwd, absolute));
@@ -691,17 +745,27 @@ async function readPprRegionModuleConfig(
 async function resolveProjectSourceAbsolute(
   cwd: string,
   sourcePath: string,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string | undefined> {
   if (!sourcePath.startsWith(".")) return undefined;
-  return resolveSourcePath(cwd, path.resolve(cwd, sourcePath));
+  return resolveSourcePath(
+    cwd,
+    path.resolve(cwd, sourcePath),
+    onSourceDependency,
+  );
 }
 
 async function resolveProjectSourcePath(
   cwd: string,
   sourcePath: string,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string> {
   if (!sourcePath.startsWith(".")) return sourcePath;
-  const resolved = await resolveSourcePath(cwd, path.resolve(cwd, sourcePath));
+  const resolved = await resolveSourcePath(
+    cwd,
+    path.resolve(cwd, sourcePath),
+    onSourceDependency,
+  );
   return resolved
     ? `./${toPosixPath(path.relative(cwd, resolved))}`
     : sourcePath;
@@ -944,6 +1008,8 @@ async function collectFrameworkSourceFiles(
   sourceCache: Map<string, string>,
   aliases?: Record<string, string>,
   providerSourceModules: string[] = [],
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ): Promise<FrameworkSourceFiles> {
   const files = new Set<string>();
   const roots = new Set<string>();
@@ -958,6 +1024,7 @@ async function collectFrameworkSourceFiles(
       `Application-route module "${module}"`,
       diagnostics,
       explicitDependencyRoots,
+      onSourceDependency,
     );
   }
 
@@ -969,6 +1036,7 @@ async function collectFrameworkSourceFiles(
       `Page route "${route.id}" module`,
       diagnostics,
       explicitDependencyRoots,
+      onSourceDependency,
     );
     await addConfiguredSource(
       roots,
@@ -977,6 +1045,7 @@ async function collectFrameworkSourceFiles(
       `Page route "${route.id}" error boundary module`,
       diagnostics,
       explicitDependencyRoots,
+      onSourceDependency,
     );
     await addConfiguredSource(
       roots,
@@ -985,6 +1054,7 @@ async function collectFrameworkSourceFiles(
       `Page route "${route.id}" not-found boundary module`,
       diagnostics,
       explicitDependencyRoots,
+      onSourceDependency,
     );
   }
   for (const route of config.server.routes ?? []) {
@@ -995,6 +1065,7 @@ async function collectFrameworkSourceFiles(
       `Server route "${route.path}" module`,
       diagnostics,
       explicitDependencyRoots,
+      onSourceDependency,
     );
   }
   for (const middleware of [
@@ -1008,6 +1079,7 @@ async function collectFrameworkSourceFiles(
       `Server middleware "${middleware.module}" module`,
       diagnostics,
       explicitDependencyRoots,
+      onSourceDependency,
     );
   }
   await addConfiguredSource(
@@ -1017,9 +1089,18 @@ async function collectFrameworkSourceFiles(
     "SPA root layout module",
     diagnostics,
     explicitDependencyRoots,
+    onSourceDependency,
   );
   for (const root of roots) {
-    await collectStaticImportClosure(files, cwd, root, sourceCache, aliases);
+    await collectStaticImportClosure(
+      files,
+      cwd,
+      root,
+      sourceCache,
+      aliases,
+      beforeSourceRead,
+      onSourceDependency,
+    );
   }
 
   return {
@@ -1036,15 +1117,18 @@ async function addConfiguredSource(
   label: string,
   diagnostics: Diagnostic[],
   explicitDependencyFiles?: Set<string>,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string | undefined> {
   if (!filePath) return;
   const absolute = path.resolve(cwd, filePath);
   const file = getConfiguredSourceDiagnosticFile(cwd, filePath, absolute);
+  if (isInsideCwd(cwd, absolute)) onSourceDependency?.(absolute);
 
   let stat: Awaited<ReturnType<typeof fs.stat>>;
   try {
     stat = await fs.stat(absolute);
-  } catch {
+  } catch (error) {
+    if (!isMissingSourcePathError(error)) throw error;
     diagnostics.push({
       level: "error",
       file,
@@ -1062,7 +1146,7 @@ async function addConfiguredSource(
     return undefined;
   }
 
-  if (!SOURCE_EXTENSIONS.has(path.extname(absolute))) {
+  if (!isProjectSourceModule(absolute)) {
     diagnostics.push({
       level: "error",
       file,
@@ -1093,20 +1177,23 @@ async function collectStaticImportClosure(
   file: string,
   sourceCache: Map<string, string>,
   aliases?: Record<string, string>,
+  beforeSourceRead?: (file: string) => void,
+  onSourceDependency?: (file: string) => void,
 ) {
   if (files.has(file)) return;
   files.add(file);
 
-  let source: string;
-  try {
-    source = sourceCache.get(file) ?? (await fs.readFile(file, "utf-8"));
-    sourceCache.set(file, source);
-  } catch {
-    return;
-  }
+  const source = await readFrameworkSource(file, sourceCache, beforeSourceRead);
+  if (source === undefined) return;
 
   for (const specifier of extractStaticImportSpecifiers(source, aliases)) {
-    const dependency = await resolveSourceImport(cwd, file, specifier, aliases);
+    const dependency = await resolveSourceImport(
+      cwd,
+      file,
+      specifier,
+      aliases,
+      onSourceDependency,
+    );
     if (dependency) {
       await collectStaticImportClosure(
         files,
@@ -1114,8 +1201,31 @@ async function collectStaticImportClosure(
         dependency,
         sourceCache,
         aliases,
+        beforeSourceRead,
+        onSourceDependency,
       );
     }
+  }
+}
+
+async function readFrameworkSource(
+  file: string,
+  sourceCache: Map<string, string>,
+  beforeSourceRead?: (file: string) => void,
+): Promise<string | undefined> {
+  const cached = sourceCache.get(file);
+  if (cached !== undefined) return cached;
+
+  // Keep observer failures fail-closed while preserving source-discovery
+  // tolerance for files that disappear during graph traversal.
+  beforeSourceRead?.(file);
+  try {
+    const source = await fs.readFile(file, "utf-8");
+    sourceCache.set(file, source);
+    return source;
+  } catch (error) {
+    if (isMissingSourcePathError(error)) return undefined;
+    throw error;
   }
 }
 
@@ -1123,12 +1233,7 @@ function extractStaticImportSpecifiers(
   source: string,
   aliases?: Record<string, string>,
 ): string[] {
-  const specifiers = new Set<string>();
-  for (const specifier of extractParsedStaticImportSpecifiers(source)) {
-    specifiers.add(specifier);
-  }
-
-  return [...specifiers].filter((specifier) =>
+  return extractRuntimeModuleSpecifiers(source).filter((specifier) =>
     isLocalSourceImportSpecifier(specifier, aliases),
   );
 }
@@ -1145,128 +1250,6 @@ function isLocalSourceImportSpecifier(
   );
 }
 
-function extractParsedStaticImportSpecifiers(source: string): string[] {
-  try {
-    const ast = parseSync(source, {
-      syntax: "typescript",
-      tsx: true,
-      target: "esnext",
-    });
-    return [
-      ...ast.body.flatMap(getStaticModuleSpecifier),
-      ...extractParsedDynamicImportSpecifiers(ast),
-    ];
-  } catch {
-    return [
-      ...extractStaticImportSpecifiersWithRegex(source),
-      ...extractDynamicImportSpecifiersWithRegex(source),
-    ];
-  }
-}
-
-function getStaticModuleSpecifier(item: ModuleItem): string[] {
-  if (item.type === "ImportDeclaration") {
-    if (
-      item.typeOnly ||
-      (item.specifiers.length > 0 &&
-        item.specifiers.every(
-          (specifier) =>
-            specifier.type === "ImportSpecifier" && specifier.isTypeOnly,
-        ))
-    ) {
-      return [];
-    }
-    return [item.source.value];
-  }
-  if (item.type === "ExportNamedDeclaration" && item.source) {
-    if (
-      item.typeOnly ||
-      (item.specifiers.length > 0 &&
-        item.specifiers.every(
-          (specifier) =>
-            specifier.type === "ExportSpecifier" && specifier.isTypeOnly,
-        ))
-    ) {
-      return [];
-    }
-    return [item.source.value];
-  }
-  if (item.type === "ExportAllDeclaration") {
-    return "typeOnly" in item && item.typeOnly ? [] : [item.source.value];
-  }
-  return [];
-}
-
-function extractParsedDynamicImportSpecifiers(ast: unknown): string[] {
-  const specifiers = new Set<string>();
-
-  function visit(value: unknown): void {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-    if (!isAstRecord(value)) return;
-    if (value.type === "TsImportType") return;
-
-    const specifier = getRuntimeDynamicImportSpecifier(value);
-    if (specifier) specifiers.add(specifier);
-    for (const child of Object.values(value)) visit(child);
-  }
-
-  visit(ast);
-  return [...specifiers];
-}
-
-function getRuntimeDynamicImportSpecifier(
-  expression: Record<string, unknown>,
-): string | undefined {
-  if (expression.type !== "CallExpression") return undefined;
-  if (!isAstRecord(expression.callee) || expression.callee.type !== "Import") {
-    return undefined;
-  }
-  if (!Array.isArray(expression.arguments)) return undefined;
-
-  const firstArgument = expression.arguments[0];
-  if (!isAstRecord(firstArgument) || firstArgument.spread) return undefined;
-  if (
-    !isAstRecord(firstArgument.expression) ||
-    firstArgument.expression.type !== "StringLiteral" ||
-    typeof firstArgument.expression.value !== "string"
-  ) {
-    return undefined;
-  }
-  return firstArgument.expression.value;
-}
-
-function isAstRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function extractDynamicImportSpecifiersWithRegex(source: string): string[] {
-  const specifiers: string[] = [];
-  const importPattern = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
-
-  for (const match of source.matchAll(importPattern)) {
-    const specifier = match[1];
-    if (specifier) specifiers.push(specifier);
-  }
-
-  return specifiers;
-}
-
-function extractStaticImportSpecifiersWithRegex(source: string): string[] {
-  const specifiers: string[] = [];
-  const importPattern =
-    /\bimport\s+(?!type\b)(?:[^'"]*?\s+from\s+)?["']([^"']+)["']|\bexport\s+(?!type\b)[^'"]*?\s+from\s+["']([^"']+)["']/g;
-
-  for (const match of source.matchAll(importPattern)) {
-    const specifier = match[1] ?? match[2];
-    if (specifier) specifiers.push(specifier);
-  }
-
-  return specifiers;
-}
-
 function isFrameworkDependencySource(source: string): boolean {
   return /^\s*["']use (client|server)["']/m.test(source.slice(0, 200));
 }
@@ -1276,24 +1259,31 @@ async function resolveSourceImport(
   fromFile: string,
   specifier: string,
   aliases?: Record<string, string>,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string | undefined> {
   const alias = findMatchingSourceAlias(specifier, aliases);
   if (alias) {
     const suffix = specifier.slice(alias.specifier.length).replace(/^\//, "");
-    return resolveSourcePath(cwd, path.resolve(cwd, alias.replacement, suffix));
+    return resolveSourcePath(
+      cwd,
+      path.resolve(cwd, alias.replacement, suffix),
+      onSourceDependency,
+    );
   }
   if (specifier === DEFAULT_SOURCE_ALIAS.slice(0, -1)) {
-    return resolveSourcePath(cwd, path.resolve(cwd, "src"));
+    return resolveSourcePath(cwd, path.resolve(cwd, "src"), onSourceDependency);
   }
   if (specifier.startsWith(DEFAULT_SOURCE_ALIAS)) {
     return resolveSourcePath(
       cwd,
       path.resolve(cwd, "src", specifier.slice(DEFAULT_SOURCE_ALIAS.length)),
+      onSourceDependency,
     );
   }
   return resolveSourcePath(
     cwd,
     path.resolve(path.dirname(fromFile), specifier),
+    onSourceDependency,
   );
 }
 
@@ -1315,25 +1305,22 @@ function findMatchingSourceAlias(
 async function resolveSourcePath(
   cwd: string,
   base: string,
+  onSourceDependency?: (file: string) => void,
 ): Promise<string | undefined> {
-  const candidates = [base];
-  if (!SOURCE_EXTENSIONS.has(path.extname(base))) {
-    for (const extension of SOURCE_EXTENSIONS) {
-      candidates.push(`${base}${extension}`);
-    }
-  }
-  for (const extension of SOURCE_EXTENSIONS) {
-    candidates.push(path.join(base, `index${extension}`));
-  }
+  const projectCandidates = registerProjectSourceResolutionCandidates(
+    cwd,
+    base,
+    onSourceDependency,
+  );
 
-  for (const candidate of candidates) {
-    if (!isInsideCwd(cwd, candidate)) continue;
+  for (const candidate of projectCandidates) {
     try {
       const stat = await fs.stat(candidate);
-      if (stat.isFile() && SOURCE_EXTENSIONS.has(path.extname(candidate))) {
+      if (stat.isFile() && isProjectSourceModule(candidate)) {
         return candidate;
       }
-    } catch {
+    } catch (error) {
+      if (!isMissingSourcePathError(error)) throw error;
       // Non-source imports are handled by the bundler. Graph analysis only
       // follows local framework-relevant TypeScript/JavaScript modules.
     }

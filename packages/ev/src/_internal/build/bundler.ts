@@ -1,14 +1,13 @@
 import type {
   AssetGroup,
-  BuildOutputServerModule,
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
-import { assertPortableRelativeBrowserArtifactPath } from "@evjs/shared/manifest";
-import type {
-  DefaultBundlerConfig,
-  ResolvedFrameworkConfig,
-} from "../../config/index.js";
+import {
+  assertPortableRelativeBrowserArtifactPath,
+  assertServerRelativeArtifactPath,
+} from "@evjs/shared/manifest";
+import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type { PluginHooks } from "../../plugin/index.js";
 
 export interface BundlerEmittedFiles {
@@ -24,15 +23,34 @@ export interface BundlerBuildFacts {
    */
   emittedFiles?: BundlerEmittedFiles;
   clientEntryAssets?: Record<string, AssetGroup>;
+  /** Assets keyed by the exact server BuildPlan entry name. */
   serverEntryAssets?: Record<string, AssetGroup>;
-  serverEntry?: string;
-  serverAssets?: AssetGroup;
-  serverModules?: BuildOutputServerModule[];
   loadServerModule?: (asset: string) => Promise<unknown>;
   rscManifests?: {
     clientReferenceManifest?: Record<string, unknown>;
   };
 }
+
+const REMOVED_SERVER_FACT_FIELDS = [
+  "serverEntry",
+  "serverAssets",
+  "serverModules",
+] as const;
+
+/** Reject removed server-fact aliases before Core silently drops them. */
+export function assertBundlerBuildFactsContract(
+  facts: BundlerBuildFacts,
+): void {
+  for (const field of REMOVED_SERVER_FACT_FIELDS) {
+    if (!Object.hasOwn(facts, field)) continue;
+    throw new Error(
+      `[evjs] Bundler build facts.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
+    );
+  }
+}
+
+/** Whether Core committed a development facts snapshot to canonical output. */
+export type BundlerBuildFactsDisposition = "published" | "discarded";
 
 /**
  * Normalize adapter-native client entrypoint names into the exact BuildPlan
@@ -53,14 +71,14 @@ export function resolveBundlerClientEntryAssets(
   const resolved: Record<string, AssetGroup> = {};
 
   for (const entry of planned) {
-    const assets = available[entry.name] ?? soleFallback?.[1];
+    const assets = getOwn(available, entry.name) ?? soleFallback?.[1];
     if (!assets) {
       const names = rawEntries.map(([name]) => JSON.stringify(name)).join(", ");
       throw new Error(
         `[evjs] ${source} do not identify client BuildPlan entrypoint "${entry.name}" uniquely; found entrypoints ${names || "<none>"}.`,
       );
     }
-    resolved[entry.name] = {
+    defineRecordValue(resolved, entry.name, {
       js: assets.js.map((asset, index) =>
         assertPortableRelativeBrowserArtifactPath(
           asset,
@@ -73,12 +91,101 @@ export function resolveBundlerClientEntryAssets(
           `${source} entrypoint "${entry.name}" CSS asset[${index}]`,
         ),
       ),
-    };
+    });
   }
   return resolved;
 }
 
-export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
+/**
+ * Resolve server entrypoint facts by exact BuildPlan identity. Unlike client
+ * entrypoints, server entries never use an adapter-native sole-entry fallback.
+ */
+export function resolveBundlerServerEntryAssets(
+  plan: BuildPlan,
+  available: Record<string, AssetGroup>,
+  source: string,
+): Record<string, AssetGroup> {
+  const planned = plan.entries.filter(
+    (entry) => entry.environment === "server",
+  );
+  const plannedNames = new Set(planned.map((entry) => entry.name));
+  const resolved: Record<string, AssetGroup> = {};
+
+  for (const entry of planned) {
+    const assets = getOwn(available, entry.name);
+    if (!assets) {
+      const names = Object.keys(available)
+        .map((name) => JSON.stringify(name))
+        .join(", ");
+      throw new Error(
+        `[evjs] ${source} do not identify server BuildPlan entrypoint "${entry.name}" exactly; found entrypoints ${names || "<none>"}.`,
+      );
+    }
+    if (
+      typeof assets !== "object" ||
+      !Array.isArray(assets.js) ||
+      !Array.isArray(assets.css)
+    ) {
+      throw new Error(
+        `[evjs] ${source} entrypoint "${entry.name}" must provide an AssetGroup with JavaScript and CSS arrays.`,
+      );
+    }
+    if (assets.js.length !== 1) {
+      throw new Error(
+        `[evjs] ${source} entrypoint "${entry.name}" must emit exactly one self-contained JavaScript asset; found ${assets.js.length}.`,
+      );
+    }
+    defineRecordValue(resolved, entry.name, {
+      js: assets.js.map((asset, index) =>
+        assertServerRelativeArtifactPath(
+          asset,
+          `${source} entrypoint "${entry.name}" JavaScript asset[${index}]`,
+        ),
+      ),
+      css: assets.css.map((asset, index) =>
+        assertServerRelativeArtifactPath(
+          asset,
+          `${source} entrypoint "${entry.name}" CSS asset[${index}]`,
+        ),
+      ),
+    });
+  }
+
+  const unexpected = Object.keys(available).filter(
+    (name) => !plannedNames.has(name),
+  );
+  if (unexpected.length > 0) {
+    throw new Error(
+      `[evjs] ${source} contain unplanned server entrypoints: ${unexpected
+        .map((name) => JSON.stringify(name))
+        .join(", ")}.`,
+    );
+  }
+
+  return resolved;
+}
+
+function getOwn<T>(
+  record: Readonly<Record<string, T>>,
+  key: string,
+): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+function defineRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+export interface BundlerBuildContext<TBundlerCfg = unknown> {
   cwd: string;
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   plan: BuildPlan;
@@ -87,8 +194,23 @@ export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
   addWatchFile?(file: string): void;
 }
 
-export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
+/**
+ * Opaque identity for one adapter-visible development build generation.
+ *
+ * Adapters receive these identities from the framework and must return the
+ * identity captured by the compile that produced each facts snapshot. This
+ * keeps late compile results bound to the config and plan that started them.
+ */
+declare const bundlerDevGenerationBrand: unique symbol;
+
+export interface BundlerDevGeneration {
+  readonly [bundlerDevGenerationBrand]: true;
+}
+
+export interface BundlerDevContext<TBundlerCfg = unknown>
   extends BundlerBuildContext<TBundlerCfg> {
+  /** Generation owned by the initial dev plan. */
+  generation: BundlerDevGeneration;
   callbacks: {
     /**
      * Called after the client development server is listening and framework
@@ -97,34 +219,87 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
     onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
     /**
      * Called by the bundler adapter after a dev compile has fresh build facts.
-     * The ev orchestrator owns framework output linking, plugin output hooks,
-     * manifest emission, and HTML emission.
+     * The ev orchestrator owns beforeBuild, framework output linking,
+     * transformOutput, manifest emission, and HTML emission. Adapters may
+     * acknowledge facts or notify server readiness only after `published`;
+     * `discarded` facts were not consumed and must be retried from fresh
+     * compiler state.
      */
     onBuildFacts: (
+      generation: BundlerDevGeneration,
       facts: BundlerBuildFacts,
-      options?: { isRebuild?: boolean },
+      options: { readonly isRebuild: boolean },
+    ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>;
+    /** Notify the framework that this generation's server bundle is ready. */
+    onServerBundleReady: (
+      generation: BundlerDevGeneration,
     ) => void | Promise<void>;
-    onServerBundleReady: () => void | Promise<void>;
   };
 }
 
-export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
+export interface BundlerDevUpdateOptions<TBundlerCfg = unknown> {
   /** The resolved config that produced the next plan. */
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   /**
-   * True when framework config or a `bundlerConfig()` dependency changed and
+   * True when framework config or a `configureBundler()` dependency changed and
    * the adapter must refresh its effective bundler configuration.
    */
   configChanged: boolean;
+  /** The exact transition reserved before Core wrote candidate input. */
+  transition: BundlerDevUpdateTransition;
+  /** Generation owned by `update.next`. */
+  generation: BundlerDevGeneration;
+  /**
+   * Activate `generation` exactly once at the adapter's serialized plan
+   * boundary: after every prior-generation facts callback has completed and
+   * before adopting `update.next` or publishing its facts.
+   */
+  activate(): void;
 }
 
-export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
+/**
+ * Adapter-owned boundary reserved before Core materializes candidate `.ev`
+ * inputs. Core explicitly accepts the final input or rolls back only after it
+ * has restored the previous generated state. Adapters must drop any compile
+ * that could have observed input while this boundary was active, then obtain
+ * fresh facts for the selected state.
+ */
+export interface BundlerDevUpdateTransition {
+  /** Select the final generated input while keeping the current generation. */
+  accept(): void | Promise<void>;
+  /** Select the previous generation after Core restored its generated input. */
+  rollback(): void | Promise<void>;
+  /** Release deferred compiler work after Core opens the selected consumer. */
+  resume(): void | Promise<void>;
+  /**
+   * Complete any fallible settlement work while the adapter boundary remains
+   * reserved. A rejection must leave the resumed outcome selectable for
+   * rollback.
+   */
+  prepareFinalize(): void | Promise<void>;
+  /**
+   * Release the adapter boundary after Core commits the selected output.
+   * This operation must be synchronous and must not throw.
+   */
+  finalize(): void;
+}
+
+export interface BundlerDevController<TBundlerCfg = unknown> {
   /** Settles if the adapter-owned dev service terminates independently. */
   done?: Promise<void>;
   close?(): void | Promise<void>;
+  /**
+   * Establish a fail-closed boundary before candidate generated inputs are
+   * written. The returned promise may wait for compiles that started before
+   * the boundary to finish; compiles that start after it must not publish
+   * facts until the adapter has observed the final accepted input state.
+   */
+  beginUpdate():
+    | BundlerDevUpdateTransition
+    | Promise<BundlerDevUpdateTransition>;
   updatePlan(
     update: BuildPlanUpdate,
-    options?: BundlerDevUpdateOptions<TBundlerCfg>,
+    options: BundlerDevUpdateOptions<TBundlerCfg>,
   ): void | Promise<void>;
 }
 
@@ -210,7 +385,7 @@ export interface BundlerCapabilityGap {
 /**
  * Interface that all bundler adapters must implement.
  */
-export interface BundlerAdapter<TBundlerCfg = DefaultBundlerConfig> {
+export interface BundlerAdapter<TBundlerCfg = unknown> {
   /** Human-readable bundler name (used by plugin helpers for type-narrowing). */
   readonly name: string;
   /** Stable framework capabilities used for plan preflight. */

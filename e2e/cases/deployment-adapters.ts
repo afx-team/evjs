@@ -168,7 +168,7 @@ test.describe("deployment-adapters", () => {
       "utf-8",
     );
     expect(nodeServerModule).toContain(
-      "await import(pathToFileURL(resolveServerArtifact(serverEntry)).href)",
+      "await import(pathToFileURL(await resolveServerArtifact(serverEntry)).href)",
     );
     expect(nodeServerModule).toContain("if (!serverArtifacts.has(asset))");
 

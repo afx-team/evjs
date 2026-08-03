@@ -382,7 +382,6 @@ function assertShellOptions(options: unknown): asserts options is ShellOptions {
   assertOptionalFunction(options.loadModule, "loadModule");
   assertOptionalFunction(options.resolveMountPoint, "resolveMountPoint");
   assertOptionalFunction(options.onError, "onError");
-  assertOptionalFunction(options.onWarning, "onWarning");
 }
 
 function assertActivationRequest(

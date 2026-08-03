@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AppRouteTarget,
   BuildEntry,
@@ -486,7 +487,7 @@ export function createBuildPlan(
 
   return {
     version: 1,
-    buildId: options.buildId ?? mode,
+    buildId: options.buildId ?? createBuildGenerationId(mode),
     mode,
     distDir,
     output: {
@@ -526,6 +527,13 @@ export function createBuildPlan(
         }
       : {}),
   };
+}
+
+/** Create one identity for a framework output generation. */
+export function createBuildGenerationId(
+  mode: "development" | "production",
+): string {
+  return mode === "production" ? `build-${randomUUID()}` : "development";
 }
 
 /**

@@ -4,6 +4,10 @@
  * plugins, and deployment helpers.
  */
 
+import {
+  cloneStaticJsonValue,
+  readOptionalStaticJsonObjectProperty,
+} from "../_internal/static-json.js";
 import { pageRoutePathShapeFromPath } from "../page-route-data.js";
 import {
   assertPortableRelativeBrowserArtifactPath,
@@ -24,10 +28,6 @@ import type {
   HydrationMode,
   PageOutput,
   PageRenderingOutput,
-  PublicDocumentOutput,
-  PublicManifestOutput,
-  PublicPageOutput,
-  PublicRoutingOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
 } from "./index.js";
@@ -35,7 +35,6 @@ import { clonePageMetadata } from "./page-metadata.js";
 import {
   assertBuildOutputServerArtifacts,
   assertServerArtifactGroups,
-  assertServerRelativeArtifactPath,
   type ServerArtifactGroupReference,
 } from "./server-artifacts.js";
 
@@ -47,33 +46,19 @@ declare const URL: {
   ): { protocol: string };
 };
 
-export interface BuildOutputServerModule {
-  moduleId: string;
-  assets: AssetGroup;
-}
-
 export interface BuildOutputLinkInput {
   graph: CoreGraph;
   plan: BuildPlan;
   clientEntryAssets?: Record<string, AssetGroup>;
+  /** Assets keyed by the exact server BuildPlan entry name. */
   serverEntryAssets?: Record<string, AssetGroup>;
-  serverEntry?: string;
-  serverAssets?: AssetGroup;
-  serverModules?: BuildOutputServerModule[];
 }
 
-export interface ServerManifestOutput {
-  version: 1;
-  entry?: string;
-  routes: ServerManifestRouteOutput[];
-}
-
-export type ServerManifestRouteOutput =
-  | Extract<DeploymentRouteOutput, { kind: "server-page" }>
-  | Extract<DeploymentRouteOutput, { kind: "server-function" }>
-  | Extract<DeploymentRouteOutput, { kind: "ppr-endpoint" }>
-  | Extract<DeploymentRouteOutput, { kind: "rsc-endpoint" }>
-  | Extract<DeploymentRouteOutput, { kind: "api-route" }>;
+const REMOVED_SERVER_LINK_INPUT_FIELDS = [
+  "serverEntry",
+  "serverAssets",
+  "serverModules",
+] as const;
 
 /**
  * Join CoreGraph, BuildPlan, and bundler facts into one validated BuildOutput.
@@ -83,10 +68,9 @@ export type ServerManifestRouteOutput =
  * from emitted filenames or module stats.
  */
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
+  assertBuildOutputLinkInputContract(input);
   assertBuildOutputLinkInputServerArtifacts(input);
   const serverEntryAssets = input.serverEntryAssets ?? {};
-  const fallbackServerAssets = input.serverAssets ?? EMPTY_ASSETS;
-  const serverModules = input.serverModules ?? [];
   const resolvedClientEntryAssets = resolveClientEntryAssets(
     input.plan,
     input.clientEntryAssets,
@@ -95,17 +79,12 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const clientAssetsForEntry = (entry: BuildEntry) =>
     cloneAssetGroup(resolvedClientEntryAssets.get(entry.name) ?? EMPTY_ASSETS);
   const serverAssetsForEntry = (entry: BuildEntry) => {
-    const assets =
-      serverEntryAssets[entry.name] ??
-      (entry.kind === "server-runtime" && input.serverAssets
-        ? input.serverAssets
-        : undefined);
+    const assets = getOwn(serverEntryAssets, entry.name);
     if (!assets) {
       throw new Error(
         `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
       );
     }
-    assertExecutableServerEntryAssets(entry, assets);
     return cloneAssetGroup(assets);
   };
   const serverRuntimeEntry = input.plan.entries.find(
@@ -115,13 +94,9 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const htmlDocuments = createHtmlDocumentLookup(input.plan.html);
   const serverRuntimeAssets = serverRuntimeEntry
     ? serverAssetsForEntry(serverRuntimeEntry)
-    : fallbackServerAssets;
+    : cloneAssetGroup(EMPTY_ASSETS);
   const serverEntry = serverRuntimeEntry
-    ? assertServerRuntimeEntry(
-        input.serverEntry ?? serverRuntimeAssets.js[0],
-        serverRuntimeAssets,
-        serverRuntimeEntry,
-      )
+    ? serverRuntimeAssets.js[0]
     : undefined;
   const serverAssets = serverRuntimeEntry
     ? serverRuntimeAssets
@@ -155,19 +130,19 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     return entry ? serverAssetsForEntry(entry).css : [];
   };
 
-  const assetsForSource = (sourceRel: string) =>
-    cloneAssetGroup(
-      serverModules.find((mod) =>
-        moduleIdMatchesSource(mod.moduleId, sourceRel),
-      )?.assets ?? serverAssets,
-    );
+  function cloneServerCapabilityAssets(): AssetGroup {
+    return cloneAssetGroup(serverAssets);
+  }
 
   const entryAssets: Record<string, AssetGroup> = {};
   for (const entry of input.plan.entries) {
-    entryAssets[entry.name] =
+    defineRecordValue(
+      entryAssets,
+      entry.name,
       entry.environment === "client"
         ? clientAssetsForEntry(entry)
-        : serverAssetsForEntry(entry);
+        : serverAssetsForEntry(entry),
+    );
   }
 
   const apps = Object.fromEntries(
@@ -314,19 +289,22 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       }),
   );
 
-  const serverFunctions: Record<string, ServerFunctionOutput> = {};
+  const serverFunctions = Object.create(null) as Record<
+    string,
+    ServerFunctionOutput
+  >;
   for (const fn of input.graph.serverFunctions) {
-    serverFunctions[fn.id] = {
-      assets: assetsForSource(fn.module),
+    defineRecordValue(serverFunctions, fn.id, {
+      assets: cloneServerCapabilityAssets(),
       exportName: fn.exportName,
-    };
+    });
   }
 
   const serverRoutes: ServerRouteOutput[] = input.graph.serverRoutes.map(
     (route) => ({
       path: route.path,
       methods: route.methods,
-      assets: assetsForSource(route.module),
+      assets: cloneServerCapabilityAssets(),
     }),
   );
   const rsc = linkRscOutput(input, serverAssetsForEntry);
@@ -376,7 +354,7 @@ function resolveClientEntryAssets(
   const claimedFiles: Array<{ entryName: string; fileName: string }> = [];
 
   for (const entry of plannedEntries) {
-    const assets = facts[entry.name];
+    const assets = getOwn(facts, entry.name);
     if (!assets) {
       const available = Object.keys(facts)
         .map((name) => `"${name}"`)
@@ -603,254 +581,49 @@ function isNamedEntryAsset(entryName: string, asset: string): boolean {
   return fileName === `${entryName}.js` || fileName.startsWith(`${entryName}.`);
 }
 
-function assertServerRuntimeEntry(
-  serverEntry: string | undefined,
-  assets: AssetGroup,
-  runtimeEntry: BuildEntry | undefined,
-): string {
-  if (!runtimeEntry) {
-    throw new Error(
-      "[evjs] Server build did not declare a server runtime entry.",
-    );
-  }
-  if (serverEntry && assets.js.includes(serverEntry)) return serverEntry;
-  if (serverEntry && assets.js.length > 0) {
-    throw new Error(
-      `[evjs] Server runtime entry "${serverEntry}" must exactly match one JavaScript artifact emitted for build entry "${runtimeEntry.name}".`,
-    );
-  }
-  throw new Error(
-    `[evjs] Server runtime entry "${runtimeEntry.name}" did not produce a server JavaScript asset.`,
-  );
-}
-
 function assertBuildOutputLinkInputServerArtifacts(
   input: BuildOutputLinkInput,
 ): void {
+  const plannedServerEntries = new Map(
+    input.plan.entries
+      .filter((entry) => entry.environment === "server")
+      .map((entry) => [entry.name, entry] as const),
+  );
   const runtimeGroups: ServerArtifactGroupReference[] = [];
   const buildGroups: ServerArtifactGroupReference[] = [];
-  for (const [entryName, assets] of Object.entries(
-    input.serverEntryAssets ?? {},
-  )) {
-    const entry = input.plan.entries.find(
-      (candidate) =>
-        candidate.environment === "server" && candidate.name === entryName,
-    );
-    const groups = entry?.phase === "build" ? buildGroups : runtimeGroups;
+  const serverEntryAssets = input.serverEntryAssets ?? {};
+  for (const entryName of Object.keys(serverEntryAssets)) {
+    if (!plannedServerEntries.has(entryName)) {
+      throw new Error(
+        `[evjs] BuildOutput link input.serverEntryAssets.${entryName} does not match an exact server BuildPlan entry name.`,
+      );
+    }
+  }
+  for (const entry of plannedServerEntries.values()) {
+    const assets = getOwn(serverEntryAssets, entry.name);
+    if (!assets) {
+      throw new Error(
+        `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
+      );
+    }
+    assertExecutableServerEntryAssets(entry, assets);
+    const groups = entry.phase === "build" ? buildGroups : runtimeGroups;
     groups.push({
       assets,
-      source: `BuildOutput link input.serverEntryAssets.${entryName}`,
+      source: `BuildOutput link input.serverEntryAssets.${entry.name}`,
     });
   }
-  if (input.serverAssets) {
-    runtimeGroups.push({
-      assets: input.serverAssets,
-      source: "BuildOutput link input.serverAssets",
-    });
-  }
-  input.serverModules?.forEach((serverModule, index) => {
-    assertServerArtifactGroups([
-      {
-        assets: serverModule.assets,
-        source: `BuildOutput link input.serverModules[${index}].assets`,
-      },
-    ]);
-  });
   assertServerArtifactGroups(runtimeGroups);
   assertServerArtifactGroups(buildGroups);
-  if (input.serverEntry !== undefined) {
-    assertServerRelativeArtifactPath(
-      input.serverEntry,
-      "BuildOutput link input.serverEntry",
+}
+
+function assertBuildOutputLinkInputContract(input: BuildOutputLinkInput): void {
+  for (const field of REMOVED_SERVER_LINK_INPUT_FIELDS) {
+    if (!Object.hasOwn(input, field)) continue;
+    throw new Error(
+      `[evjs] BuildOutput link input.${field} is no longer supported. Return every server entry through serverEntryAssets keyed by its exact BuildPlan name.`,
     );
   }
-}
-
-/**
- * Project BuildOutput into a browser-safe routing and asset summary.
- *
- * Runtime startup data stays in ClientRuntime, while framework endpoints and
- * the canonical deployment plan stay in FrameworkRuntime and
- * DeploymentMetadata respectively.
- */
-export function createPublicManifest(
-  output: BuildOutput,
-): PublicManifestOutput {
-  const publicAssetFiles = collectPublicAssetFiles(output);
-  const documents = createPublicDocumentManifest(output, publicAssetFiles);
-  if (documents) {
-    return {
-      version: output.version,
-      buildId: output.buildId,
-      publicPath: output.publicPath,
-      documents,
-    };
-  }
-  const routing = createPublicManifestRouting(output, publicAssetFiles);
-  const assets =
-    routing.kind === "spa"
-      ? clonePublicAssetRecord(output.assets, publicAssetFiles)
-      : undefined;
-  return pruneUndefined({
-    version: output.version,
-    buildId: output.buildId,
-    publicPath: output.publicPath,
-    assets: assets && hasAssetRecordEntries(assets) ? assets : undefined,
-    routing,
-  }) as PublicManifestOutput;
-}
-
-function createPublicManifestRouting(
-  output: BuildOutput,
-  publicAssetFiles: Set<string>,
-): PublicRoutingOutput {
-  const hasSpaRoute = output.routes.some((route) => route.appId);
-  if (!hasSpaRoute && Object.keys(output.pages).length > 0) {
-    return {
-      kind: "mpa",
-      pages: Object.fromEntries(
-        Object.entries(output.pages).map(([id, page]) => [
-          id,
-          sanitizePageOutput(
-            page,
-            publicAssetFiles,
-            findOutputRouteForPage(output, id),
-          ),
-        ]),
-      ),
-    };
-  }
-
-  return {
-    kind: "spa",
-    routes: output.routes.map((route) =>
-      pruneUndefined({
-        id: route.id,
-        path: route.path,
-        pageId: route.pageId,
-        render: route.pageId ? output.pages[route.pageId]?.render : undefined,
-        metadata: route.pageId
-          ? clonePageMetadata(output.pages[route.pageId]?.metadata)
-          : undefined,
-      }),
-    ),
-  };
-}
-
-function createPublicDocumentManifest(
-  output: BuildOutput,
-  publicAssetFiles: Set<string>,
-): PublicDocumentOutput[] | undefined {
-  if (!isStaticDocumentOnlyOutput(output)) return undefined;
-  const documents = createStaticSsgDocumentRecords(output).map((document) =>
-    pruneUndefined({
-      id: document.id,
-      path: document.path,
-      fileName: document.fileName,
-      ...(document.aliases ? { aliases: [...document.aliases] } : {}),
-      render: document.render,
-      metadata: clonePageMetadata(document.metadata),
-      assets: optionalAssetGroup(
-        clonePublicAssets(document.assets, publicAssetFiles),
-      ),
-    }),
-  );
-  return documents.length > 0 ? documents : undefined;
-}
-
-function isStaticDocumentOnlyOutput(output: BuildOutput): boolean {
-  const documentIds = new Set(
-    createStaticSsgDocumentRecords(output).map((document) => document.id),
-  );
-  if (documentIds.size === 0) return false;
-  if (
-    Object.keys(output.pages).some((pageId) => !documentIds.has(pageId)) ||
-    output.routes.some(
-      (route) => !route.pageId || !documentIds.has(route.pageId),
-    )
-  ) {
-    return false;
-  }
-  if (output.server.entry) return false;
-  if (Object.keys(output.server.functions).length > 0) return false;
-  if (output.server.routes.length > 0) return false;
-  if (output.rsc && Object.keys(output.rsc.pages ?? {}).length > 0) {
-    return false;
-  }
-  if (
-    Object.values(output.apps).some(
-      (app) =>
-        app.document ||
-        app.assets.js.length > 0 ||
-        app.assets.css.length > 0 ||
-        app.module,
-    )
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
-  id: string;
-  path: string;
-  fileName: string;
-  aliases?: string[];
-  render: Extract<PageOutput["render"], "ssg">;
-  metadata?: PageOutput["metadata"];
-  assets: AssetGroup;
-}> {
-  return Object.entries(output.pages).flatMap(([id, page]) => {
-    if (
-      !page.document ||
-      page.render !== "ssg" ||
-      page.rendering.html !== "static" ||
-      page.rendering.prerender !== "full" ||
-      page.ppr
-    ) {
-      return [];
-    }
-    const route = findOutputRouteForPage(output, id);
-    const path = route?.path ?? page.path;
-    if (!path?.startsWith("/")) return [];
-    return [
-      {
-        id,
-        path,
-        fileName: page.document.fileName,
-        ...(page.document.aliases
-          ? { aliases: [...page.document.aliases] }
-          : {}),
-        render: page.render,
-        metadata: clonePageMetadata(page.metadata),
-        assets: page.assets,
-      },
-    ];
-  });
-}
-
-export function createServerManifest(
-  output: BuildOutput,
-): ServerManifestOutput {
-  assertBuildOutputServerArtifacts(output, "BuildOutput");
-  return {
-    version: 1,
-    ...(output.server.entry ? { entry: output.server.entry } : {}),
-    routes: createDeploymentRoutes(output).filter(isServerManifestRoute),
-  };
-}
-
-function isServerManifestRoute(
-  route: DeploymentRouteOutput,
-): route is ServerManifestRouteOutput {
-  return (
-    route.kind === "server-page" ||
-    route.kind === "server-function" ||
-    route.kind === "ppr-endpoint" ||
-    route.kind === "rsc-endpoint" ||
-    route.kind === "api-route"
-  );
 }
 
 export interface DeploymentMetadataOptions {
@@ -872,10 +645,15 @@ export function createDeploymentMetadata(
   const assets = includeAssets
     ? clonePublicAssetRecord(output.assets, publicAssetFiles)
     : undefined;
+  const metadata = readOptionalStaticJsonObjectProperty(
+    output,
+    "deployment",
+    "BuildOutput.deployment",
+  );
   return pruneUndefined({
     version: 1 as const,
     buildId: output.buildId,
-    paths: output.paths,
+    paths: { ...output.paths },
     publicPath: output.publicPath,
     assets: assets && hasAssetRecordEntries(assets) ? assets : undefined,
     documents: createDeploymentDocuments(output, includeAssets),
@@ -883,7 +661,7 @@ export function createDeploymentMetadata(
     server: pruneUndefined({
       entry: output.server.entry,
     }),
-    metadata: output.deployment,
+    metadata: metadata ? cloneStaticJsonValue(metadata) : undefined,
   }) as DeploymentMetadata;
 }
 
@@ -895,21 +673,6 @@ function createBuildOutputPaths(
     publicDir: plan.output.clientDir,
     serverDir: plan.output.serverDir,
   };
-}
-
-function sanitizePageOutput(
-  page: PageOutput,
-  publicAssetFiles: Set<string>,
-  route?: BuildOutput["routes"][number],
-): PublicPageOutput {
-  return pruneUndefined({
-    assets: clonePublicAssets(page.assets, publicAssetFiles),
-    document: cloneHtmlDocument(page.document),
-    path: page.path ?? route?.path,
-    routeId: page.routeId ?? route?.id,
-    render: page.render,
-    metadata: clonePageMetadata(page.metadata),
-  }) as PublicPageOutput;
 }
 
 function createDeploymentDocuments(
@@ -1050,13 +813,6 @@ function createDeploymentServerPageRendering(
   );
 }
 
-function findOutputRouteForPage(
-  output: BuildOutput,
-  pageId: string,
-): BuildOutput["routes"][number] | undefined {
-  return output.routes.find((route) => route.pageId === pageId);
-}
-
 function findOutputRouteForApp(
   output: BuildOutput,
   appId: string,
@@ -1120,7 +876,9 @@ function hasAssetRecordEntries(assets: Record<string, AssetGroup>): boolean {
 }
 
 function optionalAssetGroup(assets: AssetGroup): AssetGroup | undefined {
-  return assets.js.length > 0 || assets.css.length > 0 ? assets : undefined;
+  return assets.js.length > 0 || assets.css.length > 0
+    ? cloneAssetGroup(assets)
+    : undefined;
 }
 
 function collectPublicAssetFiles(output: BuildOutput): Set<string> {
@@ -1158,6 +916,26 @@ function cloneAssetGroup(assets: AssetGroup): AssetGroup {
     js: [...assets.js],
     css: [...assets.css],
   };
+}
+
+function getOwn<T>(
+  record: Readonly<Record<string, T>>,
+  key: string,
+): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+function defineRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -1348,8 +1126,4 @@ function isFullPrerenderPage(
 
 function toRuntimePathname(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-}
-
-function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {
-  return moduleId === sourceRel || moduleId.endsWith(`/${sourceRel}`);
 }

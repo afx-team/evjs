@@ -7,12 +7,11 @@ import type {
 import { getLogger } from "@logtape/logtape";
 import {
   type Config,
-  type DefaultBundlerConfig,
   type ResolvedConfig,
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
-import type { CliFlags, PluginContext } from "../../plugin/index.js";
+import type { CliFlags, PluginSetupContext } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import {
   type BundlerAdapter,
@@ -36,8 +35,7 @@ import type { PageRouteDiscovery } from "./page-routes.js";
 import {
   collectPluginHooks,
   orderPluginsByDependencies,
-  runBuildStartHooks,
-  runConfigHooks,
+  runConfigureHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
 import { resolvePluginSettingsState } from "./plugin-settings.js";
@@ -45,15 +43,11 @@ import { toProjectPath } from "./utils.js";
 
 const logger = getLogger(["evjs", "ev"]);
 
-export interface InspectFrameworkBuildOptions<
-  TBundlerCfg = DefaultBundlerConfig,
-> {
+export interface InspectFrameworkBuildOptions<TBundlerCfg = unknown> {
   cwd?: string;
   flags?: CliFlags;
   mode?: "development" | "production";
-  command?: "dev" | "build";
   bundler?: BundlerAdapter<TBundlerCfg>;
-  runLifecycleHooks?: boolean;
 }
 
 export interface InspectDiagnostic {
@@ -106,7 +100,6 @@ export interface InspectHtmlDocument {
 export interface InspectFrameworkBuildResult {
   cwd: string;
   mode: "development" | "production";
-  command: "dev" | "build";
   routing?: {
     /** Route and Document materialization mode. */
     routingMode: "spa" | "mpa";
@@ -145,28 +138,18 @@ export interface InspectFrameworkBuildResult {
   pluginWatchFiles: string[];
 }
 
-export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
+export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
   options: InspectFrameworkBuildOptions<TBundlerCfg> = {},
 ): Promise<InspectFrameworkBuildResult> {
   const cwd = options.cwd ?? process.cwd();
-  const command =
-    options.command ??
-    (options.mode === "development" ? "dev" : ("build" as const));
-  const expectedMode = command === "dev" ? "development" : "production";
-  if (options.mode && options.mode !== expectedMode) {
-    throw new Error(
-      `[evjs] inspectFrameworkBuild command "${command}" must use mode "${expectedMode}".`,
-    );
-  }
-  const mode = options.mode ?? expectedMode;
+  const mode = options.mode ?? "production";
   const flags = options.flags;
   const diagnostics: InspectDiagnostic[] = [];
   let pageRouteDiscovery: PageRouteDiscovery | undefined;
 
-  const configuredConfig = await runConfigHooks(userConfig, {
+  const configuredConfig = await runConfigureHooks(userConfig, {
     mode,
-    command,
     cwd,
     flags,
   });
@@ -244,14 +227,11 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   const {
     registry: pluginSettings,
     applicationSettings: applicationPluginSettings,
-  } = resolvePluginSettingsState(baseConfig, undefined, {
-    reusePreparedApplicationSettings: true,
-  });
+  } = resolvePluginSettingsState(baseConfig);
   const config = baseConfig;
   const pluginWatchFiles = new Set<string>();
-  const pluginContext: PluginContext<TBundlerCfg> = {
+  const pluginContext: PluginSetupContext<TBundlerCfg> = {
     mode,
-    command,
     cwd,
     config,
     flags,
@@ -269,9 +249,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   try {
-    if (options.runLifecycleHooks === true) {
-      await runBuildStartHooks(hooks, pluginContext);
-    }
     try {
       validateHtmlTemplates(cwd, config);
     } catch (err) {
@@ -289,7 +266,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       const materialized = await analyzeAndMaterializeFrameworkIR({
         cwd,
         mode,
-        command,
         config,
         pluginContext,
         pluginSettings,
@@ -332,7 +308,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     return {
       cwd,
       mode,
-      command,
       routing: createInspectRouting(config, analysis.graph),
       pageRoutes: createPageRouteNodesFromCoreGraph(analysis.graph).map(
         (route) => ({

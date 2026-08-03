@@ -38,15 +38,12 @@ export interface ShellOptions {
   loadModule?: (href: string, ctx: AppContext) => Promise<AppModule>;
   resolveMountPoint?: (ctx: AppContext) => Element | null;
   onError?: (error: unknown, ctx: ShellErrorContext) => void | Promise<void>;
-  onWarning?: (warning: ShellWarningContext) => void | Promise<void>;
 }
 
 export interface ShellErrorContext {
   phase: "resolve" | "load" | "init" | "mount" | "hydrate" | "unmount";
   app: AppContext;
 }
-
-export type ShellWarningContext = never;
 
 export interface Shell {
   start(request?: ActivationRequest): Promise<void>;

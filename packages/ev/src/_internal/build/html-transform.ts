@@ -2,8 +2,8 @@ import type { BuildOutput } from "@evjs/shared/manifest";
 import type {
   HtmlDocument,
   HtmlDocumentInfo,
-  PluginContext,
   PluginHooks,
+  PluginSetupContext,
 } from "../../plugin/index.js";
 import { createBuildResult } from "./build-result.js";
 import { createLatePluginContext } from "./plugin-lifecycle.js";
@@ -13,7 +13,7 @@ export interface BuildHtmlOptions<TBundlerCfg = unknown> {
   doc: HtmlDocument;
   hooks: PluginHooks<TBundlerCfg>[];
   /** Base plugin context shared by HTML hooks. */
-  pluginContext: PluginContext<TBundlerCfg>;
+  pluginContext: PluginSetupContext<TBundlerCfg>;
   /** Current HTML document identity. */
   html: HtmlDocumentInfo;
   /** Single framework build output. */
@@ -49,13 +49,13 @@ export async function buildHtml<TBundlerCfg = unknown>(
         outputSnapshot,
         options.isRebuild ?? false,
       );
-      const htmlContext = {
+      const htmlContext = Object.freeze({
         ...latePluginContext,
         ...htmlSnapshot,
         ...buildResult,
         buildId: outputSnapshot.buildId,
         publicPath: outputSnapshot.publicPath,
-      };
+      });
       await h.transformHtml(doc, htmlContext);
     }
   }

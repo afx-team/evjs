@@ -26,7 +26,7 @@ test.describe("Scaffolding CLI E2E", () => {
   );
   const cliPath = path.resolve(
     import.meta.dirname,
-    "../../packages/create-app/dist/index.js",
+    "../../packages/create-app/bin/create-evjs-app.js",
   );
 
   test.afterAll(() => {

@@ -23,10 +23,16 @@ body {
   font-size: 28px;
 }
 
+.description {
+  max-width: 640px;
+  color: #53617d;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+  margin-bottom: 20px;
 }
 
 .grid article {
@@ -40,4 +46,14 @@ body {
 
 .grid span {
   color: #53617d;
+}
+
+.button {
+  display: inline-flex;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #1b5fd9;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
 }

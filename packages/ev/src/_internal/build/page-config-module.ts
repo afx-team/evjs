@@ -19,8 +19,8 @@ import type {
   PageRouteDiscoveryMetadata,
 } from "../../config/index.js";
 import {
-  type ResolvedPagePluginConfigInput,
-  resolvePagePluginConfigValues,
+  type ResolvedPagePluginOptionsInput,
+  resolvePagePluginOptions,
 } from "../../config/plugins.js";
 import {
   clearStaticConfigModuleCache,
@@ -49,7 +49,7 @@ export interface ResolvedPageFileConfig {
   hydrate?: HydrationMode;
   prerender?: PrerenderConfig;
   metadata?: PageMetadata;
-  plugins: Readonly<Record<string, ResolvedPagePluginConfigInput>>;
+  plugins: Readonly<Record<string, ResolvedPagePluginOptionsInput>>;
   document?: ResolvedPageDocumentConfig;
 }
 
@@ -62,9 +62,15 @@ export interface ResolvedPageFileConfigs {
   dependencies: string[];
 }
 
+export interface ResolvePageConfigModulesOptions {
+  beforeSourceRead?: (file: string) => void;
+  onSourceDependency?: (file: string) => void;
+}
+
 export async function resolvePageConfigModules(
   cwd: string,
   metadata: PageRouteDiscoveryMetadata | undefined,
+  options: ResolvePageConfigModulesOptions = {},
 ): Promise<ResolvedPageFileConfigs> {
   return resolveKnownPageConfigModules(
     cwd,
@@ -73,6 +79,7 @@ export async function resolvePageConfigModules(
         ? [{ pageId: page.pageId, configModule: page.configModule }]
         : [],
     ),
+    options,
   );
 }
 
@@ -80,6 +87,7 @@ export async function resolvePageConfigModules(
 export async function resolveCorePageConfigModules(
   cwd: string,
   graph: CoreGraph,
+  options: ResolvePageConfigModulesOptions = {},
 ): Promise<ResolvedPageFileConfigs> {
   return resolveKnownPageConfigModules(
     cwd,
@@ -90,12 +98,14 @@ export async function resolveCorePageConfigModules(
           : [],
       )
       .sort((left, right) => left.pageId.localeCompare(right.pageId)),
+    options,
   );
 }
 
 async function resolveKnownPageConfigModules(
   cwd: string,
   configuredPages: PageConfigMetadata[],
+  options: ResolvePageConfigModulesOptions,
 ): Promise<ResolvedPageFileConfigs> {
   const pages = createRecord<ResolvedPageFileConfig>();
   const dependencies = new Set<string>();
@@ -105,7 +115,7 @@ async function resolveKnownPageConfigModules(
   );
 
   for (const page of configuredPages) {
-    const resolved = await resolvePageConfigModule(cwd, page);
+    const resolved = await resolvePageConfigModule(cwd, page, options);
     defineRecordValue(pages, page.pageId, resolved.config);
     for (const dependency of resolved.dependencies) {
       dependencies.add(dependency);
@@ -121,13 +131,17 @@ async function resolveKnownPageConfigModules(
 async function resolvePageConfigModule(
   cwd: string,
   page: PageConfigMetadata,
+  options: ResolvePageConfigModulesOptions,
 ): Promise<{
   config: ResolvedPageFileConfig;
   dependencies: string[];
 }> {
   const source = page.configModule;
-  const loaded = await loadStaticConfigModule(path.resolve(cwd, source), cwd, {
+  const absoluteSource = path.resolve(cwd, source);
+  options.beforeSourceRead?.(absoluteSource);
+  const loaded = await loadStaticConfigModule(absoluteSource, cwd, {
     cache: true,
+    onDependency: options.onSourceDependency,
   });
   if (!loaded.hasDefaultExport) {
     throw new Error(
@@ -157,7 +171,7 @@ async function resolvePageConfigModule(
   const prerender = resolvePrerender(value.prerender, page);
   const componentModel = resolveComponentModel(value.rsc, page);
   const metadata = resolvePageMetadata(value, page);
-  const plugins = resolvePagePluginConfigValues(
+  const plugins = resolvePagePluginOptions(
     value.plugins,
     `Page "${page.pageId}" config "${page.configModule}" plugins`,
   );

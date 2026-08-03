@@ -7,8 +7,9 @@ active architecture boundaries that are enforced by the current code.
 
 - Canonical `src/pages/**/page.*` Pages and explicit SPA route trees normalize
   into one Application/Page/Route/Document CoreGraph.
-- Adjacent `page.config.ts` owns static metadata, rendering settings, and
-  namespaced Page, Route, and Page-owned Document extensions.
+- Adjacent `page.config.ts` owns static metadata, rendering settings, and the
+  generated Page-level `plugins` map. Plugins derive Route and Document
+  behavior from the normalized Page graph rather than separate owner configs.
 - Positive `src/apis/**/api.*` anchors own request Routes and
   filesystem-scoped middleware.
 - `BuildPlan` drives generated `.ev` entries, bundler adapters, dev routing,
@@ -16,9 +17,9 @@ active architecture boundaries that are enforced by the current code.
 - `BuildOutput` is the complete in-memory result;
   `dist/deployment-metadata.json` is the canonical serialized deployment
   projection.
-- Plugin extension ownership covers Application, Page, Route, and Document;
-  generated contributions cover entry, wrapper, middleware, HTML, alias, and
-  external slots.
+- One plugin model covers independent Application and Page options; generated
+  IR contributions cover entry, wrapper, middleware, HTML, alias, and external
+  slots.
 - Node, static, and edge deployment adapters consume the linked output model.
 
 ## Bundler Capability Matrix

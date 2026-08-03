@@ -46,6 +46,20 @@ describe("createServerReference / getFnId / getFnName", () => {
     expect(getFnName("no-name")).toBe("no-name"); // fallback
   });
 
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+  ])("preserves metadata for the prototype-shaped id %s", (fnId) => {
+    const fn = createServerReference(fnId, `name:${fnId}`);
+
+    expect(getFnId(fn)).toBe(fnId);
+    expect(getFnName(fnId)).toBe(`name:${fnId}`);
+    expect(fn.fnId).toBe(fnId);
+    expect(fn.queryKey("arg")).toEqual([fnId, "arg"]);
+    expect(getServerFunction(fn)).toBe(fn);
+  });
+
   it("rejects invalid server reference metadata", () => {
     const invalidFnIdError =
       "[evjs] createServerReference() fnId must be a non-empty string without leading or trailing whitespace.";
@@ -296,19 +310,28 @@ describe("initTransport + callServer", () => {
     expect(() => initTransport({ adapter: null as never })).toThrow(
       "[evjs] initTransport() adapter must be an object.",
     );
+    expect(() => initTransport({ adapter: {} as never })).toThrow(
+      "[evjs] initTransport() adapter.send must be a function.",
+    );
     expect(() => initTransport({ adapter: { send: "send" } as never })).toThrow(
-      "[evjs] initTransport() adapter.send must be a function when provided.",
+      "[evjs] initTransport() adapter.send must be a function.",
     );
     expect(() =>
       initTransport({
-        adapter: { flight: async () => new Response() } as never,
+        adapter: {
+          send: async () => undefined,
+          flight: async () => new Response(),
+        } as never,
       }),
     ).toThrow(
       "[evjs] initTransport() adapter.flight is not supported. Custom transports only support send(fnId, args, context).",
     );
     expect(() =>
       initTransport({
-        adapter: { render: async () => new Response() } as never,
+        adapter: {
+          send: async () => undefined,
+          render: async () => new Response(),
+        } as never,
       }),
     ).toThrow(
       "[evjs] initTransport() adapter.render is not supported. Custom transports only support send(fnId, args, context).",
@@ -410,14 +433,6 @@ describe("initTransport + callServer", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("reports adapters without send using evjs diagnostics", async () => {
-    initTransport({ adapter: {} });
-
-    await expect(callServer("fn1", [])).rejects.toThrow(
-      "[evjs] Transport adapter does not implement send().",
-    );
-  });
-
   it("propagates transport errors", async () => {
     const send = vi.fn().mockRejectedValue(new Error("network failure"));
     initTransport({ adapter: { send } });
@@ -433,19 +448,27 @@ describe("transport types", () => {
     };
     expect(adapter).toEqual({ send: adapter.send });
 
+    // @ts-expect-error A custom transport must implement server-function calls.
+    const missingSendAdapter: TransportAdapter = {};
+    expect(missingSendAdapter).toEqual({});
+
     const invalidFlightAdapter: TransportAdapter = {
+      send: async () => "ok",
       // @ts-expect-error RSC Flight transport is not part of the stable custom adapter contract.
       flight: async () => new Response(),
     };
     expect(invalidFlightAdapter).toEqual({
+      send: expect.any(Function),
       flight: expect.any(Function),
     });
 
     const invalidRenderAdapter: TransportAdapter = {
+      send: async () => "ok",
       // @ts-expect-error SSR document rendering is not part of the stable custom adapter contract.
       render: async () => new Response(),
     };
     expect(invalidRenderAdapter).toEqual({
+      send: expect.any(Function),
       render: expect.any(Function),
     });
   });
@@ -641,6 +664,140 @@ describe("default fetch adapter", () => {
           baseUrl: "https://runtime.example.com/api",
           headers: { "x-source": "runtime" },
         },
+      },
+    });
+    await callServer("myFn", []);
+
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://user.example.com/api/fn"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(headers.get("x-source")).toBe("user");
+  });
+
+  it("keeps a runtime transport snapshot isolated from caller mutation", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    const headers = { "x-source": "runtime" };
+    const transport: RuntimeTransportOptions = {
+      baseUrl: "https://runtime.example.com/api",
+      credentials: "include",
+      headers,
+    };
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "fn");
+
+    initTransportFromRuntime({ runtime: { transport } });
+    transport.baseUrl = "https://attacker.example.com/api";
+    transport.credentials = "omit";
+    headers["x-source"] = "attacker";
+    await callServer("myFn", []);
+
+    const requestHeaders = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://runtime.example.com/api/fn"),
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(requestHeaders.get("x-source")).toBe("runtime");
+  });
+
+  it("treats repeated normalized runtime transport as a no-op", () => {
+    initTransportFromRuntime({
+      runtime: {
+        transport: {
+          baseUrl: "https://runtime.example.com/api",
+          credentials: "include",
+          headers: {
+            "x-second": "2",
+            "X-First": "1",
+          },
+        },
+      },
+    });
+
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: {
+          transport: {
+            baseUrl: "https://runtime.example.com/api",
+            credentials: "include",
+            headers: new Headers([
+              ["x-first", "1"],
+              ["X-SECOND", "2"],
+            ]),
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a conflicting framework runtime before it can hijack transport", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "fn");
+    initTransportFromRuntime({
+      runtime: {
+        transport: {
+          baseUrl: "https://first.example.com/api",
+          headers: { "x-source": "first" },
+        },
+      },
+    });
+
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: {
+          transport: {
+            baseUrl: "https://second.example.com/api",
+            headers: { "x-source": "second" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() received transport configuration that conflicts with an existing framework runtime in the same JavaScript realm.",
+    );
+    await callServer("myFn", []);
+
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://first.example.com/api/fn"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(headers.get("x-source")).toBe("first");
+  });
+
+  it("guards the framework default transport against later replacement", () => {
+    initTransportFromRuntime({ runtime: {} });
+
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: {
+          transport: { baseUrl: "https://second.example.com/api" },
+        },
+      }),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() received transport configuration that conflicts with an existing framework runtime in the same JavaScript realm.",
+    );
+  });
+
+  it("lets explicit initTransport intentionally replace framework ownership", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    initTransportFromRuntime({
+      runtime: {
+        transport: { baseUrl: "https://framework.example.com/api" },
+      },
+    });
+
+    initTransport({
+      baseUrl: "https://user.example.com/api",
+      functions: { endpoint: "fn" },
+      headers: { "x-source": "user" },
+      silent: true,
+    });
+    initTransportFromRuntime({
+      runtime: {
+        transport: { baseUrl: "https://other.example.com/api" },
       },
     });
     await callServer("myFn", []);

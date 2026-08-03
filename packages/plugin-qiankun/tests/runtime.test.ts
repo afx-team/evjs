@@ -5,6 +5,8 @@ import {
   createQiankunSlaveLifecycles,
   defineQiankunMasterResolver,
   defineQiankunSlaveRuntime,
+  type QiankunMasterOptions,
+  type QiankunRoute,
   resolveQiankunSlaveBase,
   startQiankunMaster,
   unmountQiankunMicroAppAfterUpdates,
@@ -29,17 +31,17 @@ describe("@evjs/plugin-qiankun runtime", () => {
   it("installs runtime routes before starting the master Application", async () => {
     const calls: string[] = [];
     const updateRuntime = vi.fn(async () => calls.push("routes"));
+    const configuredFetch = vi.fn();
     const resolver = vi.fn(async () => ({
       apps: [
         {
           name: "console",
           entry: "https://example.com/console/",
-          platformId: "platform-console",
         },
       ],
-      routes: [{ path: "/console", microApp: "platform-console" }],
-      appNameKeyAlias: "platformId",
+      routes: [{ path: "/console", microApp: "console" }],
       prefetch: "all" as const,
+      settings: { fetch: configuredFetch },
     }));
     qiankun.prefetchApps.mockClear();
 
@@ -71,22 +73,20 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
     expect(qiankun.prefetchApps).toHaveBeenCalledWith(
       [{ name: "console", entry: "https://example.com/console/" }],
-      undefined,
+      configuredFetch,
     );
   });
 
-  it("projects prepend, match, alias, and redirect routes", () => {
+  it("projects prepend, match, and redirect routes", () => {
     const routes = createQiankunMasterRoutes({
       apps: [
         {
           name: "catalog",
           entry: "https://example.com/catalog/",
-          platformId: "catalog-id",
         },
       ],
-      appNameKeyAlias: "platformId",
       routes: [
-        { path: "/catalog", microApp: "catalog-id" },
+        { path: "/catalog", microApp: "catalog" },
         {
           path: "/catalog-exact",
           microApp: "catalog",
@@ -105,6 +105,40 @@ describe("@evjs/plugin-qiankun runtime", () => {
         kind: "redirect",
         redirect: { kind: "path", path: "/catalog" },
       },
+    ]);
+  });
+
+  it("preserves valid static, dynamic, and catch-all snapshot patterns", () => {
+    const routes = createQiankunMasterRoutes({
+      apps: [
+        {
+          name: "catalog",
+          entry: "https://example.com/catalog/",
+        },
+      ],
+      routes: [
+        {
+          path: "/catalog/products",
+          microApp: "catalog",
+          mode: "match",
+        },
+        {
+          path: "/tenants/:tenantId",
+          microApp: "catalog",
+          mode: "match",
+        },
+        {
+          path: "/assets/*",
+          microApp: "catalog",
+          mode: "match",
+        },
+      ],
+    });
+
+    expect(routes.map((route) => route.path)).toEqual([
+      "/catalog/products",
+      "/tenants/$tenantId",
+      "/assets/$",
     ]);
   });
 
@@ -180,6 +214,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
     };
     expect(router.matchRoutes("/").length).toBeGreaterThan(1);
     expect(router.matchRoutes("/catalog").length).toBeGreaterThan(1);
+    expect(router.matchRoutes("/catalog/details").length).toBeGreaterThan(1);
   });
 
   it("does not render the master when the runtime overlay update fails", async () => {
@@ -201,6 +236,22 @@ describe("@evjs/plugin-qiankun runtime", () => {
       }),
     ).rejects.toThrow("runtime route update failed");
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed route snapshot before loading the master entry", async () => {
+    const loadEntry = vi.fn();
+
+    await expect(
+      startQiankunMaster({
+        resolver: async () => ({
+          apps: [{ name: "catalog", entry: "https://example.com" }],
+          routes: [{ path: "/:", microApp: "catalog" }],
+        }),
+        mount: "#app",
+        loadEntry,
+      }),
+    ).rejects.toThrow('contains dynamic segment ":" without a param name');
+    expect(loadEntry).not.toHaveBeenCalled();
   });
 
   it("rejects malformed, conflicting, and unresolved runtime routes", () => {
@@ -242,6 +293,154 @@ describe("@evjs/plugin-qiankun runtime", () => {
         ],
       }),
     ).toThrow("routes[0].microAppProps.lifeCycles must be an object");
+  });
+
+  it.each([
+    ["/:", 'contains dynamic segment ":" without a param name'],
+    ["/catalog/:", 'contains dynamic segment ":" without a param name'],
+    ["/catalog//details", 'must not contain repeated "/" separators'],
+    ["/catalog/:product-id", 'dynamic segment ":product-id" must use ":param"'],
+    ["/catalog/*/details", "wildcard must be the terminal path segment"],
+    ["/catalog/$", 'must use ":param" or "*" syntax'],
+    ["/catalog/:id/:id", 'uses duplicate dynamic param name "id"'],
+    ["/catalog/:_splat", 'uses reserved dynamic param name "_splat"'],
+  ])("rejects malformed master route snapshot path %s", (path, expectedMessage) => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com" }],
+        routes: [{ path, microApp: "catalog" }],
+      }),
+    ).toThrow(expectedMessage);
+  });
+
+  it("detects duplicate route paths after trailing-slash normalization", () => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com" }],
+        routes: [
+          { path: "/catalog", microApp: "catalog" },
+          { path: "/catalog/", redirect: "/" },
+        ],
+      }),
+    ).toThrow('duplicate route path "/catalog"');
+  });
+
+  it.each<[QiankunRoute[], string]>([
+    [
+      [
+        { path: "/tenants/:tenantId", microApp: "catalog", mode: "match" },
+        { path: "/tenants/:id", microApp: "catalog", mode: "match" },
+      ],
+      '"/tenants/:id" conflicts with routes[0].path "/tenants/:tenantId"',
+    ],
+    [
+      [
+        { path: "/catalog", microApp: "catalog" },
+        { path: "/catalog/*", microApp: "catalog", mode: "match" },
+      ],
+      '"/catalog/*" conflicts with routes[0].path "/catalog"',
+    ],
+  ])("rejects routes with the same normalized runtime shape", (routes, expectedMessage) => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com" }],
+        routes,
+      }),
+    ).toThrow(expectedMessage);
+  });
+
+  it("rejects unknown master, app, route, and lifecycle fields", () => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [],
+        appNameKeyAlias: "externalId",
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('options contains unknown field "appNameKeyAlias"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [
+          {
+            name: "catalog",
+            entry: "https://example.com/catalog/",
+            credentials: true,
+          },
+        ],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('apps[0] contains unknown field "credentials"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com/catalog/" }],
+        routes: [
+          {
+            path: "/catalog",
+            microApp: "catalog",
+            activeRule: "/catalog",
+          },
+        ],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('routes[0] contains unknown field "activeRule"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        routes: [{ path: "/legacy", redirect: "/", mode: "match" }],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('routes[0] contains unknown field "mode"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        lifeCycles: {
+          beforeMout: vi.fn(),
+        },
+      } as unknown as QiankunMasterOptions),
+    ).toThrow('lifeCycles contains unknown field "beforeMout"');
+
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [{ name: "catalog", entry: "https://example.com/catalog/" }],
+        routes: [
+          {
+            path: "/catalog",
+            microApp: "catalog",
+            microAppProps: {
+              lifeCycles: {
+                afterMout: vi.fn(),
+              },
+            },
+          },
+        ],
+      } as unknown as QiankunMasterOptions),
+    ).toThrow(
+      'routes[0].microAppProps.lifeCycles contains unknown field "afterMout"',
+    );
+  });
+
+  it("keeps app props and route micro-app props extensible", () => {
+    expect(() =>
+      createQiankunMasterRoutes({
+        apps: [
+          {
+            name: "catalog",
+            entry: "https://example.com/catalog/",
+            props: {
+              externalId: "catalog-reference",
+              credentials: "include",
+            },
+          },
+        ],
+        routes: [
+          {
+            path: "/catalog",
+            microApp: "catalog",
+            microAppProps: {
+              platformRouteId: "catalog-route",
+              requestScope: "catalog:read",
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
   });
 
   it("loads the slave entry once and remounts its app after unmount", async () => {
@@ -308,6 +507,64 @@ describe("@evjs/plugin-qiankun runtime", () => {
       "clear",
     ]);
     expect(containerHtml).toBe("");
+  });
+
+  it("uses the nested slave container without patching document lookups", async () => {
+    const originalDocument = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "document",
+    );
+    const masterRoot = createElement();
+    const slaveRoot = createElement();
+    const querySelector = vi.fn(() => masterRoot);
+    const getElementById = vi.fn(() => masterRoot);
+    const outerContainer = {
+      innerHTML: '<div id="app"></div>',
+      querySelector: vi.fn((selector: string) =>
+        selector === "#app" ? slaveRoot : null,
+      ),
+    } as unknown as Element;
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { querySelector, getElementById },
+    });
+
+    try {
+      const slave = createQiankunSlaveLifecycles({
+        name: "catalog",
+        mount: "#app",
+        runtime: {
+          mount(_props, context) {
+            expect(context.container).toBe(slaveRoot);
+          },
+        },
+        async loadEntry() {
+          expect(globalThis.document.querySelector).toBe(querySelector);
+          expect(globalThis.document.getElementById).toBe(getElementById);
+          return {
+            start(target: Element) {
+              expect(target).toBe(slaveRoot);
+            },
+            app: { unmount() {} },
+          };
+        },
+      });
+
+      await slave.mount({ container: outerContainer });
+      await slave.unmount({ container: outerContainer });
+
+      expect(outerContainer.querySelector).toHaveBeenCalledWith("#app");
+      expect(querySelector).not.toHaveBeenCalled();
+      expect(getElementById).not.toHaveBeenCalled();
+      expect(globalThis.document.querySelector).toBe(querySelector);
+      expect(globalThis.document.getElementById).toBe(getElementById);
+    } finally {
+      if (originalDocument) {
+        Object.defineProperty(globalThis, "document", originalDocument);
+      } else {
+        delete (globalThis as { document?: unknown }).document;
+      }
+    }
   });
 
   it("uses the framework start export for a standalone first mount", async () => {
@@ -519,6 +776,152 @@ describe("@evjs/plugin-qiankun runtime", () => {
     expect(calls).toEqual(["entry-render"]);
   });
 
+  it("retries a rejected slave entry load on the next mount", async () => {
+    const loadError = new Error("entry load failed");
+    const container = createElement();
+    const runtimeMount = vi.fn();
+    const runtimeUnmount = vi.fn();
+    const render = vi.fn();
+    let loadAttempts = 0;
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        mount: runtimeMount,
+        unmount: runtimeUnmount,
+      },
+      async loadEntry() {
+        loadAttempts += 1;
+        if (loadAttempts === 1) throw loadError;
+        return { app: { render, unmount: vi.fn() } };
+      },
+    });
+
+    await expect(slave.mount({ container })).rejects.toBe(loadError);
+    await slave.mount({ container });
+
+    expect(loadAttempts).toBe(2);
+    expect(runtimeMount).toHaveBeenCalledTimes(2);
+    expect(runtimeUnmount).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the original mount error when rollback also fails", async () => {
+    const mountError = new Error("runtime mount failed");
+    const rollbackError = new Error("runtime rollback failed");
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        mount() {
+          throw mountError;
+        },
+        unmount() {
+          throw rollbackError;
+        },
+      },
+      async loadEntry() {
+        return { app: { render() {} } };
+      },
+    });
+    let receivedError: unknown;
+
+    try {
+      await slave.mount({ container: createElement() });
+    } catch (error) {
+      receivedError = error;
+    }
+
+    expect(receivedError).toBeInstanceOf(AggregateError);
+    expect((receivedError as AggregateError).errors).toEqual([
+      mountError,
+      rollbackError,
+    ]);
+  });
+
+  it("rolls back entry, projection, runtime, and container state after mount fails", async () => {
+    const mountError = new Error("entry start failed");
+    const calls: string[] = [];
+    let containerHtml = "";
+    const container = {
+      get innerHTML() {
+        return containerHtml;
+      },
+      set innerHTML(value: string) {
+        containerHtml = value;
+        calls.push(value ? `html:${value}` : "clear");
+      },
+      querySelector: vi.fn(() => undefined),
+    } as unknown as Element;
+    let activeBase = "/";
+    let activeHistory = "browser";
+    let startAttempts = 0;
+    const updateRuntime = vi.fn(
+      async (update: { basepath?: string; history?: { type: string } }) => {
+        if (update.basepath) activeBase = update.basepath;
+        if (update.history) activeHistory = update.history.type;
+        calls.push(`projection:${activeBase}:${activeHistory}`);
+      },
+    );
+    const loadEntry = vi.fn(async () => ({
+      pagesApp: { updateRuntime },
+      start() {
+        startAttempts += 1;
+        calls.push("entry-start");
+        if (startAttempts === 1) {
+          container.innerHTML = "partial";
+          throw mountError;
+        }
+      },
+      app: {
+        unmount() {
+          calls.push("entry-unmount");
+        },
+      },
+    }));
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        mount() {
+          calls.push("runtime-mount");
+        },
+        unmount() {
+          calls.push("runtime-unmount");
+        },
+      },
+      loadEntry,
+    });
+    const props = {
+      container,
+      base: "/catalog",
+      history: "hash" as const,
+    };
+
+    await expect(slave.mount(props)).rejects.toBe(mountError);
+
+    expect(activeBase).toBe("/");
+    expect(activeHistory).toBe("browser");
+    expect(containerHtml).toBe("");
+    expect(calls).toEqual([
+      "runtime-mount",
+      "projection:/catalog:hash",
+      "entry-start",
+      "html:partial",
+      "entry-unmount",
+      "projection:/:browser",
+      "runtime-unmount",
+      "clear",
+    ]);
+
+    await slave.mount(props);
+
+    expect(loadEntry).toHaveBeenCalledTimes(1);
+    expect(startAttempts).toBe(2);
+    expect(activeBase).toBe("/catalog");
+    expect(activeHistory).toBe("hash");
+  });
+
   it("resets mount state when multiple unmount steps fail", async () => {
     const calls: string[] = [];
     const container = createElement();
@@ -565,61 +968,37 @@ describe("@evjs/plugin-qiankun runtime", () => {
     ]);
   });
 
-  it("scopes slave document mount lookups to the qiankun container while loading entry", async () => {
-    const originalDocument = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "document",
-    );
-    const masterRoot = { name: "master" };
-    const slaveRoot = { name: "slave" };
-    const querySelector = vi.fn(() => masterRoot);
-    const getElementById = vi.fn(() => masterRoot);
-    const fakeDocument = { querySelector, getElementById };
-    const container = {
-      innerHTML: '<div id="app"></div>',
-      querySelector: vi.fn((selector: string) =>
-        selector === "#app" ? slaveRoot : null,
-      ),
-    } as unknown as Element;
-    let queryResult: unknown;
-    let idResult: unknown;
-
-    Object.defineProperty(globalThis, "document", {
-      value: fakeDocument,
-      configurable: true,
+  it("serializes duplicate mount and interleaved unmount calls per slave instance", async () => {
+    const mountStarted = createDeferred();
+    const mountGate = createDeferred();
+    const runtimeMount = vi.fn(async () => {
+      mountStarted.resolve();
+      await mountGate.promise;
+    });
+    const runtimeUnmount = vi.fn();
+    const render = vi.fn();
+    const entryUnmount = vi.fn();
+    const container = createElement();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { mount: runtimeMount, unmount: runtimeUnmount },
+      async loadEntry() {
+        return { app: { render, unmount: entryUnmount } };
+      },
     });
 
-    try {
-      const slave = createQiankunSlaveLifecycles({
-        name: "catalog",
-        mount: "#app",
-        runtime: {
-          async mount(_props, context) {
-            await context.loadEntry();
-          },
-        },
-        loadEntry: async () => {
-          queryResult = globalThis.document.querySelector("#app");
-          idResult = globalThis.document.getElementById("app");
-          return { app: { render() {} } };
-        },
-      });
+    const firstMount = slave.mount({ container });
+    const duplicateMount = slave.mount({ container });
+    const interleavedUnmount = slave.unmount({ container });
+    await mountStarted.promise;
+    mountGate.resolve();
+    await Promise.all([firstMount, duplicateMount, interleavedUnmount]);
 
-      await slave.mount({ container });
-
-      expect(queryResult).toBe(slaveRoot);
-      expect(idResult).toBe(slaveRoot);
-      expect(querySelector).not.toHaveBeenCalledWith("#app");
-      expect(getElementById).not.toHaveBeenCalledWith("app");
-      expect(globalThis.document.querySelector).toBe(querySelector);
-      expect(globalThis.document.getElementById).toBe(getElementById);
-    } finally {
-      if (originalDocument) {
-        Object.defineProperty(globalThis, "document", originalDocument);
-      } else {
-        delete (globalThis as { document?: unknown }).document;
-      }
-    }
+    expect(runtimeMount).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(runtimeUnmount).toHaveBeenCalledTimes(1);
+    expect(entryUnmount).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -628,4 +1007,17 @@ function createElement(): Element {
     innerHTML: "",
     querySelector: vi.fn(() => undefined),
   } as unknown as Element;
+}
+
+function createDeferred(): { promise: Promise<void>; resolve(): void } {
+  let resolvePromise: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve() {
+      resolvePromise?.();
+    },
+  };
 }

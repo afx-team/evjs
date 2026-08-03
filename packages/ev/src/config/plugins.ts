@@ -5,13 +5,13 @@ import {
   deepFreezeStaticJsonValue,
   isPlainStaticJsonObject,
 } from "@evjs/shared/_internal/static-json";
+import { assertPluginId } from "@evjs/shared/manifest";
 import type {
   DefinedPluginPageDefaultable,
   DefinedPluginPageInput,
+  DefinitePluginId,
 } from "../plugin/defined.js";
 import type { StaticConfigCompatible, StaticConfigValue } from "./static.js";
-
-const UNSAFE_PLUGIN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 declare const installedPluginRegistry: unique symbol;
 
@@ -25,22 +25,10 @@ export interface InstalledPluginRegistry {
   readonly [installedPluginRegistry]?: never;
 }
 
-type InstalledPluginRegistryControlKey =
-  | typeof installedPluginRegistry
-  | "config";
-
 type GeneratedInstalledPluginConfig =
   InstalledPluginRegistry extends Readonly<{ config: infer TConfig }>
     ? TConfig
     : never;
-
-type ManuallyRegisteredPluginKey = Exclude<
-  keyof InstalledPluginRegistry,
-  InstalledPluginRegistryControlKey
->;
-
-type ManuallyRegisteredPlugin =
-  InstalledPluginRegistry[ManuallyRegisteredPluginKey];
 
 type InactivePluginEntry = false | null | undefined;
 
@@ -77,24 +65,28 @@ type ConfiguredPlugin<TConfig> = [TConfig] extends [
   : never;
 
 type InstalledPlugin = Exclude<
-  ConfiguredPlugin<GeneratedInstalledPluginConfig> | ManuallyRegisteredPlugin,
+  ConfiguredPlugin<GeneratedInstalledPluginConfig>,
   InactivePluginEntry
 >;
 
-type PluginKey<TPlugin> = TPlugin extends {
-  readonly key: infer TKey extends string;
+type PagePluginId<TPlugin> = TPlugin extends {
+  readonly id: infer TId extends string;
 }
-  ? TKey
+  ? [DefinitePluginId<TId>] extends [never]
+    ? never
+    : DefinedPluginPageInput<TPlugin> extends never
+      ? never
+      : DefinitePluginId<TId>
   : never;
 
-type InstalledPluginKey = PluginKey<InstalledPlugin>;
+type InstalledPagePluginId = PagePluginId<InstalledPlugin>;
 
-type InstalledPluginForKey<TKey extends InstalledPluginKey> = Extract<
+type InstalledPluginForId<TId extends InstalledPagePluginId> = Extract<
   InstalledPlugin,
-  { readonly key: TKey }
+  { readonly id: TId }
 >;
 
-type PagePluginConfiguredValue<TPlugin> =
+type PagePluginOption<TPlugin> =
   DefinedPluginPageInput<TPlugin> extends never
     ? never
     :
@@ -102,16 +94,16 @@ type PagePluginConfiguredValue<TPlugin> =
         | StaticConfigCompatible<DefinedPluginPageInput<TPlugin>>
         | (DefinedPluginPageDefaultable<TPlugin> extends true ? true : never);
 
-type RegisteredPagePluginValues = {
-  readonly [TKey in InstalledPluginKey]?: PagePluginConfiguredValue<
-    InstalledPluginForKey<TKey>
+type RegisteredPagePluginOptions = {
+  readonly [TId in InstalledPagePluginId]?: PagePluginOption<
+    InstalledPluginForId<TId>
   >;
 };
 
 /** Page-level settings for plugins installed by `ev.config.ts`. */
-export type PagePluginConfigValues = [InstalledPluginKey] extends [never]
+export type PagePluginOptions = [InstalledPagePluginId] extends [never]
   ? Readonly<Record<string, never>>
-  : RegisteredPagePluginValues;
+  : RegisteredPagePluginOptions;
 
 type NormalizedStaticConfigPropertyKey<TKey extends PropertyKey> = TKey extends
   | string
@@ -152,45 +144,44 @@ type ExactStaticConfigValue<TActual, TExpected> = TExpected extends
         : never
       : never;
 
-type ExactPagePluginConfiguredValue<TActual, TExpected> =
-  TActual extends boolean
-    ? TActual extends TExpected
-      ? TActual
-      : never
-    : ExactStaticConfigValue<TActual, Exclude<TExpected, boolean>>;
+type ExactPagePluginOption<TActual, TExpected> = TActual extends boolean
+  ? TActual extends TExpected
+    ? TActual
+    : never
+  : ExactStaticConfigValue<TActual, Exclude<TExpected, boolean>>;
 
 /** Exact nested-value check used by the generic `definePageConfig()` helper. */
-export type PagePluginConfigValuesCheck<TActual> = TActual extends undefined
+export type PagePluginOptionsCheck<TActual> = TActual extends undefined
   ? undefined
   : TActual extends object
     ? {
-        readonly [TKey in keyof TActual]: TKey extends InstalledPluginKey
-          ? ExactPagePluginConfiguredValue<
+        readonly [TKey in keyof TActual]: TKey extends InstalledPagePluginId
+          ? ExactPagePluginOption<
               Exclude<TActual[TKey], undefined>,
-              Exclude<RegisteredPagePluginValues[TKey], undefined>
+              Exclude<RegisteredPagePluginOptions[TKey], undefined>
             >
           : never;
       }
     : never;
 
-export type ResolvedPagePluginConfigInput =
+export type ResolvedPagePluginOptionsInput =
   | boolean
   | Readonly<Record<string, StaticConfigValue>>;
 
 /** Validate and isolate the static plugin map read from `page.config.*`. */
-export function resolvePagePluginConfigValues(
+export function resolvePagePluginOptions(
   value: unknown,
   source: string,
-): Readonly<Record<string, ResolvedPagePluginConfigInput>> {
+): Readonly<Record<string, ResolvedPagePluginOptionsInput>> {
   if (value === undefined) return {};
   if (!isPlainStaticJsonObject(value)) {
     throw new Error(`[evjs] ${source} must be a plain object.`);
   }
   assertEnumerableStaticJsonProperties(value, source);
 
-  const resolved: Record<string, ResolvedPagePluginConfigInput> = {};
+  const resolved: Record<string, ResolvedPagePluginOptionsInput> = {};
   for (const [key, configured] of Object.entries(value)) {
-    assertPluginKey(key, `${source} key`);
+    assertPluginId(key, `${source} key`);
     if (typeof configured === "boolean") {
       defineRecordValue(resolved, key, configured);
       continue;
@@ -212,24 +203,9 @@ export function resolvePagePluginConfigValues(
   return Object.freeze(resolved);
 }
 
-export function assertPluginKey(
-  value: unknown,
-  source: string,
-): asserts value is string {
-  if (
-    typeof value !== "string" ||
-    !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ||
-    UNSAFE_PLUGIN_KEYS.has(value)
-  ) {
-    throw new Error(
-      `[evjs] ${source} must be a lowercase plugin key such as "analytics" or "error-reporting".`,
-    );
-  }
-}
-
-export type ExtractInstalledPlugin<TConfig, TKey extends string> = Extract<
+export type ExtractInstalledPlugin<TConfig, TId extends string> = Extract<
   ConfiguredPlugin<TConfig>,
-  { readonly key: TKey }
+  { readonly id: TId }
 >;
 
 function defineRecordValue<T>(

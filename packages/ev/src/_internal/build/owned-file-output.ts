@@ -67,6 +67,120 @@ export async function removeOwnedOutputFile(
   }
 }
 
+export interface OwnedOutputFileSnapshot {
+  readonly contents: Buffer | undefined;
+  readonly missingDirectories: readonly string[];
+}
+
+/** Snapshot one owned regular file and the parent directories it may create. */
+export async function snapshotOwnedOutputFile(
+  rootDir: string,
+  filePath: string,
+  field: string,
+): Promise<OwnedOutputFileSnapshot> {
+  const absoluteRoot = path.resolve(rootDir);
+  const destination = path.resolve(filePath);
+  assertStrictDescendant(absoluteRoot, destination, field);
+  if (!(await assertExistingOwnedDirectory(absoluteRoot, field))) {
+    return { contents: undefined, missingDirectories: [] };
+  }
+
+  const relativeParent = path.relative(absoluteRoot, path.dirname(destination));
+  let current = absoluteRoot;
+  const parentSegments = relativeParent ? relativeParent.split(path.sep) : [];
+  const missingDirectories: string[] = [];
+  for (const [index, segment] of parentSegments.entries()) {
+    current = path.join(current, segment);
+    if (await assertExistingOwnedDirectory(current, field)) continue;
+    missingDirectories.push(current);
+    for (const missingSegment of parentSegments.slice(index + 1)) {
+      current = path.join(current, missingSegment);
+      missingDirectories.push(current);
+    }
+    return { contents: undefined, missingDirectories };
+  }
+
+  try {
+    const stats = await fs.lstat(destination);
+    if (stats.isSymbolicLink()) {
+      throw new Error(
+        `[evjs] ${field} must not overwrite a symbolic-link output file.`,
+      );
+    }
+    if (!stats.isFile()) {
+      throw new Error(`[evjs] ${field} output path must be a file.`);
+    }
+    return {
+      contents: await fs.readFile(destination),
+      missingDirectories,
+    };
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return { contents: undefined, missingDirectories };
+    }
+    throw error;
+  }
+}
+
+/** Remove a known-new owned directory only when it is still an empty directory. */
+export async function removeOwnedOutputDirectoryIfEmpty(
+  rootDir: string,
+  directory: string,
+  field: string,
+): Promise<void> {
+  const absoluteRoot = path.resolve(rootDir);
+  const destination = path.resolve(directory);
+  assertStrictDescendant(absoluteRoot, destination, field);
+  if (!(await assertExistingOwnedDirectory(absoluteRoot, field))) return;
+
+  const relativeParent = path.relative(absoluteRoot, path.dirname(destination));
+  let current = absoluteRoot;
+  for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
+    current = path.join(current, segment);
+    if (!(await assertExistingOwnedDirectory(current, field))) return;
+  }
+
+  try {
+    const stats = await fs.lstat(destination);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new Error(`[evjs] ${field} output path must be a directory.`);
+    }
+    await fs.rmdir(destination);
+  } catch (error) {
+    if (isMissingPathError(error) || isNonEmptyDirectoryError(error)) return;
+    throw error;
+  }
+}
+
+/** Remove one symbolic-link leaf without following it or a symbolic ancestor. */
+export async function removeOwnedOutputSymbolicLink(
+  rootDir: string,
+  outputPath: string,
+  field: string,
+): Promise<void> {
+  const absoluteRoot = path.resolve(rootDir);
+  const destination = path.resolve(outputPath);
+  assertStrictDescendant(absoluteRoot, destination, field);
+  if (!(await assertExistingOwnedDirectory(absoluteRoot, field))) return;
+
+  const relativeParent = path.relative(absoluteRoot, path.dirname(destination));
+  let current = absoluteRoot;
+  for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
+    current = path.join(current, segment);
+    if (!(await assertExistingOwnedDirectory(current, field))) return;
+  }
+
+  try {
+    const stats = await fs.lstat(destination);
+    if (stats.isSymbolicLink()) {
+      await fs.rm(destination);
+    }
+  } catch (error) {
+    if (isMissingPathError(error)) return;
+    throw error;
+  }
+}
+
 /** Synchronous counterpart used by process-exit cleanup paths. */
 export function removeOwnedOutputFileSync(
   rootDir: string,
@@ -207,4 +321,9 @@ function isAlreadyExistsError(error: unknown): boolean {
 
 function isMissingPathError(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function isNonEmptyDirectoryError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EEXIST" || code === "ENOTEMPTY";
 }
