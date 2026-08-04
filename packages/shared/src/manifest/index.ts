@@ -733,6 +733,7 @@ export type GeneratedScope =
 
 export type FrameworkSlotName =
   | "client.entry"
+  | "server.entry"
   | "page.wrapper"
   | "server.request.middleware"
   | "html.tag"
@@ -806,6 +807,7 @@ export interface GeneratedImportEdgePlan {
 
 export type FrameworkSlotPlanItem =
   | ClientEntrySlotPlanItem
+  | ServerEntrySlotPlanItem
   | PageWrapperSlotPlanItem
   | ServerRequestMiddlewareSlotPlanItem
   | HtmlTagSlotPlanItem
@@ -825,6 +827,13 @@ export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   runtime: ClientContributionRuntime;
   mode: "import" | "replace";
   target?: ContributionTarget;
+}
+
+export interface ServerEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "server.entry";
+  module: string;
+  mode: "replace";
+  target: { kind: "page"; pageId: string };
 }
 
 export interface PageWrapperSlotPlanItem extends FrameworkSlotPlanItemBase {
