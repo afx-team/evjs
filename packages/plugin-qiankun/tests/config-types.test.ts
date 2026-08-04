@@ -8,11 +8,14 @@ import {
   type QiankunMasterPluginOptions,
   type QiankunSlavePluginOptions,
 } from "../src/index.js";
-import type {
-  QiankunApp,
-  QiankunHistoryOptions,
-  QiankunMasterOptions,
-  QiankunRuntimePageDefinition,
+import {
+  defineQiankunSlaveRuntime,
+  type QiankunApp,
+  type QiankunHistoryOptions,
+  type QiankunLifecycleProps,
+  type QiankunMasterOptions,
+  type QiankunRuntimePageDefinition,
+  type QiankunSlaveRuntimeContext,
 } from "../src/runtime.js";
 
 describe("qiankun plugin config types", () => {
@@ -107,5 +110,21 @@ describe("qiankun plugin config types", () => {
       return options;
     };
     expect(assertStandardAppIdentity).toBeTypeOf("function");
+  });
+
+  it("contextually types slave post lifecycles", () => {
+    const runtime = defineQiankunSlaveRuntime({
+      afterMount(props, context) {
+        expectTypeOf(props).toEqualTypeOf<QiankunLifecycleProps>();
+        expectTypeOf(context).toEqualTypeOf<QiankunSlaveRuntimeContext>();
+      },
+      afterUpdate(props, context) {
+        expectTypeOf(props).toEqualTypeOf<QiankunLifecycleProps>();
+        expectTypeOf(context).toEqualTypeOf<QiankunSlaveRuntimeContext>();
+      },
+    });
+
+    expect(runtime.afterMount).toBeTypeOf("function");
+    expect(runtime.afterUpdate).toBeTypeOf("function");
   });
 });

@@ -24,6 +24,7 @@ import type {
   HtmlTagSlotPlanItem,
   PageWrapperSlotPlanItem,
   ServerAppEntryMetadata,
+  ServerEntrySlotPlanItem,
   ServerMiddlewareNode,
 } from "@evjs/shared/manifest";
 import { assertPluginId } from "@evjs/shared/manifest";
@@ -70,6 +71,7 @@ export const GENERATED_IR_TYPES = "types.d.ts";
 const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
   "client.entry",
+  "server.entry",
   "page.wrapper",
   "server.request.middleware",
   "html.tag",
@@ -90,6 +92,7 @@ const CONTRIBUTION_RUNTIMES = [
 ] as const satisfies readonly ContributionRuntime[];
 const CLIENT_ENTRY_RUNTIMES = ["client"] as const;
 const CLIENT_ENTRY_MODES = ["import", "replace"] as const;
+const SERVER_ENTRY_MODES = ["replace"] as const;
 const HTML_TAG_NAMES = [
   "meta",
   "link",
@@ -145,6 +148,7 @@ interface InternalGeneratedModuleRef {
 
 type TargetedSlotPlanItem =
   | ClientEntrySlotPlanItem
+  | ServerEntrySlotPlanItem
   | PageWrapperSlotPlanItem
   | HtmlTagSlotPlanItem;
 
@@ -318,10 +322,41 @@ class ContributionCollector<TBundlerCfg> {
       }
     }
 
+    const serverEntryReplacements = new Map<string, ServerEntrySlotPlanItem>();
     for (const slot of this.slots) {
       if (!isTargetedSlotPlanItem(slot) || !slot.target) continue;
       const target = slot.target;
       this.validateKnownTarget(slot);
+
+      if (slot.slot === "server.entry") {
+        const pageId = slot.target.pageId;
+        const matches = this.options.plan.entries.filter(
+          (entry) =>
+            entry.environment === "server" &&
+            entry.kind === "page-server" &&
+            targetMatchesEntry(target, entry),
+        );
+        if (matches.length === 0) {
+          throw new Error(
+            `[evjs] Plugin "${slot.pluginId}" server.entry contribution "${slot.id}" targets page "${pageId}", but no server page entry matches that target.`,
+          );
+        }
+        if (matches.length > 1) {
+          throw new Error(
+            `[evjs] Plugin "${slot.pluginId}" server.entry contribution "${slot.id}" targets page "${pageId}", but multiple server page entries match that target: ${matches
+              .map((entry) => `"${entry.name}"`)
+              .join(", ")}.`,
+          );
+        }
+        const entry = matches[0];
+        const previous = serverEntryReplacements.get(entry.name);
+        if (previous) {
+          throw new Error(
+            `[evjs] Server page entry "${entry.name}" has multiple replacement server.entry contributions: ${previous.key}, ${slot.key}.`,
+          );
+        }
+        serverEntryReplacements.set(entry.name, slot);
+      }
 
       if (
         slot.slot === "client.entry" &&
@@ -607,6 +642,24 @@ class ContributionCollector<TBundlerCfg> {
             : {}),
         };
       }
+      case "server.entry": {
+        const item = input as FrameworkSlotInput<"server.entry">;
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
+        return {
+          ...base,
+          slot: name,
+          module: this.resolveModuleValue(
+            item.module,
+            {
+              from: base.key,
+              kind: "slot-module",
+            },
+            "file",
+          ),
+          target: validateServerEntryTarget(item.target),
+          mode: validateEnum(item.mode, SERVER_ENTRY_MODES, `${base.key}.mode`),
+        };
+      }
       case "page.wrapper": {
         const item = input as FrameworkSlotInput<"page.wrapper">;
         assertGeneratedModuleOrString(pluginId, item.id, item.module);
@@ -848,6 +901,7 @@ function isTargetedSlotPlanItem(
 ): slot is TargetedSlotPlanItem {
   return (
     slot.slot === "client.entry" ||
+    slot.slot === "server.entry" ||
     slot.slot === "page.wrapper" ||
     slot.slot === "html.tag"
   );
@@ -1500,6 +1554,17 @@ function createEntrySource(
     return toGeneratedImportSpecifier(cwd, fromFile, file);
   }
 
+  if (entry.kind === "page-server") {
+    const replacement = getMatchingServerEntryReplacement(plan, entry);
+    if (replacement) {
+      const mod = toGeneratedImportSpecifier(cwd, fromFile, replacement.module);
+      return [
+        `export { default } from ${JSON.stringify(mod)};`,
+        `export * from ${JSON.stringify(mod)};`,
+      ].join("\n");
+    }
+  }
+
   if (entry.metadata?.type === "pages-app") {
     return createClientEntrySource({
       cwd,
@@ -1768,6 +1833,15 @@ function getMatchingClientEntrySlots(
   );
 }
 
+function getMatchingServerEntryReplacement(
+  plan: BuildPlan,
+  entry: BuildEntry,
+): ServerEntrySlotPlanItem | undefined {
+  return getSlotItems<ServerEntrySlotPlanItem>(plan, "server.entry").find(
+    (slot) => targetMatchesEntry(slot.target, entry),
+  );
+}
+
 function getSlotItems<T extends FrameworkSlotPlanItem>(
   plan: BuildPlan,
   slot: FrameworkSlotName,
@@ -1952,6 +2026,22 @@ function validateContributionTarget(
     return { ...target };
   }
   throw new Error('[evjs] target.kind must be "application" or "page".');
+}
+
+function validateServerEntryTarget(target: unknown): {
+  kind: "page";
+  pageId: string;
+} {
+  if (!target || typeof target !== "object" || Array.isArray(target)) {
+    throw new Error("[evjs] server.entry target must be a Page target.");
+  }
+  if (Reflect.get(target, "kind") !== "page") {
+    throw new Error('[evjs] server.entry target.kind must be "page".');
+  }
+  return validateContributionTarget(target as ContributionTarget) as {
+    kind: "page";
+    pageId: string;
+  };
 }
 
 function assertGeneratedModuleOrString(

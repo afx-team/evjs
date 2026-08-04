@@ -8,6 +8,38 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.4] — 2026-08-04
+
+### ✨ Improvements
+
+- **Qiankun slave post lifecycles** — Optional slave runtimes can use
+  `afterMount()` after projection and entry rendering succeed, and
+  `afterUpdate()` after mounted updates settle. Post lifecycles participate in
+  the serialized slave queue without requiring integrations to wrap generated
+  entry methods.
+
+### 🐛 Bug Fixes
+
+- **Stable Webpack development entry assets** — HMR assets are identified from
+  Webpack stats metadata and excluded from canonical client entry assets while
+  remaining in the emitted-file inventory, preventing replacement compilations
+  from failing single-entry validation.
+
+---
+
+## [0.3.3] — 2026-08-03
+
+### 🐛 Bug Fixes
+
+- **Qiankun sub-app browser history synchronization** — Qiankun masters now
+  forward same-base host location changes to mounted slaves, and slave Routers
+  reconcile native browser back/forward navigation without requiring an
+  application-level `popstate` workaround. Browser and hash history adapters
+  are scoped per app and retain the active wrapper during rollback, preventing
+  stale shared `window.history` restoration.
+
+---
+
 ## [0.3.2] — 2026-08-03
 
 ### ⚠️ Breaking Changes

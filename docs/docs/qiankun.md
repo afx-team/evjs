@@ -224,11 +224,17 @@ import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
 
 export default defineQiankunSlaveRuntime({
   mount(props, ctx) {
-    console.log(`${ctx.name} mounted`, {
+    console.log(`${ctx.name} preparing to mount`, {
       container: props.container,
       base: props.base,
       history: props.history,
     });
+  },
+  afterMount(_props, ctx) {
+    console.log(`${ctx.name} mounted`);
+  },
+  afterUpdate(_props, ctx) {
+    console.log(`${ctx.name} updated`);
   },
   unmount() {
     console.log("slave unmounted");
@@ -373,8 +379,10 @@ The optional slave runtime supports:
 interface QiankunSlaveRuntime {
   bootstrap?(props, ctx): void | Promise<void>;
   mount?(props, ctx): void | Promise<void>;
-  unmount?(props, ctx): void | Promise<void>;
+  afterMount?(props, ctx): void | Promise<void>;
   update?(props, ctx): void | Promise<void>;
+  afterUpdate?(props, ctx): void | Promise<void>;
+  unmount?(props, ctx): void | Promise<void>;
 }
 ```
 
@@ -382,6 +390,15 @@ interface QiankunSlaveRuntime {
 Calling it during `bootstrap()` is safe. The first `mount()` configures runtime
 base/history before `start()`; subsequent remounts reuse the loaded module and
 call its render path inside the current container.
+
+`mount()` and `update()` run before the framework-owned entry work.
+`afterMount()` runs only after base/history projection and entry `start()` or
+`render()` complete successfully. `afterUpdate()` runs after a successful
+projection commit and also runs for mounted updates that do not change the
+projection. All lifecycle operations remain serialized: a queued update or
+unmount waits for the preceding post lifecycle to settle. An `afterMount()`
+failure participates in mount rollback; an `afterUpdate()` failure rejects that
+update without rolling back the already committed projection.
 
 ## Bundling Qiankun
 

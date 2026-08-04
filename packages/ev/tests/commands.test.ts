@@ -2804,6 +2804,300 @@ describe("prepareFrameworkBuild", () => {
     await prepared.dispose();
   });
 
+  it("replaces exact Page server entry facades without changing framework entry identity", async () => {
+    const cwd = await createProject();
+    for (const pageId of ["home", "admin", "profile"]) {
+      await writeFile(
+        path.join(cwd, `src/pages/${pageId}/page.tsx`),
+        `export default function ${pageId}Page() { return null; }`,
+        "utf-8",
+      );
+      await writeFile(
+        path.join(cwd, `src/pages/${pageId}/page.config.ts`),
+        'export default { render: "ssr" };',
+        "utf-8",
+      );
+    }
+
+    let compiledPlan: BuildPlan | undefined;
+    let linkedOutput: BuildOutput | undefined;
+    const plugin: Plugin<Record<string, never>> = {
+      id: "server-entry-replacement",
+      setup() {
+        return {
+          afterBuild(result) {
+            linkedOutput = result.output;
+          },
+        };
+      },
+      emitIR(ctx) {
+        for (const pageId of ["home", "admin"] as const) {
+          const entry = ctx.emit.module({
+            id: `${pageId}-server-entry`,
+            scope: { kind: "page", pageId },
+            source: [
+              `export default function ${pageId}ServerPage() { return null; }`,
+              `export const ${pageId}ServerExport = true;`,
+            ].join("\n"),
+          });
+          ctx.slot("server.entry").add({
+            id: `${pageId}-server-entry-slot`,
+            target: { kind: "page", pageId },
+            module: entry,
+            mode: "replace",
+          });
+        }
+      },
+    };
+
+    await build(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      {
+        cwd,
+        bundler: createMockBundler([], {
+          onBuildPlan(plan) {
+            compiledPlan = plan;
+          },
+        }),
+      },
+    );
+
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+    ) as BuildPlan;
+    const homeName = createPageServerBuildEntryName("home");
+    const adminName = createPageServerBuildEntryName("admin");
+    const profileName = createPageServerBuildEntryName("profile");
+    const homeModule = manifest.generated?.modules.find(
+      (module) => module.id === "home-server-entry",
+    );
+    const adminModule = manifest.generated?.modules.find(
+      (module) => module.id === "admin-server-entry",
+    );
+    const homeFacadeFile = `.ev/entries/${homeName}.ts`;
+    const adminFacadeFile = `.ev/entries/${adminName}.ts`;
+    const profileFacadeFile = `.ev/entries/${profileName}.ts`;
+    const homeFacade = await fs.promises.readFile(
+      path.join(cwd, homeFacadeFile),
+      "utf-8",
+    );
+    const adminFacade = await fs.promises.readFile(
+      path.join(cwd, adminFacadeFile),
+      "utf-8",
+    );
+    const profileFacade = await fs.promises.readFile(
+      path.join(cwd, profileFacadeFile),
+      "utf-8",
+    );
+
+    for (const [name, pageId] of [
+      [homeName, "home"],
+      [adminName, "admin"],
+      [profileName, "profile"],
+    ] as const) {
+      expect(
+        compiledPlan?.entries.find((entry) => entry.name === name),
+      ).toMatchObject({
+        name,
+        import: `./.ev/entries/${name}.ts`,
+        environment: "server",
+        kind: "page-server",
+        owner: { pageId },
+        metadata: { type: "react-server-page" },
+      });
+      expect(
+        compiledPlan?.server.renderers?.find(
+          (renderer) => renderer.name === name,
+        ),
+      ).toMatchObject({
+        name,
+        import: `./.ev/entries/${name}.ts`,
+        kind: "page-server",
+        owner: { pageId },
+        metadata: { type: "react-server-page" },
+      });
+      expect(linkedOutput?.server.renderers?.[name]).toMatchObject({
+        kind: "page-server",
+        owner: { pageId },
+        assets: { js: [`${name}.js`], css: [] },
+      });
+    }
+
+    const homeImport = generatedImport(
+      cwd,
+      homeFacadeFile,
+      homeModule?.file ?? "",
+    );
+    const adminImport = generatedImport(
+      cwd,
+      adminFacadeFile,
+      adminModule?.file ?? "",
+    );
+    expect(homeFacade).toContain(`export { default } from "${homeImport}";`);
+    expect(homeFacade).toContain(`export * from "${homeImport}";`);
+    expect(adminFacade).toContain(`export { default } from "${adminImport}";`);
+    expect(adminFacade).toContain(`export * from "${adminImport}";`);
+    expect(homeFacade).not.toContain("src/pages/home/page");
+    expect(adminFacade).not.toContain("src/pages/admin/page");
+    expect(profileFacade).toContain(
+      'import * as pageModule from "../../src/pages/profile/page";',
+    );
+    expect(profileFacade).toContain(
+      'export { PageProvider } from "@evjs/ev/_internal/client/page-context";',
+    );
+    expect(manifest.generated?.slots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slot: "server.entry",
+          id: "home-server-entry-slot",
+          target: { kind: "page", pageId: "home" },
+          module: homeModule?.file,
+          mode: "replace",
+        }),
+        expect.objectContaining({
+          slot: "server.entry",
+          id: "admin-server-entry-slot",
+          target: { kind: "page", pageId: "admin" },
+          module: adminModule?.file,
+          mode: "replace",
+        }),
+      ]),
+    );
+    expect(manifest.generated?.importEdges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "server-entry-replacement:home-server-entry-slot",
+          to: "server-entry-replacement:home-server-entry",
+          kind: "slot-module",
+          specifier: homeModule?.file,
+        }),
+        expect.objectContaining({
+          from: "server-entry-replacement:admin-server-entry-slot",
+          to: "server-entry-replacement:admin-server-entry",
+          kind: "slot-module",
+          specifier: adminModule?.file,
+        }),
+      ]),
+    );
+  });
+
+  it("rejects multiple replacements for one concrete Page server entry", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.config.ts"),
+      'export default { render: "ssr" };',
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      id: "duplicate-server-entry",
+      emitIR(ctx) {
+        for (const id of ["first", "second"] as const) {
+          const entry = ctx.emit.module({
+            id: `${id}-entry`,
+            scope: { kind: "page", pageId: "home" },
+            source: "export default function Home() { return null; }",
+          });
+          ctx.slot("server.entry").add({
+            id: `${id}-slot`,
+            target: { kind: "page", pageId: "home" },
+            module: entry,
+            mode: "replace",
+          });
+        }
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        { routing: { mode: "spa" }, plugins: [plugin] },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      `Server page entry "${createPageServerBuildEntryName("home")}" has multiple replacement server.entry contributions: duplicate-server-entry:first-slot, duplicate-server-entry:second-slot.`,
+    );
+  });
+
+  it("rejects unknown Pages and Pages without a server entry", async () => {
+    const createPlugin = (pageId: string): Plugin<Record<string, never>> => ({
+      id: `server-entry-${pageId}`,
+      emitIR(ctx) {
+        const entry = ctx.emit.module({
+          id: "entry",
+          scope: { kind: "application" },
+          source: "export default function Page() { return null; }",
+        });
+        ctx.slot("server.entry").add({
+          id: "entry-slot",
+          target: { kind: "page", pageId },
+          module: entry,
+          mode: "replace",
+        });
+      },
+    });
+
+    const unknownCwd = await createSpaProject();
+    await expect(
+      prepareFrameworkBuild(
+        {
+          routing: { mode: "spa" },
+          plugins: [createPlugin("missing")],
+        },
+        { cwd: unknownCwd },
+      ),
+    ).rejects.toThrow(
+      'server.entry contribution "entry-slot" targets unknown page "missing".',
+    );
+
+    const csrCwd = await createSpaProject();
+    await expect(
+      prepareFrameworkBuild(
+        {
+          routing: { mode: "spa" },
+          plugins: [createPlugin("index")],
+        },
+        { cwd: csrCwd },
+      ),
+    ).rejects.toThrow(
+      'server.entry contribution "entry-slot" targets page "index", but no server page entry matches that target.',
+    );
+  });
+
+  it("rejects non-Page server entry targets", async () => {
+    const cwd = await createSpaProject();
+    const plugin: Plugin<Record<string, never>> = {
+      id: "invalid-server-entry-target",
+      emitIR(ctx) {
+        const entry = ctx.emit.module({
+          id: "entry",
+          scope: { kind: "application" },
+          source: "export default function Page() { return null; }",
+        });
+        ctx.slot("server.entry").add({
+          id: "entry-slot",
+          target: { kind: "application" } as never,
+          module: entry,
+          mode: "replace",
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        { routing: { mode: "spa" }, plugins: [plugin] },
+        { cwd },
+      ),
+    ).rejects.toThrow('server.entry target.kind must be "page".');
+  });
+
   it("adds server.request.middleware contributions to the generated server entry", async () => {
     const cwd = await createProject();
     await writeFile(
@@ -13600,14 +13894,19 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       async dev() {
         events.push("bundler.dev");
         return createTestDevController({
-          async updatePlan() {
+          async updatePlan(_update, options) {
             const candidateRouteTypes = await fs.promises.readFile(
               path.join(cwd, "src/route-types.d.ts"),
               "utf-8",
             );
-            events.push(
-              `candidate-types:${candidateRouteTypes.includes(JSON.stringify("/about"))}`,
+            const includesAbout = candidateRouteTypes.includes(
+              JSON.stringify("/about"),
             );
+            if (!includesAbout) {
+              options.activate();
+              return;
+            }
+            events.push("candidate-types:true");
             events.push("update:throw");
             throw new Error("mock update failure");
           },
