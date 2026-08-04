@@ -201,6 +201,7 @@ The supported slots are:
 | Slot | Covers |
 |------|--------|
 | `client.entry` | Entry imports and entry wrapper modules, including replacement wrappers |
+| `server.entry` | Replacement modules for existing Page server entries |
 | `page.wrapper` | Semantic Page component wrapping across client and server projections |
 | `server.request.middleware` | Framework request middleware in the server pipeline |
 | `html.tag` | Structured `meta`, `link`, `script`, and `style` tags |
@@ -209,6 +210,33 @@ The supported slots are:
 
 Use `client.entry` to import a side-effect module or call an explicit
 installer. The IR does not carry an inert runtime-plugin registry.
+
+`server.entry` is replacement-only. It requires `mode: "replace"` and an exact
+Page target, and that Page must already own a `page-server` entry. The
+contribution replaces only that entry's generated facade module; its framework
+name, kind, owner, environment, renderer identity, and output asset binding
+remain unchanged. It cannot create an entry or target another server renderer
+kind.
+
+```ts
+emitIR(ctx) {
+  const entry = ctx.emit.module({
+    id: "page-server-entry",
+    scope: { kind: "page", pageId: "dashboard" },
+    source: "export default function Dashboard() { return null; }",
+  });
+
+  ctx.slot("server.entry").add({
+    id: "page-server-entry-slot",
+    target: { kind: "page", pageId: "dashboard" },
+    module: entry,
+    mode: "replace",
+  });
+}
+```
+
+Unknown Pages, Pages without a concrete `page-server` entry, and multiple
+replacements for the same concrete entry fail during IR materialization.
 
 `client.entry.runtime` accepts only `"client"`. A client entry cannot
 materialize server code, so `"server"` and the misleading `"all"` value are

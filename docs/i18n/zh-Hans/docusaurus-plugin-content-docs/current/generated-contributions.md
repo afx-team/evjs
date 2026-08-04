@@ -190,6 +190,7 @@ slots 如下：
 | Slot | 覆盖能力 |
 |------|----------|
 | `client.entry` | Entry imports、entry wrapper modules 和 replacement wrappers |
+| `server.entry` | 替换已有 Page server entry 的模块 |
 | `page.wrapper` | 跨 client/server projection 的语义 Page component 包装 |
 | `server.request.middleware` | Server pipeline 中的 framework request middleware |
 | `html.tag` | 结构化 `meta`、`link`、`script`、`style` tags |
@@ -198,6 +199,32 @@ slots 如下：
 
 需要 import side-effect module 或执行安装逻辑时，使用 `client.entry` 显式调用
 installer。IR 不携带 inert runtime-plugin registry。
+
+`server.entry` 只支持 replacement。它要求显式提供 `mode: "replace"` 和精确的 Page
+target，且该 Page 必须已经拥有 `page-server` entry。Contribution 只替换该 entry 的
+generated facade module；框架持有的 name、kind、owner、environment、renderer identity
+与 output asset binding 均保持不变。它不能新增 entry，也不能命中其他 server renderer
+kind。
+
+```ts
+emitIR(ctx) {
+  const entry = ctx.emit.module({
+    id: "page-server-entry",
+    scope: { kind: "page", pageId: "dashboard" },
+    source: "export default function Dashboard() { return null; }",
+  });
+
+  ctx.slot("server.entry").add({
+    id: "page-server-entry-slot",
+    target: { kind: "page", pageId: "dashboard" },
+    module: entry,
+    mode: "replace",
+  });
+}
+```
+
+未知 Page、没有 concrete `page-server` entry 的 Page，以及同一 concrete entry 的多次
+replacement，都会在 IR materialization 阶段失败。
 
 `client.entry.runtime` 只接受 `"client"`。Client entry 无法物化 server code，
 因此 `"server"` 和具有误导性的 `"all"` 都会被拒绝。需要把 Page component

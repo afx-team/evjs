@@ -606,17 +606,19 @@ export interface FrameworkSlot<K extends FrameworkSlotName> {
 export type FrameworkSlotInput<K extends FrameworkSlotName> =
   K extends "client.entry"
     ? ClientEntryContribution
-    : K extends "page.wrapper"
-      ? PageWrapperContribution
-      : K extends "server.request.middleware"
-        ? ServerRequestMiddlewareContribution
-        : K extends "html.tag"
-          ? HtmlTagContribution
-          : K extends "resolve.alias"
-            ? ResolveAliasContribution
-            : K extends "resolve.external"
-              ? ResolveExternalContribution
-              : never;
+    : K extends "server.entry"
+      ? ServerEntryContribution
+      : K extends "page.wrapper"
+        ? PageWrapperContribution
+        : K extends "server.request.middleware"
+          ? ServerRequestMiddlewareContribution
+          : K extends "html.tag"
+            ? HtmlTagContribution
+            : K extends "resolve.alias"
+              ? ResolveAliasContribution
+              : K extends "resolve.external"
+                ? ResolveExternalContribution
+                : never;
 
 export interface ClientEntryContribution {
   id: string;
@@ -632,6 +634,14 @@ export interface ClientEntryContribution {
    * such as qiankun slave mode that must own the entry exports.
    */
   mode?: "import" | "replace";
+}
+
+/** Replaces one existing framework-owned Page server entry facade. */
+export interface ServerEntryContribution {
+  id: string;
+  module: GeneratedModuleRef | string;
+  target: { kind: "page"; pageId: string };
+  mode: "replace";
 }
 
 /**
