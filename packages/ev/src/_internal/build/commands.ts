@@ -66,6 +66,7 @@ import {
   type PreparedWatchFilesPlan,
   prepareWatchFilesPlan,
   type RouteDirectoryWatchState,
+  resolveInitialDevWatchMode,
   type WatchFilesPlan,
   watchFiles,
 } from "./dev-watch.js";
@@ -1442,7 +1443,7 @@ async function runDevSession<TBundlerCfg = unknown>(
     resolveDevWatchFailure = resolve;
   });
   let devWatchFailed = false;
-  let devWatchMode: "events" | "polling" = "events";
+  let devWatchMode = resolveInitialDevWatchMode();
   const reportDevWatchFailure = (failure: unknown) => {
     if (devWatchFailed) return;
     devWatchFailed = true;

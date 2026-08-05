@@ -12,7 +12,7 @@ import {
 } from "@evjs/shared/manifest";
 import { configureSync, resetSync } from "@logtape/logtape";
 import { execa } from "execa";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createPageClientBuildEntryName,
   createPageServerBuildEntryName,
@@ -77,6 +77,16 @@ const fullBundlerCapabilities = {
 } as const;
 const BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR =
   "[evjs] transformOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.";
+
+beforeEach(() => {
+  // Exercise native event watching by default regardless of whether the test
+  // runner itself is hosted in Codex's macOS Seatbelt sandbox.
+  vi.stubEnv("CODEX_SANDBOX", "");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 type TestDevTransitionOutcome = "accept" | "rollback";
 
@@ -8839,6 +8849,62 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     }
   });
 
+  it.runIf(process.platform === "darwin")(
+    "starts with polling in the Codex Seatbelt sandbox",
+    async () => {
+      vi.stubEnv("CODEX_SANDBOX", "seatbelt");
+      const cwd = await createSpaProject();
+      const events: string[] = [];
+      const watchSpy = vi.spyOn(fs, "watch").mockImplementation((() => {
+        throw new Error("fs.watch should not run in the Seatbelt sandbox");
+      }) as never);
+      const bundler = createRouteUpdateBundler(cwd, events, "/admin");
+      const running = dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler },
+      );
+      let settled = false;
+      void running.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+
+      try {
+        await waitForEvent(events, "initial:/");
+        await writeFile(
+          path.join(cwd, "src/pages/admin/page.tsx"),
+          "export default function Admin() { return null; }",
+          "utf-8",
+        );
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error("Seatbelt polling update timed out")),
+              devUpdateTimeoutMs,
+            );
+          }),
+        ]);
+        expect(watchSpy).not.toHaveBeenCalled();
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        if (!settled) {
+          process.emit("SIGINT");
+          await running.catch(() => {});
+        }
+        watchSpy.mockRestore();
+      }
+    },
+  );
+
   it("falls back to polling when dependency event watchers exhaust resources", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
@@ -12819,6 +12885,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     const cwd = await createSpaProject();
     const dependency = path.join(cwd, "bundler-plugin.config.json");
     await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const controlledWatch = installControlledFsWatch();
     const events: string[] = [];
 
     const createSnapshotPlugin = (
@@ -12943,6 +13010,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       await waitForEvent(events, "bundler.dev");
       currentConfig = nextConfig;
       await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+      await controlledWatch.dispatchFileChange(dependency);
       await waitForEvent(events, "dispose:old:initial");
 
       const emitRetired = emitRetiredFacts;
@@ -12958,6 +13026,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
         process.emit("SIGINT");
         await running.catch(() => {});
       }
+      controlledWatch.restore();
     }
 
     expect(events).toEqual([

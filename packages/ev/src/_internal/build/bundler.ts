@@ -218,7 +218,9 @@ export interface BundlerDevContext<TBundlerCfg = unknown>
      */
     onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
     /**
-     * Called by the bundler adapter after a dev compile has fresh build facts.
+     * Called by the bundler adapter after a dev compile has fresh build facts,
+     * or with previously published facts that remain valid across a proven
+     * topology-preserving artifact update.
      * The ev orchestrator owns beforeBuild, framework output linking,
      * transformOutput, manifest emission, and HTML emission. Adapters may
      * acknowledge facts or notify server readiness only after `published`;
@@ -262,7 +264,9 @@ export interface BundlerDevUpdateOptions<TBundlerCfg = unknown> {
  * inputs. Core explicitly accepts the final input or rolls back only after it
  * has restored the previous generated state. Adapters must drop any compile
  * that could have observed input while this boundary was active, then obtain
- * fresh facts for the selected state.
+ * fresh facts for the selected state. A topology-preserving artifact update
+ * may instead relink with the last published facts while the compiler handles
+ * its generated-input rebuild independently.
  */
 export interface BundlerDevUpdateTransition {
   /** Select the final generated input while keeping the current generation. */

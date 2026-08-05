@@ -166,95 +166,6 @@ function waitForPollingDelay(
   });
 }
 
-function collectGeneratedEntryInvalidation(
-  cwd: string,
-  plan: BuildPlan,
-): {
-  files: string[];
-  statsPaths: string[];
-} {
-  const generatedRoot = path.resolve(cwd, ".ev");
-  const environments = new Set<"client" | "server">();
-  const files = new Set<string>();
-  for (const entry of plan.entries) {
-    if (!entry.import.startsWith(".") && !path.isAbsolute(entry.import)) {
-      continue;
-    }
-    const absolute = path.resolve(cwd, entry.import);
-    const relative = path.relative(generatedRoot, absolute);
-    if (
-      relative === "" ||
-      relative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relative)
-    ) {
-      continue;
-    }
-    files.add(absolute);
-    environments.add(entry.environment);
-  }
-
-  const outputPaths = resolveBuildOutputPaths(cwd, plan);
-  return {
-    files: [...files],
-    statsPaths: [
-      ...(environments.has("client")
-        ? [path.join(outputPaths.clientDir, "stats.json")]
-        : []),
-      ...(environments.has("server")
-        ? [path.join(outputPaths.serverDir, "stats.json")]
-        : []),
-    ],
-  };
-}
-
-async function readStatsVersions(
-  statsPaths: readonly string[],
-): Promise<Map<string, string | undefined>> {
-  return new Map(
-    await Promise.all(
-      statsPaths.map(
-        async (statsPath) =>
-          [statsPath, await readServerStatsVersion(statsPath)] as const,
-      ),
-    ),
-  );
-}
-
-async function waitForStatsVersionsToAdvance(
-  statsPaths: readonly string[],
-  previous: ReadonlyMap<string, string | undefined>,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (true) {
-    throwIfPollingAborted(
-      signal,
-      "[evjs] Utoopack development session closed during update.",
-    );
-    const current = await readStatsVersions(statsPaths);
-    if (
-      statsPaths.every((statsPath) => {
-        const version = current.get(statsPath);
-        return version !== undefined && version !== previous.get(statsPath);
-      })
-    ) {
-      return;
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `[evjs] Timed out waiting for Utoopack to compile final generated input (${statsPaths
-          .map((statsPath) => JSON.stringify(statsPath))
-          .join(", ")}). Restart ev dev to recover safely.`,
-      );
-    }
-    await waitForPollingDelay(
-      signal,
-      "[evjs] Utoopack development session closed during update.",
-    );
-  }
-}
-
 function requireUtoopack(): UtoopackRuntime {
   // @utoo/pack's import condition targets ESM .js files; Node 18 parses them as CJS.
   return require("@utoo/pack") as UtoopackRuntime;
@@ -394,6 +305,7 @@ async function startUtoopackDev(
         "[evjs] Core discarded the initial Utoopack facts snapshot.",
       );
     }
+    controller.markBuildPublished(initialFacts, initialServerStatsVersion);
     worker.throwIfFailed();
 
     if (hasRuntimeServerEntry(plan)) {
@@ -401,7 +313,6 @@ async function startUtoopackDev(
       worker.throwIfFailed();
     }
     if (hasServerEntries(plan)) {
-      controller.markServerStatsPublished(initialServerStatsVersion);
       const monitor = startUtoopackServerStatsMonitor({
         statsPath: serverStatsPath,
         initialVersion: initialServerStatsVersion,
@@ -473,6 +384,7 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
   private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private pendingPlanTransition: UtoopackDevPlanTransition | undefined;
+  private publishedFacts: BundlerBuildFacts | undefined;
   private publishedServerStatsVersion: string | undefined;
   private closing = false;
   private closed = false;
@@ -502,8 +414,12 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     this.serverStatsMonitor = monitor;
   }
 
-  markServerStatsPublished(version: string | undefined): void {
-    this.publishedServerStatsVersion = version;
+  markBuildPublished(
+    facts: BundlerBuildFacts,
+    serverStatsVersion: string | undefined,
+  ): void {
+    this.publishedFacts = facts;
+    this.publishedServerStatsVersion = serverStatsVersion;
   }
 
   async close(): Promise<void> {
@@ -547,14 +463,14 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     const initialGeneration = this.options.generation;
     const transition = createUtoopackDevPlanTransition({
       onOpenAccept: () => async () => {
-        const publish = await this.prepareBuildPublication(
+        const publish = this.prepareArtifactPublication(
           initialPlan,
           initialGeneration,
         );
         await publish();
       },
       onOpenRollback: () => async () => {
-        const publish = await this.prepareBuildPublication(
+        const publish = this.prepareArtifactPublication(
           initialPlan,
           initialGeneration,
         );
@@ -637,8 +553,9 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
         return false;
       });
     }
-    // The observed stats may come from any intermediate `.ev` snapshot. Drop
-    // and acknowledge it only after Core selects and opens the final state.
+    // The observed stats may come from any intermediate `.ev` snapshot. Defer
+    // it until Core selects the final state, then leave the monitor baseline
+    // unchanged so that state is collected on the next polling cycle.
     return transition.defer();
   }
 
@@ -657,6 +574,9 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
       { isRebuild: true },
       facts,
     );
+    if (disposition === "published") {
+      this.publishedFacts = facts;
+    }
     if (
       disposition === "published" &&
       hasRuntimeServerEntry(plan) &&
@@ -688,7 +608,7 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
       this.options.generation = options.generation;
       transition.stage({
         publish: async () => {
-          const publish = await this.prepareBuildPublication(
+          const publish = this.prepareArtifactPublication(
             update.next,
             options.generation,
           );
@@ -699,7 +619,7 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
           this.options.generation = previousGeneration;
           if (this.closed) return async () => {};
           return async () => {
-            const publish = await this.prepareBuildPublication(
+            const publish = this.prepareArtifactPublication(
               previousPlan,
               previousGeneration,
             );
@@ -714,29 +634,6 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
       }
       throw error;
     }
-  }
-
-  private async collectFinalBuildFacts(plan: BuildPlan): Promise<{
-    facts: BundlerBuildFacts;
-    serverStatsVersion: string | undefined;
-  }> {
-    await this.waitForFinalCompilerState(plan);
-    // A later stats version must never be acknowledged for an earlier facts
-    // snapshot. Reading the version first is deliberately conservative: a
-    // concurrent rebuild may cause one duplicate cycle, but cannot be lost.
-    const serverStatsVersion = hasServerEntries(plan)
-      ? await readServerStatsVersion(
-          path.join(
-            resolveBuildOutputPaths(this.options.cwd, plan).serverDir,
-            "stats.json",
-          ),
-        )
-      : undefined;
-    const facts = await this.waitForReadableStats(
-      plan,
-      INITIAL_DEV_STATS_TIMEOUT_MS,
-    );
-    return { facts, serverStatsVersion };
   }
 
   waitForReadableStats(
@@ -754,12 +651,19 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     ]);
   }
 
-  private async prepareBuildPublication(
+  private prepareArtifactPublication(
     plan: BuildPlan,
     generation: BundlerDevGeneration,
-  ): Promise<() => Promise<void>> {
-    const { facts, serverStatsVersion } =
-      await this.collectFinalBuildFacts(plan);
+  ): () => Promise<void> {
+    const facts = this.publishedFacts;
+    if (!facts) {
+      throw new Error(
+        "[evjs] Utoopack cannot relink development artifacts before its initial build facts are published.",
+      );
+    }
+    // Artifact-only updates preserve entry and output identity. Reuse the last
+    // published asset inventory to relink framework-owned HTML/manifests while
+    // Utoopack independently watches and rebuilds generated `.ev` input.
     return async () => {
       if (this.closed) return;
       const disposition = await generateDevArtifacts(
@@ -775,37 +679,7 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
           "[evjs] Core discarded the selected Utoopack facts snapshot before publication completed.",
         );
       }
-      if (hasRuntimeServerEntry(plan) && !this.closed) {
-        await this.options.onServerBundleReady(generation);
-      }
-      if (hasServerEntries(plan) && !this.closed) {
-        this.publishedServerStatsVersion = serverStatsVersion;
-        this.serverStatsMonitor?.advance(serverStatsVersion);
-      }
     };
-  }
-
-  private async waitForFinalCompilerState(plan: BuildPlan): Promise<void> {
-    const invalidation = collectGeneratedEntryInvalidation(
-      this.options.cwd,
-      plan,
-    );
-    if (invalidation.files.length === 0) return;
-    for (let pass = 0; pass < 2; pass += 1) {
-      this.options.worker.throwIfFailed();
-      const versions = await readStatsVersions(invalidation.statsPaths);
-      await this.options.worker.invalidate(invalidation.files);
-      await Promise.race([
-        waitForStatsVersionsToAdvance(
-          invalidation.statsPaths,
-          versions,
-          INITIAL_DEV_STATS_TIMEOUT_MS,
-          this.closingController.signal,
-        ),
-        this.options.worker.failure,
-      ]);
-    }
-    this.options.worker.throwIfFailed();
   }
 
   private enqueueDevWork<T>(work: () => Promise<T>): Promise<T> {
@@ -857,8 +731,8 @@ function createUtoopackDevPlanTransition(options: {
   let selectedPublish: (() => void | Promise<void>) | undefined;
   let aborted = false;
   const deferred: Array<(consumed: boolean) => void> = [];
-  const releaseDeferred = () => {
-    for (const resolve of deferred.splice(0)) resolve(true);
+  const releaseDeferred = (consumed: boolean) => {
+    for (const resolve of deferred.splice(0)) resolve(consumed);
   };
   const assertSelectable = (operation: string) => {
     if (
@@ -909,7 +783,7 @@ function createUtoopackDevPlanTransition(options: {
       if (aborted || state === "settled") return;
       aborted = true;
       options.onSettled();
-      releaseDeferred();
+      releaseDeferred(true);
     },
     stage(next) {
       assertSelectable("stage a candidate");
@@ -962,7 +836,10 @@ function createUtoopackDevPlanTransition(options: {
       }
       state = "settled";
       if (!aborted) options.onSettled();
-      releaseDeferred();
+      // Accepted state must retry an observation that may have been produced
+      // before its final `.ev` snapshot was visible. Rollback discards that
+      // candidate observation and waits for a later restored-state rebuild.
+      releaseDeferred(outcome !== "accept");
     },
   };
 }

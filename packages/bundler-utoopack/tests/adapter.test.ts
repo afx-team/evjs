@@ -40,7 +40,6 @@ const utoopackMock = vi.hoisted(() => ({
   initialClientStats: undefined as string | undefined,
   clientStats: undefined as string | undefined,
   omitClientStats: false,
-  workerInvalidate: vi.fn(),
   workerClose: vi.fn(async () => {}),
   startUtoopackDevWorker: vi.fn(
     ({ config, server }: { config: ConfigComplete; server: unknown }) => {
@@ -61,7 +60,6 @@ const utoopackMock = vi.hoisted(() => ({
         rejectReady = reject;
       });
       const runtime = utoopackMock.requireUtoopack();
-      let invalidation = 0;
       void runtime
         .serve({ config }, undefined, undefined, {
           ...(server as object),
@@ -91,24 +89,6 @@ const utoopackMock = vi.hoisted(() => ({
         done: new Promise<void>(() => {}),
         failure: new Promise<never>(() => {}),
         throwIfFailed() {},
-        async invalidate() {
-          invalidation += 1;
-          utoopackMock.workerInvalidate(invalidation);
-          const outputPaths = [
-            config.output?.path,
-            config.server?.output?.path,
-          ].filter((outputPath): outputPath is string => Boolean(outputPath));
-          for (const outputPath of outputPaths) {
-            const statsPath = path.join(outputPath, "stats.json");
-            const stats = JSON.parse(
-              await fs.promises.readFile(statsPath, "utf-8"),
-            ) as Record<string, unknown>;
-            await fs.promises.writeFile(
-              statsPath,
-              JSON.stringify({ ...stats, __testInvalidation: invalidation }),
-            );
-          }
-        },
         close: utoopackMock.workerClose,
       };
     },
@@ -272,7 +252,6 @@ afterEach(async () => {
   utoopackMock.initialClientStats = undefined;
   utoopackMock.clientStats = undefined;
   utoopackMock.omitClientStats = false;
-  utoopackMock.workerInvalidate.mockClear();
   utoopackMock.workerClose.mockClear();
   utoopackMock.startUtoopackDevWorker.mockClear();
   await Promise.all(
@@ -565,7 +544,7 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it("emits CSR deployment metadata and nested client output", async () => {
+  it("relinks CSR updates from published facts while the compiler watches independently", async () => {
     const cwd = await makeProject();
     utoopackMock.initialClientStats = "{}";
     utoopackMock.clientStatsDelayMs = 75;
@@ -608,19 +587,20 @@ describe("utoopackAdapter dev", () => {
       },
     ];
 
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      hooks,
+      onBuildOutput,
+      onDevServerReady,
+    });
     const controller = await utoopackAdapter.dev({
       config,
       cwd,
       generation: createDevGeneration(),
       plan: buildContext.plan,
-      callbacks: createFrameworkCallbacks({
-        config,
-        cwd,
-        ...buildContext,
-        hooks,
-        onBuildOutput,
-        onDevServerReady,
-      }),
+      callbacks: framework,
       hooks,
     });
 
@@ -674,6 +654,18 @@ describe("utoopackAdapter dev", () => {
     expect(fs.existsSync(path.join(cwd, "dist/client"))).toBe(true);
     expect(controller).toBeDefined();
     if (!controller) throw new Error("Expected Utoopack dev controller");
+    const statsPath = path.join(cwd, "dist/client/stats.json");
+    const staleStats = JSON.stringify({
+      entrypoints: {
+        main: { assets: [{ name: "stale-main.js" }] },
+      },
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stale-main.js"),
+      "",
+      "utf-8",
+    );
+    await fs.promises.writeFile(statsPath, staleStats, "utf-8");
     const rejectedUpdate = await createDevUpdateOptions(
       controller,
       config,
@@ -689,17 +681,32 @@ describe("utoopackAdapter dev", () => {
     await settleDevUpdate(rejectedUpdate, "rollback");
     expect(onBuildOutput).toHaveBeenCalledTimes(2);
 
+    const nextPlan = structuredClone(buildContext.plan);
+    if (!nextPlan.generated) {
+      throw new Error("Expected generated framework plan.");
+    }
+    nextPlan.generated.coreGraphHash = "updated-core-graph";
+    const update = diffBuildPlan(
+      buildContext.plan,
+      nextPlan,
+      "route-declaration",
+    );
     const appliedUpdate = await createDevUpdateOptions(controller, config);
+    framework.update(buildContext.graph, nextPlan);
     await expect(
-      controller.updatePlan(
-        diffBuildPlan(buildContext.plan, buildContext.plan, "config"),
-        appliedUpdate.options,
-      ),
+      controller.updatePlan(update, appliedUpdate.options),
     ).resolves.toBeUndefined();
+    expect(update.generatedChanged).toBe(true);
     expect(appliedUpdate.activate).toHaveBeenCalledOnce();
     await settleDevUpdate(appliedUpdate, "accept");
     expect(onBuildOutput).toHaveBeenCalledTimes(3);
-    expect(utoopackMock.workerInvalidate).toHaveBeenCalledTimes(4);
+    expect(onBuildOutput.mock.calls.at(-1)?.[0].assets.main).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
+    });
+    await expect(fs.promises.readFile(statsPath, "utf-8")).resolves.toBe(
+      staleStats,
+    );
     await controller.close?.();
   });
 
@@ -942,6 +949,20 @@ describe("utoopackAdapter dev", () => {
       const planUpdate = await createDevUpdateOptions(controller, config);
       framework.update(nextGraph, nextPlan);
       await controller.updatePlan(update, planUpdate.options);
+      const serverStatsPath = path.join(cwd, "dist/server/stats.json");
+      await fs.promises.writeFile(
+        serverStatsPath,
+        JSON.stringify({
+          revision: 2,
+          assets: [{ name: "server.js" }],
+          entrypoints: {
+            server: { assets: [{ name: "server.js" }] },
+          },
+        }),
+        "utf-8",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(onServerBundleReady).not.toHaveBeenCalled();
       await settleDevUpdate(planUpdate, "accept");
 
       expect(update.entries.added).toHaveLength(0);
@@ -952,7 +973,12 @@ describe("utoopackAdapter dev", () => {
       expect(update.serverDocumentsChanged).toBe(false);
       expect(update.devRoutingChanged).toBe(false);
       expect(onBuildOutput).toHaveBeenCalledTimes(2);
-      expect(onServerBundleReady).toHaveBeenCalledTimes(1);
+      expect(onServerBundleReady).not.toHaveBeenCalled();
+      await vi.waitFor(
+        () => expect(onServerBundleReady).toHaveBeenCalledTimes(1),
+        { timeout: 2_000 },
+      );
+      expect(onBuildOutput).toHaveBeenCalledTimes(3);
       expect(onServerBundleReady).toHaveBeenCalledWith(
         planUpdate.options.generation,
       );
@@ -961,6 +987,85 @@ describe("utoopackAdapter dev", () => {
         title: "Updated home",
         meta: { description: "Updated description" },
       });
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("drops server stats observed during a rolled-back plan transition", async () => {
+    const cwd = await makeProject("home");
+    const config = await resolveProjectConfig(cwd, {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "mpa", html: "./index.html" },
+    });
+    const baseContext = await createBuildContext(config, cwd);
+    const serverRuntimeEntry = {
+      name: "server",
+      import: "@evjs/ev/_internal/server/fetch",
+      environment: "server" as const,
+      runtime: "node" as const,
+      kind: "server-runtime" as const,
+    };
+    const plan: BuildPlan = {
+      ...baseContext.plan,
+      entries: [...baseContext.plan.entries, serverRuntimeEntry],
+      server: { entry: serverRuntimeEntry.import },
+    };
+    const generation = createDevGeneration();
+    const onBuildOutput = vi.fn();
+    const onServerBundleReady = vi.fn();
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      generation,
+      plan,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: baseContext.graph,
+        plan,
+        onBuildOutput,
+        onServerBundleReady,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      onServerBundleReady.mockClear();
+      const planUpdate = await createDevUpdateOptions(controller, config);
+      await controller.updatePlan(
+        diffBuildPlan(plan, plan, "route-declaration"),
+        planUpdate.options,
+      );
+      const statsPath = path.join(cwd, "dist/server/stats.json");
+      const writeServerStats = (revision: number) =>
+        fs.promises.writeFile(
+          statsPath,
+          JSON.stringify({
+            revision,
+            assets: [{ name: "server.js" }],
+            entrypoints: {
+              server: { assets: [{ name: "server.js" }] },
+            },
+          }),
+          "utf-8",
+        );
+
+      await writeServerStats(2);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(onServerBundleReady).not.toHaveBeenCalled();
+      await settleDevUpdate(planUpdate, "rollback");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(onServerBundleReady).not.toHaveBeenCalled();
+
+      await writeServerStats(3);
+      await vi.waitFor(
+        () => expect(onServerBundleReady).toHaveBeenCalledTimes(1),
+        { timeout: 2_000 },
+      );
+      expect(onServerBundleReady).toHaveBeenCalledWith(generation);
+      expect(onBuildOutput).toHaveBeenCalledTimes(3);
     } finally {
       await controller.close?.();
     }

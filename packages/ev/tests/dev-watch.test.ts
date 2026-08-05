@@ -9,6 +9,7 @@ import {
   createWatchFilesPlan,
   listConfigDependencyFiles,
   prepareWatchFilesPlan,
+  resolveInitialDevWatchMode,
   watchFiles,
 } from "../src/_internal/build/dev-watch.js";
 import { resolveConfig } from "../src/config/index.js";
@@ -35,6 +36,7 @@ class FakeWatcher extends EventEmitter {
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   await Promise.all(
     temporaryDirectories
@@ -90,6 +92,15 @@ async function waitForChange(
   }
 }
 
+describe("resolveInitialDevWatchMode", () => {
+  it("preselects polling only for the macOS Codex Seatbelt sandbox", () => {
+    expect(resolveInitialDevWatchMode("darwin", "seatbelt")).toBe("polling");
+    expect(resolveInitialDevWatchMode("darwin", "")).toBe("events");
+    expect(resolveInitialDevWatchMode("darwin", "landlock")).toBe("events");
+    expect(resolveInitialDevWatchMode("linux", "seatbelt")).toBe("events");
+  });
+});
+
 describe("watchFiles", () => {
   it("lists every supported config candidate even when none exists", async () => {
     const root = await createTemporaryDirectory();
@@ -114,6 +125,32 @@ describe("watchFiles", () => {
 
     expect(collectWatchFilesChangedSince(baseline, current)).toEqual([first]);
     expect(collectWatchFilesChangedSince(current, current)).toEqual([]);
+  });
+
+  it("canonicalizes dependency order without erasing recovery semantics", async () => {
+    const root = await createTemporaryDirectory();
+    const first = path.join(root, "first.ts");
+    const second = path.join(root, "second.ts");
+    await writeFile(first);
+    await writeFile(second);
+
+    const firstPlan = createWatchFilesPlan(
+      [second, first, second],
+      new Set([first]),
+    );
+    const reorderedPlan = createWatchFilesPlan(
+      [first, second, first],
+      new Set([first]),
+    );
+    const changedRecoveryPlan = createWatchFilesPlan(
+      [first, second],
+      new Set([second]),
+    );
+
+    expect(firstPlan.logicalTargets).toEqual([first, second]);
+    expect(reorderedPlan.logicalTargets).toEqual(firstPlan.logicalTargets);
+    expect(reorderedPlan.key).toBe(firstPlan.key);
+    expect(changedRecoveryPlan.key).not.toBe(firstPlan.key);
   });
 
   it("reconciles a resource-unknown snapshot once it becomes readable", async () => {
@@ -558,6 +595,113 @@ describe("watchFiles", () => {
     },
   );
 
+  it.runIf(process.platform !== "win32")(
+    "survives a missing target's symlink ancestor being atomically replaced",
+    async () => {
+      const root = await createTemporaryDirectory();
+      const target = path.join(root, "target");
+      const link = path.join(root, "link");
+      const missing = path.join(link, "dependency.ts");
+      await fs.promises.mkdir(target);
+      await fs.promises.symlink(target, link, "dir");
+
+      const originalRealpath = fs.promises.realpath;
+      let replaced = false;
+      vi.spyOn(fs.promises, "realpath").mockImplementation((async (
+        ...args: unknown[]
+      ) => {
+        const result = await Reflect.apply(originalRealpath, fs.promises, args);
+        if (!replaced && path.resolve(String(args[0])) === link) {
+          replaced = true;
+          await fs.promises.unlink(link);
+          await fs.promises.mkdir(link);
+        }
+        return result;
+      }) as typeof fs.promises.realpath);
+
+      const changes: string[] = [];
+      const errors: Error[] = [];
+      const stop = watchFiles(
+        [missing],
+        (changedFile) => changes.push(changedFile),
+        {
+          mode: "polling",
+          onError: (error) => errors.push(error),
+          recoverableMissingTargets: new Set([missing]),
+        },
+      );
+
+      try {
+        await vi.waitFor(() => expect(replaced).toBe(true), {
+          interval: 20,
+          timeout: 2_000,
+        });
+        await waitForChange(changes, missing);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        changes.length = 0;
+
+        await fs.promises.writeFile(missing, "created", "utf-8");
+        await waitForChange(changes, missing);
+        expect(errors).toEqual([]);
+      } finally {
+        stop();
+      }
+    },
+  );
+
+  it("backs off resource-limited polling targets without delaying healthy ones", async () => {
+    vi.useFakeTimers();
+    const root = await createTemporaryDirectory();
+    const limited = path.join(root, "limited.ts");
+    const healthy = path.join(root, "healthy.ts");
+    await writeFile(limited);
+    await writeFile(healthy);
+
+    let resourceLimited = true;
+    let limitedReads = 0;
+    let healthyReads = 0;
+    vi.spyOn(fs.promises, "lstat").mockImplementation((async (
+      ...args: unknown[]
+    ) => {
+      const target = path.resolve(String(args[0]));
+      if (target === limited) {
+        limitedReads += 1;
+        if (resourceLimited) throw createErrnoError("EMFILE");
+      }
+      if (target === healthy) healthyReads += 1;
+      return fs.lstatSync(target, { bigint: true });
+    }) as typeof fs.promises.lstat);
+
+    const changes: string[] = [];
+    const errors: Error[] = [];
+    const stop = watchFiles(
+      [limited, healthy],
+      (changedFile) => changes.push(changedFile),
+      {
+        mode: "polling",
+        onError: (error) => errors.push(error),
+      },
+    );
+
+    try {
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(400);
+      expect(limitedReads).toBe(3);
+      expect(healthyReads).toBe(7);
+      expect(changes).toEqual([]);
+
+      resourceLimited = false;
+      await fs.promises.writeFile(limited, "changed after pressure", "utf-8");
+      await vi.advanceTimersByTimeAsync(900);
+      expect(limitedReads).toBeGreaterThanOrEqual(4);
+      expect(changes).toEqual([limited]);
+      expect(errors).toEqual([]);
+    } finally {
+      stop();
+    }
+  });
+
   it.each([
     "EACCES",
     "EPERM",
@@ -599,7 +743,11 @@ describe("watchFiles", () => {
     "EMFILE",
     "ENFILE",
     "ENOSPC",
-  ])("falls back to polling after setup resource error %s", async (code) => {
+    "ENOSYS",
+    "ENOTSUP",
+    "EOPNOTSUPP",
+    "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM",
+  ])("falls back to polling after native watch setup error %s", async (code) => {
     const root = await createTemporaryDirectory();
     const firstDirectory = path.join(root, "first");
     const secondDirectory = path.join(root, "second");
@@ -716,7 +864,9 @@ describe("watchFiles", () => {
     });
 
     expect(onError).not.toHaveBeenCalled();
-    expect(records).toEqual([]);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.target).toBe(liveDirectory);
+    expect(records[0]?.watcher.closeCalls).toBe(1);
     expect(changes).toEqual([missingRace]);
     changes.length = 0;
     try {
@@ -766,7 +916,11 @@ describe("watchFiles", () => {
     "EMFILE",
     "ENFILE",
     "ENOSPC",
-  ])("falls back to polling after asynchronous resource error %s", async (code) => {
+    "ENOSYS",
+    "ENOTSUP",
+    "EOPNOTSUPP",
+    "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM",
+  ])("falls back to polling after asynchronous native watch error %s", async (code) => {
     const root = await createTemporaryDirectory();
     const first = path.join(root, "first", "first.ts");
     const second = path.join(root, "second", "second.ts");
@@ -799,6 +953,48 @@ describe("watchFiles", () => {
     }
     records[0]?.listener("change", path.basename(first));
     expect(changes).toEqual([second]);
+  });
+
+  it("falls back to polling when a native watcher closes unexpectedly", async () => {
+    const root = await createTemporaryDirectory();
+    const first = path.join(root, "first", "first.ts");
+    const second = path.join(root, "second", "second.ts");
+    await writeFile(first);
+    await writeFile(second);
+
+    const records = mockWatch();
+    const changes: string[] = [];
+    const errors: Error[] = [];
+    const onFallback = vi.fn();
+    const stop = watchFiles(
+      [first, second],
+      (changedFile) => changes.push(changedFile),
+      {
+        onError: (error) => errors.push(error),
+        onFallback,
+      },
+    );
+
+    expect(records).toHaveLength(2);
+    records[0]?.watcher.emit("close");
+    expect(onFallback).toHaveBeenCalledTimes(1);
+    expect(onFallback.mock.calls[0]?.[0].message).toContain(
+      "closed unexpectedly",
+    );
+    expect(records.map((record) => record.watcher.closeCalls)).toEqual([1, 1]);
+    expect(changes).toEqual([first]);
+    changes.length = 0;
+
+    try {
+      await fs.promises.writeFile(second, "changed", "utf-8");
+      await waitForChange(changes, second);
+      expect(errors).toEqual([]);
+    } finally {
+      stop();
+    }
+
+    records[1]?.watcher.emit("close");
+    expect(onFallback).toHaveBeenCalledTimes(1);
   });
 
   it("recovers an asynchronous EPERM after watch target replacement", async () => {
