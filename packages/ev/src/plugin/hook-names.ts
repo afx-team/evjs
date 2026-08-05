@@ -4,6 +4,7 @@ export const PLUGIN_HOOK_NAMES = [
   "transformOutput",
   "transformHtml",
   "afterBuild",
+  "configureShortcuts",
   "dispose",
 ] as const;
 

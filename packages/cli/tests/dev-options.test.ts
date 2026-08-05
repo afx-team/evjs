@@ -84,4 +84,20 @@ describe("programmatic dev config loading", () => {
       }),
     );
   });
+
+  it("forwards cliShortcuts:false to the framework dev entrypoint", async () => {
+    await dev(userConfig, { cliShortcuts: false });
+
+    expect(devMocks.frameworkDev).toHaveBeenCalledWith(
+      userConfig,
+      expect.objectContaining({ cliShortcuts: false }),
+    );
+  });
+
+  it("omits cliShortcuts when no override is supplied", async () => {
+    await dev(userConfig);
+
+    const [, options] = devMocks.frameworkDev.mock.calls[0];
+    expect(options).not.toHaveProperty("cliShortcuts");
+  });
 });

@@ -55,6 +55,19 @@ export interface ResolvedDevConfig {
   https: boolean | { key: string; cert: string };
   /** Dev proxy rules. */
   proxy: DevProxyRule[];
+  /**
+   * Resolved CLI shortcuts option. `false` disables the shortcuts engine;
+   * `true` (default) enables it with no custom options. Custom shortcuts are
+   * contributed by plugins via the `configureShortcuts` setup hook, so the
+   * resolved value only carries the enable flag and a print hint toggle.
+   */
+  cliShortcuts: false | ResolvedCliShortcutsOptions;
+}
+
+/** Static CLI-shortcuts options surviving config resolution. */
+export interface ResolvedCliShortcutsOptions {
+  /** Whether to print the one-line "press h + enter" hint after binding. */
+  print: boolean;
 }
 
 /** Proxy rule for the dev server. */
@@ -213,6 +226,23 @@ export interface DevConfig {
    * are not included here.
    */
   proxy?: DevProxyRule[];
+  /**
+   * Interactive CLI keyboard shortcuts while `ev dev` runs. `false` disables
+   * the engine; `true` (default) enables it. Shortcuts themselves are
+   * registered by plugins via the `configureShortcuts` setup hook — core
+   * ships none. The engine is always a no-op in CI / non-TTY contexts and on
+   * the wasm/web (Fetch runtime) dev surface, regardless of this option.
+   */
+  cliShortcuts?: boolean | CliShortcutsConfig;
+}
+
+/** Static CLI-shortcuts config accepted on `dev.cliShortcuts`. */
+export interface CliShortcutsConfig {
+  /**
+   * Whether to print the one-line "press h + enter to show help" hint when the
+   * dev server is ready. Default `true`.
+   */
+  print?: boolean;
 }
 
 /** Server configuration. */
@@ -511,7 +541,12 @@ const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
   "template",
   "mount",
 ]);
-const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
+const PUBLIC_DEV_CONFIG_KEYS = new Set([
+  "port",
+  "https",
+  "proxy",
+  "cliShortcuts",
+]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set(["basePath", "rsc", "dev"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
@@ -522,6 +557,7 @@ const PUBLIC_OUTPUT_CONFIG_KEYS = new Set([
   "crossOriginLoading",
 ]);
 const PUBLIC_HTTPS_CONFIG_KEYS = new Set(["key", "cert"]);
+const PUBLIC_CLI_SHORTCUTS_CONFIG_KEYS = new Set(["print"]);
 const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "context",
   "target",
@@ -646,6 +682,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
   const rscEndpoint = resolveRscEndpoint(serverRscConfig);
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
+  const cliShortcuts = resolveDevCliShortcuts(devConfig.cliShortcuts);
 
   return {
     conventions,
@@ -659,6 +696,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
       port: clientPort,
       https: devHttps,
       proxy: resolveDevProxyRules(devConfig.proxy),
+      cliShortcuts,
     },
     server: {
       basePath: serverBasePath,
@@ -1690,6 +1728,33 @@ function validateHttpsConfigKeys(
   path: "dev.https" | "server.dev.https",
 ): void {
   assertKnownConfigKeys(https, PUBLIC_HTTPS_CONFIG_KEYS, path, "key and cert");
+}
+
+function resolveDevCliShortcuts(
+  cliShortcuts: DevConfig["cliShortcuts"],
+): ResolvedDevConfig["cliShortcuts"] {
+  if (cliShortcuts === undefined || cliShortcuts === true) {
+    return { print: true };
+  }
+  if (cliShortcuts === false) return false;
+  const config = assertPlainConfigRecord(
+    cliShortcuts,
+    "dev.cliShortcuts",
+    "a CLI shortcuts config object",
+  );
+  assertKnownConfigKeys(
+    config,
+    PUBLIC_CLI_SHORTCUTS_CONFIG_KEYS,
+    "dev.cliShortcuts",
+    "print",
+  );
+  const { print } = config;
+  if (print !== undefined && typeof print !== "boolean") {
+    throw new Error(
+      `[evjs] dev.cliShortcuts.print must be a boolean. Received ${typeof print}.`,
+    );
+  }
+  return { print: print ?? true };
 }
 
 function resolveDevProxyRules(proxy: DevConfig["proxy"]): DevProxyRule[] {

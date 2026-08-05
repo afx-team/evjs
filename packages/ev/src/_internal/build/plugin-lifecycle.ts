@@ -14,6 +14,7 @@ import type {
   BuildResult,
   CliFlags,
   Plugin,
+  PluginCliShortcut,
   PluginConfigureContext,
   PluginConfigureInput,
   PluginHooks,
@@ -536,6 +537,28 @@ export async function runAfterBuildHooks<TBundlerCfg>(
   for (const hook of hooks) {
     await hook.afterBuild?.(structuredClone(snapshot));
   }
+}
+
+/**
+ * Collect every plugin-contributed CLI shortcut, in plugin order.
+ *
+ * `configureShortcuts` runs at setup time, so the returned descriptors are
+ * static; shortcut `action` callbacks receive the live {@link PluginDevSession}
+ * only when the key is later pressed. A returned `undefined` shortcut array is
+ * treated as "no shortcuts from this plugin".
+ */
+export async function collectConfigureShortcutsHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+): Promise<PluginCliShortcut[]> {
+  const collected: PluginCliShortcut[] = [];
+  for (const hook of hooks) {
+    if (!hook.configureShortcuts) continue;
+    const shortcuts = await hook.configureShortcuts();
+    for (const shortcut of shortcuts ?? []) {
+      collected.push(shortcut);
+    }
+  }
+  return collected;
 }
 
 export async function runDisposeHooks<TBundlerCfg>(

@@ -137,6 +137,26 @@ forwarding them to the target.
 Custom proxy rules are applied before the built-in proxy for server runtime
 paths, so app-specific API proxies can keep their own routing behavior.
 
+`dev.cliShortcuts` controls the interactive CLI keyboard shortcuts engine. The
+default is on; set `dev.cliShortcuts: false` to disable it. The engine mirrors
+Vite's `bindCLIShortcuts` (readline line events, one key + `Enter`) but ships
+no built-in shortcuts of its own — every key is contributed by a plugin via the
+`configureShortcuts` setup hook (see [Plugin CLI Shortcuts](#plugin-cli-shortcuts)).
+It is always a no-op in CI / non-TTY contexts, and on the wasm/web (Fetch
+runtime) dev surface, regardless of this option.
+
+```ts
+// ev.config.ts
+export default defineConfig({
+  dev: {
+    cliShortcuts: false, // or { print: false } to hide the help hint
+  },
+});
+```
+
+`ev dev --no-shortcuts` disables the engine for a single run without editing
+config.
+
 ## Request Flow
 
 1. The client dev server serves browser code and HMR.
@@ -205,6 +225,87 @@ loads the discovered config, while `reloadInitialConfig: true` explicitly asks
 the provided or default `loadConfig` function to replace a supplied startup
 config. A custom `loadConfig` can still be retained for later watched reloads
 with `reloadInitialConfig: false`.
+
+The `cliShortcuts` programmatic option overrides `dev.cliShortcuts`: pass
+`false` to disable the interactive shortcuts engine regardless of
+`ev.config.ts` (mirrors `ev dev --no-shortcuts`). When omitted, the config-file
+value (default on) is authoritative.
+
+## Plugin CLI Shortcuts
+
+While `ev dev` runs in a TTY (and not under `CI`), plugins can register
+interactive keyboard shortcuts. Core ships **no built-in shortcuts** — every key
+(including `h` for help) is contributed by a plugin. This mirrors Vite's
+`bindCLIShortcuts` mechanics (one key + `Enter`, with concurrent presses
+dropped) but leaves the action set to the ecosystem.
+
+Register shortcuts from a plugin's `setup()` hook:
+
+```ts
+// my-evjs-plugin.ts
+import { spawn } from "node:child_process";
+import { defineConfig } from "@evjs/ev";
+
+const shortcutsPlugin = {
+  id: "my-shortcuts",
+  setup() {
+    return {
+      configureShortcuts() {
+        return [
+          {
+            key: "o",
+            description: "open the dev server in the browser",
+            action(session) {
+              spawn("open", [session.origin]);
+            },
+          },
+          {
+            key: "u",
+            description: "show server url",
+            action(session) {
+              console.log(session.origin);
+            },
+          },
+          {
+            key: "r",
+            description: "restart the server runtime",
+            action(session) {
+              session.restartServerRuntime();
+            },
+          },
+          {
+            key: "q",
+            description: "quit",
+            action(session) {
+              session.close();
+            },
+          },
+        ];
+      },
+    };
+  },
+};
+
+export default defineConfig({ plugins: [shortcutsPlugin] });
+```
+
+The `configureShortcuts` hook returns a `CLIShortcut[]`, and the first plugin to
+register a key owns it (later duplicates are dropped). Each `action` receives the
+live `DevSession`:
+
+- `origin: string` — the client dev server URL
+  (`http(s)://localhost:<port>`).
+- `restartServerRuntime()` — restart the Hono API server child through the
+  same serialized restart path used when a server bundle becomes ready.
+  No-ops when there is no server-runtime entry.
+- `close()` — trigger dev shutdown (equivalent to `Ctrl-C`).
+
+When bound with a help key, pressing `h` + `Enter` lists every registered
+shortcut; `ev dev` prints a `press h + enter to show help` hint at startup.
+
+Scope: this targets the standard Node dev server (the utoopack dev worker plus
+the Hono API child). The wasm/web (Fetch runtime) dev surface has no Node child
+process and no interactive TTY loop, so the engine stays a no-op there.
 
 ## Transport
 

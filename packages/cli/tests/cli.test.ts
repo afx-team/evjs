@@ -49,6 +49,30 @@ describe("CLI execution", () => {
     });
   });
 
+  it("forwards --no-shortcuts as cliShortcuts:false to the dev command", async () => {
+    const dev = vi.fn(async () => {});
+    const { dependencies } = createDependencies({ dev });
+
+    await expect(
+      runCliProgram(["node", "ev", "dev", "--no-shortcuts"], dependencies),
+    ).resolves.toBe(0);
+
+    expect(dev).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ cliShortcuts: false }),
+    );
+  });
+
+  it("does not inject cliShortcuts when --no-shortcuts is absent", async () => {
+    const dev = vi.fn(async () => {});
+    const { dependencies } = createDependencies({ dev });
+
+    await runCliProgram(["node", "ev", "dev"], dependencies);
+
+    const [, options] = dev.mock.calls[0];
+    expect(options).not.toHaveProperty("cliShortcuts");
+  });
+
   it("awaits an asynchronous command before resolving", async () => {
     let finishBuild: (() => void) | undefined;
     let markBuildStarted: (() => void) | undefined;

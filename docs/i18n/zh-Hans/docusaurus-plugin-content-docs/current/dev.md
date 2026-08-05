@@ -119,6 +119,24 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 
 自定义代理规则会先于服务端运行时路径的内置代理应用，因此应用自己的 API proxy 可以保留独立的路由行为。
 
+`dev.cliShortcuts` 控制交互式 CLI 键盘快捷键引擎。默认开启;设为
+`dev.cliShortcuts: false` 可关闭。该引擎复刻 Vite `bindCLIShortcuts`
+的机制(readline line 事件,单键 + `Enter`),但内置不提供任何快捷键 ——
+每个键都由插件通过 `configureShortcuts` setup hook 贡献(见
+[插件 CLI 快捷键](#插件-cli-快捷键))。无论该选项如何,在 CI / 非 TTY / 以及
+wasm/web(Fetch runtime)dev 场景下引擎始终为 no-op。
+
+```ts
+// ev.config.ts
+export default defineConfig({
+  dev: {
+    cliShortcuts: false, // 或 { print: false } 隐藏帮助提示
+  },
+});
+```
+
+`ev dev --no-shortcuts` 可在不修改配置的情况下,单次运行关闭该引擎。
+
 ## 请求流
 
 1. 客户端开发服务器提供浏览器代码和 HMR。
@@ -177,6 +195,81 @@ framework preflight 会对照 active BuildPlan 检查这些 capability。
 `dev(undefined, options)` 会加载发现到的配置；`reloadInitialConfig: true` 则会明确要求传入的
 或默认的 `loadConfig` 替换启动 config。若只希望自定义 `loadConfig` 用于后续监听重载，可以
 同时设置 `reloadInitialConfig: false`。
+
+programmatic 选项 `cliShortcuts` 可覆盖 `dev.cliShortcuts`:传 `false`
+即可无视 `ev.config.ts` 关闭交互式快捷键引擎(等价于 `ev dev --no-shortcuts`)。
+省略时以配置文件为准(默认开启)。
+
+## 插件 CLI 快捷键
+
+当 `ev dev` 运行于 TTY(且不在 `CI` 下)时,插件可注册交互式键盘快捷键。Core
+**不内置任何快捷键** —— 每个键(包括 `h` 帮助)均由插件贡献。该机制复刻 Vite
+`bindCLIShortcuts`(单键 + `Enter`,并发的按键会被丢弃),但把 action 集合留给生态。
+
+在插件 `setup()` hook 中注册快捷键:
+
+```ts
+// my-evjs-plugin.ts
+import { spawn } from "node:child_process";
+import { defineConfig } from "@evjs/ev";
+
+const shortcutsPlugin = {
+  id: "my-shortcuts",
+  setup() {
+    return {
+      configureShortcuts() {
+        return [
+          {
+            key: "o",
+            description: "在浏览器打开 dev server",
+            action(session) {
+              spawn("open", [session.origin]);
+            },
+          },
+          {
+            key: "u",
+            description: "显示 server url",
+            action(session) {
+              console.log(session.origin);
+            },
+          },
+          {
+            key: "r",
+            description: "重启 server runtime",
+            action(session) {
+              session.restartServerRuntime();
+            },
+          },
+          {
+            key: "q",
+            description: "退出",
+            action(session) {
+              session.close();
+            },
+          },
+        ];
+      },
+    };
+  },
+};
+
+export default defineConfig({ plugins: [shortcutsPlugin] });
+```
+
+`configureShortcuts` hook 返回 `CLIShortcut[]`,首个为某个 key 注册快捷键的插件
+拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的 `DevSession`:
+
+- `origin: string` —— 客户端 dev server URL(`http(s)://localhost:<port>`)。
+- `restartServerRuntime()` —— 通过服务端 bundle ready 时所用的同一条串行化重启
+  路径,重启 Hono API server 子进程;无 server-runtime entry 时为 no-op。
+- `close()` —— 触发 dev 关闭(等价于 `Ctrl-C`)。
+
+以帮助键绑定时,按 `h` + `Enter` 可列出所有已注册快捷键;`ev dev` 启动时会打印
+`press h + enter to show help` 提示。
+
+适用范围:该能力面向标准 Node dev server(utoopack dev worker + Hono API
+子进程)。wasm/web(Fetch runtime)dev 场景没有 Node 子进程也没有交互式 TTY
+循环,因此引擎在该路径下保持为 no-op。
 
 ## 传输层
 

@@ -34,6 +34,7 @@ import {
   preflightBundlerDevUpdate,
 } from "./bundler.js";
 import { resolveBundler, withActiveBundler } from "./bundler-config.js";
+import { bindCLIShortcuts, type DevSession } from "./cli-shortcuts.js";
 import {
   withPageRoutingDefaults,
   withServerConventionDefaults,
@@ -94,6 +95,7 @@ import {
 } from "./page-route-types.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
 import {
+  collectConfigureShortcutsHooks,
   collectPluginHooks,
   hasSamePluginIdentity,
   orderPluginsByDependencies,
@@ -391,6 +393,13 @@ export interface DevOptions<TBundlerCfg = unknown> {
   flags?: CliFlags;
   /** Reload the initial config through loadConfig inside the watcher handshake. */
   reloadInitialConfig?: boolean;
+  /**
+   * Override `dev.cliShortcuts`. Set `false` to disable the interactive CLI
+   * shortcuts engine regardless of config (mirrors `ev dev --no-shortcuts`).
+   * `true` is ignored (the config default is already on); undefined defers to
+   * `ev.config.ts` → resolved `dev.cliShortcuts`.
+   */
+  cliShortcuts?: boolean;
   loadConfig?: (
     cwd: string,
     context?: {
@@ -459,6 +468,26 @@ interface DevApiRuntimeState<TBundlerCfg> {
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime> | undefined;
   plan: BuildPlan;
   serverEntry: string | undefined;
+}
+
+/**
+ * Apply the programmatic `cliShortcuts` override (e.g. `ev dev --no-shortcuts`)
+ * to the configure-hook output before resolution. `false` forces the engine
+ * off; any other value defers to the user's `ev.config.ts` →
+ * `dev.cliShortcuts`. Returns the input untouched when there is nothing to do.
+ */
+function withCliShortcutsOverride<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+  override: boolean | undefined,
+): Config<TBundlerCfg> | undefined {
+  if (override !== false || !config) return config;
+  return {
+    ...config,
+    dev: {
+      ...(config.dev ?? {}),
+      cliShortcuts: false,
+    },
+  };
 }
 
 async function createGeneratedDevStateSnapshot(
@@ -998,11 +1027,14 @@ async function runDev<TBundlerCfg = unknown>(
           },
         })
       : userConfig;
-  const configuredConfig = await runConfigureHooks(initialUserConfig, {
-    mode: "development",
-    cwd,
-    flags,
-  });
+  const configuredConfig = withCliShortcutsOverride(
+    await runConfigureHooks(initialUserConfig, {
+      mode: "development",
+      cwd,
+      flags,
+    }),
+    options?.cliShortcuts,
+  );
   const baseResolvedConfig = resolveConfig(configuredConfig);
   const pageRoot = baseResolvedConfig.application
     ? path.resolve(cwd, baseResolvedConfig.application.pageRoot)
@@ -1424,6 +1456,7 @@ async function runDevSession<TBundlerCfg = unknown>(
   const lastScheduledDevChanges = new Map<string, ScheduledDevChangeSnapshot>();
   let pendingForcedConfigReload = false;
   let devSessionEnding = false;
+  let unbindCliShortcuts: (() => void) | undefined;
   const expectedApiExits = new WeakSet<ApiProcess>();
   const apiProcessController = new DevApiProcessController<ApiProcess>({
     expectExit(process) {
@@ -1560,6 +1593,65 @@ async function runDevSession<TBundlerCfg = unknown>(
     await restartQueue;
   };
 
+  const installDevCliShortcuts = (origin: string): void => {
+    const cliShortcuts = activeConfig.dev.cliShortcuts;
+    if (cliShortcuts === false) return;
+
+    // Plugins contribute every key (core ships none). The session's
+    // restartServerRuntime re-enters the same serialized restart path the
+    // framework uses when a server bundle becomes ready, rebuilt from the
+    // active generation state so it reflects the latest server entry.
+    const session: DevSession = {
+      origin,
+      restartServerRuntime() {
+        const state = (() => {
+          const generationState = getBundlerGenerationStateForFacts(
+            activeBundlerGeneration,
+          );
+          if (!generationState) return undefined;
+          const runtimeState: DevApiRuntimeState<TBundlerCfg> = {
+            config: generationState.config,
+            frameworkRuntime: generationState.frameworkRuntime,
+            plan: generationState.plan,
+            serverEntry: generationState.serverEntry,
+          };
+          return runtimeState;
+        })();
+        if (!state) return Promise.resolve();
+        restartQueue = restartQueue
+          .catch(() => {})
+          .then(() => {
+            if (devSessionEnding) return;
+            return restartApiServer(state);
+          })
+          .then(() => {});
+        return restartQueue.then(
+          () => undefined,
+          () => undefined,
+        );
+      },
+      close() {
+        if (devSessionEnding) return Promise.resolve();
+        resolveShutdown?.();
+        return Promise.resolve();
+      },
+    };
+
+    // collectConfigureShortcuts Hooks is async; bind as soon as plugins answer.
+    void collectConfigureShortcutsHooks(hooks)
+      .then((customShortcuts) => {
+        if (devSessionEnding) return;
+        unbindCliShortcuts = bindCLIShortcuts(session, {
+          print: cliShortcuts.print,
+          customShortcuts,
+          helpKey: true,
+        });
+      })
+      .catch((error) => {
+        logger.warn`CLI shortcuts could not be installed: ${error}`;
+      });
+  };
+
   const loadCurrentConfig = async (
     reloadConfiguredConfig: boolean,
     onRouteWatchState?: (state: {
@@ -1568,22 +1660,25 @@ async function runDevSession<TBundlerCfg = unknown>(
     }) => void,
     onConfigDependency?: (file: string) => void,
   ) => {
-    const nextConfiguredConfig = reloadConfiguredConfig
-      ? await runConfigureHooks(
-          options?.loadConfig
-            ? await options.loadConfig(cwd, {
-                onDependency(file) {
-                  onConfigDependency?.(file);
-                },
-              })
-            : userConfig,
-          {
-            mode: "development",
-            cwd,
-            flags,
-          },
-        )
-      : activeConfiguredConfig;
+    const nextConfiguredConfig = withCliShortcutsOverride(
+      reloadConfiguredConfig
+        ? await runConfigureHooks(
+            options?.loadConfig
+              ? await options.loadConfig(cwd, {
+                  onDependency(file) {
+                    onConfigDependency?.(file);
+                  },
+                })
+              : userConfig,
+            {
+              mode: "development",
+              cwd,
+              flags,
+            },
+          )
+        : activeConfiguredConfig,
+      options?.cliShortcuts,
+    );
     const nextBaseResolvedConfig = resolveConfig(nextConfiguredConfig);
     const nextPageRoot = nextBaseResolvedConfig.application
       ? path.resolve(cwd, nextBaseResolvedConfig.application.pageRoot)
@@ -2693,6 +2788,7 @@ async function runDevSession<TBundlerCfg = unknown>(
     await runCleanupTasks([
       () => clearDevDependencyWatcher(),
       () => clearCandidateDependencyWatcher(),
+      () => unbindCliShortcuts?.(),
       () => devController?.close?.(),
       () => devUpdateQueue.catch(() => {}),
       () => outputCycleQueue,
@@ -2739,6 +2835,7 @@ async function runDevSession<TBundlerCfg = unknown>(
               activeConfig,
               activePlan,
             )}`;
+            installDevCliShortcuts(context.origin);
           },
           async onBuildFacts(generation, bundlerFacts, options) {
             const { isRebuild } = options;

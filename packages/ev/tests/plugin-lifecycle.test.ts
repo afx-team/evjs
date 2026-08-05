@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectConfigureShortcutsHooks,
   collectPluginHooks,
   createLatePluginContext,
   createPluginConfigView,
@@ -330,6 +331,96 @@ describe("collectPluginHooks", () => {
     expect(() => createPluginConfigView(config)).toThrow(
       "[evjs] Resolved plugin context config.server.basePath must be a data property, not an accessor.",
     );
+  });
+});
+
+describe("collectConfigureShortcutsHooks", () => {
+  const context = {
+    mode: "development",
+    cwd: "/project",
+    config: {} as PluginSetupContext["config"],
+    logger: {} as PluginSetupContext["logger"],
+    addWatchFile() {},
+  } satisfies PluginSetupContext;
+
+  it("collects shortcuts from every plugin's configureShortcuts hook, in order", async () => {
+    const plugins: Plugin[] = [
+      {
+        id: "a",
+        setup() {
+          return {
+            configureShortcuts() {
+              return [{ key: "u", description: "show url", action() {} }];
+            },
+          };
+        },
+      },
+      {
+        id: "b",
+        setup() {
+          return {
+            configureShortcuts() {
+              return [
+                { key: "o", description: "open", action() {} },
+                { key: "c", description: "clear", action() {} },
+              ];
+            },
+          };
+        },
+      },
+    ];
+
+    const hooks = await collectPluginHooks(plugins, context);
+    const shortcuts = await collectConfigureShortcutsHooks(hooks);
+
+    expect(shortcuts.map((s) => s.key)).toEqual(["u", "o", "c"]);
+  });
+
+  it("tolerates plugins that omit configureShortcuts and that return undefined", async () => {
+    const plugins: Plugin[] = [
+      { id: "none", setup() {} },
+      {
+        id: "empty",
+        setup() {
+          return { configureShortcuts: () => undefined };
+        },
+      },
+      {
+        id: "first",
+        setup() {
+          return {
+            configureShortcuts() {
+              return [{ key: "q", description: "quit", action() {} }];
+            },
+          };
+        },
+      },
+    ];
+
+    const hooks = await collectPluginHooks(plugins, context);
+    const shortcuts = await collectConfigureShortcutsHooks(hooks);
+
+    expect(shortcuts.map((s) => s.key)).toEqual(["q"]);
+  });
+
+  it("awaits an async configureShortcuts hook", async () => {
+    const plugins: Plugin[] = [
+      {
+        id: "async",
+        setup() {
+          return {
+            async configureShortcuts() {
+              return [{ key: "r", description: "restart", action() {} }];
+            },
+          };
+        },
+      },
+    ];
+
+    const hooks = await collectPluginHooks(plugins, context);
+    const shortcuts = await collectConfigureShortcutsHooks(hooks);
+
+    expect(shortcuts.map((s) => s.key)).toEqual(["r"]);
   });
 });
 
