@@ -481,33 +481,17 @@ describe("resolveConfig", () => {
       crossOriginLoading: "anonymous",
     });
     expect(resolved.dev.proxy).toEqual([]);
-    expect(resolved.dev.cliShortcuts).toEqual({ print: true });
+    expect(resolved.dev.cliShortcuts).toBe(true);
   });
 
-  it("resolves dev.cliShortcuts: false and the print option", () => {
+  it("resolves dev.cliShortcuts as a boolean", () => {
     expect(
       resolveConfig({ dev: { cliShortcuts: false } }).dev.cliShortcuts,
     ).toBe(false);
     expect(
       resolveConfig({ dev: { cliShortcuts: true } }).dev.cliShortcuts,
-    ).toEqual({ print: true });
-    expect(
-      resolveConfig({ dev: { cliShortcuts: { print: false } } }).dev
-        .cliShortcuts,
-    ).toEqual({ print: false });
-  });
-
-  it("rejects unknown dev.cliShortcuts fields and non-boolean print", () => {
-    expect(() =>
-      resolveConfig({
-        dev: { cliShortcuts: { bogus: true } },
-      } as never),
-    ).toThrow(/dev\.cliShortcuts/);
-    expect(() =>
-      resolveConfig({
-        dev: { cliShortcuts: { print: "yes" as unknown as boolean } },
-      } as never),
-    ).toThrow(/dev\.cliShortcuts\.print must be a boolean/);
+    ).toBe(true);
+    expect(resolveConfig({}).dev.cliShortcuts).toBe(true);
   });
 
   it("accepts only plain config records at root and nested boundaries", () => {

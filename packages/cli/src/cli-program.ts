@@ -29,7 +29,7 @@ type DevFrameworkCommand = (
      * `false` when the user passed `--no-shortcuts`. `undefined` otherwise, so
      * the user's `ev.config.ts` → `dev.cliShortcuts` is authoritative.
      */
-    cliShortcuts?: boolean;
+    cliShortcuts?: false;
   },
 ) => Promise<void>;
 
@@ -91,7 +91,7 @@ export async function runCliProgram(
           cwd: string;
           flags: CliFlags;
           loadConfig: ConfigLoader;
-          cliShortcuts?: boolean;
+          cliShortcuts?: false;
         } = {
           cwd,
           flags,

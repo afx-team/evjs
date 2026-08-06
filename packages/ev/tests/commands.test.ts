@@ -4,6 +4,7 @@ import fsPromises from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import {
   type BuildOutput,
   type BuildPlan,
@@ -13785,6 +13786,196 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       .flatMap((entries) => entries ?? [])
       .some((entry) => entry.family === "IPv4" && !entry.internal);
     expect(readyLog?.includes("  Network: ")).toBe(hasNetworkAddress);
+  });
+
+  it("binds plugin CLI shortcuts to the live dev session origin on DevServerReady", async () => {
+    const originalStdin = process.stdin;
+    const originalIsTTY = process.stdin.isTTY;
+    const originalCI = process.env.CI;
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    delete process.env.CI;
+
+    // A fake readable stdin: a PassThrough is a real Readable, so
+    // readline.createInterface({ input }) fully drives it. pressing "t" is
+    // simulated by writing "t\n" to it after the engine has bound.
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(fakeStdin, "setRawMode", { value: () => {} });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const ORIGIN = "http://localhost:4711";
+    let resolveShortcutFired: () => void = () => {};
+    const shortcutFired = new Promise<{ origin: string }>((resolve) => {
+      resolveShortcutFired = () => resolve({ origin: ORIGIN });
+    });
+    let observedOrigin: string | undefined;
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({ origin: ORIGIN });
+        // Wait at least one macrotask so the engine's
+        // collectConfigureShortcutsHooks().then(bind) microtask has run before
+        // we emit the key press, then emit SIGINT to end the session.
+        await new Promise((resolve) => setImmediate(resolve));
+        fakeStdin.write("t\n");
+        await Promise.race([
+          shortcutFired,
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("plugin shortcut never fired")),
+              devStartupTimeoutMs,
+            ),
+          ),
+        ]);
+        process.emit("SIGINT");
+      },
+    };
+
+    const plugin: Plugin = {
+      id: "log-origin-shortcut",
+      setup() {
+        return {
+          configureShortcuts() {
+            return [
+              {
+                key: "t",
+                description: "log the dev origin",
+                action(session) {
+                  observedOrigin = session.origin;
+                  resolveShortcutFired();
+                },
+              },
+            ];
+          },
+        };
+      },
+    };
+
+    try {
+      await dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          dev: { port: 4711 },
+          routing: { mode: "mpa" },
+          plugins: [plugin],
+        },
+        { cwd, bundler },
+      );
+    } finally {
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      Object.defineProperty(originalStdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+    }
+
+    expect(observedOrigin).toBe(ORIGIN);
+    // The dev session must end cleanly (shortcut action returned; SIGINT shut it down).
+    expect(await shortcutFired).toEqual({ origin: ORIGIN });
+  });
+
+  it("does not bind CLI shortcuts when dev.cliShortcuts is false", async () => {
+    const originalStdin = process.stdin;
+    const originalIsTTY = process.stdin.isTTY;
+    const originalCI = process.env.CI;
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    delete process.env.CI;
+
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(fakeStdin, "setRawMode", { value: () => {} });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+
+    const dataListenerCountBefore = fakeStdin.listenerCount("data");
+
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4722",
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+        process.emit("SIGINT");
+      },
+    };
+
+    const plugin: Plugin = {
+      id: "would-fire-shortcut",
+      setup() {
+        return {
+          configureShortcuts() {
+            return [{ key: "t", description: "should not fire", action() {} }];
+          },
+        };
+      },
+    };
+
+    try {
+      await dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          dev: { port: 4722, cliShortcuts: false },
+          routing: { mode: "mpa" },
+          plugins: [plugin],
+        },
+        { cwd, bundler },
+      );
+    } finally {
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      Object.defineProperty(originalStdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+    }
+
+    // With the engine disabled, no readline 'line' listener was attached to
+    // the fake stdin beyond whatever existed before dev().
+    expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
   });
 
   it("updates generated SPA route types when a nested page route is added during dev", async () => {

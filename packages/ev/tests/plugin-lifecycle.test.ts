@@ -376,13 +376,13 @@ describe("collectConfigureShortcutsHooks", () => {
     expect(shortcuts.map((s) => s.key)).toEqual(["u", "o", "c"]);
   });
 
-  it("tolerates plugins that omit configureShortcuts and that return undefined", async () => {
+  it("tolerates plugins that omit configureShortcuts and that return an empty list", async () => {
     const plugins: Plugin[] = [
       { id: "none", setup() {} },
       {
         id: "empty",
         setup() {
-          return { configureShortcuts: () => undefined };
+          return { configureShortcuts: () => [] };
         },
       },
       {

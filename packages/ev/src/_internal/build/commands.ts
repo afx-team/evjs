@@ -19,6 +19,7 @@ import {
 } from "../../config/index.js";
 import type {
   CliFlags,
+  PluginDevSession,
   PluginHooks,
   PluginSetupContext,
 } from "../../plugin/index.js";
@@ -34,7 +35,7 @@ import {
   preflightBundlerDevUpdate,
 } from "./bundler.js";
 import { resolveBundler, withActiveBundler } from "./bundler-config.js";
-import { bindCLIShortcuts, type DevSession } from "./cli-shortcuts.js";
+import { bindCLIShortcuts } from "./cli-shortcuts.js";
 import {
   withPageRoutingDefaults,
   withServerConventionDefaults,
@@ -394,12 +395,12 @@ export interface DevOptions<TBundlerCfg = unknown> {
   /** Reload the initial config through loadConfig inside the watcher handshake. */
   reloadInitialConfig?: boolean;
   /**
-   * Override `dev.cliShortcuts`. Set `false` to disable the interactive CLI
-   * shortcuts engine regardless of config (mirrors `ev dev --no-shortcuts`).
-   * `true` is ignored (the config default is already on); undefined defers to
-   * `ev.config.ts` → resolved `dev.cliShortcuts`.
+   * Disable the interactive CLI shortcuts engine regardless of
+   * `ev.config.ts` (mirrors `ev dev --no-shortcuts`). Only `false` is
+   * meaningful; undefined defers to the resolved `dev.cliShortcuts` value
+   * (default on).
    */
-  cliShortcuts?: boolean;
+  cliShortcuts?: false;
   loadConfig?: (
     cwd: string,
     context?: {
@@ -473,12 +474,12 @@ interface DevApiRuntimeState<TBundlerCfg> {
 /**
  * Apply the programmatic `cliShortcuts` override (e.g. `ev dev --no-shortcuts`)
  * to the configure-hook output before resolution. `false` forces the engine
- * off; any other value defers to the user's `ev.config.ts` →
- * `dev.cliShortcuts`. Returns the input untouched when there is nothing to do.
+ * off; undefined defers to the user's `ev.config.ts` → `dev.cliShortcuts`.
+ * Returns the input untouched when there is nothing to do.
  */
 function withCliShortcutsOverride<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
-  override: boolean | undefined,
+  override: false | undefined,
 ): Config<TBundlerCfg> | undefined {
   if (override !== false || !config) return config;
   return {
@@ -1597,39 +1598,11 @@ async function runDevSession<TBundlerCfg = unknown>(
     const cliShortcuts = activeConfig.dev.cliShortcuts;
     if (cliShortcuts === false) return;
 
-    // Plugins contribute every key (core ships none). The session's
-    // restartServerRuntime re-enters the same serialized restart path the
-    // framework uses when a server bundle becomes ready, rebuilt from the
-    // active generation state so it reflects the latest server entry.
-    const session: DevSession = {
+    // Plugins contribute every key; core ships none. The session exposes only
+    // the dev origin and a shutdown trigger — any richer action (restart,
+    // open browser, …) is implemented by plugins from these primitives.
+    const session: PluginDevSession = {
       origin,
-      restartServerRuntime() {
-        const state = (() => {
-          const generationState = getBundlerGenerationStateForFacts(
-            activeBundlerGeneration,
-          );
-          if (!generationState) return undefined;
-          const runtimeState: DevApiRuntimeState<TBundlerCfg> = {
-            config: generationState.config,
-            frameworkRuntime: generationState.frameworkRuntime,
-            plan: generationState.plan,
-            serverEntry: generationState.serverEntry,
-          };
-          return runtimeState;
-        })();
-        if (!state) return Promise.resolve();
-        restartQueue = restartQueue
-          .catch(() => {})
-          .then(() => {
-            if (devSessionEnding) return;
-            return restartApiServer(state);
-          })
-          .then(() => {});
-        return restartQueue.then(
-          () => undefined,
-          () => undefined,
-        );
-      },
       close() {
         if (devSessionEnding) return Promise.resolve();
         resolveShutdown?.();
@@ -1637,15 +1610,11 @@ async function runDevSession<TBundlerCfg = unknown>(
       },
     };
 
-    // collectConfigureShortcuts Hooks is async; bind as soon as plugins answer.
+    // collectConfigureShortcutsHooks is async; bind as soon as plugins answer.
     void collectConfigureShortcutsHooks(hooks)
       .then((customShortcuts) => {
         if (devSessionEnding) return;
-        unbindCliShortcuts = bindCLIShortcuts(session, {
-          print: cliShortcuts.print,
-          customShortcuts,
-          helpKey: true,
-        });
+        unbindCliShortcuts = bindCLIShortcuts(session, { customShortcuts });
       })
       .catch((error) => {
         logger.warn`CLI shortcuts could not be installed: ${error}`;

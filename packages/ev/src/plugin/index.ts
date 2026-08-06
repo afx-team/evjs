@@ -789,10 +789,10 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * `action` receives the live {@link PluginDevSession} only when the key is
    * pressed later, so actions may close over setup-time values without
    * needing the runtime origin eagerly. Core ships no built-in shortcuts;
-   * every key (including `h` help) is plugin-contributed. The first plugin to
-   * register a key owns it; later duplicates are dropped. The engine is a
-   * no-op in CI / non-TTY contexts and on the wasm/web (Fetch runtime) dev
-   * surface.
+   * every key (including `h` help) is plugin-contributed. A plugin that wants a
+   * help listing should register `h` itself. The first plugin to register a
+   * key owns it; later duplicates are dropped. The engine is a no-op in CI /
+   * non-TTY contexts and on the wasm/web (Fetch runtime) dev surface.
    */
   configureShortcuts?: () => PluginCliShortcut[] | Promise<PluginCliShortcut[]>;
 
@@ -810,15 +810,14 @@ export interface PluginHooks<TBundlerCfg = unknown> {
  * This is the dev-facing shape; the build orchestrator (`_internal/build`)
  * constructs the concrete implementation. `origin` is the client dev server
  * URL reported by `BundlerDevContext.callbacks.onDevServerReady({ origin })`.
+ * Surface is intentionally minimal: it exposes only data and a shutdown
+ * trigger. Core ships no built-in shortcut actions (no `restart`, `open`,
+ * etc.); plugins that want such behavior implement it themselves from these
+ * primitives plus their own utilities.
  */
 export interface PluginDevSession {
   /** Client dev server origin, e.g. `http://localhost:3000`. */
   readonly origin: string;
-  /**
-   * Restart the server runtime (the Hono API child). No-ops when there is no
-   * server-runtime entry to restart.
-   */
-  restartServerRuntime(): Promise<void>;
   /** Trigger dev shutdown (equivalent to Ctrl-C). */
   close(): Promise<void>;
 }
@@ -827,7 +826,7 @@ export interface PluginDevSession {
 export interface PluginCliShortcut {
   /** Lowercase single-character key matched against a pressed line. */
   key: string;
-  /** Human description shown in the help list. */
+  /** Human description of what the shortcut does. */
   description: string;
   /**
    * Action invoked with the live {@link PluginDevSession}. `undefined`

@@ -149,7 +149,7 @@ runtime) dev surface, regardless of this option.
 // ev.config.ts
 export default defineConfig({
   dev: {
-    cliShortcuts: false, // or { print: false } to hide the help hint
+    cliShortcuts: false,
   },
 });
 ```
@@ -267,13 +267,6 @@ const shortcutsPlugin = {
             },
           },
           {
-            key: "r",
-            description: "restart the server runtime",
-            action(session) {
-              session.restartServerRuntime();
-            },
-          },
-          {
             key: "q",
             description: "quit",
             action(session) {
@@ -291,17 +284,16 @@ export default defineConfig({ plugins: [shortcutsPlugin] });
 
 The `configureShortcuts` hook returns a `CLIShortcut[]`, and the first plugin to
 register a key owns it (later duplicates are dropped). Each `action` receives the
-live `DevSession`:
+live `PluginDevSession`:
 
 - `origin: string` — the client dev server URL
   (`http(s)://localhost:<port>`).
-- `restartServerRuntime()` — restart the Hono API server child through the
-  same serialized restart path used when a server bundle becomes ready.
-  No-ops when there is no server-runtime entry.
 - `close()` — trigger dev shutdown (equivalent to `Ctrl-C`).
 
-When bound with a help key, pressing `h` + `Enter` lists every registered
-shortcut; `ev dev` prints a `press h + enter to show help` hint at startup.
+Core deliberately exposes only `origin` and `close()`; richer actions (restart,
+reload, profiling, …) are implemented by plugins from these primitives plus their
+own utilities, not by core. A plugin that wants a help listing registers `h`
+itself and reads the shortcut descriptions it knows about.
 
 Scope: this targets the standard Node dev server (the utoopack dev worker plus
 the Hono API child). The wasm/web (Fetch runtime) dev surface has no Node child

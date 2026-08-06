@@ -130,7 +130,7 @@ wasm/web(Fetch runtime)dev 场景下引擎始终为 no-op。
 // ev.config.ts
 export default defineConfig({
   dev: {
-    cliShortcuts: false, // 或 { print: false } 隐藏帮助提示
+    cliShortcuts: false,
   },
 });
 ```
@@ -234,13 +234,6 @@ const shortcutsPlugin = {
             },
           },
           {
-            key: "r",
-            description: "重启 server runtime",
-            action(session) {
-              session.restartServerRuntime();
-            },
-          },
-          {
             key: "q",
             description: "退出",
             action(session) {
@@ -257,15 +250,14 @@ export default defineConfig({ plugins: [shortcutsPlugin] });
 ```
 
 `configureShortcuts` hook 返回 `CLIShortcut[]`,首个为某个 key 注册快捷键的插件
-拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的 `DevSession`:
+拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的 `PluginDevSession`:
 
 - `origin: string` —— 客户端 dev server URL(`http(s)://localhost:<port>`)。
-- `restartServerRuntime()` —— 通过服务端 bundle ready 时所用的同一条串行化重启
-  路径,重启 Hono API server 子进程;无 server-runtime entry 时为 no-op。
 - `close()` —— 触发 dev 关闭(等价于 `Ctrl-C`)。
 
-以帮助键绑定时,按 `h` + `Enter` 可列出所有已注册快捷键;`ev dev` 启动时会打印
-`press h + enter to show help` 提示。
+Core 刻意只暴露 `origin` 与 `close()`;更丰富的 action(重启、reload、profiling
+等)由插件基于这些原语加自身工具实现,而非由 core 提供。需要帮助列表的插件可
+自行注册 `h`,读取它已知的快捷键描述。
 
 适用范围:该能力面向标准 Node dev server(utoopack dev worker + Hono API
 子进程)。wasm/web(Fetch runtime)dev 场景没有 Node 子进程也没有交互式 TTY

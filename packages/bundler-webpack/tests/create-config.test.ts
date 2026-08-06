@@ -1117,6 +1117,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfigs> {
       port: 3000,
       https: false,
       proxy: [],
+      cliShortcuts: true,
     },
     output: {
       client: "dist/client",

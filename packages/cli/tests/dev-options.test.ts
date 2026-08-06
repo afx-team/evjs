@@ -97,7 +97,9 @@ describe("programmatic dev config loading", () => {
   it("omits cliShortcuts when no override is supplied", async () => {
     await dev(userConfig);
 
-    const [, options] = devMocks.frameworkDev.mock.calls[0];
+    const options = (
+      devMocks.frameworkDev.mock.calls[0] as unknown[] | undefined
+    )?.[1] as Record<string, unknown> | undefined;
     expect(options).not.toHaveProperty("cliShortcuts");
   });
 });

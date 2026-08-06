@@ -551,7 +551,10 @@ export async function collectConfigureShortcutsHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
 ): Promise<PluginCliShortcut[]> {
   const collected: PluginCliShortcut[] = [];
-  for (const hook of hooks) {
+  // Snapshot so a config-reload `hooks.splice(...)` cannot mutate the array
+  // mid-iteration across the per-hook `await` (see runDisposeHooks for the same
+  // pattern).
+  for (const hook of [...hooks]) {
     if (!hook.configureShortcuts) continue;
     const shortcuts = await hook.configureShortcuts();
     for (const shortcut of shortcuts ?? []) {

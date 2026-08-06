@@ -45,6 +45,7 @@ describe("createUtoopackConfig", () => {
         port: 41234,
         https: true,
         proxy: [],
+        cliShortcuts: true,
       },
       server: {
         basePath: "/__evjs",
@@ -120,6 +121,7 @@ describe("createUtoopackConfig", () => {
         port: 41234,
         https: { key: "./certs/dev.key", cert: "./certs/dev.crt" },
         proxy: [],
+        cliShortcuts: true,
       },
     });
     const plan = await createPlan(config);
@@ -137,6 +139,7 @@ describe("createUtoopackConfig", () => {
         port: 41234,
         https: { key: "./certs/dev.key", cert: "./certs/dev.crt" },
         proxy: [],
+        cliShortcuts: true,
       },
     });
     const plan = await createPlan(config, { mode: "production" });

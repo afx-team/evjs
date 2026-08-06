@@ -69,7 +69,9 @@ describe("CLI execution", () => {
 
     await runCliProgram(["node", "ev", "dev"], dependencies);
 
-    const [, options] = dev.mock.calls[0];
+    const options = (dev.mock.calls[0] as unknown[] | undefined)?.[1] as
+      | Record<string, unknown>
+      | undefined;
     expect(options).not.toHaveProperty("cliShortcuts");
   });
 
