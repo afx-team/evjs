@@ -8,6 +8,28 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.6] — 2026-08-06
+
+### ✨ Improvements
+
+- **Public SPA Router replacement** — Generated Pages apps defer initial Router
+  construction until runtime base and history projection, then load replacement
+  Routers through TanStack's public APIs for later base, history, or runtime
+  Route-overlay updates. Replacement preserves the shared Query client and
+  commits only after the candidate Router is ready.
+
+### 🐛 Bug Fixes
+
+- **Race-safe Router remounting** — Runtime replacement and rollback now use the
+  latest mount state after asynchronous Router loading, so an intervening
+  `unmount()` stays unmounted and an intervening `render()` moves onto the
+  replacement Router instead of leaving the application blank.
+- **Committed qiankun projection rollback** — Qiankun slave lifecycles roll back
+  runtime projection only after it succeeds, avoiding duplicate rollback and
+  history restoration when projection itself fails.
+
+---
+
 ## [0.3.5] — 2026-08-06
 
 ### ✨ Features
