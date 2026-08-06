@@ -8,6 +8,27 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.5] — 2026-08-06
+
+### ✨ Features
+
+- **Page server entry replacement** — Plugins can replace an exact Page-owned
+  `page-server` entry through the replacement-only `server.entry` contribution
+  slot while preserving framework entry, renderer, manifest, and import-edge
+  identity. Invalid Page targets and duplicate replacements are rejected.
+
+### 🐛 Bug Fixes
+
+- **Stable Utoopack HMR transitions** — Utoopack now watches generated `.ev`
+  inputs independently while EVJS relinks topology-preserving updates from the
+  last published build facts, removing timestamp invalidation and the
+  `stats.json` transition barrier that made HMR unreliable.
+- **Resilient development watching** — EVJS canonicalizes dependency ordering,
+  recovers from atomic symlink replacement races, and falls back to polling
+  with per-target backoff when native watchers exhaust resources or close.
+
+---
+
 ## [0.3.4] — 2026-08-04
 
 ### ✨ Improvements
