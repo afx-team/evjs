@@ -282,7 +282,7 @@ const shortcutsPlugin = {
 export default defineConfig({ plugins: [shortcutsPlugin] });
 ```
 
-The `configureShortcuts` hook returns a `CLIShortcut[]`, and the first plugin to
+The `configureShortcuts` hook returns a `PluginCliShortcut[]`, and the first plugin to
 register a key owns it (later duplicates are dropped). Each `action` receives the
 live `PluginDevSession`:
 

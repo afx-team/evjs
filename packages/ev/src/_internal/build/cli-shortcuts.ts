@@ -60,37 +60,34 @@ export function dedupeShortcuts(
 
 export interface ShortcutDispatcher {
   /**
-   * Dispatch one pressed input line. Returns the matching shortcut when its
-   * `action` ran (or would have run), or `undefined` when nothing matched.
-   * Concurrent presses while an action is already running are dropped.
+   * Dispatch one pressed input line. Concurrent presses while an action is
+   * already running are dropped. Action errors are swallowed (logged) so the
+   * loop survives a failing shortcut.
    */
-  dispatch(input: string): Promise<PluginCliShortcut | undefined>;
+  dispatch(input: string): Promise<void>;
 }
 
 /**
- * Build a reusable shortcut dispatcher from contributed shortcuts + the live
- * session. Exposed so the dispatch path (key matching, `actionRunning` guard,
- * action error handling) is unit-testable without binding a readline interface.
- * `bindCLIShortcuts` uses this internally.
+ * Build a reusable shortcut dispatcher from already-deduplicated shortcuts +
+ * the live session. Exposed so the dispatch path (key matching,
+ * `actionRunning` guard, action error handling) is unit-testable without
+ * binding a readline interface. `bindCLIShortcuts` uses this internally.
  */
 export function createShortcutDispatcher(
   session: PluginDevSession,
   shortcuts: readonly PluginCliShortcut[],
 ): ShortcutDispatcher {
-  const deduped = dedupeShortcuts(shortcuts);
   let actionRunning = false;
   return {
     async dispatch(input) {
-      if (actionRunning) return undefined;
-      const shortcut = resolveShortcut(input, deduped);
-      if (!shortcut || shortcut.action == null) return undefined;
+      if (actionRunning) return;
+      const shortcut = resolveShortcut(input, shortcuts);
+      if (!shortcut || shortcut.action == null) return;
       actionRunning = true;
       try {
         await shortcut.action(session);
-        return shortcut;
       } catch (error) {
         logger.error`Shortcut "${shortcut.key}" failed: ${error}`;
-        return shortcut;
       } finally {
         actionRunning = false;
       }

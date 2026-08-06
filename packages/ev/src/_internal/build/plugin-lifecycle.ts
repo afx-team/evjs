@@ -544,8 +544,7 @@ export async function runAfterBuildHooks<TBundlerCfg>(
  *
  * `configureShortcuts` runs at setup time, so the returned descriptors are
  * static; shortcut `action` callbacks receive the live {@link PluginDevSession}
- * only when the key is later pressed. A returned `undefined` shortcut array is
- * treated as "no shortcuts from this plugin".
+ * only when the key is later pressed.
  */
 export async function collectConfigureShortcutsHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
@@ -557,7 +556,7 @@ export async function collectConfigureShortcutsHooks<TBundlerCfg>(
   for (const hook of [...hooks]) {
     if (!hook.configureShortcuts) continue;
     const shortcuts = await hook.configureShortcuts();
-    for (const shortcut of shortcuts ?? []) {
+    for (const shortcut of shortcuts) {
       collected.push(shortcut);
     }
   }

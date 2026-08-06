@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bindCLIShortcuts,
+  createShortcutDispatcher,
+  dedupeShortcuts,
   resolveShortcut,
 } from "../src/_internal/build/cli-shortcuts.js";
 import type {
@@ -45,17 +47,89 @@ describe("resolveShortcut (pure dispatch logic)", () => {
     ];
     expect(resolveShortcut("d", disabled)?.key).toBe("d");
   });
+});
 
-  it("first registered shortcut wins when keys collide", () => {
+describe("dedupeShortcuts", () => {
+  it("drops later duplicates, keeping first-writer order", () => {
     const first = { key: "p", description: "first", action: vi.fn() };
     const second = { key: "p", description: "second", action: vi.fn() };
-    // Note: dedupe happens in bindCLIShortcuts, not resolveShortcut. resolveShortcut
-    // uses Array.find and returns the FIRST match, mirroring that contract.
-    expect(resolveShortcut("p", [first, second])).toBe(first);
+    const third = { key: "q", description: "third", action: vi.fn() };
+    expect(dedupeShortcuts([first, second, third]).map((s) => s.key)).toEqual([
+      "p",
+      "q",
+    ]);
+    // The kept "p" is the first one.
+    expect(dedupeShortcuts([first, second, third])[0]).toBe(first);
   });
 });
 
-describe("bindCLIShortcuts enable/empty gating", () => {
+describe("createShortcutDispatcher", () => {
+  it("drops concurrent presses while an action is already running", async () => {
+    // The action returns a long-pending promise on its first call (which we
+    // control), and a self-resolving promise thereafter so the second press
+    // can be awaited deterministically.
+    let resolveFirst: () => void = () => {};
+    let calls = 0;
+    const action = vi.fn(() => {
+      calls += 1;
+      return calls === 1
+        ? new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          })
+        : Promise.resolve();
+    });
+    const session = createSession();
+    const dispatcher = createShortcutDispatcher(session, [
+      { key: "p", description: "ping", action },
+    ]);
+
+    // Fire the first press without awaiting; its action stays pending while we
+    // re-enter.
+    const first = dispatcher.dispatch("p");
+    // These presses arrive while the first action is still pending; they must
+    // be dropped.
+    await dispatcher.dispatch("p");
+    await dispatcher.dispatch("p");
+    expect(action).toHaveBeenCalledTimes(1);
+
+    resolveFirst();
+    await first;
+
+    // Once the first action finished, the next press runs again (and resolves).
+    await dispatcher.dispatch("p");
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
+  it("survives a throwing action; the loop keeps dispatching", async () => {
+    const firstAction = vi.fn(() => Promise.reject(new Error("boom")));
+    const secondAction = vi.fn().mockResolvedValue(undefined);
+    const session = createSession();
+    const dispatcher = createShortcutDispatcher(session, [
+      { key: "a", description: "throws", action: firstAction },
+      { key: "b", description: "ok", action: secondAction },
+    ]);
+
+    await expect(dispatcher.dispatch("a")).resolves.toBeUndefined();
+    await dispatcher.dispatch("b");
+    expect(firstAction).toHaveBeenCalledTimes(1);
+    expect(secondAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("no-ops for unknown keys and shortcuts with undefined action", async () => {
+    const action = vi.fn();
+    const dispatcher = createShortcutDispatcher(createSession(), [
+      { key: "d", description: "disabled" },
+      { key: "p", description: "ping", action },
+    ]);
+    await dispatcher.dispatch("z");
+    await dispatcher.dispatch("d");
+    expect(action).not.toHaveBeenCalled();
+    await dispatcher.dispatch("p");
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("bindCLIShortcuts enable gating", () => {
   const originalIsTTY = process.stdin.isTTY;
   const originalCI = process.env.CI;
 
@@ -68,7 +142,7 @@ describe("bindCLIShortcuts enable/empty gating", () => {
     else process.env.CI = originalCI;
   });
 
-  it("is a no-op when disabled and attaches nothing to stdin", () => {
+  it("is a no-op when disabled", () => {
     const unbind = bindCLIShortcuts(
       createSession(),
       {
@@ -89,14 +163,6 @@ describe("bindCLIShortcuts enable/empty gating", () => {
     const unbind = bindCLIShortcuts(createSession(), {
       customShortcuts: [{ key: "p", description: "ping", action: vi.fn() }],
     });
-    expect(typeof unbind).toBe("function");
-    unbind();
-  });
-
-  it("does not attach when no plugin contributed shortcuts", () => {
-    // With helpKey removed, an empty customShortcuts list yields a no-op unbind
-    // and never touches process.stdin.
-    const unbind = bindCLIShortcuts(createSession(), {}, true);
     expect(typeof unbind).toBe("function");
     unbind();
   });

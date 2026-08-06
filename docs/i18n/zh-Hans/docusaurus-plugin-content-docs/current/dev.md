@@ -249,7 +249,7 @@ const shortcutsPlugin = {
 export default defineConfig({ plugins: [shortcutsPlugin] });
 ```
 
-`configureShortcuts` hook 返回 `CLIShortcut[]`,首个为某个 key 注册快捷键的插件
+`configureShortcuts` hook 返回 `PluginCliShortcut[]`,首个为某个 key 注册快捷键的插件
 拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的 `PluginDevSession`:
 
 - `origin: string` —— 客户端 dev server URL(`http(s)://localhost:<port>`)。
