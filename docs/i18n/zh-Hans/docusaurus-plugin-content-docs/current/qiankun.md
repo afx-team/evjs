@@ -181,9 +181,15 @@ src/
 `/` 会渲染在 `/catalog`，本地 `/details` 会渲染在 `/catalog/details`。
 
 Slave lifecycle 会加载原始生成 entry，通过 `pagesApp.updateRuntime()` 投影收到的
-`base` 与 `history`，然后才调用 entry 的首次 `start()`。因此 router 在 Application
-首次渲染前就能观察到挂载后的 base 与 history。在 qiankun 外独立运行时，同一组 Page
-仍然使用 standalone base。
+`base` 与 `history`，然后才调用 entry 的首次 `start()`。生成的 Pages app 会把 router
+创建延迟到 runtime 投影就绪之后，因此首个 router 会直接使用挂载后的 base 与
+history，而不是创建后再修改。在 qiankun 外独立运行时，同一组 Page 仍然使用
+standalone base。
+
+已挂载的 slave 后续收到不同的 base、history 或 runtime route overlay 时，Pages app
+会复用现有 Query client 创建并加载候选 router。只有候选 router 就绪后才切换已渲染的
+provider；候选加载失败时，当前 router 会继续生效。这个替换边界只使用 TanStack
+Router 的公开创建与加载 API，不依赖其内部 match store。
 
 使用 browser 或 hash history 挂载时，slave 会使用作用域隔离的 history 适配器。
 Slave 内的 `Link` 与 `useNavigate()` 仍会更新共享的浏览器 URL，浏览器原生前进/回退

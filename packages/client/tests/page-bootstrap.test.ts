@@ -64,6 +64,29 @@ describe("SPA page bootstrap", () => {
     expect(reactRootCalls).toEqual([]);
   });
 
+  it("remounts a loaded replacement Router after runtime configuration changes", async () => {
+    function Home() {
+      return null;
+    }
+    const pagesApp = createPagesApp({
+      routes: [{ path: "/", module: { default: Home } }],
+      history: { type: "memory", initialEntries: ["/catalog"] },
+    });
+    const firstRouter = pagesApp.app.router;
+
+    pagesApp.app.render({} as HTMLElement);
+    await pagesApp.updateRuntime({ basepath: "/catalog" });
+
+    expect(pagesApp.app.router).not.toBe(firstRouter);
+    expect(reactRootCalls).toEqual([
+      "createRoot",
+      "render",
+      "unmount",
+      "createRoot",
+      "render",
+    ]);
+  });
+
   it("validates render options before mounting", () => {
     const { app } = createTestPagesApp();
     const mount = {} as HTMLElement;

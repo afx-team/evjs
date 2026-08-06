@@ -369,7 +369,7 @@ export function createQiankunSlaveLifecycles(options: {
     let projectionUpdate:
       | ((update: GeneratedPagesAppRuntimeUpdate) => MaybePromise<void>)
       | undefined;
-    let projectionAttempted = false;
+    let projectionApplied = false;
     let runtimeHookAttempted = false;
     let entryMountAttempted = false;
     let nextScopedHistory: RouterHistory | undefined;
@@ -395,8 +395,8 @@ export function createQiankunSlaveLifecycles(options: {
       );
       if (projectionOptions) {
         projectionUpdate = resolveRequiredSlavePagesAppUpdate(entryModule);
-        projectionAttempted = true;
         await projectionUpdate(projectionOptions);
+        projectionApplied = true;
       }
       const start = entryInitialized
         ? undefined
@@ -426,7 +426,7 @@ export function createQiankunSlaveLifecycles(options: {
           unmountLoadedEntry(entryModule),
         );
       }
-      if (projectionAttempted && projectionUpdate) {
+      if (projectionApplied && projectionUpdate) {
         rollbackScopedHistory = useStandaloneDefaults
           ? undefined
           : createScopedSlaveHistory(previousProjection.history.type);
@@ -456,7 +456,7 @@ export function createQiankunSlaveLifecycles(options: {
       await collectQiankunCleanupError(rollbackErrors, () =>
         nextScopedHistory?.destroy(),
       );
-      if (projectionAttempted) {
+      if (projectionApplied) {
         if (rollbackScopedHistory !== scopedHistory) {
           scopedHistory?.destroy();
         }
