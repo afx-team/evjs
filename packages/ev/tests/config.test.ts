@@ -494,6 +494,14 @@ describe("resolveConfig", () => {
     expect(resolveConfig({}).dev.cliShortcuts).toBe(true);
   });
 
+  it("rejects non-boolean dev.cliShortcuts values", () => {
+    for (const cliShortcuts of ["false", 0, null, {}, []]) {
+      expect(() =>
+        resolveConfig({ dev: { cliShortcuts } } as unknown as Config),
+      ).toThrow("[evjs] dev.cliShortcuts must be a boolean when provided.");
+    }
+  });
+
   it("accepts only plain config records at root and nested boundaries", () => {
     class ConfigRecord {
       readonly mode = "spa";

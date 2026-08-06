@@ -8,10 +8,8 @@
  * `actionRunning` guard that drops concurrent presses, and a TTY + non-CI
  * no-op default) but is bundler-agnostic and owns no default keys.
  *
- * Scope: this engine targets the standard Node dev server. The wasm/web
- * (Fetch runtime) dev surface has no Node child process and no interactive TTY
- * loop, so the engine stays a no-op there. Pass an explicit `enabled` to
- * force-enable in non-TTY tests.
+ * The engine is bundler-agnostic and binds only when a dev adapter reports a
+ * ready origin. Pass an explicit `enabled` to force-enable in non-TTY tests.
  *
  * @see package "vite" `packages/vite/src/node/shortcuts.ts` (mechanical reference)
  */
@@ -25,6 +23,22 @@ import type {
 
 const logger = getLogger(["evjs", "cli-shortcuts"]);
 
+function normalizeInputKey(input: string): string | undefined {
+  const key = input.trim().toLowerCase();
+  return [...key].length === 1 ? key : undefined;
+}
+
+/** Normalize and validate one plugin-contributed shortcut key. */
+export function normalizeShortcutKey(key: string): string {
+  const normalized = normalizeInputKey(key);
+  if (normalized === undefined) {
+    throw new Error(
+      "[evjs] CLI shortcut key must be a single non-whitespace character.",
+    );
+  }
+  return normalized;
+}
+
 /**
  * Resolve a pressed input line to its registered shortcut, if any.
  *
@@ -35,9 +49,11 @@ export function resolveShortcut(
   input: string,
   shortcuts: readonly PluginCliShortcut[],
 ): PluginCliShortcut | undefined {
-  const key = input.trim().toLowerCase();
-  if (key === "") return undefined;
-  return shortcuts.find((shortcut) => shortcut.key === key);
+  const key = normalizeInputKey(input);
+  if (key === undefined) return undefined;
+  return shortcuts.find(
+    (shortcut) => normalizeShortcutKey(shortcut.key) === key,
+  );
 }
 
 /**
@@ -51,9 +67,10 @@ export function dedupeShortcuts(
   const seen = new Set<string>();
   const deduped: PluginCliShortcut[] = [];
   for (const shortcut of shortcuts) {
-    if (seen.has(shortcut.key)) continue;
-    seen.add(shortcut.key);
-    deduped.push(shortcut);
+    const key = normalizeShortcutKey(shortcut.key);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(Object.freeze({ ...shortcut, key }));
   }
   return deduped;
 }
@@ -65,6 +82,10 @@ export interface ShortcutDispatcher {
    * loop survives a failing shortcut.
    */
   dispatch(input: string): Promise<void>;
+  /** Whether no shortcut action is currently running. */
+  isIdle(): boolean;
+  /** Wait for the currently running action, if any. */
+  waitForIdle(): Promise<void>;
 }
 
 /**
@@ -78,22 +99,61 @@ export function createShortcutDispatcher(
   shortcuts: readonly PluginCliShortcut[],
 ): ShortcutDispatcher {
   let actionRunning = false;
+  let runningAction: Promise<void> | undefined;
   return {
     async dispatch(input) {
       if (actionRunning) return;
       const shortcut = resolveShortcut(input, shortcuts);
       if (!shortcut || shortcut.action == null) return;
       actionRunning = true;
+      const action = (async () => {
+        try {
+          await shortcut.action?.(session);
+        } catch (error) {
+          logger.error`Shortcut "${shortcut.key}" failed: ${error}`;
+        }
+      })();
+      runningAction = action;
       try {
-        await shortcut.action(session);
-      } catch (error) {
-        logger.error`Shortcut "${shortcut.key}" failed: ${error}`;
+        await action;
       } finally {
-        actionRunning = false;
+        if (runningAction === action) {
+          runningAction = undefined;
+          actionRunning = false;
+        }
       }
+    },
+    isIdle() {
+      return runningAction === undefined;
+    },
+    waitForIdle() {
+      return runningAction ?? Promise.resolve();
     },
   };
 }
+
+export interface UnbindCLIShortcutsOptions {
+  /**
+   * Maximum time to wait for the active action after input has been detached.
+   * Omit to wait without a deadline; use `0` for shutdown paths that must not
+   * be held open by plugin work.
+   */
+  actionDrainTimeoutMs?: number;
+}
+
+/**
+ * Detach shortcut input and report whether the active action drained before
+ * the requested deadline.
+ */
+export interface UnbindCLIShortcutsResult {
+  readonly drained: boolean;
+  /** Settles when the action that was active during unbind finishes. */
+  readonly idle: Promise<void>;
+}
+
+export type UnbindCLIShortcuts = (
+  options?: UnbindCLIShortcutsOptions,
+) => Promise<UnbindCLIShortcutsResult>;
 
 export interface BindCLIShortcutsOptions {
   /** Shortcuts contributed by plugins, in registration order. */
@@ -119,14 +179,16 @@ export function bindCLIShortcuts(
   session: PluginDevSession,
   opts: BindCLIShortcutsOptions = {},
   enabled: boolean = process.stdin.isTTY && !process.env.CI,
-): () => void {
-  if (!enabled) return () => {};
+): UnbindCLIShortcuts {
+  if (!enabled) {
+    return async () => ({ drained: true, idle: Promise.resolve() });
+  }
 
   const shortcuts = dedupeShortcuts(opts.customShortcuts ?? []);
   if (shortcuts.length === 0) {
     // No plugin contributed a shortcut. Don't attach a readline interface (and
     // thus never disturb process.stdin) when there is nothing to dispatch.
-    return () => {};
+    return async () => ({ drained: true, idle: Promise.resolve() });
   }
   const dispatcher = createShortcutDispatcher(session, shortcuts);
 
@@ -136,9 +198,41 @@ export function bindCLIShortcuts(
 
   const rl = readline.createInterface({ input: process.stdin });
   rl.on("line", onLine);
+  let closed = false;
 
-  return () => {
-    rl.off("line", onLine);
-    rl.close();
+  return async (options = {}) => {
+    let closeError: unknown;
+    if (!closed) {
+      closed = true;
+      try {
+        rl.off("line", onLine);
+        rl.close();
+      } catch (error) {
+        closeError = error;
+      }
+    }
+    const idle = dispatcher.waitForIdle();
+    const timeoutMs = options.actionDrainTimeoutMs;
+    let drained = true;
+    if (timeoutMs === undefined) {
+      await idle;
+    } else if (timeoutMs === 0) {
+      drained = dispatcher.isIdle();
+    } else {
+      drained = await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finish = (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          resolve(value);
+        };
+        const timeout = setTimeout(() => finish(false), timeoutMs);
+        timeout.unref?.();
+        void idle.then(() => finish(true));
+      });
+    }
+    if (closeError !== undefined) throw closeError;
+    return { drained, idle };
   };
 }

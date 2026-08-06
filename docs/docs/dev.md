@@ -142,8 +142,7 @@ default is on; set `dev.cliShortcuts: false` to disable it. The engine mirrors
 Vite's `bindCLIShortcuts` (readline line events, one key + `Enter`) but ships
 no built-in shortcuts of its own — every key is contributed by a plugin via the
 `configureShortcuts` setup hook (see [Plugin CLI Shortcuts](#plugin-cli-shortcuts)).
-It is always a no-op in CI / non-TTY contexts, and on the wasm/web (Fetch
-runtime) dev surface, regardless of this option.
+It is always a no-op in CI and non-TTY contexts, regardless of this option.
 
 ```ts
 // ev.config.ts
@@ -242,23 +241,16 @@ dropped) but leaves the action set to the ecosystem.
 Register shortcuts from a plugin's `setup()` hook:
 
 ```ts
-// my-evjs-plugin.ts
-import { spawn } from "node:child_process";
+// ev.config.ts
 import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
 
-const shortcutsPlugin = {
+const shortcutsPlugin = definePlugin({
   id: "my-shortcuts",
   setup() {
     return {
       configureShortcuts() {
         return [
-          {
-            key: "o",
-            description: "open the dev server in the browser",
-            action(session) {
-              spawn("open", [session.origin]);
-            },
-          },
           {
             key: "u",
             description: "show server url",
@@ -277,9 +269,9 @@ const shortcutsPlugin = {
       },
     };
   },
-};
+});
 
-export default defineConfig({ plugins: [shortcutsPlugin] });
+export default defineConfig({ plugins: [shortcutsPlugin()] });
 ```
 
 The `configureShortcuts` hook returns a `PluginCliShortcut[]`, and the first plugin to
@@ -295,9 +287,9 @@ reload, profiling, …) are implemented by plugins from these primitives plus th
 own utilities, not by core. A plugin that wants a help listing registers `h`
 itself and reads the shortcut descriptions it knows about.
 
-Scope: this targets the standard Node dev server (the utoopack dev worker plus
-the Hono API child). The wasm/web (Fetch runtime) dev surface has no Node child
-process and no interactive TTY loop, so the engine stays a no-op there.
+The engine is bundler-agnostic: it binds after the selected Node CLI dev adapter
+reports its client origin. Both built-in adapters support that callback, and a
+server/API child is not required.
 
 ## Transport
 

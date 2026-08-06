@@ -785,16 +785,20 @@ export interface PluginHooks<TBundlerCfg = unknown> {
   /**
    * Contribute interactive CLI keyboard shortcuts for `ev dev`.
    *
-   * Runs once at setup time. Plugins return static shortcut descriptors whose
-   * `action` receives the live {@link PluginDevSession} only when the key is
-   * pressed later, so actions may close over setup-time values without
-   * needing the runtime origin eagerly. Core ships no built-in shortcuts;
+   * Runs once per plugin setup snapshot. Plugins return static shortcut
+   * descriptors whose `action` receives the live {@link PluginDevSession} only
+   * when the key is pressed later, so actions may close over setup-time values
+   * without needing the runtime origin eagerly. Core ships no built-in shortcuts;
    * every key (including `h` help) is plugin-contributed. A plugin that wants a
    * help listing should register `h` itself. The first plugin to register a
    * key owns it; later duplicates are dropped. The engine is a no-op in CI /
-   * non-TTY contexts and on the wasm/web (Fetch runtime) dev surface.
+   * non-TTY contexts. Return a fresh hooks object from each setup call when it
+   * contains this hook; reusing it across snapshots or plugin ids would make
+   * shortcut diagnostics and lifecycle ownership ambiguous.
    */
-  configureShortcuts?: () => PluginCliShortcut[] | Promise<PluginCliShortcut[]>;
+  configureShortcuts?: () =>
+    | readonly PluginCliShortcut[]
+    | Promise<readonly PluginCliShortcut[]>;
 
   /**
    * Retire this plugin snapshot after a production build, dev shutdown,
@@ -818,22 +822,22 @@ export interface PluginHooks<TBundlerCfg = unknown> {
 export interface PluginDevSession {
   /** Client dev server origin, e.g. `http://localhost:3000`. */
   readonly origin: string;
-  /** Trigger dev shutdown (equivalent to Ctrl-C). */
+  /** Request dev shutdown (equivalent to Ctrl-C); resolves after the request. */
   close(): Promise<void>;
 }
 
 /** A plugin-contributed CLI keyboard shortcut. */
 export interface PluginCliShortcut {
   /** Lowercase single-character key matched against a pressed line. */
-  key: string;
+  readonly key: string;
   /** Human description of what the shortcut does. */
-  description: string;
+  readonly description: string;
   /**
-   * Action invoked with the live {@link PluginDevSession}. `undefined`
-   * disables a shortcut registered with the same key by an earlier plugin
-   * without removing its description.
+   * Action invoked with the live {@link PluginDevSession}. Omitting it reserves
+   * the key and description without running an action; later duplicates remain
+   * ignored by the first-writer-wins rule.
    */
-  action?(session: PluginDevSession): void | Promise<void>;
+  readonly action?: (session: PluginDevSession) => void | Promise<void>;
 }
 
 /** Build result passed to plugin hooks. */

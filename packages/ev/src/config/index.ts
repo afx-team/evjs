@@ -223,8 +223,7 @@ export interface DevConfig {
    * Interactive CLI keyboard shortcuts while `ev dev` runs. `false` disables
    * the engine (default `true`). Shortcuts themselves are registered by plugins
    * via the `configureShortcuts` setup hook — core ships none. The engine is
-   * always a no-op in CI / non-TTY contexts and on the wasm/web (Fetch
-   * runtime) dev surface, regardless of this option.
+   * always a no-op in CI and non-TTY contexts, regardless of this option.
    */
   cliShortcuts?: boolean;
 }
@@ -665,7 +664,8 @@ export function resolveConfig<TBundlerCfg = unknown>(
   const rscEndpoint = resolveRscEndpoint(serverRscConfig);
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
-  const cliShortcuts = devConfig.cliShortcuts !== false;
+  const cliShortcuts =
+    assertOptionalBoolean(devConfig.cliShortcuts, "dev.cliShortcuts") ?? true;
 
   return {
     conventions,
@@ -1549,7 +1549,7 @@ function validateDevConfigKeys(dev: DevConfig): void {
     dev,
     PUBLIC_DEV_CONFIG_KEYS,
     "dev",
-    "port, https, or proxy",
+    "port, https, proxy, or cliShortcuts",
   );
 }
 

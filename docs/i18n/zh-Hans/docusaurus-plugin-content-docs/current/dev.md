@@ -123,8 +123,8 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 `dev.cliShortcuts: false` 可关闭。该引擎复刻 Vite `bindCLIShortcuts`
 的机制(readline line 事件,单键 + `Enter`),但内置不提供任何快捷键 ——
 每个键都由插件通过 `configureShortcuts` setup hook 贡献(见
-[插件 CLI 快捷键](#插件-cli-快捷键))。无论该选项如何,在 CI / 非 TTY / 以及
-wasm/web(Fetch runtime)dev 场景下引擎始终为 no-op。
+[插件 CLI 快捷键](#插件-cli-快捷键))。无论该选项如何,在 CI / 非 TTY 场景下
+引擎始终为 no-op。
 
 ```ts
 // ev.config.ts
@@ -209,23 +209,16 @@ programmatic 选项 `cliShortcuts` 可覆盖 `dev.cliShortcuts`:传 `false`
 在插件 `setup()` hook 中注册快捷键:
 
 ```ts
-// my-evjs-plugin.ts
-import { spawn } from "node:child_process";
+// ev.config.ts
 import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
 
-const shortcutsPlugin = {
+const shortcutsPlugin = definePlugin({
   id: "my-shortcuts",
   setup() {
     return {
       configureShortcuts() {
         return [
-          {
-            key: "o",
-            description: "在浏览器打开 dev server",
-            action(session) {
-              spawn("open", [session.origin]);
-            },
-          },
           {
             key: "u",
             description: "显示 server url",
@@ -244,9 +237,9 @@ const shortcutsPlugin = {
       },
     };
   },
-};
+});
 
-export default defineConfig({ plugins: [shortcutsPlugin] });
+export default defineConfig({ plugins: [shortcutsPlugin()] });
 ```
 
 `configureShortcuts` hook 返回 `PluginCliShortcut[]`,首个为某个 key 注册快捷键的插件
@@ -259,9 +252,8 @@ Core 刻意只暴露 `origin` 与 `close()`;更丰富的 action(重启、reload�
 等)由插件基于这些原语加自身工具实现,而非由 core 提供。需要帮助列表的插件可
 自行注册 `h`,读取它已知的快捷键描述。
 
-适用范围:该能力面向标准 Node dev server(utoopack dev worker + Hono API
-子进程)。wasm/web(Fetch runtime)dev 场景没有 Node 子进程也没有交互式 TTY
-循环,因此引擎在该路径下保持为 no-op。
+该引擎与 bundler 解耦：所选 Node CLI dev adapter 报告 client origin 后即可绑定。
+两个内置 adapter 都支持该 callback，且不要求存在 server/API 子进程。
 
 ## 传输层
 

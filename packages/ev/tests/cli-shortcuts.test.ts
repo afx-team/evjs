@@ -3,6 +3,7 @@ import {
   bindCLIShortcuts,
   createShortcutDispatcher,
   dedupeShortcuts,
+  normalizeShortcutKey,
   resolveShortcut,
 } from "../src/_internal/build/cli-shortcuts.js";
 import type {
@@ -35,10 +36,11 @@ describe("resolveShortcut (pure dispatch logic)", () => {
     expect(resolveShortcut("O\n", shortcuts)?.key).toBe("o");
   });
 
-  it("returns undefined for unknown keys and empty input", () => {
+  it("returns undefined for unknown, empty, and multi-character input", () => {
     expect(resolveShortcut("z", shortcuts)).toBeUndefined();
     expect(resolveShortcut("", shortcuts)).toBeUndefined();
     expect(resolveShortcut("   ", shortcuts)).toBeUndefined();
+    expect(resolveShortcut("open", shortcuts)).toBeUndefined();
   });
 
   it("returns a shortcut even when its action is undefined (caller skips)", () => {
@@ -50,16 +52,20 @@ describe("resolveShortcut (pure dispatch logic)", () => {
 });
 
 describe("dedupeShortcuts", () => {
-  it("drops later duplicates, keeping first-writer order", () => {
-    const first = { key: "p", description: "first", action: vi.fn() };
+  it("normalizes keys and drops later duplicates by first-writer order", () => {
+    const first = { key: " P ", description: "first", action: vi.fn() };
     const second = { key: "p", description: "second", action: vi.fn() };
     const third = { key: "q", description: "third", action: vi.fn() };
-    expect(dedupeShortcuts([first, second, third]).map((s) => s.key)).toEqual([
-      "p",
-      "q",
-    ]);
-    // The kept "p" is the first one.
-    expect(dedupeShortcuts([first, second, third])[0]).toBe(first);
+    const deduped = dedupeShortcuts([first, second, third]);
+    expect(deduped.map((s) => s.key)).toEqual(["p", "q"]);
+    expect(deduped[0]?.description).toBe("first");
+    expect(deduped[0]?.action).toBe(first.action);
+    expect(Object.isFrozen(deduped[0])).toBe(true);
+  });
+
+  it("rejects empty and multi-character registration keys", () => {
+    expect(() => normalizeShortcutKey(" ")).toThrow("single non-whitespace");
+    expect(() => normalizeShortcutKey("open")).toThrow("single non-whitespace");
   });
 });
 
@@ -127,6 +133,31 @@ describe("createShortcutDispatcher", () => {
     await dispatcher.dispatch("p");
     expect(action).toHaveBeenCalledTimes(1);
   });
+
+  it("waits for an in-flight action before becoming idle", async () => {
+    let resolveAction: () => void = () => {};
+    const action = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAction = resolve;
+        }),
+    );
+    const dispatcher = createShortcutDispatcher(createSession(), [
+      { key: "p", description: "pending", action },
+    ]);
+
+    const dispatch = dispatcher.dispatch("p");
+    let idle = false;
+    const waitForIdle = dispatcher.waitForIdle().then(() => {
+      idle = true;
+    });
+    await Promise.resolve();
+    expect(idle).toBe(false);
+
+    resolveAction();
+    await Promise.all([dispatch, waitForIdle]);
+    expect(idle).toBe(true);
+  });
 });
 
 describe("bindCLIShortcuts enable gating", () => {
@@ -142,7 +173,8 @@ describe("bindCLIShortcuts enable gating", () => {
     else process.env.CI = originalCI;
   });
 
-  it("is a no-op when disabled", () => {
+  it("is a no-op when disabled", async () => {
+    const dataListeners = process.stdin.listenerCount("data");
     const unbind = bindCLIShortcuts(
       createSession(),
       {
@@ -151,19 +183,52 @@ describe("bindCLIShortcuts enable gating", () => {
       false,
     );
     expect(typeof unbind).toBe("function");
-    unbind();
+    expect(process.stdin.listenerCount("data")).toBe(dataListeners);
+    await unbind();
   });
 
-  it("defaults to disabled under CI / non-TTY", () => {
+  it("defaults to disabled under CI / non-TTY", async () => {
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: false,
     });
     process.env.CI = "1";
+    const dataListeners = process.stdin.listenerCount("data");
     const unbind = bindCLIShortcuts(createSession(), {
       customShortcuts: [{ key: "p", description: "ping", action: vi.fn() }],
     });
     expect(typeof unbind).toBe("function");
-    unbind();
+    expect(process.stdin.listenerCount("data")).toBe(dataListeners);
+    await unbind();
+  });
+
+  it("detaches input without waiting forever for a stuck action", async () => {
+    const action = vi.fn(() => new Promise<void>(() => {}));
+    const unbind = bindCLIShortcuts(
+      createSession(),
+      {
+        customShortcuts: [{ key: "p", description: "pending", action }],
+      },
+      true,
+    );
+    process.stdin.emit("data", Buffer.from("p\n"));
+    await vi.waitFor(() => expect(action).toHaveBeenCalledOnce());
+
+    const result = await unbind({ actionDrainTimeoutMs: 5 });
+    expect(result.drained).toBe(false);
+  });
+
+  it("reports an idle binding as drained with a zero timeout", async () => {
+    const unbind = bindCLIShortcuts(
+      createSession(),
+      {
+        customShortcuts: [{ key: "p", description: "unused", action: vi.fn() }],
+      },
+      true,
+    );
+
+    const result = await unbind({ actionDrainTimeoutMs: 0 });
+    expect(result.drained).toBe(true);
+    await expect(result.idle).resolves.toBeUndefined();
   });
 });

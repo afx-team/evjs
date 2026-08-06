@@ -22,9 +22,24 @@ import type {
   TransformOutputContext,
 } from "../../plugin/index.js";
 import type { BundlerEmittedFiles } from "./bundler.js";
+import { normalizeShortcutKey } from "./cli-shortcuts.js";
 import { assertAfterBuildDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 
 const typedPluginHookNames: readonly (keyof PluginHooks)[] = PLUGIN_HOOK_NAMES;
+interface PluginHookOwnership {
+  pluginIds: Set<string>;
+  shortcutOwner?: string;
+  shortcutDescriptor?: Readonly<{
+    configurable: boolean;
+    enumerable: boolean;
+    value: NonNullable<PluginHooks["configureShortcuts"]>;
+    writable: boolean;
+  }>;
+}
+
+const pluginHookOwnership = new WeakMap<object, PluginHookOwnership>();
+
+class ReusedPluginHooksError extends Error {}
 
 interface PluginOrderDeclaration {
   id: string;
@@ -194,8 +209,14 @@ export async function collectPluginHooks<TBundlerCfg>(
       try {
         hooks = resolvePluginSetupHooks<TBundlerCfg>(plugin.id, setupResult);
       } catch (error) {
+        const setupResultAlreadyOwned =
+          setupResult !== null &&
+          typeof setupResult === "object" &&
+          pluginHookOwnership.has(setupResult);
         const rollbackHooks =
-          captureSetupRollbackHooks<TBundlerCfg>(setupResult);
+          error instanceof ReusedPluginHooksError || setupResultAlreadyOwned
+            ? undefined
+            : captureSetupRollbackHooks<TBundlerCfg>(setupResult);
         if (rollbackHooks) allHooks.push(rollbackHooks);
         throw error;
       }
@@ -266,6 +287,18 @@ function resolvePluginSetupHooks<TBundlerCfg>(
   }
 
   const hookConfig = hooks as Record<string, unknown>;
+  const existingOwnership = pluginHookOwnership.get(hookConfig);
+  if (existingOwnership?.shortcutOwner !== undefined) {
+    if (existingOwnership.shortcutOwner !== pluginId) {
+      throw new ReusedPluginHooksError(
+        `[evjs] Plugin "${pluginId}" setup hook cannot reuse shortcut hooks owned by plugin "${existingOwnership.shortcutOwner}". Hooks objects containing configureShortcuts cannot be shared by distinct plugin ids.`,
+      );
+    }
+    throw new ReusedPluginHooksError(
+      `[evjs] Plugin "${pluginId}" setup hook cannot reuse a hooks object containing configureShortcuts across setup snapshots. Return a fresh hooks object from each setup call.`,
+    );
+  }
+  let shortcutDescriptor: PluginHookOwnership["shortcutDescriptor"];
   for (const key of Reflect.ownKeys(hookConfig)) {
     if (typeof key !== "string") {
       throw new Error(
@@ -289,7 +322,40 @@ function resolvePluginSetupHooks<TBundlerCfg>(
         `[evjs] Plugin "${pluginId}" setup hook returned ${key} must be a function.`,
       );
     }
+    if (
+      key === "configureShortcuts" &&
+      typeof descriptor.value === "function"
+    ) {
+      shortcutDescriptor = Object.freeze({
+        configurable: descriptor.configurable ?? false,
+        enumerable: descriptor.enumerable ?? false,
+        value: descriptor.value as NonNullable<
+          PluginHooks["configureShortcuts"]
+        >,
+        writable: descriptor.writable ?? false,
+      });
+    }
   }
+  if (shortcutDescriptor && existingOwnership) {
+    const existingShortcutOwner = [...existingOwnership.pluginIds].find(
+      (existingPluginId) => existingPluginId !== pluginId,
+    );
+    if (existingShortcutOwner !== undefined) {
+      throw new ReusedPluginHooksError(
+        `[evjs] Plugin "${pluginId}" setup hook cannot reuse shortcut hooks owned by plugin "${existingShortcutOwner}". Hooks objects containing configureShortcuts cannot be shared by distinct plugin ids.`,
+      );
+    }
+    throw new ReusedPluginHooksError(
+      `[evjs] Plugin "${pluginId}" setup hook cannot reuse a hooks object containing configureShortcuts across setup snapshots. Return a fresh hooks object from each setup call.`,
+    );
+  }
+  const ownership = existingOwnership ?? { pluginIds: new Set<string>() };
+  ownership.pluginIds.add(pluginId);
+  if (shortcutDescriptor) {
+    ownership.shortcutOwner = pluginId;
+    ownership.shortcutDescriptor = shortcutDescriptor;
+  }
+  pluginHookOwnership.set(hookConfig, ownership);
   return hookConfig as PluginHooks<TBundlerCfg>;
 }
 
@@ -542,25 +608,172 @@ export async function runAfterBuildHooks<TBundlerCfg>(
 /**
  * Collect every plugin-contributed CLI shortcut, in plugin order.
  *
- * `configureShortcuts` runs at setup time, so the returned descriptors are
- * static; shortcut `action` callbacks receive the live {@link PluginDevSession}
- * only when the key is later pressed.
+ * `configureShortcuts` runs once per setup snapshot, so the returned
+ * descriptors are static for that snapshot; shortcut `action` callbacks
+ * receive the live {@link PluginDevSession} only when the key is later pressed.
  */
 export async function collectConfigureShortcutsHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
+  options: { onError?: (error: unknown) => void } = {},
 ): Promise<PluginCliShortcut[]> {
   const collected: PluginCliShortcut[] = [];
   // Snapshot so a config-reload `hooks.splice(...)` cannot mutate the array
   // mid-iteration across the per-hook `await` (see runDisposeHooks for the same
   // pattern).
+  const seenShortcutHooks = new WeakSet<object>();
   for (const hook of [...hooks]) {
-    if (!hook.configureShortcuts) continue;
-    const shortcuts = await hook.configureShortcuts();
-    for (const shortcut of shortcuts) {
-      collected.push(shortcut);
+    if (seenShortcutHooks.has(hook)) continue;
+    seenShortcutHooks.add(hook);
+    try {
+      const ownership = pluginHookOwnership.get(hook);
+      const descriptor = Object.getOwnPropertyDescriptor(
+        hook,
+        "configureShortcuts",
+      );
+      const expectedDescriptor = ownership?.shortcutDescriptor;
+      let configureShortcuts: NonNullable<PluginHooks["configureShortcuts"]>;
+      if (ownership?.shortcutOwner !== undefined) {
+        if (
+          !descriptor ||
+          !expectedDescriptor ||
+          !("value" in descriptor) ||
+          descriptor.value !== expectedDescriptor.value ||
+          (descriptor.configurable ?? false) !==
+            expectedDescriptor.configurable ||
+          (descriptor.enumerable ?? false) !== expectedDescriptor.enumerable ||
+          (descriptor.writable ?? false) !== expectedDescriptor.writable
+        ) {
+          throw new ReusedPluginHooksError(
+            `[evjs] Plugin "${ownership.shortcutOwner}" configureShortcuts hook was mutated after setup validation. Return a fresh hooks object from setup instead of mutating a validated snapshot.`,
+          );
+        }
+        configureShortcuts = expectedDescriptor.value;
+      } else {
+        if (
+          !descriptor ||
+          ("value" in descriptor && descriptor.value === undefined)
+        ) {
+          continue;
+        }
+        if (
+          !descriptor.enumerable ||
+          !("value" in descriptor) ||
+          typeof descriptor.value !== "function"
+        ) {
+          throw new ReusedPluginHooksError(
+            `[evjs] configureShortcuts added after setup validation must be an enumerable own data function. Return a fresh hooks object from setup.`,
+          );
+        }
+        if (ownership) {
+          throw new ReusedPluginHooksError(
+            `[evjs] Hooks object owned by ${[...ownership.pluginIds]
+              .map((pluginId) => `"${pluginId}"`)
+              .join(
+                ", ",
+              )} cannot add configureShortcuts after setup validation. Return a fresh hooks object from setup.`,
+          );
+        }
+        configureShortcuts = descriptor.value as NonNullable<
+          PluginHooks["configureShortcuts"]
+        >;
+      }
+      const pluginId = ownership?.shortcutOwner ?? "unknown";
+      let value: unknown;
+      try {
+        value = await Reflect.apply(configureShortcuts, hook, []);
+      } catch (error) {
+        throw new Error(
+          `[evjs] Plugin "${pluginId}" configureShortcuts hook failed: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      const shortcuts = resolvePluginCliShortcuts(pluginId, value);
+      collected.push(...shortcuts);
+    } catch (error) {
+      if (!options.onError) throw error;
+      options.onError(error);
     }
   }
   return collected;
+}
+
+function resolvePluginCliShortcuts(
+  pluginId: string,
+  value: unknown,
+): PluginCliShortcut[] {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `[evjs] Plugin "${pluginId}" configureShortcuts hook must return an array.`,
+    );
+  }
+
+  const resolved: PluginCliShortcut[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const path = `Plugin "${pluginId}" configureShortcuts item ${index}`;
+    const itemDescriptor = Object.getOwnPropertyDescriptor(
+      value,
+      String(index),
+    );
+    if (!itemDescriptor?.enumerable || !("value" in itemDescriptor)) {
+      throw new Error(`[evjs] ${path} must be an array data property.`);
+    }
+    const shortcut = itemDescriptor.value;
+    if (
+      !shortcut ||
+      typeof shortcut !== "object" ||
+      Array.isArray(shortcut) ||
+      !isPlainObject(shortcut)
+    ) {
+      throw new Error(`[evjs] ${path} must be a shortcut object.`);
+    }
+
+    const record = shortcut as Record<string, unknown>;
+    for (const key of Reflect.ownKeys(record)) {
+      const descriptor = Object.getOwnPropertyDescriptor(record, key);
+      if (
+        typeof key !== "string" ||
+        !["key", "description", "action"].includes(key) ||
+        !descriptor?.enumerable ||
+        !("value" in descriptor)
+      ) {
+        throw new Error(
+          `[evjs] ${path} must contain only key, description, and optional action data properties.`,
+        );
+      }
+    }
+
+    if (typeof record.key !== "string") {
+      throw new Error(`[evjs] ${path}.key must be a string.`);
+    }
+    let key: string;
+    try {
+      key = normalizeShortcutKey(record.key);
+    } catch {
+      throw new Error(
+        `[evjs] ${path}.key must be a single non-whitespace character.`,
+      );
+    }
+    if (
+      typeof record.description !== "string" ||
+      record.description.trim() === ""
+    ) {
+      throw new Error(`[evjs] ${path}.description must be a non-empty string.`);
+    }
+    if (record.action !== undefined && typeof record.action !== "function") {
+      throw new Error(
+        `[evjs] ${path}.action must be a function when provided.`,
+      );
+    }
+
+    resolved.push(
+      Object.freeze({
+        key,
+        description: record.description,
+        ...(record.action === undefined ? {} : { action: record.action }),
+      }) as PluginCliShortcut,
+    );
+  }
+  return resolved;
 }
 
 export async function runDisposeHooks<TBundlerCfg>(
