@@ -9,8 +9,10 @@ export interface RouteDirectoryWatchState {
   unsafeBoundary?: string;
 }
 
+export type WatchFilesMode = "events" | "polling";
+
 export interface WatchFilesOptions {
-  readonly mode?: "events" | "polling";
+  readonly mode?: WatchFilesMode;
   readonly onError: (error: Error) => void;
   readonly onFallback?: (error: Error) => void;
   readonly recoverableMissingTargets?: ReadonlySet<string>;
@@ -72,8 +74,24 @@ interface StartPollingOptions {
   readonly invalidateChangedTargets?: boolean;
 }
 
+interface PollingResourceRetryState {
+  readonly failureCount: number;
+  readonly retryAt: number;
+}
+
 const POLLING_INTERVAL_MS = 100;
+const MAX_POLLING_RESOURCE_RETRY_MS = 2_000;
 const POLLING_READ_CANCELLED = Symbol("polling-read-cancelled");
+
+export function resolveInitialDevWatchMode(
+  platform: NodeJS.Platform = process.platform,
+  sandbox: string | undefined = process.env.CODEX_SANDBOX,
+): WatchFilesMode {
+  // Codex's macOS Seatbelt profile currently denies the FSEvents service used
+  // by directory fs.watch(), which Node reports as a misleading EMFILE error.
+  // Skip that known-to-fail probe and use EVJS's existing polling backend.
+  return platform === "darwin" && sandbox === "seatbelt" ? "polling" : "events";
+}
 
 export function listConfigDependencyFiles(cwd: string): string[] {
   return ["ev.config.ts", "ev.config.js", "ev.config.mjs"].map((file) =>
@@ -91,7 +109,7 @@ export function createWatchFilesPlan(
   const groups = new Map<string, PhysicalWatchGroup>();
   const logicalFiles = [
     ...new Set(files.map((authoredFile) => path.resolve(authoredFile))),
-  ];
+  ].sort();
   const logicalTargets: string[] = [];
   const signatures: string[] = [];
   const watchTargetIdentities = new Map<string, string>();
@@ -273,6 +291,7 @@ export function watchFiles(
     plan;
   const watchers: fs.FSWatcher[] = [];
   const pollingSnapshots = new Map<string, string>();
+  const pollingResourceRetries = new Map<string, PollingResourceRetryState>();
   let eventWatchersClosed = false;
   let polling = false;
   let pollingTask: Promise<void> | undefined;
@@ -301,6 +320,7 @@ export function watchFiles(
     if (pollingTimer) clearTimeout(pollingTimer);
     pollingTimer = undefined;
     pollingSnapshots.clear();
+    pollingResourceRetries.clear();
     return [];
   };
 
@@ -386,6 +406,8 @@ export function watchFiles(
     const nextSnapshots = new Map<string, string>();
     for (const file of logicalTargets) {
       if (stopped || !polling) return;
+      const resourceRetry = pollingResourceRetries.get(file);
+      if (resourceRetry && resourceRetry.retryAt > Date.now()) continue;
       try {
         const snapshot = await readPollingSnapshotAsync(
           file,
@@ -393,9 +415,21 @@ export function watchFiles(
           () => !stopped && polling,
         );
         if (snapshot === POLLING_READ_CANCELLED) return;
+        pollingResourceRetries.delete(file);
         nextSnapshots.set(file, snapshot);
       } catch (error) {
-        if (isWatchResourceError(error)) continue;
+        if (isWatchResourceError(error)) {
+          const failureCount = (resourceRetry?.failureCount ?? 0) + 1;
+          const retryDelay = Math.min(
+            POLLING_INTERVAL_MS * 2 ** Math.min(failureCount, 5),
+            MAX_POLLING_RESOURCE_RETRY_MS,
+          );
+          pollingResourceRetries.set(file, {
+            failureCount,
+            retryAt: Date.now() + retryDelay,
+          });
+          continue;
+        }
         if (!stopped && polling) reportFailure(file, error);
         return;
       }
@@ -583,9 +617,20 @@ export function watchFiles(
       };
       const watcher = fs.watch(watchTarget, listener);
       watchers.push(watcher);
+      watcher.once("close", () => {
+        if (eventWatchersClosed || stopped || polling) return;
+        startPolling({
+          fallbackError: createWatchError(
+            watchTarget,
+            new Error("Native filesystem watcher closed unexpectedly."),
+          ),
+          forceInvalidateTargets: new Set(targets.map((target) => target.file)),
+          invalidateChangedTargets: true,
+        });
+      });
       watcher.on("error", (error) => {
         if (eventWatchersClosed) return;
-        if (isWatchResourceError(error)) {
+        if (isNativeWatchUnavailableError(error)) {
           startPolling({
             fallbackError: createWatchError(watchTarget, error),
             invalidateChangedTargets: true,
@@ -605,7 +650,7 @@ export function watchFiles(
         if (recovery.failure) throw recovery.failure;
         break;
       }
-      if (isWatchResourceError(error)) {
+      if (isNativeWatchUnavailableError(error)) {
         const pollingFailure = startPolling({
           fallbackError: createWatchError(watchTarget, error),
           invalidateChangedTargets: true,
@@ -850,7 +895,13 @@ function readSymlinkResolutionChain(target: string): SymlinkBoundary[] {
       visitedStates.add(state);
       followedLinks += 1;
 
-      const linkTarget = fs.readlinkSync(candidate);
+      let linkTarget: string;
+      try {
+        linkTarget = fs.readlinkSync(candidate);
+      } catch (error) {
+        if (isReadlinkTopologyRaceError(error)) return boundaries;
+        throw error;
+      }
       if (!boundaryPaths.has(candidate)) {
         const ownIdentity = serializeWatchIdentity(own);
         boundaries.push({
@@ -902,6 +953,21 @@ function isWatchResourceError(error: unknown): boolean {
   return code === "EMFILE" || code === "ENFILE" || code === "ENOSPC";
 }
 
+function isNativeWatchUnavailableError(error: unknown): boolean {
+  if (isWatchResourceError(error)) return true;
+  const code = (error as NodeJS.ErrnoException).code;
+  return (
+    code === "ENOSYS" ||
+    code === "ENOTSUP" ||
+    code === "EOPNOTSUPP" ||
+    code === "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM"
+  );
+}
+
+function isReadlinkTopologyRaceError(error: unknown): boolean {
+  return isMissingPathError(error) || isErrnoCode(error, "EINVAL");
+}
+
 function readPollingSnapshot(file: string): string {
   let own: fs.BigIntStats;
   try {
@@ -945,7 +1011,11 @@ function readMissingPollingSnapshot(file: string): string {
       let linkTarget: string | undefined;
       let target: fs.BigIntStats | undefined;
       if (own.isSymbolicLink()) {
-        linkTarget = fs.readlinkSync(ancestor);
+        try {
+          linkTarget = fs.readlinkSync(ancestor);
+        } catch (error) {
+          if (!isReadlinkTopologyRaceError(error)) throw error;
+        }
         try {
           target = fs.statSync(ancestor, { bigint: true });
         } catch (error) {
@@ -1155,7 +1225,7 @@ function readCachedReadlink(
   const cached = cache.readlinks.get(file);
   if (cached) return cached;
   const pending = fs.promises.readlink(file).catch((error: unknown) => {
-    if (isMissingPathError(error)) return undefined;
+    if (isReadlinkTopologyRaceError(error)) return undefined;
     throw error;
   });
   cache.readlinks.set(file, pending);
