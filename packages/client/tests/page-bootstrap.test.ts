@@ -87,6 +87,46 @@ describe("SPA page bootstrap", () => {
     ]);
   });
 
+  it("stays unmounted when unmount runs while a replacement Router loads", async () => {
+    const loadStarted = createDeferred<void>();
+    const releaseLoad = createDeferred<void>();
+    const pagesApp = createRuntimeRacePagesApp(loadStarted, releaseLoad);
+    const mount = {} as HTMLElement;
+
+    pagesApp.app.render(mount);
+    const update = pagesApp.updateRuntime({ routes: [] });
+    await loadStarted.promise;
+
+    pagesApp.app.unmount();
+    releaseLoad.resolve();
+    await update;
+
+    expect(reactRootCalls).toEqual(["createRoot", "render", "unmount"]);
+  });
+
+  it("keeps a render started while a replacement Router loads mounted", async () => {
+    const loadStarted = createDeferred<void>();
+    const releaseLoad = createDeferred<void>();
+    const pagesApp = createRuntimeRacePagesApp(loadStarted, releaseLoad);
+    const mount = {} as HTMLElement;
+
+    void pagesApp.app.router;
+    const update = pagesApp.updateRuntime({ routes: [] });
+    await loadStarted.promise;
+
+    pagesApp.app.render(mount);
+    releaseLoad.resolve();
+    await update;
+
+    expect(reactRootCalls).toEqual([
+      "createRoot",
+      "render",
+      "unmount",
+      "createRoot",
+      "render",
+    ]);
+  });
+
   it("validates render options before mounting", () => {
     const { app } = createTestPagesApp();
     const mount = {} as HTMLElement;
@@ -148,6 +188,30 @@ function createTestPagesApp() {
   }
   return createPagesApp({
     routes: [{ path: "/", module: { default: Home } }],
+  });
+}
+
+function createRuntimeRacePagesApp(
+  loadStarted: ReturnType<typeof createDeferred<void>>,
+  releaseLoad: ReturnType<typeof createDeferred<void>>,
+) {
+  function Home() {
+    return null;
+  }
+  return createPagesApp({
+    routes: [
+      {
+        path: "/",
+        module: {
+          default: Home,
+          async loader() {
+            loadStarted.resolve();
+            await releaseLoad.promise;
+          },
+        },
+      },
+    ],
+    history: { type: "memory", initialEntries: ["/"] },
   });
 }
 

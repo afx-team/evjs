@@ -265,7 +265,6 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
 
     const previousRuntime = activeRuntime;
     const previousState = runtimeState;
-    const previousMount = mountedApp;
     const retainedHistory = historyChanged
       ? undefined
       : previousRuntime.history;
@@ -294,8 +293,8 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       }
       activeRuntime = candidate;
       runtimeState = nextState;
-      if (previousMount) {
-        await candidate.app.render(previousMount.container, { hydrate: false });
+      if (mountedApp) {
+        await candidate.app.render(mountedApp.container, { hydrate: false });
       }
       if (
         historyChanged &&
@@ -324,8 +323,8 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
           activeRuntime = previousRuntime;
         }
         runtimeState = previousState;
-        if (previousMount && previousUnmounted) {
-          await activeRuntime.app.render(previousMount.container, {
+        if (mountedApp && previousUnmounted) {
+          await activeRuntime.app.render(mountedApp.container, {
             hydrate: false,
           });
         }
