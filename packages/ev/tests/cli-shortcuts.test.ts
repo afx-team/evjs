@@ -4,6 +4,20 @@ import {
   bindCLIShortcuts,
   type DevSession,
 } from "../src/_internal/build/cli-shortcuts.js";
+import {
+  collectConfigureShortcutsHooks,
+  collectPluginHooks,
+} from "../src/_internal/build/plugin-lifecycle.js";
+import type { Plugin, PluginSetupContext } from "../src/plugin/index.js";
+
+/** Minimal setup context satisfying collectPluginHooks without a real config. */
+const testSetupContext = {
+  mode: "development",
+  cwd: "/project",
+  config: {} as PluginSetupContext["config"],
+  logger: {} as PluginSetupContext["logger"],
+  addWatchFile() {},
+} satisfies PluginSetupContext;
 
 function createSession(): DevSession & {
   restartServerRuntime: ReturnType<typeof vi.fn>;
@@ -247,5 +261,106 @@ describe("bindCLIShortcuts", () => {
     await sendLine(input, "q");
     unbind();
     expect(action).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("plugin-contributed shortcut (end-to-end)", () => {
+  let consoleLog: ReturnType<typeof vi.spyOn>;
+
+  afterEach(() => {
+    consoleLog?.mockRestore();
+  });
+
+  it("logs the test-case name to stdout when its plugin-registered key is pressed", async () => {
+    // The test-case name is what the plugin's shortcut action writes via console.log.
+    const TEST_CASE_NAME = "test-log-fired-x4k7";
+    let resolveAction: () => void = () => {};
+    const actionRan = new Promise<void>((resolve) => {
+      resolveAction = resolve;
+    });
+
+    const input = new PassThrough();
+    const plugin: Plugin = {
+      id: "test-log-plugin",
+      setup() {
+        return {
+          configureShortcuts() {
+            return [
+              {
+                key: "t",
+                description: "log the test-case name to stdout",
+                action() {
+                  // biome-ignore lint/suspicious/noConsole: the shortcut action's job is to log the test-case name
+                  console.log(TEST_CASE_NAME);
+                  resolveAction();
+                },
+              },
+            ];
+          },
+        };
+      },
+    };
+
+    // Collect shortcuts the way the dev() orchestrator does: plugin setup hook
+    // -> lifecycle collector -> engine binding.
+    const hooks = await collectPluginHooks([plugin], testSetupContext);
+    const customShortcuts = await collectConfigureShortcutsHooks(hooks);
+    expect(customShortcuts.map((s) => s.key)).toEqual(["t"]);
+
+    consoleLog = vi.spyOn(console, "log");
+    const unbind = bindCLIShortcuts(
+      createSession(),
+      { customShortcuts, input },
+      true,
+    );
+
+    input.write("t\n");
+    await actionRan;
+    unbind();
+
+    expect(consoleLog).toHaveBeenCalledTimes(1);
+    expect(consoleLog).toHaveBeenCalledWith(TEST_CASE_NAME);
+  });
+
+  it("pressing an unregistered key does not write the test-case name", async () => {
+    const TEST_CASE_NAME = "test-log-should-not-fire";
+    const action = vi.fn(() => {
+      // biome-ignore lint/suspicious/noConsole: the shortcut action's job is to log the test-case name
+      console.log(TEST_CASE_NAME);
+    });
+    const input = new PassThrough();
+    const plugin: Plugin = {
+      id: "test-log-plugin",
+      setup() {
+        return {
+          configureShortcuts() {
+            return [
+              {
+                key: "t",
+                description: "log the test-case name to stdout",
+                action,
+              },
+            ];
+          },
+        };
+      },
+    };
+
+    const hooks = await collectPluginHooks([plugin], testSetupContext);
+    const customShortcuts = await collectConfigureShortcutsHooks(hooks);
+
+    consoleLog = vi.spyOn(console, "log");
+    const unbind = bindCLIShortcuts(
+      createSession(),
+      { customShortcuts, input },
+      true,
+    );
+
+    input.write("z\n"); // key not registered
+    await sendLine(input, "z");
+    unbind();
+
+    expect(action).not.toHaveBeenCalled();
+    expect(consoleLog).not.toHaveBeenCalled();
   });
 });
