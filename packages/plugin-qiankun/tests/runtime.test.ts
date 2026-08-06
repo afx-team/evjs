@@ -849,6 +849,35 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
   });
 
+  it("does not roll back a slave projection that never committed", async () => {
+    const projectionError = new Error("projection failed");
+    const updateRuntime = vi.fn(async () => {
+      throw projectionError;
+    });
+    const start = vi.fn();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      async loadEntry() {
+        return {
+          pagesApp: { updateRuntime },
+          start,
+        };
+      },
+    });
+
+    await expect(
+      slave.mount({
+        container: createElement(),
+        base: "/catalog",
+        history: "hash",
+      }),
+    ).rejects.toBe(projectionError);
+
+    expect(updateRuntime).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+  });
+
   it("runs slave post lifecycles after mount and every mounted update", async () => {
     const calls: string[] = [];
     const container = createElement();
@@ -1399,10 +1428,10 @@ describe("@evjs/plugin-qiankun runtime", () => {
         { path: "/$", module: { default: () => null } },
       ],
     });
-    const router = pagesApp.app.router as {
+    const initialRouter = pagesApp.app.router as {
       history: ReturnType<typeof createQiankunSlaveHistory>;
     };
-    const initialHistory = router.history;
+    const initialHistory = initialRouter.history;
     const mountError = new Error("entry start failed");
     const retryError = new Error("runtime mount failed");
     const runtimeMount = vi
@@ -1433,7 +1462,11 @@ describe("@evjs/plugin-qiankun runtime", () => {
         }),
       ).rejects.toBe(mountError);
 
-      const restoredHistory = router.history;
+      const restoredRouter = pagesApp.app.router as {
+        history: ReturnType<typeof createQiankunSlaveHistory>;
+      };
+      const restoredHistory = restoredRouter.history;
+      expect(restoredRouter).not.toBe(initialRouter);
       expect(restoredHistory).not.toBe(initialHistory);
       expect(restoredHistory.location.href).toBe("/catalog");
       expect(win.history.pushState).toBe(hostPushState);
@@ -1447,8 +1480,9 @@ describe("@evjs/plugin-qiankun runtime", () => {
           history: "browser",
         }),
       ).rejects.toBe(retryError);
-      expect(router.history).toBe(restoredHistory);
-      expect(router.history.location.href).toBe("/catalog");
+      expect(pagesApp.app.router).toBe(restoredRouter);
+      expect(restoredRouter.history).toBe(restoredHistory);
+      expect(restoredRouter.history.location.href).toBe("/catalog");
       expect(win.listenerCount("popstate")).toBe(2);
 
       await slave.unmount();

@@ -11,7 +11,7 @@ import {
   clonePageMetadata,
   type PageMetadata,
 } from "@evjs/shared/manifest";
-import type { QueryClient } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import type {
   AnyRoute,
   AnyRouter,
@@ -147,26 +147,64 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   assertCreatePagesAppOptions(options);
   const canonicalRoutes = clonePageDefinitions(options.routes);
   const rootModule = options.rootModule;
-  const initialHistory =
-    options.history === undefined
-      ? undefined
-      : resolvePagesAppHistory(options.history);
-  const routeTree = createGeneratedRouteTree({
-    routes: canonicalRoutes,
-    ...(rootModule ? { rootModule } : {}),
-  });
-  const app = createApp({
-    routeTree,
+  const queryClient = new QueryClient();
+  let runtimeState: PagesAppRuntimeState = {
+    routes: [],
     ...(options.basepath !== undefined ? { basepath: options.basepath } : {}),
-    ...(initialHistory ? { history: initialHistory.history } : {}),
-  });
-  let runtimeRoutes: PageDefinition[] = [];
-  let currentBasepath = options.basepath;
-  let currentHistory = captureInitialPagesAppHistory(
-    app.router,
-    initialHistory,
-  );
+    ...(options.history !== undefined
+      ? { history: clonePagesAppHistoryInput(options.history) }
+      : {}),
+  };
+  let activeRuntime: ActivePagesAppRuntime | undefined;
+  let mountedApp: MountedPagesApp | undefined;
   let runtimeUpdateQueue = Promise.resolve();
+
+  const app: App<AnyRouter> = {
+    get router() {
+      return getActiveRuntime().app.router;
+    },
+    queryClient,
+    render(container, renderOptions = {}) {
+      const runtime = getActiveRuntime();
+      mountedApp = {
+        container,
+      };
+      return runtime.app.render(container, renderOptions);
+    },
+    unmount() {
+      mountedApp = undefined;
+      activeRuntime?.app.unmount();
+    },
+  };
+
+  function getActiveRuntime(): ActivePagesAppRuntime {
+    activeRuntime ??= createPagesAppRuntime(runtimeState);
+    return activeRuntime;
+  }
+
+  function createPagesAppRuntime(
+    state: PagesAppRuntimeState,
+    retainedHistory?: ManagedPagesAppHistory,
+  ): ActivePagesAppRuntime {
+    let history = retainedHistory;
+    if (!history && state.history !== undefined) {
+      history = resolvePagesAppHistory(state.history);
+    }
+    const routeTree = createGeneratedRouteTree({
+      routes: composePageDefinitions(canonicalRoutes, state.routes),
+      ...(rootModule ? { rootModule } : {}),
+    });
+    const runtimeApp = createApp({
+      routeTree,
+      queryClient,
+      ...(state.basepath !== undefined ? { basepath: state.basepath } : {}),
+      ...(history ? { history: history.history } : {}),
+    });
+    return {
+      app: runtimeApp,
+      history: captureInitialPagesAppHistory(runtimeApp.router, history),
+    };
+  }
 
   function updateRuntime(
     runtimeOptions: PagesAppRuntimeOptions,
@@ -183,91 +221,114 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   ): Promise<void> {
     assertPagesAppRuntimeOptions(runtimeOptions);
     const hasRouteUpdate = runtimeOptions.routes !== undefined;
-    const runtimeRouteOverlay = runtimeOptions.routes ?? [];
     const nextRuntimeRoutes = hasRouteUpdate
-      ? clonePageDefinitions(runtimeRouteOverlay)
-      : runtimeRoutes;
-    const nextRoutes = hasRouteUpdate
-      ? composePageDefinitions(canonicalRoutes, nextRuntimeRoutes)
-      : undefined;
-    if (nextRoutes) {
+      ? clonePageDefinitions(runtimeOptions.routes ?? [])
+      : runtimeState.routes;
+    if (hasRouteUpdate) {
       assertCreatePagesAppOptions({
-        routes: nextRoutes,
+        routes: composePageDefinitions(canonicalRoutes, nextRuntimeRoutes),
         ...(rootModule ? { rootModule } : {}),
       });
     }
-    const nextBasepath = runtimeOptions.basepath ?? currentBasepath;
-    const nextRouteTree = hasRouteUpdate
-      ? createGeneratedRouteTree({
-          routes: nextRoutes ?? canonicalRoutes,
-          ...(rootModule ? { rootModule } : {}),
-        })
-      : app.router.routeTree;
-    const previousRouterOptions = app.router.options;
-    const previousRouteTree = app.router.routeTree;
-    const previousBasepath = app.router.basepath;
-    const previousHistory = app.router.history;
-    const previousMatches = snapshotRouterMatches(app.router);
+    const nextBasepath = runtimeOptions.basepath ?? runtimeState.basepath;
     const historyChanged =
       runtimeOptions.history !== undefined &&
       !pagesAppHistoryInputMatchesCurrent(
         runtimeOptions.history,
-        currentHistory,
+        activeRuntime?.history,
+        runtimeState.history,
       );
-    let nextHistory = currentHistory;
-    let destroyedCurrentHistoryBeforeReplace = false;
+    const nextHistory =
+      runtimeOptions.history !== undefined
+        ? clonePagesAppHistoryInput(runtimeOptions.history)
+        : runtimeState.history;
+    const nextState: PagesAppRuntimeState = {
+      routes: nextRuntimeRoutes,
+      ...(nextBasepath !== undefined ? { basepath: nextBasepath } : {}),
+      ...(nextHistory !== undefined ? { history: nextHistory } : {}),
+    };
+
+    // Generated qiankun entries project base/history before their first render.
+    // Commit that descriptor without constructing a throwaway Router.
+    if (!activeRuntime) {
+      runtimeState = nextState;
+      return;
+    }
+
+    if (
+      !hasRouteUpdate &&
+      runtimeOptions.basepath === undefined &&
+      !historyChanged
+    ) {
+      return;
+    }
+
+    const previousRuntime = activeRuntime;
+    const previousState = runtimeState;
+    const previousMount = mountedApp;
+    const retainedHistory = historyChanged
+      ? undefined
+      : previousRuntime.history;
+    const releaseBeforeCandidate =
+      historyChanged &&
+      shouldReleaseHistoryBeforeReplacement(
+        previousRuntime.history,
+        nextState.history,
+      );
+    let previousReleased = false;
+    let previousUnmounted = false;
+    let candidate: ActivePagesAppRuntime | undefined;
 
     try {
-      if (historyChanged && runtimeOptions.history !== undefined) {
-        if (
-          !isRouterHistory(runtimeOptions.history) &&
-          currentHistory?.owned &&
-          currentHistory.descriptor &&
-          currentHistory.descriptor.type !== "memory"
-        ) {
-          // TanStack patches browser/hash globals, so release the current
-          // framework-owned instance before constructing its replacement.
-          currentHistory.history.destroy();
-          destroyedCurrentHistoryBeforeReplace = true;
-        }
-        nextHistory = resolvePagesAppHistory(runtimeOptions.history);
+      if (releaseBeforeCandidate) {
+        previousRuntime.app.unmount();
+        previousUnmounted = true;
+        previousReleased = true;
+        previousRuntime.history?.history.destroy();
       }
-      app.router.update({
-        ...app.router.options,
-        routeTree: nextRouteTree,
-        ...(nextBasepath !== undefined ? { basepath: nextBasepath } : {}),
-        ...(nextHistory ? { history: nextHistory.history } : {}),
-      });
-      if (hasRouteUpdate) pruneRouterMatches(app.router);
-      await loadUpdatedRouter(app.router);
+      candidate = createPagesAppRuntime(nextState, retainedHistory);
+      await candidate.app.router.load();
+      if (!previousUnmounted) {
+        previousRuntime.app.unmount();
+        previousUnmounted = true;
+      }
+      activeRuntime = candidate;
+      runtimeState = nextState;
+      if (previousMount) {
+        await candidate.app.render(previousMount.container, { hydrate: false });
+      }
+      if (
+        historyChanged &&
+        !previousReleased &&
+        previousRuntime.history?.owned &&
+        previousRuntime.history.history !== candidate.history?.history
+      ) {
+        previousReleased = true;
+        previousRuntime.history.history.destroy();
+      }
     } catch (error) {
       let rollbackError: unknown;
       try {
+        candidate?.app.unmount();
         if (
-          nextHistory?.owned &&
-          nextHistory !== currentHistory &&
-          nextHistory.history !== previousHistory
+          candidate?.history?.owned &&
+          candidate.history.history !== previousRuntime.history?.history
         ) {
-          nextHistory.history.destroy();
+          candidate.history.history.destroy();
         }
-        let rollbackHistory = previousHistory;
-        if (
-          destroyedCurrentHistoryBeforeReplace &&
-          currentHistory?.descriptor
-        ) {
-          const restoredHistory = resolvePagesAppHistory(
-            currentHistory.descriptor,
-          );
-          currentHistory = restoredHistory;
-          rollbackHistory = restoredHistory.history;
+        if (previousReleased) {
+          const restoredRuntime = createPagesAppRuntime(previousState);
+          await restoredRuntime.app.router.load();
+          activeRuntime = restoredRuntime;
+        } else {
+          activeRuntime = previousRuntime;
         }
-        app.router.update({
-          ...previousRouterOptions,
-          routeTree: previousRouteTree,
-          basepath: previousBasepath,
-          ...(rollbackHistory ? { history: rollbackHistory } : {}),
-        });
-        restoreRouterMatches(app.router, previousMatches);
+        runtimeState = previousState;
+        if (previousMount && previousUnmounted) {
+          await activeRuntime.app.render(previousMount.container, {
+            hydrate: false,
+          });
+        }
       } catch (caught) {
         rollbackError = caught;
       }
@@ -279,85 +340,30 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       }
       throw error;
     }
-
-    runtimeRoutes = nextRuntimeRoutes;
-    currentBasepath = nextBasepath;
-    if (
-      historyChanged &&
-      !destroyedCurrentHistoryBeforeReplace &&
-      currentHistory?.owned &&
-      nextHistory !== currentHistory
-    ) {
-      // Retain the previous instance until the update commits so rollback can
-      // continue using it. Browser/hash replacements created from descriptors
-      // are the exception above because TanStack patches their shared globals.
-      currentHistory.history.destroy();
-    }
-    currentHistory = nextHistory;
   }
 
   return { app, updateRuntime };
+}
+
+interface PagesAppRuntimeState {
+  routes: PageDefinition[];
+  basepath?: string;
+  history?: PagesAppHistoryInput;
+}
+
+interface ActivePagesAppRuntime {
+  app: App<AnyRouter>;
+  history?: ManagedPagesAppHistory;
+}
+
+interface MountedPagesApp {
+  container: string | HTMLElement;
 }
 
 interface ManagedPagesAppHistory {
   history: RouterHistory;
   owned: boolean;
   descriptor?: PagesAppHistoryDescriptor;
-}
-
-type PagesRouterMatches = ReturnType<AnyRouter["stores"]["matches"]["get"]>;
-
-interface PagesRouterMatchSnapshot {
-  matches: PagesRouterMatches;
-  pending: PagesRouterMatches;
-  cached: PagesRouterMatches;
-}
-
-async function loadUpdatedRouter(router: AnyRouter): Promise<void> {
-  if (!router.history || !router.stores) return;
-  await router.load();
-}
-
-function snapshotRouterMatches(
-  router: AnyRouter,
-): PagesRouterMatchSnapshot | undefined {
-  if (!router.stores) return undefined;
-  return {
-    matches: [...router.stores.matches.get()],
-    pending: [...router.stores.pendingMatches.get()],
-    cached: [...router.stores.cachedMatches.get()],
-  };
-}
-
-function pruneRouterMatches(router: AnyRouter): void {
-  if (!router.stores) return;
-  // TanStack Router caches exiting matches during load. Remove matches for
-  // deleted overlay Routes first so cache cleanup never resolves a stale ID.
-  const keepKnownRoute = (match: PagesRouterMatches[number]) =>
-    Object.hasOwn(router.routesById, match.routeId);
-  router.batch(() => {
-    router.stores.setMatches(
-      router.stores.matches.get().filter(keepKnownRoute),
-    );
-    router.stores.setPending(
-      router.stores.pendingMatches.get().filter(keepKnownRoute),
-    );
-    router.stores.setCached(
-      router.stores.cachedMatches.get().filter(keepKnownRoute),
-    );
-  });
-}
-
-function restoreRouterMatches(
-  router: AnyRouter,
-  snapshot: PagesRouterMatchSnapshot | undefined,
-): void {
-  if (!router.stores || !snapshot) return;
-  router.batch(() => {
-    router.stores.setMatches(snapshot.matches);
-    router.stores.setPending(snapshot.pending);
-    router.stores.setCached(snapshot.cached);
-  });
 }
 
 function captureInitialPagesAppHistory(
@@ -405,12 +411,39 @@ function resolvePagesAppHistory(
 function pagesAppHistoryInputMatchesCurrent(
   input: PagesAppHistoryInput,
   current: ManagedPagesAppHistory | undefined,
+  configured: PagesAppHistoryInput | undefined,
 ): boolean {
-  if (!current) return false;
+  if (!current) {
+    if (configured === undefined) return false;
+    if (isRouterHistory(input) || isRouterHistory(configured)) {
+      return input === configured;
+    }
+    return equalPagesAppHistoryDescriptors(configured, input);
+  }
   if (isRouterHistory(input)) return current.history === input;
   return (
     current.descriptor !== undefined &&
     equalPagesAppHistoryDescriptors(current.descriptor, input)
+  );
+}
+
+function clonePagesAppHistoryInput(
+  input: PagesAppHistoryInput,
+): PagesAppHistoryInput {
+  return isRouterHistory(input) ? input : clonePagesAppHistoryDescriptor(input);
+}
+
+function shouldReleaseHistoryBeforeReplacement(
+  current: ManagedPagesAppHistory | undefined,
+  next: PagesAppHistoryInput | undefined,
+): boolean {
+  return (
+    current?.owned === true &&
+    current.descriptor !== undefined &&
+    current.descriptor.type !== "memory" &&
+    next !== undefined &&
+    !isRouterHistory(next) &&
+    next.type !== "memory"
   );
 }
 

@@ -192,9 +192,18 @@ local `/details` is rendered at `/catalog/details`.
 
 The slave lifecycle loads the original generated entry, projects the received
 `base` and `history` through `pagesApp.updateRuntime()`, and only then calls the
-entry's first `start()`. The router therefore observes the mounted base and
-history before the first application render. When run outside qiankun, the same
-Pages remain available under their standalone base.
+entry's first `start()`. The generated Pages app defers router construction
+until that runtime projection is available, so the first router is created
+with the mounted base and history instead of being patched after creation.
+When run outside qiankun, the same Pages remain available under their
+standalone base.
+
+If a mounted slave later receives a different base, history, or runtime route
+overlay, the Pages app creates and loads a candidate router with the existing
+Query client. It switches the rendered provider only after that candidate is
+ready; a failed candidate leaves the active router in place. This replacement
+boundary uses TanStack Router's public construction and loading APIs rather
+than depending on its internal match stores.
 
 While mounted with browser or hash history, the slave uses a scoped history
 adapter. Slave `Link` and `useNavigate()` calls still update the shared browser

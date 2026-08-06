@@ -123,19 +123,30 @@ describe("createPagesApp", () => {
     await pagesApp.updateRuntime({
       routes: [{ id: "micro-catalog", path: "/catalog", kind: "group" }],
     });
-    expect(generatedRoutePaths(router.routeTree)).toEqual(
+    const catalogRouter = pagesApp.app.router as {
+      routeTree: InspectableGeneratedRoute;
+    };
+    expect(catalogRouter).not.toBe(router);
+    expect(generatedRoutePaths(catalogRouter.routeTree)).toEqual(
       expect.arrayContaining(["/", "/catalog"]),
     );
 
     await pagesApp.updateRuntime({
       routes: [{ id: "micro-orders", path: "/orders", kind: "group" }],
     });
-    const replacedPaths = generatedRoutePaths(router.routeTree);
+    const ordersRouter = pagesApp.app.router as {
+      routeTree: InspectableGeneratedRoute;
+    };
+    expect(ordersRouter).not.toBe(catalogRouter);
+    const replacedPaths = generatedRoutePaths(ordersRouter.routeTree);
     expect(replacedPaths).toEqual(expect.arrayContaining(["/", "/orders"]));
     expect(replacedPaths).not.toContain("/catalog");
 
     await pagesApp.updateRuntime({ routes: [] });
-    const clearedPaths = generatedRoutePaths(router.routeTree);
+    const clearedPaths = generatedRoutePaths(
+      (pagesApp.app.router as { routeTree: InspectableGeneratedRoute })
+        .routeTree,
+    );
     expect(clearedPaths).toContain("/");
     expect(clearedPaths).not.toContain("/orders");
   });
@@ -152,10 +163,6 @@ describe("createPagesApp", () => {
       ],
       history: { type: "memory", initialEntries: ["/catalog"] },
     });
-    const router = pagesApp.app.router as {
-      routeTree: InspectableGeneratedRoute;
-    };
-
     await pagesApp.updateRuntime({
       routes: [
         {
@@ -167,6 +174,9 @@ describe("createPagesApp", () => {
       ],
     });
 
+    const router = pagesApp.app.router as {
+      routeTree: InspectableGeneratedRoute;
+    };
     const runtimeRoot = flattenGeneratedRoutes(router.routeTree).find(
       (route) => route.options.beforeLoad,
     );
@@ -195,10 +205,6 @@ describe("createPagesApp", () => {
       ],
       history: { type: "memory", initialEntries: ["/catalog"] },
     });
-    const router = pagesApp.app.router as {
-      routeTree: InspectableGeneratedRoute;
-    };
-
     await pagesApp.updateRuntime({
       routes: [
         {
@@ -209,26 +215,30 @@ describe("createPagesApp", () => {
       ],
     });
 
-    expect(generatedRoutePaths(router.routeTree)).toEqual([
-      "/",
-      "/",
-      "/about",
-      "/catalog/$",
-    ]);
+    expect(
+      generatedRoutePaths(
+        (pagesApp.app.router as { routeTree: InspectableGeneratedRoute })
+          .routeTree,
+      ),
+    ).toEqual(["/", "/", "/about", "/catalog/$"]);
 
     await pagesApp.updateRuntime({
       routes: [{ id: "runtime-root", path: "/$", kind: "group" }],
     });
-    expect(generatedRoutePaths(router.routeTree)).toEqual(["/", "/$"]);
+    expect(
+      generatedRoutePaths(
+        (pagesApp.app.router as { routeTree: InspectableGeneratedRoute })
+          .routeTree,
+      ),
+    ).toEqual(["/", "/$"]);
 
     await pagesApp.updateRuntime({ routes: [] });
-    expect(generatedRoutePaths(router.routeTree)).toEqual([
-      "/",
-      "/",
-      "/catalog",
-      "/catalog/orders",
-      "/about",
-    ]);
+    expect(
+      generatedRoutePaths(
+        (pagesApp.app.router as { routeTree: InspectableGeneratedRoute })
+          .routeTree,
+      ),
+    ).toEqual(["/", "/", "/catalog", "/catalog/orders", "/about"]);
   });
 
   it("updates basepath and serializable history before the first render", async () => {
@@ -243,14 +253,13 @@ describe("createPagesApp", () => {
         initialEntries: ["/catalog"],
       },
     });
+    await pagesApp.updateRuntime({ basepath: "/catalog" });
+
     const router = pagesApp.app.router as {
       history: { location: { href: string } };
       latestLocation: { pathname: string };
       matchRoutes(pathname: string): unknown[];
     };
-
-    await pagesApp.updateRuntime({ basepath: "/catalog" });
-
     expect(router.history.location.href).toBe("/catalog");
     expect(router.latestLocation.pathname).toBe("/");
     expect(router.matchRoutes("/").length).toBeGreaterThan(1);
@@ -290,7 +299,7 @@ describe("createPagesApp", () => {
     expect(router.history).toBe(initialHistory);
   });
 
-  it("releases owned browser history only after an external history update commits", async () => {
+  it("releases owned browser history after a replacement Router commits", async () => {
     const nativePushState = vi.fn();
     const nativeReplaceState = vi.fn();
     const browserHistory = {
@@ -322,31 +331,22 @@ describe("createPagesApp", () => {
     });
     const router = pagesApp.app.router as {
       history: ReturnType<typeof client.createMemoryHistory>;
-      update(options: unknown): void;
     };
     const ownedHistory = router.history;
     const destroy = vi.spyOn(ownedHistory, "destroy");
     const externalHistory = client.createMemoryHistory();
-    const originalUpdate = router.update.bind(router);
-    vi.spyOn(router, "update").mockImplementationOnce((options) => {
-      originalUpdate(options);
-      throw new Error("mock external history update failure");
-    });
-
-    await expect(
-      pagesApp.updateRuntime({ history: externalHistory }),
-    ).rejects.toThrow("mock external history update failure");
-    expect(destroy).not.toHaveBeenCalled();
-    expect(router.history).toBe(ownedHistory);
 
     await pagesApp.updateRuntime({ history: externalHistory });
     expect(destroy).toHaveBeenCalledTimes(1);
-    expect(router.history).toBe(externalHistory);
+    expect(pagesApp.app.router).not.toBe(router);
+    expect((pagesApp.app.router as { history: unknown }).history).toBe(
+      externalHistory,
+    );
     expect(browserHistory.pushState).toBe(nativePushState);
     expect(browserHistory.replaceState).toBe(nativeReplaceState);
   });
 
-  it("atomically restores the previous Route overlay when router update fails", async () => {
+  it("replaces the Router without mutating the previous Route state", async () => {
     function Home() {
       return null;
     }
@@ -367,19 +367,12 @@ describe("createPagesApp", () => {
     const previousRouteTree = router.routeTree;
     const previousHistory = router.history;
     const previousBasepath = router.basepath;
-    const originalUpdate = router.update.bind(router);
-    vi.spyOn(router, "update").mockImplementationOnce((options) => {
-      originalUpdate(options);
-      throw new Error("mock router update failure");
+    const queryClient = pagesApp.app.queryClient;
+    await pagesApp.updateRuntime({
+      routes: [{ id: "micro-orders", path: "/orders", kind: "group" }],
+      basepath: "/workspace",
+      history: { type: "memory", initialEntries: ["/workspace/orders"] },
     });
-
-    await expect(
-      pagesApp.updateRuntime({
-        routes: [{ id: "micro-orders", path: "/orders", kind: "group" }],
-        basepath: "/workspace",
-        history: { type: "memory", initialEntries: ["/workspace/orders"] },
-      }),
-    ).rejects.toThrow("mock router update failure");
 
     expect(router.routeTree).toBe(previousRouteTree);
     expect(router.history).toBe(previousHistory);
@@ -388,6 +381,16 @@ describe("createPagesApp", () => {
       expect.arrayContaining(["/", "/catalog"]),
     );
     expect(generatedRoutePaths(router.routeTree)).not.toContain("/orders");
+    const replacement = pagesApp.app.router as {
+      basepath: string;
+      routeTree: InspectableGeneratedRoute;
+    };
+    expect(replacement).not.toBe(router);
+    expect(replacement.basepath).toBe("/workspace");
+    expect(generatedRoutePaths(replacement.routeTree)).toEqual(
+      expect.arrayContaining(["/", "/orders"]),
+    );
+    expect(pagesApp.app.queryClient).toBe(queryClient);
   });
 
   it("rejects invalid runtime inputs before changing the active Route tree", async () => {
