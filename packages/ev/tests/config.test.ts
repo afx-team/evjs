@@ -481,6 +481,25 @@ describe("resolveConfig", () => {
       crossOriginLoading: "anonymous",
     });
     expect(resolved.dev.proxy).toEqual([]);
+    expect(resolved.dev.cliShortcuts).toBe(true);
+  });
+
+  it("resolves dev.cliShortcuts as a boolean", () => {
+    expect(
+      resolveConfig({ dev: { cliShortcuts: false } }).dev.cliShortcuts,
+    ).toBe(false);
+    expect(
+      resolveConfig({ dev: { cliShortcuts: true } }).dev.cliShortcuts,
+    ).toBe(true);
+    expect(resolveConfig({}).dev.cliShortcuts).toBe(true);
+  });
+
+  it("rejects non-boolean dev.cliShortcuts values", () => {
+    for (const cliShortcuts of ["false", 0, null, {}, []]) {
+      expect(() =>
+        resolveConfig({ dev: { cliShortcuts } } as unknown as Config),
+      ).toThrow("[evjs] dev.cliShortcuts must be a boolean when provided.");
+    }
   });
 
   it("accepts only plain config records at root and nested boundaries", () => {
@@ -1129,11 +1148,13 @@ describe("resolveConfig", () => {
 
   it("accepts only the single plugin descriptor shape", () => {
     const setup = () => ({});
+    const cliShortcuts = () => [{ key: "h", description: "help" }];
     const plugin = {
       id: "test-plugin",
       dependencies: ["required"],
       optionalDependencies: ["optional"],
       enforce: "pre" as const,
+      cliShortcuts,
       setup,
     };
     const resolved = resolveConfig({
@@ -1143,6 +1164,7 @@ describe("resolveConfig", () => {
     expect(resolved.plugins).toEqual([plugin]);
     expect(resolved.plugins[0]).toMatchObject({
       id: "test-plugin",
+      cliShortcuts,
     });
     expect(resolved.plugins[0]).not.toBe(plugin);
     expect(Object.isFrozen(resolved.plugins[0])).toBe(true);
@@ -1181,6 +1203,21 @@ describe("resolveConfig", () => {
         ],
       }),
     ).toThrow("Return the hook from plugins[0].setup() instead");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            id: "legacy-shortcuts-hook",
+            configureShortcuts() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].configureShortcuts is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [{ id: "invalid-shortcuts", cliShortcuts: true } as never],
+      }),
+    ).toThrow("plugins[0].cliShortcuts must be a function");
     expect(() =>
       resolveConfig({
         plugins: [

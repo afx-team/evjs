@@ -25,6 +25,11 @@ type DevFrameworkCommand = (
     cwd: string;
     flags: CliFlags;
     loadConfig: ConfigLoader;
+    /**
+     * `false` when the user passed `--no-shortcuts`. `undefined` otherwise, so
+     * the user's `ev.config.ts` → `dev.cliShortcuts` is authoritative.
+     */
+    cliShortcuts?: false;
   },
 ) => Promise<void>;
 
@@ -74,16 +79,26 @@ export async function runCliProgram(
   program
     .command("dev")
     .description("Start development server")
+    .option("--no-shortcuts", "Disable interactive CLI keyboard shortcuts")
     .allowUnknownOption(true)
-    .action(async (_options: unknown, command: Command) => {
+    .action(async (options: { shortcuts?: boolean }, command: Command) => {
       await runCommand("Failed to start dev server", async () => {
         const cwd = dependencies.cwd();
         const flags = parseCliFlags(command.args);
-        await dependencies.dev(undefined, {
+        // Only inject cliShortcuts when the user passed --no-shortcuts; leave it
+        // absent otherwise so the user's ev.config.ts → dev.cliShortcuts wins.
+        const devOptions: {
+          cwd: string;
+          flags: CliFlags;
+          loadConfig: ConfigLoader;
+          cliShortcuts?: false;
+        } = {
           cwd,
           flags,
           loadConfig: dependencies.loadConfig,
-        });
+        };
+        if (options.shortcuts === false) devOptions.cliShortcuts = false;
+        await dependencies.dev(undefined, devOptions);
       });
     });
 

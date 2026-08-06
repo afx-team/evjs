@@ -290,6 +290,19 @@ export interface Plugin<TBundlerCfg = unknown> {
   setup?: PluginSetupHook<TBundlerCfg>;
 
   /**
+   * Declare interactive CLI keyboard shortcuts for `ev dev`.
+   *
+   * This contribution is collected once for each resolved plugin snapshot.
+   * Its static descriptors are independent from setup lifecycle state; each
+   * `action` receives the live {@link PluginDevSession} when its key is pressed.
+   * Core ships no built-in shortcuts, including help. The first plugin to
+   * register a key owns it, and the engine is a no-op in CI / non-TTY contexts.
+   */
+  cliShortcuts?: () =>
+    | readonly PluginCliShortcut[]
+    | Promise<readonly PluginCliShortcut[]>;
+
+  /**
    * Emit generated framework modules and slots into the `.ev` IR.
    *
    * This hook is separate from setup() lifecycle hooks. It declares generated
@@ -788,6 +801,38 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * rebuilds do not dispose the active snapshot.
    */
   dispose?: DisposeHook<TBundlerCfg>;
+}
+
+/**
+ * Capability handle surfaced to a plugin shortcut action at press time.
+ *
+ * This is the dev-facing shape; the build orchestrator (`_internal/build`)
+ * constructs the concrete implementation. `origin` is the client dev server
+ * URL reported by `BundlerDevContext.callbacks.onDevServerReady({ origin })`.
+ * Surface is intentionally minimal: it exposes only data and a shutdown
+ * trigger. Core ships no built-in shortcut actions (no `restart`, `open`,
+ * etc.); plugins that want such behavior implement it themselves from these
+ * primitives plus their own utilities.
+ */
+export interface PluginDevSession {
+  /** Client dev server origin, e.g. `http://localhost:3000`. */
+  readonly origin: string;
+  /** Request dev shutdown (equivalent to Ctrl-C); resolves after the request. */
+  close(): Promise<void>;
+}
+
+/** A plugin-contributed CLI keyboard shortcut. */
+export interface PluginCliShortcut {
+  /** Lowercase single-character key matched against a pressed line. */
+  readonly key: string;
+  /** Human description of what the shortcut does. */
+  readonly description: string;
+  /**
+   * Action invoked with the live {@link PluginDevSession}. Omitting it reserves
+   * the key and description without running an action; later duplicates remain
+   * ignored by the first-writer-wins rule.
+   */
+  readonly action?: (session: PluginDevSession) => void | Promise<void>;
 }
 
 /** Build result passed to plugin hooks. */

@@ -55,6 +55,12 @@ export interface ResolvedDevConfig {
   https: boolean | { key: string; cert: string };
   /** Dev proxy rules. */
   proxy: DevProxyRule[];
+  /**
+   * Whether the interactive CLI shortcuts engine is enabled (default `true`).
+   * Shortcuts themselves are contributed by plugins through descriptor-level
+   * `cliShortcuts()` contributions; this flag only gates the engine.
+   */
+  cliShortcuts: boolean;
 }
 
 /** Proxy rule for the dev server. */
@@ -213,6 +219,14 @@ export interface DevConfig {
    * are not included here.
    */
   proxy?: DevProxyRule[];
+  /**
+   * Interactive CLI keyboard shortcuts while `ev dev` runs. `false` disables
+   * the engine (default `true`). Shortcuts themselves are registered by plugins
+   * through descriptor-level `cliShortcuts()` contributions — core ships none.
+   * The engine is always a no-op in CI and non-TTY contexts, regardless of
+   * this option.
+   */
+  cliShortcuts?: boolean;
 }
 
 /** Server configuration. */
@@ -511,7 +525,12 @@ const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
   "template",
   "mount",
 ]);
-const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
+const PUBLIC_DEV_CONFIG_KEYS = new Set([
+  "port",
+  "https",
+  "proxy",
+  "cliShortcuts",
+]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set(["basePath", "rsc", "dev"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
@@ -536,6 +555,7 @@ const PUBLIC_PLUGIN_KEYS = new Set([
   "enforce",
   "configure",
   "setup",
+  "cliShortcuts",
   "emitIR",
 ]);
 const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
@@ -646,6 +666,8 @@ export function resolveConfig<TBundlerCfg = unknown>(
   const rscEndpoint = resolveRscEndpoint(serverRscConfig);
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
+  const cliShortcuts =
+    assertOptionalBoolean(devConfig.cliShortcuts, "dev.cliShortcuts") ?? true;
 
   return {
     conventions,
@@ -659,6 +681,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
       port: clientPort,
       https: devHttps,
       proxy: resolveDevProxyRules(devConfig.proxy),
+      cliShortcuts,
     },
     server: {
       basePath: serverBasePath,
@@ -737,7 +760,7 @@ function resolvePlugin<TBundlerCfg = unknown>(
     pluginDescriptor,
     PUBLIC_PLUGIN_KEYS,
     path,
-    "id, dependencies, optionalDependencies, enforce, configure, setup, or emitIR",
+    "id, dependencies, optionalDependencies, enforce, configure, setup, cliShortcuts, or emitIR",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -750,6 +773,7 @@ function resolvePlugin<TBundlerCfg = unknown>(
     enforce: rawEnforce,
     configure: rawConfigure,
     setup: rawSetup,
+    cliShortcuts: rawCliShortcuts,
     emitIR: rawEmitIR,
   } = pluginDescriptor;
 
@@ -763,6 +787,12 @@ function resolvePlugin<TBundlerCfg = unknown>(
     assertFunction<NonNullable<Plugin<TBundlerCfg>["setup"]>>(
       rawSetup,
       `${path}.setup`,
+    );
+  }
+  if (rawCliShortcuts !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["cliShortcuts"]>>(
+      rawCliShortcuts,
+      `${path}.cliShortcuts`,
     );
   }
   if (rawEmitIR !== undefined) {
@@ -812,6 +842,7 @@ function resolvePlugin<TBundlerCfg = unknown>(
       : {}),
     ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
+    ...(rawCliShortcuts !== undefined ? { cliShortcuts: rawCliShortcuts } : {}),
     ...(rawEmitIR !== undefined ? { emitIR: rawEmitIR } : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);
@@ -1528,7 +1559,7 @@ function validateDevConfigKeys(dev: DevConfig): void {
     dev,
     PUBLIC_DEV_CONFIG_KEYS,
     "dev",
-    "port, https, or proxy",
+    "port, https, proxy, or cliShortcuts",
   );
 }
 

@@ -14,6 +14,7 @@ import type {
   BuildResult,
   CliFlags,
   Plugin,
+  PluginCliShortcut,
   PluginConfigureContext,
   PluginConfigureInput,
   PluginHooks,
@@ -21,6 +22,7 @@ import type {
   TransformOutputContext,
 } from "../../plugin/index.js";
 import type { BundlerEmittedFiles } from "./bundler.js";
+import { normalizeShortcutKey } from "./cli-shortcuts.js";
 import { assertAfterBuildDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 
 const typedPluginHookNames: readonly (keyof PluginHooks)[] = PLUGIN_HOOK_NAMES;
@@ -536,6 +538,119 @@ export async function runAfterBuildHooks<TBundlerCfg>(
   for (const hook of hooks) {
     await hook.afterBuild?.(structuredClone(snapshot));
   }
+}
+
+/**
+ * Collect every plugin-contributed CLI shortcut, in plugin order.
+ *
+ * `cliShortcuts` is a descriptor-level contribution collected once per
+ * resolved plugin snapshot. Shortcut `action` callbacks receive the live
+ * {@link PluginDevSession} only when the key is later pressed.
+ */
+export async function collectPluginCliShortcuts<TBundlerCfg>(
+  plugins: readonly Plugin<TBundlerCfg>[],
+  options: { onError?: (error: unknown) => void } = {},
+): Promise<PluginCliShortcut[]> {
+  const collected: PluginCliShortcut[] = [];
+  for (const plugin of [...plugins]) {
+    if (!plugin.cliShortcuts) continue;
+    try {
+      let value: unknown;
+      try {
+        value = await Reflect.apply(plugin.cliShortcuts, plugin, []);
+      } catch (error) {
+        throw new Error(
+          `[evjs] Plugin "${plugin.id}" cliShortcuts contribution failed: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      const shortcuts = resolvePluginCliShortcuts(plugin.id, value);
+      collected.push(...shortcuts);
+    } catch (error) {
+      if (!options.onError) throw error;
+      options.onError(error);
+    }
+  }
+  return collected;
+}
+
+function resolvePluginCliShortcuts(
+  pluginId: string,
+  value: unknown,
+): PluginCliShortcut[] {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `[evjs] Plugin "${pluginId}" cliShortcuts contribution must return an array.`,
+    );
+  }
+
+  const resolved: PluginCliShortcut[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const path = `Plugin "${pluginId}" cliShortcuts item ${index}`;
+    const itemDescriptor = Object.getOwnPropertyDescriptor(
+      value,
+      String(index),
+    );
+    if (!itemDescriptor?.enumerable || !("value" in itemDescriptor)) {
+      throw new Error(`[evjs] ${path} must be an array data property.`);
+    }
+    const shortcut = itemDescriptor.value;
+    if (
+      !shortcut ||
+      typeof shortcut !== "object" ||
+      Array.isArray(shortcut) ||
+      !isPlainObject(shortcut)
+    ) {
+      throw new Error(`[evjs] ${path} must be a shortcut object.`);
+    }
+
+    const record = shortcut as Record<string, unknown>;
+    for (const key of Reflect.ownKeys(record)) {
+      const descriptor = Object.getOwnPropertyDescriptor(record, key);
+      if (
+        typeof key !== "string" ||
+        !["key", "description", "action"].includes(key) ||
+        !descriptor?.enumerable ||
+        !("value" in descriptor)
+      ) {
+        throw new Error(
+          `[evjs] ${path} must contain only key, description, and optional action data properties.`,
+        );
+      }
+    }
+
+    if (typeof record.key !== "string") {
+      throw new Error(`[evjs] ${path}.key must be a string.`);
+    }
+    let key: string;
+    try {
+      key = normalizeShortcutKey(record.key);
+    } catch {
+      throw new Error(
+        `[evjs] ${path}.key must be a single non-whitespace character.`,
+      );
+    }
+    if (
+      typeof record.description !== "string" ||
+      record.description.trim() === ""
+    ) {
+      throw new Error(`[evjs] ${path}.description must be a non-empty string.`);
+    }
+    if (record.action !== undefined && typeof record.action !== "function") {
+      throw new Error(
+        `[evjs] ${path}.action must be a function when provided.`,
+      );
+    }
+
+    resolved.push(
+      Object.freeze({
+        key,
+        description: record.description,
+        ...(record.action === undefined ? {} : { action: record.action }),
+      }) as PluginCliShortcut,
+    );
+  }
+  return resolved;
 }
 
 export async function runDisposeHooks<TBundlerCfg>(

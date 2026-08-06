@@ -4,6 +4,7 @@ import fsPromises from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import {
   type BuildOutput,
   type BuildPlan,
@@ -13785,6 +13786,887 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       .flatMap((entries) => entries ?? [])
       .some((entry) => entry.family === "IPv4" && !entry.internal);
     expect(readyLog?.includes("  Network: ")).toBe(hasNetworkAddress);
+  });
+
+  it("binds plugin CLI shortcuts to the live dev session origin on DevServerReady", async () => {
+    const originalStdin = process.stdin;
+    const originalIsTTY = process.stdin.isTTY;
+    const originalCI = process.env.CI;
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    delete process.env.CI;
+
+    // A fake readable stdin: a PassThrough is a real Readable, so
+    // readline.createInterface({ input }) fully drives it. pressing "t" is
+    // simulated by writing "t\n" to it after the engine has bound.
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(fakeStdin, "setRawMode", { value: () => {} });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const ORIGIN = "http://localhost:4711";
+    let resolveShortcutFired: () => void = () => {};
+    const shortcutFired = new Promise<{ origin: string }>((resolve) => {
+      resolveShortcutFired = () => resolve({ origin: ORIGIN });
+    });
+    let observedOrigin: string | undefined;
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({ origin: ORIGIN });
+        // Wait at least one macrotask so the engine's
+        // collectPluginCliShortcuts().then(bind) microtask has run before
+        // we emit the key press, then emit SIGINT to end the session.
+        await new Promise((resolve) => setImmediate(resolve));
+        fakeStdin.write("t\n");
+        await Promise.race([
+          shortcutFired,
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("plugin shortcut never fired")),
+              devStartupTimeoutMs,
+            ),
+          ),
+        ]);
+        process.emit("SIGINT");
+      },
+    };
+
+    const plugin: Plugin = {
+      id: "log-origin-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: "log the dev origin",
+            action(session) {
+              observedOrigin = session.origin;
+              resolveShortcutFired();
+            },
+          },
+        ];
+      },
+    };
+    try {
+      await dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          dev: { port: 4711 },
+          routing: { mode: "mpa" },
+          plugins: [plugin],
+        },
+        { cwd, bundler },
+      );
+    } finally {
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      Object.defineProperty(originalStdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+    }
+
+    expect(observedOrigin).toBe(ORIGIN);
+    // The dev session must end cleanly (shortcut action returned; SIGINT shut it down).
+    expect(await shortcutFired).toEqual({ origin: ORIGIN });
+  });
+
+  it("does not bind CLI shortcuts when dev.cliShortcuts is false", async () => {
+    const originalStdin = process.stdin;
+    const originalIsTTY = process.stdin.isTTY;
+    const originalCI = process.env.CI;
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    delete process.env.CI;
+
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(fakeStdin, "setRawMode", { value: () => {} });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+
+    const dataListenerCountBefore = fakeStdin.listenerCount("data");
+
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const shortcutAction = vi.fn();
+    const cliShortcuts = vi.fn(() => [
+      {
+        key: "t",
+        description: "should not fire",
+        action: shortcutAction,
+      },
+    ]);
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4722",
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
+        fakeStdin.write("t\n");
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(shortcutAction).not.toHaveBeenCalled();
+        process.emit("SIGINT");
+      },
+    };
+
+    const plugin: Plugin = {
+      id: "would-fire-shortcut",
+      cliShortcuts,
+    };
+
+    try {
+      await dev(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          dev: { port: 4722, cliShortcuts: false },
+          routing: { mode: "mpa" },
+          plugins: [plugin],
+        },
+        { cwd, bundler },
+      );
+    } finally {
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      Object.defineProperty(originalStdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+    }
+
+    // With the engine disabled, no readline 'line' listener was attached to
+    // the fake stdin beyond whatever existed before dev().
+    expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
+    expect(cliShortcuts).not.toHaveBeenCalled();
+  });
+
+  it("applies the cliShortcuts:false override when no config file exists", async () => {
+    const cwd = await createProject();
+    let observedCliShortcuts: boolean | undefined;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ config }) {
+        observedCliShortcuts = config.dev.cliShortcuts;
+        process.emit("SIGINT");
+      },
+    };
+
+    await dev(undefined, {
+      cwd,
+      bundler,
+      cliShortcuts: false,
+      loadConfig: async () => undefined,
+      reloadInitialConfig: true,
+    });
+
+    expect(observedCliShortcuts).toBe(false);
+  });
+
+  it("replaces plugin CLI shortcuts transactionally across config reloads", async () => {
+    const originalStdin = process.stdin;
+    const originalCI = process.env.CI;
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+    delete process.env.CI;
+    const dataListenerCountBefore = fakeStdin.listenerCount("data");
+
+    const cwd = await createProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    function createPlugin(label: string): Plugin<Record<string, never>> {
+      return {
+        id: "reload-shortcuts",
+        cliShortcuts() {
+          events.push(`contribute:${label}`);
+          return [
+            {
+              key: "t",
+              description: `shortcut ${label}`,
+              action() {
+                events.push(`shortcut:${label}`);
+              },
+            },
+          ];
+        },
+        setup() {
+          events.push(`setup:${label}`);
+          return {
+            dispose() {
+              events.push(`dispose:${label}`);
+            },
+          };
+        },
+      };
+    }
+
+    let currentConfig: Config<Record<string, never>> = {
+      routing: { mode: "mpa" },
+      plugins: [createPlugin("v1")],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4733",
+        });
+        events.push("ready");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            events.push("update");
+          },
+        });
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "ready");
+      expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore + 1);
+      fakeStdin.write("t\n");
+      await waitForEvent(events, "shortcut:v1");
+
+      currentConfig = {
+        ...currentConfig,
+        plugins: [createPlugin("v2")],
+      };
+      await writeFile(
+        configPath,
+        "export default {}; // shortcuts v2",
+        "utf-8",
+      );
+      await controlledWatch.dispatchFileChange(configPath);
+      await waitForEvent(events, "dispose:v1");
+      fakeStdin.write("t\n");
+      await waitForEvent(events, "shortcut:v2");
+      expect(events.filter((event) => event === "shortcut:v1")).toHaveLength(1);
+
+      currentConfig = {
+        ...currentConfig,
+        dev: { cliShortcuts: false },
+        plugins: [createPlugin("v3")],
+      };
+      await writeFile(
+        configPath,
+        "export default {}; // shortcuts disabled",
+        "utf-8",
+      );
+      await controlledWatch.dispatchFileChange(configPath);
+      await waitForEvent(events, "dispose:v2");
+      expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
+      fakeStdin.write("t\n");
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(events).not.toContain("shortcut:v3");
+
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+      controlledWatch.restore();
+    }
+
+    expect(events.filter((event) => event === "contribute:v1")).toHaveLength(1);
+    expect(events.filter((event) => event === "contribute:v2")).toHaveLength(1);
+    expect(events).not.toContain("contribute:v3");
+    expect(events).toContain("dispose:v3");
+  });
+
+  it("keeps committed CLI shortcuts when a candidate dev update rolls back", async () => {
+    const originalStdin = process.stdin;
+    const originalCI = process.env.CI;
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+    delete process.env.CI;
+
+    const cwd = await createProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const createPlugin = (label: string): Plugin<Record<string, never>> => ({
+      id: "rollback-shortcuts",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: `shortcut ${label}`,
+            action() {
+              events.push(`shortcut:${label}`);
+            },
+          },
+        ];
+      },
+      setup() {
+        events.push(`setup:${label}`);
+        return {
+          dispose() {
+            events.push(`dispose:${label}`);
+          },
+        };
+      },
+    });
+    let currentConfig: Config<Record<string, never>> = {
+      routing: { mode: "mpa" },
+      plugins: [createPlugin("v1")],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4744",
+        });
+        events.push("ready");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            await callbacks.onDevServerReady?.({
+              origin: "http://localhost:4745",
+            });
+            events.push("update:throw");
+            throw new Error("candidate update failed");
+          },
+        });
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "ready");
+      fakeStdin.write("t\n");
+      await waitForEvent(events, "shortcut:v1");
+
+      currentConfig = {
+        ...currentConfig,
+        plugins: [createPlugin("v2")],
+      };
+      await writeFile(
+        configPath,
+        "export default {}; // rollback shortcuts",
+        "utf-8",
+      );
+      await controlledWatch.dispatchFileChange(configPath);
+      await waitForEvent(events, "dispose:v2");
+
+      fakeStdin.write("t\n");
+      await vi.waitFor(() => {
+        expect(events.filter((event) => event === "shortcut:v1")).toHaveLength(
+          2,
+        );
+      });
+      expect(events).not.toContain("shortcut:v2");
+
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+      controlledWatch.restore();
+    }
+  });
+
+  it("defers old plugin disposal and restores shortcuts after a slow action", async () => {
+    const originalStdin = process.stdin;
+    const originalCI = process.env.CI;
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+    delete process.env.CI;
+    const dataListenerCountBefore = fakeStdin.listenerCount("data");
+
+    const cwd = await createProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    let finishSlowAction: () => void = () => {};
+    const slowAction = new Promise<void>((resolve) => {
+      finishSlowAction = resolve;
+    });
+    const createPlugin = (label: "v1" | "v2"): Plugin => ({
+      id: "slow-reload-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: `shortcut ${label}`,
+            action() {
+              events.push(`shortcut:${label}`);
+              return label === "v1" ? slowAction : undefined;
+            },
+          },
+        ];
+      },
+      setup() {
+        events.push(`setup:${label}`);
+        return {
+          dispose() {
+            events.push(`dispose:${label}`);
+          },
+        };
+      },
+    });
+    let currentConfig: Config = {
+      routing: { mode: "mpa" },
+      plugins: [createPlugin("v1")],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4766",
+        });
+        events.push("ready");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            events.push("update");
+          },
+        });
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "ready");
+      fakeStdin.write("t\n");
+      await waitForEvent(events, "shortcut:v1");
+
+      currentConfig = {
+        ...currentConfig,
+        plugins: [createPlugin("v2")],
+      };
+      await writeFile(
+        configPath,
+        "export default {}; // slow action reload",
+        "utf-8",
+      );
+      await controlledWatch.dispatchFileChange(configPath);
+      await waitForEvent(events, "update");
+      await vi.waitFor(
+        () => {
+          expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
+        },
+        { timeout: 2_000 },
+      );
+      expect(events).not.toContain("dispose:v1");
+
+      finishSlowAction();
+      await waitForEvent(events, "dispose:v1");
+      await vi.waitFor(() => {
+        expect(fakeStdin.listenerCount("data")).toBe(
+          dataListenerCountBefore + 1,
+        );
+      });
+      fakeStdin.write("t\n");
+      await waitForEvent(events, "shortcut:v2");
+
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      finishSlowAction();
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+      controlledWatch.restore();
+    }
+
+    expect(events).toContain("dispose:v2");
+  });
+
+  it("attempts every plugin disposal when shutdown follows a reload", async () => {
+    const originalStdin = process.stdin;
+    const originalCI = process.env.CI;
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+    delete process.env.CI;
+    const dataListenerCountBefore = fakeStdin.listenerCount("data");
+
+    const cwd = await createProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const controlledWatch = installControlledFsWatch();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const resources = new Set<ReturnType<typeof setInterval>>();
+    const createPlugin = (label: "v1" | "v2"): Plugin => ({
+      id: "retired-stuck-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: `shortcut ${label}`,
+            action() {
+              events.push(`shortcut:${label}`);
+              return label === "v1" ? new Promise<void>(() => {}) : undefined;
+            },
+          },
+        ];
+      },
+      setup() {
+        const resource = setInterval(() => {}, 1_000);
+        resources.add(resource);
+        return {
+          dispose() {
+            clearInterval(resource);
+            resources.delete(resource);
+            events.push(`dispose:${label}`);
+            if (label === "v1") throw new Error("retired dispose failed");
+          },
+        };
+      },
+    });
+    let currentConfig: Config = {
+      routing: { mode: "mpa" },
+      plugins: [createPlugin("v1")],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4767",
+        });
+        events.push("ready");
+        return createTestDevController({
+          async updatePlan(_update, options) {
+            options.activate();
+            events.push("update");
+          },
+        });
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await waitForEvent(events, "ready");
+      fakeStdin.write("t\n");
+      await waitForEvent(events, "shortcut:v1");
+
+      currentConfig = {
+        ...currentConfig,
+        plugins: [createPlugin("v2")],
+      };
+      await writeFile(
+        configPath,
+        "export default {}; // retired stuck action",
+        "utf-8",
+      );
+      await controlledWatch.dispatchFileChange(configPath);
+      await waitForEvent(events, "update");
+      await vi.waitFor(
+        () => {
+          expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
+        },
+        { timeout: 2_000 },
+      );
+      expect(events).not.toContain("dispose:v1");
+
+      process.emit("SIGINT");
+      await expect(
+        Promise.race([
+          running,
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("retired plugin blocked shutdown")),
+              2_000,
+            ),
+          ),
+        ]),
+      ).rejects.toThrow("retired dispose failed");
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+      for (const resource of resources) clearInterval(resource);
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+      controlledWatch.restore();
+    }
+
+    expect(events.filter((event) => event === "dispose:v1")).toHaveLength(1);
+    expect(events.filter((event) => event === "dispose:v2")).toHaveLength(1);
+    expect(resources.size).toBe(0);
+  });
+
+  it("does not let a stuck shortcut action block dev shutdown", async () => {
+    const originalStdin = process.stdin;
+    const originalCI = process.env.CI;
+    const fakeStdin = new PassThrough();
+    Object.defineProperty(fakeStdin, "isTTY", { value: true });
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: fakeStdin,
+    });
+    delete process.env.CI;
+
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    let markShortcutStarted: () => void = () => {};
+    const shortcutStarted = new Promise<void>((resolve) => {
+      markShortcutStarted = resolve;
+    });
+    let pluginResource: ReturnType<typeof setInterval> | undefined;
+    const dispose = vi.fn(() => {
+      if (pluginResource) clearInterval(pluginResource);
+      pluginResource = undefined;
+    });
+    const plugin: Plugin = {
+      id: "stuck-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "p",
+            description: "pending forever",
+            action() {
+              markShortcutStarted();
+              return new Promise<void>(() => {});
+            },
+          },
+        ];
+      },
+      setup() {
+        pluginResource = setInterval(() => {}, 1_000);
+        return {
+          dispose,
+        };
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks }) {
+        await callbacks.onDevServerReady?.({
+          origin: "http://localhost:4755",
+        });
+        fakeStdin.write("p\n");
+        await shortcutStarted;
+        process.emit("SIGINT");
+      },
+    };
+
+    try {
+      await expect(
+        Promise.race([
+          dev(
+            {
+              routing: { mode: "mpa" },
+              plugins: [plugin],
+            },
+            { cwd, bundler },
+          ),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("stuck shortcut blocked shutdown")),
+              devStartupTimeoutMs,
+            ),
+          ),
+        ]),
+      ).resolves.toBeUndefined();
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      if (pluginResource) clearInterval(pluginResource);
+      Object.defineProperty(process, "stdin", {
+        configurable: true,
+        value: originalStdin,
+      });
+      if (originalCI === undefined) delete process.env.CI;
+      else process.env.CI = originalCI;
+    }
   });
 
   it("updates generated SPA route types when a nested page route is added during dev", async () => {

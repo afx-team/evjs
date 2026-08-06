@@ -119,6 +119,24 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 
 自定义代理规则会先于服务端运行时路径的内置代理应用，因此应用自己的 API proxy 可以保留独立的路由行为。
 
+`dev.cliShortcuts` 控制交互式 CLI 键盘快捷键引擎。默认开启;设为
+`dev.cliShortcuts: false` 可关闭。该引擎复刻 Vite `bindCLIShortcuts`
+的机制(readline line 事件,单键 + `Enter`),但内置不提供任何快捷键 ——
+每个键都由插件 descriptor 顶层的 `cliShortcuts()` 贡献(见
+[插件 CLI 快捷键](#插件-cli-快捷键))。无论该选项如何,在 CI / 非 TTY 场景下
+引擎始终为 no-op。
+
+```ts
+// ev.config.ts
+export default defineConfig({
+  dev: {
+    cliShortcuts: false,
+  },
+});
+```
+
+`ev dev --no-shortcuts` 可在不修改配置的情况下,单次运行关闭该引擎。
+
 ## 请求流
 
 1. 客户端开发服务器提供浏览器代码和 HMR。
@@ -177,6 +195,66 @@ framework preflight 会对照 active BuildPlan 检查这些 capability。
 `dev(undefined, options)` 会加载发现到的配置；`reloadInitialConfig: true` 则会明确要求传入的
 或默认的 `loadConfig` 替换启动 config。若只希望自定义 `loadConfig` 用于后续监听重载，可以
 同时设置 `reloadInitialConfig: false`。
+
+programmatic 选项 `cliShortcuts` 可覆盖 `dev.cliShortcuts`:传 `false`
+即可无视 `ev.config.ts` 关闭交互式快捷键引擎(等价于 `ev dev --no-shortcuts`)。
+省略时以配置文件为准(默认开启)。
+
+## 插件 CLI 快捷键
+
+当 `ev dev` 运行于 TTY(且不在 `CI` 下)时,插件可注册交互式键盘快捷键。Core
+**不内置任何快捷键** —— 每个键(包括 `h` 帮助)均由插件贡献。该机制复刻 Vite
+`bindCLIShortcuts`(单键 + `Enter`,并发的按键会被丢弃),但把 action 集合留给生态。
+
+在插件 descriptor 顶层声明快捷键:
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
+
+const shortcutsPlugin = definePlugin({
+  id: "my-shortcuts",
+  cliShortcuts() {
+    return [
+      {
+        key: "u",
+        description: "显示 server url",
+        action(session) {
+          console.log(session.origin);
+        },
+      },
+      {
+        key: "q",
+        description: "退出",
+        action(session) {
+          session.close();
+        },
+      },
+    ];
+  },
+});
+
+export default defineConfig({ plugins: [shortcutsPlugin()] });
+```
+
+`cliShortcuts()` 返回 `PluginCliShortcut[]`。evjs 会为每个 resolved plugin snapshot
+收集一次；它是声明式 contribution，不是 `setup()` lifecycle event。由于它不依赖 hooks
+对象 identity，普通 setup hooks 在其他条件允许时可以复用。Shortcut action 不应依赖
+`setup()` 内创建的私有资源。
+
+首个为某个 key 注册快捷键的插件拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的
+`PluginDevSession`:
+
+- `origin: string` —— 客户端 dev server URL(`http(s)://localhost:<port>`)。
+- `close()` —— 触发 dev 关闭(等价于 `Ctrl-C`)。
+
+Core 刻意只暴露 `origin` 与 `close()`;更丰富的 action(重启、reload、profiling
+等)由插件基于这些原语加自身工具实现,而非由 core 提供。需要帮助列表的插件可
+自行注册 `h`,读取它已知的快捷键描述。
+
+该引擎与 bundler 解耦：所选 Node CLI dev adapter 报告 client origin 后即可绑定。
+两个内置 adapter 都支持该 callback，且不要求存在 server/API 子进程。
 
 ## 传输层
 

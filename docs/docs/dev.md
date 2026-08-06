@@ -137,6 +137,26 @@ forwarding them to the target.
 Custom proxy rules are applied before the built-in proxy for server runtime
 paths, so app-specific API proxies can keep their own routing behavior.
 
+`dev.cliShortcuts` controls the interactive CLI keyboard shortcuts engine. The
+default is on; set `dev.cliShortcuts: false` to disable it. The engine mirrors
+Vite's `bindCLIShortcuts` (readline line events, one key + `Enter`) but ships
+no built-in shortcuts of its own — every key is contributed by a plugin via the
+descriptor-level `cliShortcuts()` contribution (see
+[Plugin CLI Shortcuts](#plugin-cli-shortcuts)).
+It is always a no-op in CI and non-TTY contexts, regardless of this option.
+
+```ts
+// ev.config.ts
+export default defineConfig({
+  dev: {
+    cliShortcuts: false,
+  },
+});
+```
+
+`ev dev --no-shortcuts` disables the engine for a single run without editing
+config.
+
 ## Request Flow
 
 1. The client dev server serves browser code and HMR.
@@ -205,6 +225,73 @@ loads the discovered config, while `reloadInitialConfig: true` explicitly asks
 the provided or default `loadConfig` function to replace a supplied startup
 config. A custom `loadConfig` can still be retained for later watched reloads
 with `reloadInitialConfig: false`.
+
+The `cliShortcuts` programmatic option overrides `dev.cliShortcuts`: pass
+`false` to disable the interactive shortcuts engine regardless of
+`ev.config.ts` (mirrors `ev dev --no-shortcuts`). When omitted, the config-file
+value (default on) is authoritative.
+
+## Plugin CLI Shortcuts
+
+While `ev dev` runs in a TTY (and not under `CI`), plugins can register
+interactive keyboard shortcuts. Core ships **no built-in shortcuts** — every key
+(including `h` for help) is contributed by a plugin. This mirrors Vite's
+`bindCLIShortcuts` mechanics (one key + `Enter`, with concurrent presses
+dropped) but leaves the action set to the ecosystem.
+
+Declare shortcuts directly on the plugin descriptor:
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
+
+const shortcutsPlugin = definePlugin({
+  id: "my-shortcuts",
+  cliShortcuts() {
+    return [
+      {
+        key: "u",
+        description: "show server url",
+        action(session) {
+          console.log(session.origin);
+        },
+      },
+      {
+        key: "q",
+        description: "quit",
+        action(session) {
+          session.close();
+        },
+      },
+    ];
+  },
+});
+
+export default defineConfig({ plugins: [shortcutsPlugin()] });
+```
+
+`cliShortcuts()` returns a `PluginCliShortcut[]`. evjs collects it once for each
+resolved plugin snapshot; it is a declaration, not a `setup()` lifecycle event.
+Because it does not depend on the hooks object's identity, ordinary setup hooks
+may be reused where otherwise safe. Shortcut actions should not depend on private
+resources created inside `setup()`.
+
+The first plugin to register a key owns it (later duplicates are dropped). Each
+`action` receives the live `PluginDevSession`:
+
+- `origin: string` — the client dev server URL
+  (`http(s)://localhost:<port>`).
+- `close()` — trigger dev shutdown (equivalent to `Ctrl-C`).
+
+Core deliberately exposes only `origin` and `close()`; richer actions (restart,
+reload, profiling, …) are implemented by plugins from these primitives plus their
+own utilities, not by core. A plugin that wants a help listing registers `h`
+itself and reads the shortcut descriptions it knows about.
+
+The engine is bundler-agnostic: it binds after the selected Node CLI dev adapter
+reports its client origin. Both built-in adapters support that callback, and a
+server/API child is not required.
 
 ## Transport
 

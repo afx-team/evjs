@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  collectPluginCliShortcuts,
   collectPluginHooks,
   createLatePluginContext,
   createPluginConfigView,
@@ -158,6 +159,57 @@ describe("collectPluginHooks", () => {
       "setup hook returned dispose must be a function",
     );
     expect(events).toEqual([]);
+  });
+
+  it("allows hooks objects to be reused independently of CLI contributions", async () => {
+    const sharedHooks = { beforeBuild() {} };
+    const context = {
+      mode: "production",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await expect(
+      collectPluginHooks(
+        [
+          {
+            id: "first",
+            cliShortcuts: () => [{ key: "a", description: "first" }],
+            setup: () => sharedHooks,
+          },
+          {
+            id: "second",
+            cliShortcuts: () => [{ key: "b", description: "second" }],
+            setup: () => sharedHooks,
+          },
+        ],
+        context,
+      ),
+    ).resolves.toEqual([sharedHooks, sharedHooks]);
+  });
+
+  it("allows the same hooks object to be reused across setup snapshots", async () => {
+    const sharedHooks = { beforeBuild() {} };
+    const context = {
+      mode: "production",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    const plugin: Plugin = {
+      id: "reused-hooks",
+      cliShortcuts: () => [{ key: "r", description: "reload" }],
+      setup: () => sharedHooks,
+    };
+    const first = await collectPluginHooks([plugin], context);
+    expect(first).toEqual([sharedHooks]);
+    await expect(collectPluginHooks([plugin], context)).resolves.toEqual([
+      sharedHooks,
+    ]);
   });
 
   it("exposes one isolated frozen config view to setup and lifecycle hooks", async () => {
@@ -329,6 +381,162 @@ describe("collectPluginHooks", () => {
 
     expect(() => createPluginConfigView(config)).toThrow(
       "[evjs] Resolved plugin context config.server.basePath must be a data property, not an accessor.",
+    );
+  });
+});
+
+describe("collectPluginCliShortcuts", () => {
+  const context = {
+    mode: "development",
+    cwd: "/project",
+    config: {} as PluginSetupContext["config"],
+    logger: {} as PluginSetupContext["logger"],
+    addWatchFile() {},
+  } satisfies PluginSetupContext;
+
+  it("rejects configureShortcuts returned from setup without invoking accessors", async () => {
+    let getterCalls = 0;
+    const hooks: Record<string, unknown> = {};
+    Object.defineProperty(hooks, "configureShortcuts", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return () => [];
+      },
+    });
+
+    await expect(
+      collectPluginHooks(
+        [{ id: "shortcut-getter", setup: () => hooks as PluginHooks }],
+        context,
+      ),
+    ).rejects.toThrow('setup hook returned "configureShortcuts"');
+    expect(getterCalls).toBe(0);
+  });
+
+  it("collects shortcuts from every plugin descriptor in order", async () => {
+    const plugins: Plugin[] = [
+      {
+        id: "a",
+        cliShortcuts() {
+          return [{ key: "u", description: "show url", action() {} }];
+        },
+      },
+      {
+        id: "b",
+        cliShortcuts() {
+          return [
+            { key: "o", description: "open", action() {} },
+            { key: "c", description: "clear", action() {} },
+          ];
+        },
+      },
+    ];
+
+    const shortcuts = await collectPluginCliShortcuts(plugins);
+
+    expect(shortcuts.map((s) => s.key)).toEqual(["u", "o", "c"]);
+  });
+
+  it("tolerates plugins that omit cliShortcuts or return an empty list", async () => {
+    const plugins: Plugin[] = [
+      { id: "none", setup() {} },
+      {
+        id: "empty",
+        cliShortcuts: () => [],
+      },
+      {
+        id: "first",
+        cliShortcuts() {
+          return [{ key: "q", description: "quit", action() {} }];
+        },
+      },
+    ];
+
+    const shortcuts = await collectPluginCliShortcuts(plugins);
+
+    expect(shortcuts.map((s) => s.key)).toEqual(["q"]);
+  });
+
+  it("awaits an async cliShortcuts contribution", async () => {
+    const plugins: Plugin[] = [
+      {
+        id: "async",
+        async cliShortcuts() {
+          return [{ key: "r", description: "restart", action() {} }];
+        },
+      },
+    ];
+
+    const shortcuts = await collectPluginCliShortcuts(plugins);
+
+    expect(shortcuts.map((s) => s.key)).toEqual(["r"]);
+  });
+
+  it("normalizes registration keys before returning descriptors", async () => {
+    const shortcuts = await collectPluginCliShortcuts([
+      {
+        id: "normalized",
+        cliShortcuts() {
+          return [{ key: " R ", description: "restart", action() {} }];
+        },
+      },
+    ]);
+    expect(shortcuts.map((shortcut) => shortcut.key)).toEqual(["r"]);
+    expect(Object.isFrozen(shortcuts[0])).toBe(true);
+  });
+
+  it("rejects invalid hook results and descriptors with plugin diagnostics", async () => {
+    const sparseShortcuts: unknown[] = [];
+    sparseShortcuts.length = 1;
+    const invalidResults: unknown[] = [
+      null,
+      sparseShortcuts,
+      [{ key: "open", description: "multi" }],
+      [{ key: "q", description: "" }],
+      [{ key: "q", description: "quit", action: "not-a-function" }],
+    ];
+
+    for (const [index, result] of invalidResults.entries()) {
+      await expect(
+        collectPluginCliShortcuts([
+          { id: `invalid-${index}`, cliShortcuts: () => result as never },
+        ]),
+      ).rejects.toThrow(`Plugin "invalid-${index}" cliShortcuts`);
+    }
+  });
+
+  it("can isolate an invalid plugin while collecting later shortcuts", async () => {
+    const onError = vi.fn();
+
+    const shortcuts = await collectPluginCliShortcuts(
+      [
+        { id: "invalid", cliShortcuts: () => null as never },
+        {
+          id: "valid",
+          cliShortcuts: () => [{ key: "u", description: "show url" }],
+        },
+      ],
+      { onError },
+    );
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(shortcuts.map((shortcut) => shortcut.key)).toEqual(["u"]);
+  });
+
+  it("identifies a plugin whose cliShortcuts contribution throws", async () => {
+    await expect(
+      collectPluginCliShortcuts([
+        {
+          id: "throwing-shortcuts",
+          cliShortcuts() {
+            throw new Error("contribution failed");
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Plugin "throwing-shortcuts" cliShortcuts contribution failed: contribution failed',
     );
   });
 });

@@ -19,6 +19,9 @@ import {
 } from "../../config/index.js";
 import type {
   CliFlags,
+  Plugin,
+  PluginCliShortcut,
+  PluginDevSession,
   PluginHooks,
   PluginSetupContext,
 } from "../../plugin/index.js";
@@ -34,6 +37,7 @@ import {
   preflightBundlerDevUpdate,
 } from "./bundler.js";
 import { resolveBundler, withActiveBundler } from "./bundler-config.js";
+import { bindCLIShortcuts, type UnbindCLIShortcuts } from "./cli-shortcuts.js";
 import {
   withPageRoutingDefaults,
   withServerConventionDefaults,
@@ -94,6 +98,7 @@ import {
 } from "./page-route-types.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
 import {
+  collectPluginCliShortcuts,
   collectPluginHooks,
   hasSamePluginIdentity,
   orderPluginsByDependencies,
@@ -117,6 +122,8 @@ import { createProductionOutputTransaction } from "./production-output-transacti
 import { CANONICAL_SERVER_ROUTE_ROOT } from "./server-route-conventions.js";
 import { isInsideCwd } from "./utils.js";
 
+const DEV_CLI_SHORTCUT_ACTION_DRAIN_TIMEOUT_MS = 1_000;
+
 type MutablePluginSetupContext<TBundlerCfg> = Omit<
   PluginSetupContext<TBundlerCfg>,
   "config"
@@ -132,6 +139,7 @@ interface DevCycleTracker {
 interface DevPluginExecutionSnapshot<TBundlerCfg> extends DevCycleTracker {
   readonly hooks: PluginHooks<TBundlerCfg>[];
   readonly context: MutablePluginSetupContext<TBundlerCfg>;
+  collectShortcutContributions(): Promise<PluginCliShortcut[]>;
 }
 
 interface ScheduledDevChangeSnapshot {
@@ -286,12 +294,22 @@ function createDevFrameworkOutputTransaction(
 }
 
 function createDevPluginExecutionSnapshot<TBundlerCfg>(
+  plugins: readonly Plugin<TBundlerCfg>[],
   hooks: PluginHooks<TBundlerCfg>[],
   context: MutablePluginSetupContext<TBundlerCfg>,
 ): DevPluginExecutionSnapshot<TBundlerCfg> {
+  let shortcutContributions: Promise<PluginCliShortcut[]> | undefined;
   return {
     hooks: [...hooks],
     context,
+    collectShortcutContributions() {
+      shortcutContributions ??= collectPluginCliShortcuts(plugins, {
+        onError(error) {
+          logger.warn`A plugin CLI shortcut contribution was ignored: ${error}`;
+        },
+      });
+      return shortcutContributions;
+    },
     ...createDevCycleTracker(),
   };
 }
@@ -391,6 +409,13 @@ export interface DevOptions<TBundlerCfg = unknown> {
   flags?: CliFlags;
   /** Reload the initial config through loadConfig inside the watcher handshake. */
   reloadInitialConfig?: boolean;
+  /**
+   * Disable the interactive CLI shortcuts engine regardless of
+   * `ev.config.ts` (mirrors `ev dev --no-shortcuts`). Only `false` is
+   * meaningful; undefined defers to the resolved `dev.cliShortcuts` value
+   * (default on).
+   */
+  cliShortcuts?: false;
   loadConfig?: (
     cwd: string,
     context?: {
@@ -459,6 +484,26 @@ interface DevApiRuntimeState<TBundlerCfg> {
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime> | undefined;
   plan: BuildPlan;
   serverEntry: string | undefined;
+}
+
+/**
+ * Apply the programmatic `cliShortcuts` override (e.g. `ev dev --no-shortcuts`)
+ * to the configure-hook output before resolution. `false` forces the engine
+ * off; undefined defers to the user's `ev.config.ts` → `dev.cliShortcuts`.
+ * Returns the input untouched when there is nothing to do.
+ */
+function withCliShortcutsOverride<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+  override: false | undefined,
+): Config<TBundlerCfg> | undefined {
+  if (override !== false) return config;
+  return {
+    ...(config ?? {}),
+    dev: {
+      ...(config?.dev ?? {}),
+      cliShortcuts: false,
+    },
+  };
 }
 
 async function createGeneratedDevStateSnapshot(
@@ -998,11 +1043,14 @@ async function runDev<TBundlerCfg = unknown>(
           },
         })
       : userConfig;
-  const configuredConfig = await runConfigureHooks(initialUserConfig, {
-    mode: "development",
-    cwd,
-    flags,
-  });
+  const configuredConfig = withCliShortcutsOverride(
+    await runConfigureHooks(initialUserConfig, {
+      mode: "development",
+      cwd,
+      flags,
+    }),
+    options?.cliShortcuts,
+  );
   const baseResolvedConfig = resolveConfig(configuredConfig);
   const pageRoot = baseResolvedConfig.application
     ? path.resolve(cwd, baseResolvedConfig.application.pageRoot)
@@ -1210,6 +1258,7 @@ async function runDevSession<TBundlerCfg = unknown>(
     throw error;
   }
   let activePluginExecution = createDevPluginExecutionSnapshot(
+    activeConfig.plugins,
     hooks,
     pluginCtx,
   );
@@ -1424,6 +1473,26 @@ async function runDevSession<TBundlerCfg = unknown>(
   const lastScheduledDevChanges = new Map<string, ScheduledDevChangeSnapshot>();
   let pendingForcedConfigReload = false;
   let devSessionEnding = false;
+  let devServerOrigin: string | undefined;
+  let pendingDevServerOrigin: string | undefined;
+  let devShortcutPublicationSuspended = false;
+  let restoreDevCliShortcutsAfterUpdate = false;
+  let cliShortcutsBinding:
+    | {
+        pluginExecution: DevPluginExecutionSnapshot<TBundlerCfg>;
+        unbind: UnbindCLIShortcuts;
+      }
+    | undefined;
+  const pendingShortcutActionsByPluginExecution = new Map<
+    DevPluginExecutionSnapshot<TBundlerCfg>,
+    Set<Promise<void>>
+  >();
+  const deferredPluginExecutionDisposals = new Map<
+    DevPluginExecutionSnapshot<TBundlerCfg>,
+    () => Promise<void>
+  >();
+  let cliShortcutsRestoreScheduled = false;
+  let cliShortcutsRefreshQueue = Promise.resolve();
   const expectedApiExits = new WeakSet<ApiProcess>();
   const apiProcessController = new DevApiProcessController<ApiProcess>({
     expectExit(process) {
@@ -1560,6 +1629,163 @@ async function runDevSession<TBundlerCfg = unknown>(
     await restartQueue;
   };
 
+  const trackPendingShortcutAction = (
+    pluginExecution: DevPluginExecutionSnapshot<TBundlerCfg>,
+    idle: Promise<void>,
+  ): void => {
+    let pending = pendingShortcutActionsByPluginExecution.get(pluginExecution);
+    if (!pending) {
+      pending = new Set();
+      pendingShortcutActionsByPluginExecution.set(pluginExecution, pending);
+    }
+    pending.add(idle);
+    void idle.then(() => {
+      pending?.delete(idle);
+      if (pending?.size === 0) {
+        pendingShortcutActionsByPluginExecution.delete(pluginExecution);
+      }
+    });
+  };
+
+  const listPendingShortcutActions = (): Promise<void>[] =>
+    [...pendingShortcutActionsByPluginExecution.values()].flatMap((pending) => [
+      ...pending,
+    ]);
+
+  const scheduleDevCliShortcutsRestore = (
+    pendingShortcutActions: readonly Promise<void>[],
+  ): void => {
+    if (cliShortcutsRestoreScheduled) return;
+    cliShortcutsRestoreScheduled = true;
+    void Promise.allSettled(pendingShortcutActions).then(() => {
+      cliShortcutsRestoreScheduled = false;
+      if (devSessionEnding) return;
+      if (devShortcutPublicationSuspended) {
+        restoreDevCliShortcutsAfterUpdate = true;
+        return;
+      }
+      void refreshDevCliShortcuts().catch((error) => {
+        logger.warn`Plugin CLI shortcuts could not be restored after an action finished: ${error}`;
+      });
+    });
+  };
+
+  const disposeDevPluginExecution = async (
+    pluginExecution: DevPluginExecutionSnapshot<TBundlerCfg>,
+    deferForShortcutActions: boolean,
+  ): Promise<void> => {
+    const existingDeferredDispose =
+      deferredPluginExecutionDisposals.get(pluginExecution);
+    if (existingDeferredDispose) {
+      if (!deferForShortcutActions) await existingDeferredDispose();
+      return;
+    }
+    const pendingShortcutActions = [
+      ...(pendingShortcutActionsByPluginExecution.get(pluginExecution) ?? []),
+    ];
+    const dispose = async () => {
+      await pluginExecution.waitForIdle();
+      await runDisposeHooks(pluginExecution.hooks, pluginExecution.context);
+    };
+    if (deferForShortcutActions && pendingShortcutActions.length > 0) {
+      let disposePromise: Promise<void> | undefined;
+      const disposeOnce = () => {
+        disposePromise ??= dispose().finally(() => {
+          if (
+            deferredPluginExecutionDisposals.get(pluginExecution) ===
+            disposeOnce
+          ) {
+            deferredPluginExecutionDisposals.delete(pluginExecution);
+          }
+        });
+        return disposePromise;
+      };
+      deferredPluginExecutionDisposals.set(pluginExecution, disposeOnce);
+      void Promise.allSettled(pendingShortcutActions)
+        .then(disposeOnce)
+        .catch((error) => {
+          logger.warn`Deferred plugin cleanup after a CLI shortcut action failed: ${error}`;
+        });
+      return;
+    }
+    await dispose();
+  };
+
+  const clearDevCliShortcuts = async (
+    actionDrainTimeoutMs = DEV_CLI_SHORTCUT_ACTION_DRAIN_TIMEOUT_MS,
+  ): Promise<{ drained: boolean; idle?: Promise<void> }> => {
+    const binding = cliShortcutsBinding;
+    cliShortcutsBinding = undefined;
+    if (!binding) return { drained: true };
+    const result = await binding.unbind({ actionDrainTimeoutMs });
+    if (!result.drained) {
+      trackPendingShortcutAction(binding.pluginExecution, result.idle);
+    }
+    return result;
+  };
+
+  const refreshDevCliShortcutsNow = async (
+    origin: string | undefined,
+    cliShortcutsEnabled: boolean,
+    pluginExecution: DevPluginExecutionSnapshot<TBundlerCfg>,
+  ): Promise<void> => {
+    if (origin !== undefined) devServerOrigin = origin;
+    if (!devServerOrigin) return;
+
+    if (!cliShortcutsEnabled) {
+      await clearDevCliShortcuts();
+      return;
+    }
+
+    // Plugins contribute every key; core ships none. The session exposes only
+    // the dev origin and a shutdown trigger — any richer action (restart,
+    // open browser, …) is implemented by plugins from these primitives.
+    const session: PluginDevSession = {
+      origin: devServerOrigin,
+      close() {
+        if (devSessionEnding) return Promise.resolve();
+        resolveShutdown?.();
+        return Promise.resolve();
+      },
+    };
+
+    const customShortcuts =
+      await pluginExecution.collectShortcutContributions();
+    if (devSessionEnding) return;
+
+    // Drain the previous snapshot before its plugin hooks are disposed, then
+    // publish the replacement binding for the active snapshot.
+    const previousBinding = await clearDevCliShortcuts();
+    if (devSessionEnding) return;
+    const pendingShortcutActions = listPendingShortcutActions();
+    if (pendingShortcutActions.length > 0) {
+      if (!previousBinding.drained) {
+        logger.warn`Plugin CLI shortcuts were detached, but the running action did not finish within ${DEV_CLI_SHORTCUT_ACTION_DRAIN_TIMEOUT_MS}ms. New shortcuts will be restored after it finishes.`;
+      }
+      scheduleDevCliShortcutsRestore(pendingShortcutActions);
+      return;
+    }
+    cliShortcutsBinding = {
+      pluginExecution,
+      unbind: bindCLIShortcuts(session, { customShortcuts }),
+    };
+  };
+
+  const refreshDevCliShortcuts = (
+    origin: string | undefined = devServerOrigin,
+  ): Promise<void> => {
+    const cliShortcutsEnabled = activeConfig.dev.cliShortcuts !== false;
+    const pluginExecution = activePluginExecution;
+    const refresh = cliShortcutsRefreshQueue.then(
+      () =>
+        refreshDevCliShortcutsNow(origin, cliShortcutsEnabled, pluginExecution),
+      () =>
+        refreshDevCliShortcutsNow(origin, cliShortcutsEnabled, pluginExecution),
+    );
+    cliShortcutsRefreshQueue = refresh.catch(() => {});
+    return refresh;
+  };
+
   const loadCurrentConfig = async (
     reloadConfiguredConfig: boolean,
     onRouteWatchState?: (state: {
@@ -1568,22 +1794,25 @@ async function runDevSession<TBundlerCfg = unknown>(
     }) => void,
     onConfigDependency?: (file: string) => void,
   ) => {
-    const nextConfiguredConfig = reloadConfiguredConfig
-      ? await runConfigureHooks(
-          options?.loadConfig
-            ? await options.loadConfig(cwd, {
-                onDependency(file) {
-                  onConfigDependency?.(file);
-                },
-              })
-            : userConfig,
-          {
-            mode: "development",
-            cwd,
-            flags,
-          },
-        )
-      : activeConfiguredConfig;
+    const nextConfiguredConfig = withCliShortcutsOverride(
+      reloadConfiguredConfig
+        ? await runConfigureHooks(
+            options?.loadConfig
+              ? await options.loadConfig(cwd, {
+                  onDependency(file) {
+                    onConfigDependency?.(file);
+                  },
+                })
+              : userConfig,
+            {
+              mode: "development",
+              cwd,
+              flags,
+            },
+          )
+        : activeConfiguredConfig,
+      options?.cliShortcuts,
+    );
     const nextBaseResolvedConfig = resolveConfig(nextConfiguredConfig);
     const nextPageRoot = nextBaseResolvedConfig.application
       ? path.resolve(cwd, nextBaseResolvedConfig.application.pageRoot)
@@ -1688,6 +1917,7 @@ async function runDevSession<TBundlerCfg = unknown>(
       throw error;
     }
     const nextPluginExecution = createDevPluginExecutionSnapshot(
+      nextConfig.plugins,
       nextHooks,
       nextPluginCtx,
     );
@@ -1716,8 +1946,7 @@ async function runDevSession<TBundlerCfg = unknown>(
         }
         settlement = "committed";
         retirePreviousPluginContext();
-        await previousPluginExecution.waitForIdle();
-        await runDisposeHooks(previousHooks, previousPluginCtx);
+        await disposeDevPluginExecution(previousPluginExecution, true);
       },
       async rollback() {
         if (settlement !== "pending") return;
@@ -2019,6 +2248,7 @@ async function runDevSession<TBundlerCfg = unknown>(
 
   const commitStagedPluginHooks = async (
     stagedPluginHooks: Awaited<ReturnType<typeof stagePluginHooks>> | undefined,
+    nextDevServerOrigin: string | undefined,
     reconcileFrom?: PreparedWatchFilesPlan,
     additionalBaselines: Iterable<PreparedWatchFilesPlan> = [],
   ) => {
@@ -2026,6 +2256,18 @@ async function runDevSession<TBundlerCfg = unknown>(
       ...(stagedPluginHooks?.watchBaselines.values() ?? []),
       ...additionalBaselines,
     ];
+    if (stagedPluginHooks || nextDevServerOrigin !== undefined) {
+      try {
+        await refreshDevCliShortcuts(nextDevServerOrigin);
+      } catch (error) {
+        logger.warn`Plugin CLI shortcuts could not be refreshed: ${error}`;
+        try {
+          await clearDevCliShortcuts();
+        } catch (cleanupError) {
+          logger.warn`Plugin CLI shortcuts could not be cleared after a refresh failure: ${cleanupError}`;
+        }
+      }
+    }
     try {
       await stagedPluginHooks?.commit();
     } catch (error) {
@@ -2036,13 +2278,12 @@ async function runDevSession<TBundlerCfg = unknown>(
     }
   };
 
-  const handleDevDependencyChange = async (
+  const applyDevDependencyChange = async (
     changedFiles: readonly string[],
     forceConfigReload = false,
     devWatchReconcileFrom?: PreparedWatchFilesPlan,
     candidateWatchReconcileFrom?: PreparedWatchFilesPlan,
   ) => {
-    if (devSessionEnding || devWatchFailed) return;
     let currentDevWatchReconcileFrom = devWatchReconcileFrom;
     const configDependencyFiles = new Set([
       ...listConfigDependencyFiles(cwd),
@@ -2594,8 +2835,11 @@ async function runDevSession<TBundlerCfg = unknown>(
       activeServerRouteWatchState = nextServerRouteWatchState;
       commitCandidateConfigDependencies();
       commitCandidateObservedSourceDependencies();
+      const committedDevServerOrigin = pendingDevServerOrigin;
+      pendingDevServerOrigin = undefined;
       await commitStagedPluginHooks(
         stagedPluginHooks,
+        committedDevServerOrigin,
         currentDevWatchReconcileFrom,
         [...candidateRouteWatchBaselines, ...candidateSourceBaselines.values()],
       );
@@ -2617,6 +2861,34 @@ async function runDevSession<TBundlerCfg = unknown>(
         "[evjs] Framework dev state update failed and rollback also failed.",
       );
     }
+  };
+
+  const handleDevDependencyChange = (
+    changedFiles: readonly string[],
+    forceConfigReload = false,
+    devWatchReconcileFrom?: PreparedWatchFilesPlan,
+    candidateWatchReconcileFrom?: PreparedWatchFilesPlan,
+  ): Promise<void> => {
+    if (devSessionEnding || devWatchFailed) return Promise.resolve();
+    devShortcutPublicationSuspended = true;
+    restoreDevCliShortcutsAfterUpdate = false;
+    pendingDevServerOrigin = undefined;
+    return applyDevDependencyChange(
+      changedFiles,
+      forceConfigReload,
+      devWatchReconcileFrom,
+      candidateWatchReconcileFrom,
+    ).finally(() => {
+      const restoreShortcuts = restoreDevCliShortcutsAfterUpdate;
+      restoreDevCliShortcutsAfterUpdate = false;
+      pendingDevServerOrigin = undefined;
+      devShortcutPublicationSuspended = false;
+      if (restoreShortcuts && !devSessionEnding) {
+        void refreshDevCliShortcuts().catch((error) => {
+          logger.warn`Plugin CLI shortcuts could not be restored after a framework update: ${error}`;
+        });
+      }
+    });
   };
 
   function overlapsCandidateWatchDependency(changedFile: string): boolean {
@@ -2693,6 +2965,10 @@ async function runDevSession<TBundlerCfg = unknown>(
     await runCleanupTasks([
       () => clearDevDependencyWatcher(),
       () => clearCandidateDependencyWatcher(),
+      async () => {
+        await cliShortcutsRefreshQueue;
+        await clearDevCliShortcuts(0);
+      },
       () => devController?.close?.(),
       () => devUpdateQueue.catch(() => {}),
       () => outputCycleQueue,
@@ -2713,8 +2989,12 @@ async function runDevSession<TBundlerCfg = unknown>(
         const execution = activePluginExecution;
         retireBundlerGeneration(activeBundlerGeneration);
         retirePluginContext();
-        await execution.waitForIdle();
-        await runDisposeHooks(execution.hooks, execution.context);
+        await runCleanupTasks([
+          ...[...deferredPluginExecutionDisposals.values()].map(
+            (dispose) => dispose,
+          ),
+          () => disposeDevPluginExecution(execution, false),
+        ]);
       },
     ]);
   };
@@ -2733,12 +3013,17 @@ async function runDevSession<TBundlerCfg = unknown>(
         plan: activePlan,
         addWatchFile: addBundlerConfigWatchFile,
         callbacks: {
-          onDevServerReady(context) {
+          async onDevServerReady(context) {
             logger.info`${formatDevServerReady(
               context,
               activeConfig,
               activePlan,
             )}`;
+            if (devShortcutPublicationSuspended) {
+              pendingDevServerOrigin = context.origin;
+              return;
+            }
+            await refreshDevCliShortcuts(context.origin);
           },
           async onBuildFacts(generation, bundlerFacts, options) {
             const { isRebuild } = options;
