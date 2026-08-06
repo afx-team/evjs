@@ -576,6 +576,7 @@ export interface DefinedPluginDescriptor<
   readonly enforce?: "pre" | "normal" | "post";
   readonly configure?: DefinedPluginConfigureHook<TApplication, TBundlerCfg>;
   readonly setup?: DefinedPluginSetupHook<TApplication, TBundlerCfg>;
+  readonly cliShortcuts?: Plugin<TBundlerCfg>["cliShortcuts"];
   /** Emit application-wide `.ev` IR with all enabled Pages in `ctx.pages`. */
   readonly emitIR?: DefinedPluginEmitIRHook<TApplication, TPage, TBundlerCfg>;
   /** Emit `.ev` IR once for each enabled Page. */
@@ -821,6 +822,7 @@ export function definePlugin<
     });
     const configure = definition.configure;
     const setup = definition.setup;
+    const cliShortcuts = definition.cliShortcuts;
     const emitIR = definition.emitIR;
     const emitPageIR = definition.emitPageIR;
     const plugin: Plugin<TBundlerCfg> = {
@@ -859,6 +861,7 @@ export function definePlugin<
             },
           }
         : {}),
+      ...(cliShortcuts ? { cliShortcuts } : {}),
       ...(emitIR || emitPageIR
         ? {
             async emitIR(context) {
@@ -1362,6 +1365,7 @@ const DEFINED_PLUGIN_DESCRIPTOR_FIELDS = [
   "enforce",
   "configure",
   "setup",
+  "cliShortcuts",
   "emitIR",
   "emitPageIR",
 ] as const;
@@ -1502,7 +1506,13 @@ function assertDefinedPluginDescriptor<
       '[evjs] definePlugin() enforce must be "pre", "normal", or "post".',
     );
   }
-  for (const field of ["configure", "setup", "emitIR", "emitPageIR"] as const) {
+  for (const field of [
+    "configure",
+    "setup",
+    "cliShortcuts",
+    "emitIR",
+    "emitPageIR",
+  ] as const) {
     if (
       descriptor[field] !== undefined &&
       typeof descriptor[field] !== "function"

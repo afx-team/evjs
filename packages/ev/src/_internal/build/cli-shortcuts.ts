@@ -3,7 +3,7 @@
  *
  * This is the core registration + execution surface only. Core ships no
  * built-in shortcuts — not even `h` (help) — every key is contributed by a
- * plugin via the `configureShortcuts` setup hook. The engine mirrors the
+ * plugin via the descriptor-level `cliShortcuts()` contribution. The engine mirrors the
  * mechanics of Vite's `bindCLIShortcuts` (readline `'line'` events, an
  * `actionRunning` guard that drops concurrent presses, and a TTY + non-CI
  * no-op default) but is bundler-agnostic and owns no default keys.

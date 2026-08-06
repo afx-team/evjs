@@ -57,8 +57,8 @@ export interface ResolvedDevConfig {
   proxy: DevProxyRule[];
   /**
    * Whether the interactive CLI shortcuts engine is enabled (default `true`).
-   * Shortcuts themselves are contributed by plugins via the
-   * `configureShortcuts` setup hook; this flag only gates the engine.
+   * Shortcuts themselves are contributed by plugins through descriptor-level
+   * `cliShortcuts()` contributions; this flag only gates the engine.
    */
   cliShortcuts: boolean;
 }
@@ -222,8 +222,9 @@ export interface DevConfig {
   /**
    * Interactive CLI keyboard shortcuts while `ev dev` runs. `false` disables
    * the engine (default `true`). Shortcuts themselves are registered by plugins
-   * via the `configureShortcuts` setup hook — core ships none. The engine is
-   * always a no-op in CI and non-TTY contexts, regardless of this option.
+   * through descriptor-level `cliShortcuts()` contributions — core ships none.
+   * The engine is always a no-op in CI and non-TTY contexts, regardless of
+   * this option.
    */
   cliShortcuts?: boolean;
 }
@@ -554,6 +555,7 @@ const PUBLIC_PLUGIN_KEYS = new Set([
   "enforce",
   "configure",
   "setup",
+  "cliShortcuts",
   "emitIR",
 ]);
 const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
@@ -758,7 +760,7 @@ function resolvePlugin<TBundlerCfg = unknown>(
     pluginDescriptor,
     PUBLIC_PLUGIN_KEYS,
     path,
-    "id, dependencies, optionalDependencies, enforce, configure, setup, or emitIR",
+    "id, dependencies, optionalDependencies, enforce, configure, setup, cliShortcuts, or emitIR",
     (key) =>
       isPluginLifecycleDescriptorField(key)
         ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
@@ -771,6 +773,7 @@ function resolvePlugin<TBundlerCfg = unknown>(
     enforce: rawEnforce,
     configure: rawConfigure,
     setup: rawSetup,
+    cliShortcuts: rawCliShortcuts,
     emitIR: rawEmitIR,
   } = pluginDescriptor;
 
@@ -784,6 +787,12 @@ function resolvePlugin<TBundlerCfg = unknown>(
     assertFunction<NonNullable<Plugin<TBundlerCfg>["setup"]>>(
       rawSetup,
       `${path}.setup`,
+    );
+  }
+  if (rawCliShortcuts !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["cliShortcuts"]>>(
+      rawCliShortcuts,
+      `${path}.cliShortcuts`,
     );
   }
   if (rawEmitIR !== undefined) {
@@ -833,6 +842,7 @@ function resolvePlugin<TBundlerCfg = unknown>(
       : {}),
     ...(rawConfigure !== undefined ? { configure: rawConfigure } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
+    ...(rawCliShortcuts !== undefined ? { cliShortcuts: rawCliShortcuts } : {}),
     ...(rawEmitIR !== undefined ? { emitIR: rawEmitIR } : {}),
   };
   copyDefinedPluginRuntime(plugin as Plugin<TBundlerCfg>, resolved);

@@ -19,6 +19,8 @@ import {
 } from "../../config/index.js";
 import type {
   CliFlags,
+  Plugin,
+  PluginCliShortcut,
   PluginDevSession,
   PluginHooks,
   PluginSetupContext,
@@ -96,7 +98,7 @@ import {
 } from "./page-route-types.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
 import {
-  collectConfigureShortcutsHooks,
+  collectPluginCliShortcuts,
   collectPluginHooks,
   hasSamePluginIdentity,
   orderPluginsByDependencies,
@@ -137,6 +139,7 @@ interface DevCycleTracker {
 interface DevPluginExecutionSnapshot<TBundlerCfg> extends DevCycleTracker {
   readonly hooks: PluginHooks<TBundlerCfg>[];
   readonly context: MutablePluginSetupContext<TBundlerCfg>;
+  collectShortcutContributions(): Promise<PluginCliShortcut[]>;
 }
 
 interface ScheduledDevChangeSnapshot {
@@ -291,12 +294,22 @@ function createDevFrameworkOutputTransaction(
 }
 
 function createDevPluginExecutionSnapshot<TBundlerCfg>(
+  plugins: readonly Plugin<TBundlerCfg>[],
   hooks: PluginHooks<TBundlerCfg>[],
   context: MutablePluginSetupContext<TBundlerCfg>,
 ): DevPluginExecutionSnapshot<TBundlerCfg> {
+  let shortcutContributions: Promise<PluginCliShortcut[]> | undefined;
   return {
     hooks: [...hooks],
     context,
+    collectShortcutContributions() {
+      shortcutContributions ??= collectPluginCliShortcuts(plugins, {
+        onError(error) {
+          logger.warn`A plugin CLI shortcut contribution was ignored: ${error}`;
+        },
+      });
+      return shortcutContributions;
+    },
     ...createDevCycleTracker(),
   };
 }
@@ -1245,6 +1258,7 @@ async function runDevSession<TBundlerCfg = unknown>(
     throw error;
   }
   let activePluginExecution = createDevPluginExecutionSnapshot(
+    activeConfig.plugins,
     hooks,
     pluginCtx,
   );
@@ -1477,10 +1491,6 @@ async function runDevSession<TBundlerCfg = unknown>(
     DevPluginExecutionSnapshot<TBundlerCfg>,
     () => Promise<void>
   >();
-  const cliShortcutContributionsByPluginExecution = new WeakMap<
-    DevPluginExecutionSnapshot<TBundlerCfg>,
-    ReturnType<typeof collectConfigureShortcutsHooks<TBundlerCfg>>
-  >();
   let cliShortcutsRestoreScheduled = false;
   let cliShortcutsRefreshQueue = Promise.resolve();
   const expectedApiExits = new WeakSet<ApiProcess>();
@@ -1647,7 +1657,7 @@ async function runDevSession<TBundlerCfg = unknown>(
   ): void => {
     if (cliShortcutsRestoreScheduled) return;
     cliShortcutsRestoreScheduled = true;
-    void Promise.all(pendingShortcutActions).then(() => {
+    void Promise.allSettled(pendingShortcutActions).then(() => {
       cliShortcutsRestoreScheduled = false;
       if (devSessionEnding) return;
       if (devShortcutPublicationSuspended) {
@@ -1739,23 +1749,8 @@ async function runDevSession<TBundlerCfg = unknown>(
       },
     };
 
-    let customShortcutsPromise =
-      cliShortcutContributionsByPluginExecution.get(pluginExecution);
-    if (!customShortcutsPromise) {
-      customShortcutsPromise = collectConfigureShortcutsHooks(
-        pluginExecution.hooks,
-        {
-          onError(error) {
-            logger.warn`A plugin CLI shortcut contribution was ignored: ${error}`;
-          },
-        },
-      );
-      cliShortcutContributionsByPluginExecution.set(
-        pluginExecution,
-        customShortcutsPromise,
-      );
-    }
-    const customShortcuts = await customShortcutsPromise;
+    const customShortcuts =
+      await pluginExecution.collectShortcutContributions();
     if (devSessionEnding) return;
 
     // Drain the previous snapshot before its plugin hooks are disposed, then
@@ -1922,6 +1917,7 @@ async function runDevSession<TBundlerCfg = unknown>(
       throw error;
     }
     const nextPluginExecution = createDevPluginExecutionSnapshot(
+      nextConfig.plugins,
       nextHooks,
       nextPluginCtx,
     );

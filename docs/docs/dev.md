@@ -141,7 +141,8 @@ paths, so app-specific API proxies can keep their own routing behavior.
 default is on; set `dev.cliShortcuts: false` to disable it. The engine mirrors
 Vite's `bindCLIShortcuts` (readline line events, one key + `Enter`) but ships
 no built-in shortcuts of its own — every key is contributed by a plugin via the
-`configureShortcuts` setup hook (see [Plugin CLI Shortcuts](#plugin-cli-shortcuts)).
+descriptor-level `cliShortcuts()` contribution (see
+[Plugin CLI Shortcuts](#plugin-cli-shortcuts)).
 It is always a no-op in CI and non-TTY contexts, regardless of this option.
 
 ```ts
@@ -238,7 +239,7 @@ interactive keyboard shortcuts. Core ships **no built-in shortcuts** — every k
 `bindCLIShortcuts` mechanics (one key + `Enter`, with concurrent presses
 dropped) but leaves the action set to the ecosystem.
 
-Register shortcuts from a plugin's `setup()` hook:
+Declare shortcuts directly on the plugin descriptor:
 
 ```ts
 // ev.config.ts
@@ -247,36 +248,37 @@ import { definePlugin } from "@evjs/ev/plugin";
 
 const shortcutsPlugin = definePlugin({
   id: "my-shortcuts",
-  setup() {
-    return {
-      configureShortcuts() {
-        return [
-          {
-            key: "u",
-            description: "show server url",
-            action(session) {
-              console.log(session.origin);
-            },
-          },
-          {
-            key: "q",
-            description: "quit",
-            action(session) {
-              session.close();
-            },
-          },
-        ];
+  cliShortcuts() {
+    return [
+      {
+        key: "u",
+        description: "show server url",
+        action(session) {
+          console.log(session.origin);
+        },
       },
-    };
+      {
+        key: "q",
+        description: "quit",
+        action(session) {
+          session.close();
+        },
+      },
+    ];
   },
 });
 
 export default defineConfig({ plugins: [shortcutsPlugin()] });
 ```
 
-The `configureShortcuts` hook returns a `PluginCliShortcut[]`, and the first plugin to
-register a key owns it (later duplicates are dropped). Each `action` receives the
-live `PluginDevSession`:
+`cliShortcuts()` returns a `PluginCliShortcut[]`. evjs collects it once for each
+resolved plugin snapshot; it is a declaration, not a `setup()` lifecycle event.
+Because it does not depend on the hooks object's identity, ordinary setup hooks
+may be reused where otherwise safe. Shortcut actions should not depend on private
+resources created inside `setup()`.
+
+The first plugin to register a key owns it (later duplicates are dropped). Each
+`action` receives the live `PluginDevSession`:
 
 - `origin: string` — the client dev server URL
   (`http(s)://localhost:<port>`).

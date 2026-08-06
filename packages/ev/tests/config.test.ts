@@ -1148,11 +1148,13 @@ describe("resolveConfig", () => {
 
   it("accepts only the single plugin descriptor shape", () => {
     const setup = () => ({});
+    const cliShortcuts = () => [{ key: "h", description: "help" }];
     const plugin = {
       id: "test-plugin",
       dependencies: ["required"],
       optionalDependencies: ["optional"],
       enforce: "pre" as const,
+      cliShortcuts,
       setup,
     };
     const resolved = resolveConfig({
@@ -1162,6 +1164,7 @@ describe("resolveConfig", () => {
     expect(resolved.plugins).toEqual([plugin]);
     expect(resolved.plugins[0]).toMatchObject({
       id: "test-plugin",
+      cliShortcuts,
     });
     expect(resolved.plugins[0]).not.toBe(plugin);
     expect(Object.isFrozen(resolved.plugins[0])).toBe(true);
@@ -1200,6 +1203,21 @@ describe("resolveConfig", () => {
         ],
       }),
     ).toThrow("Return the hook from plugins[0].setup() instead");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            id: "legacy-shortcuts-hook",
+            configureShortcuts() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("plugins[0].configureShortcuts is not supported");
+    expect(() =>
+      resolveConfig({
+        plugins: [{ id: "invalid-shortcuts", cliShortcuts: true } as never],
+      }),
+    ).toThrow("plugins[0].cliShortcuts must be a function");
     expect(() =>
       resolveConfig({
         plugins: [

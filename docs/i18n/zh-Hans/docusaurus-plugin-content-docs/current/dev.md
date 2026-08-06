@@ -122,7 +122,7 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 `dev.cliShortcuts` 控制交互式 CLI 键盘快捷键引擎。默认开启;设为
 `dev.cliShortcuts: false` 可关闭。该引擎复刻 Vite `bindCLIShortcuts`
 的机制(readline line 事件,单键 + `Enter`),但内置不提供任何快捷键 ——
-每个键都由插件通过 `configureShortcuts` setup hook 贡献(见
+每个键都由插件 descriptor 顶层的 `cliShortcuts()` 贡献(见
 [插件 CLI 快捷键](#插件-cli-快捷键))。无论该选项如何,在 CI / 非 TTY 场景下
 引擎始终为 no-op。
 
@@ -206,7 +206,7 @@ programmatic 选项 `cliShortcuts` 可覆盖 `dev.cliShortcuts`:传 `false`
 **不内置任何快捷键** —— 每个键(包括 `h` 帮助)均由插件贡献。该机制复刻 Vite
 `bindCLIShortcuts`(单键 + `Enter`,并发的按键会被丢弃),但把 action 集合留给生态。
 
-在插件 `setup()` hook 中注册快捷键:
+在插件 descriptor 顶层声明快捷键:
 
 ```ts
 // ev.config.ts
@@ -215,35 +215,36 @@ import { definePlugin } from "@evjs/ev/plugin";
 
 const shortcutsPlugin = definePlugin({
   id: "my-shortcuts",
-  setup() {
-    return {
-      configureShortcuts() {
-        return [
-          {
-            key: "u",
-            description: "显示 server url",
-            action(session) {
-              console.log(session.origin);
-            },
-          },
-          {
-            key: "q",
-            description: "退出",
-            action(session) {
-              session.close();
-            },
-          },
-        ];
+  cliShortcuts() {
+    return [
+      {
+        key: "u",
+        description: "显示 server url",
+        action(session) {
+          console.log(session.origin);
+        },
       },
-    };
+      {
+        key: "q",
+        description: "退出",
+        action(session) {
+          session.close();
+        },
+      },
+    ];
   },
 });
 
 export default defineConfig({ plugins: [shortcutsPlugin()] });
 ```
 
-`configureShortcuts` hook 返回 `PluginCliShortcut[]`,首个为某个 key 注册快捷键的插件
-拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的 `PluginDevSession`:
+`cliShortcuts()` 返回 `PluginCliShortcut[]`。evjs 会为每个 resolved plugin snapshot
+收集一次；它是声明式 contribution，不是 `setup()` lifecycle event。由于它不依赖 hooks
+对象 identity，普通 setup hooks 在其他条件允许时可以复用。Shortcut action 不应依赖
+`setup()` 内创建的私有资源。
+
+首个为某个 key 注册快捷键的插件拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的
+`PluginDevSession`:
 
 - `origin: string` —— 客户端 dev server URL(`http(s)://localhost:<port>`)。
 - `close()` —— 触发 dev 关闭(等价于 `Ctrl-C`)。

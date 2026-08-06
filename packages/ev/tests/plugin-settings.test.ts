@@ -548,6 +548,12 @@ describe("definePlugin and pluginOptions", () => {
         setup: true,
       } as never),
     ).toThrow("definePlugin() setup must be a function");
+    expect(() =>
+      definePlugin({
+        id: "invalid-cli-shortcuts",
+        cliShortcuts: true,
+      } as never),
+    ).toThrow("definePlugin() cliShortcuts must be a function");
   });
 
   it("captures an immutable descriptor snapshot without executing accessors", () => {
@@ -560,6 +566,9 @@ describe("definePlugin and pluginOptions", () => {
       setup() {
         return {};
       },
+      cliShortcuts() {
+        return [{ key: "h", description: "help" }];
+      },
     };
     const factory = definePlugin(descriptor);
 
@@ -567,6 +576,7 @@ describe("definePlugin and pluginOptions", () => {
     Reflect.set(descriptor, "id", "mutated-plugin");
     Reflect.set(descriptor, "page", undefined);
     Reflect.set(descriptor, "setup", undefined);
+    Reflect.set(descriptor, "cliShortcuts", undefined);
 
     const plugin = factory();
     const registry = collectPluginSettingsRegistry([
@@ -577,6 +587,9 @@ describe("definePlugin and pluginOptions", () => {
     expect(plugin.dependencies).toEqual(["base-plugin"]);
     expect(Object.isFrozen(plugin.dependencies)).toBe(true);
     expect(plugin.setup).toBeTypeOf("function");
+    expect(plugin.cliShortcuts?.()).toEqual([
+      { key: "h", description: "help" },
+    ]);
     expect(registry.catalog.entries["snapshot-plugin"]?.page).toEqual({
       defaultable: true,
     });

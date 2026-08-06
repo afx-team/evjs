@@ -290,6 +290,19 @@ export interface Plugin<TBundlerCfg = unknown> {
   setup?: PluginSetupHook<TBundlerCfg>;
 
   /**
+   * Declare interactive CLI keyboard shortcuts for `ev dev`.
+   *
+   * This contribution is collected once for each resolved plugin snapshot.
+   * Its static descriptors are independent from setup lifecycle state; each
+   * `action` receives the live {@link PluginDevSession} when its key is pressed.
+   * Core ships no built-in shortcuts, including help. The first plugin to
+   * register a key owns it, and the engine is a no-op in CI / non-TTY contexts.
+   */
+  cliShortcuts?: () =>
+    | readonly PluginCliShortcut[]
+    | Promise<readonly PluginCliShortcut[]>;
+
+  /**
    * Emit generated framework modules and slots into the `.ev` IR.
    *
    * This hook is separate from setup() lifecycle hooks. It declares generated
@@ -781,24 +794,6 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * isolated snapshot; mutations do not affect later hooks or artifacts.
    */
   afterBuild?: (result: BuildResult) => void | Promise<void>;
-
-  /**
-   * Contribute interactive CLI keyboard shortcuts for `ev dev`.
-   *
-   * Runs once per plugin setup snapshot. Plugins return static shortcut
-   * descriptors whose `action` receives the live {@link PluginDevSession} only
-   * when the key is pressed later, so actions may close over setup-time values
-   * without needing the runtime origin eagerly. Core ships no built-in shortcuts;
-   * every key (including `h` help) is plugin-contributed. A plugin that wants a
-   * help listing should register `h` itself. The first plugin to register a
-   * key owns it; later duplicates are dropped. The engine is a no-op in CI /
-   * non-TTY contexts. Return a fresh hooks object from each setup call when it
-   * contains this hook; reusing it across snapshots or plugin ids would make
-   * shortcut diagnostics and lifecycle ownership ambiguous.
-   */
-  configureShortcuts?: () =>
-    | readonly PluginCliShortcut[]
-    | Promise<readonly PluginCliShortcut[]>;
 
   /**
    * Retire this plugin snapshot after a production build, dev shutdown,

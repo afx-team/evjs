@@ -13832,7 +13832,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       async dev({ callbacks }) {
         await callbacks.onDevServerReady?.({ origin: ORIGIN });
         // Wait at least one macrotask so the engine's
-        // collectConfigureShortcutsHooks().then(bind) microtask has run before
+        // collectPluginCliShortcuts().then(bind) microtask has run before
         // we emit the key press, then emit SIGINT to end the session.
         await new Promise((resolve) => setImmediate(resolve));
         fakeStdin.write("t\n");
@@ -13851,24 +13851,19 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
 
     const plugin: Plugin = {
       id: "log-origin-shortcut",
-      setup() {
-        return {
-          configureShortcuts() {
-            return [
-              {
-                key: "t",
-                description: "log the dev origin",
-                action(session) {
-                  observedOrigin = session.origin;
-                  resolveShortcutFired();
-                },
-              },
-            ];
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: "log the dev origin",
+            action(session) {
+              observedOrigin = session.origin;
+              resolveShortcutFired();
+            },
           },
-        };
+        ];
       },
     };
-
     try {
       await dev(
         {
@@ -13924,6 +13919,13 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       "utf-8",
     );
     const shortcutAction = vi.fn();
+    const cliShortcuts = vi.fn(() => [
+      {
+        key: "t",
+        description: "should not fire",
+        action: shortcutAction,
+      },
+    ]);
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
@@ -13946,19 +13948,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
 
     const plugin: Plugin = {
       id: "would-fire-shortcut",
-      setup() {
-        return {
-          configureShortcuts() {
-            return [
-              {
-                key: "t",
-                description: "should not fire",
-                action: shortcutAction,
-              },
-            ];
-          },
-        };
-      },
+      cliShortcuts,
     };
 
     try {
@@ -13987,6 +13977,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     // With the engine disabled, no readline 'line' listener was attached to
     // the fake stdin beyond whatever existed before dev().
     expect(fakeStdin.listenerCount("data")).toBe(dataListenerCountBefore);
+    expect(cliShortcuts).not.toHaveBeenCalled();
   });
 
   it("applies the cliShortcuts:false override when no config file exists", async () => {
@@ -14040,20 +14031,21 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     function createPlugin(label: string): Plugin<Record<string, never>> {
       return {
         id: "reload-shortcuts",
+        cliShortcuts() {
+          events.push(`contribute:${label}`);
+          return [
+            {
+              key: "t",
+              description: `shortcut ${label}`,
+              action() {
+                events.push(`shortcut:${label}`);
+              },
+            },
+          ];
+        },
         setup() {
           events.push(`setup:${label}`);
           return {
-            configureShortcuts() {
-              return [
-                {
-                  key: "t",
-                  description: `shortcut ${label}`,
-                  action() {
-                    events.push(`shortcut:${label}`);
-                  },
-                },
-              ];
-            },
             dispose() {
               events.push(`dispose:${label}`);
             },
@@ -14157,6 +14149,9 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
       controlledWatch.restore();
     }
 
+    expect(events.filter((event) => event === "contribute:v1")).toHaveLength(1);
+    expect(events.filter((event) => event === "contribute:v2")).toHaveLength(1);
+    expect(events).not.toContain("contribute:v3");
     expect(events).toContain("dispose:v3");
   });
 
@@ -14183,20 +14178,20 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     const events: string[] = [];
     const createPlugin = (label: string): Plugin<Record<string, never>> => ({
       id: "rollback-shortcuts",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: `shortcut ${label}`,
+            action() {
+              events.push(`shortcut:${label}`);
+            },
+          },
+        ];
+      },
       setup() {
         events.push(`setup:${label}`);
         return {
-          configureShortcuts() {
-            return [
-              {
-                key: "t",
-                description: `shortcut ${label}`,
-                action() {
-                  events.push(`shortcut:${label}`);
-                },
-              },
-            ];
-          },
           dispose() {
             events.push(`dispose:${label}`);
           },
@@ -14318,21 +14313,21 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     });
     const createPlugin = (label: "v1" | "v2"): Plugin => ({
       id: "slow-reload-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: `shortcut ${label}`,
+            action() {
+              events.push(`shortcut:${label}`);
+              return label === "v1" ? slowAction : undefined;
+            },
+          },
+        ];
+      },
       setup() {
         events.push(`setup:${label}`);
         return {
-          configureShortcuts() {
-            return [
-              {
-                key: "t",
-                description: `shortcut ${label}`,
-                action() {
-                  events.push(`shortcut:${label}`);
-                  return label === "v1" ? slowAction : undefined;
-                },
-              },
-            ];
-          },
           dispose() {
             events.push(`dispose:${label}`);
           },
@@ -14459,24 +14454,22 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     const resources = new Set<ReturnType<typeof setInterval>>();
     const createPlugin = (label: "v1" | "v2"): Plugin => ({
       id: "retired-stuck-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "t",
+            description: `shortcut ${label}`,
+            action() {
+              events.push(`shortcut:${label}`);
+              return label === "v1" ? new Promise<void>(() => {}) : undefined;
+            },
+          },
+        ];
+      },
       setup() {
         const resource = setInterval(() => {}, 1_000);
         resources.add(resource);
         return {
-          configureShortcuts() {
-            return [
-              {
-                key: "t",
-                description: `shortcut ${label}`,
-                action() {
-                  events.push(`shortcut:${label}`);
-                  return label === "v1"
-                    ? new Promise<void>(() => {})
-                    : undefined;
-                },
-              },
-            ];
-          },
           dispose() {
             clearInterval(resource);
             resources.delete(resource);
@@ -14611,21 +14604,21 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
     });
     const plugin: Plugin = {
       id: "stuck-shortcut",
+      cliShortcuts() {
+        return [
+          {
+            key: "p",
+            description: "pending forever",
+            action() {
+              markShortcutStarted();
+              return new Promise<void>(() => {});
+            },
+          },
+        ];
+      },
       setup() {
         pluginResource = setInterval(() => {}, 1_000);
         return {
-          configureShortcuts() {
-            return [
-              {
-                key: "p",
-                description: "pending forever",
-                action() {
-                  markShortcutStarted();
-                  return new Promise<void>(() => {});
-                },
-              },
-            ];
-          },
           dispose,
         };
       },
@@ -14659,7 +14652,7 @@ describe("dev", { timeout: devUpdateTimeoutMs + 5_000 }, () => {
           new Promise((_, reject) =>
             setTimeout(
               () => reject(new Error("stuck shortcut blocked shutdown")),
-              500,
+              devStartupTimeoutMs,
             ),
           ),
         ]),
