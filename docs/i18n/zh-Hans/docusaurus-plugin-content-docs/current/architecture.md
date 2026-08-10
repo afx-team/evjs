@@ -128,6 +128,9 @@ sequenceDiagram
 
 IR 记录 generated module、import edge、framework slot 与具体 entry facade。
 Bundler adapter 编译这些 entry 并返回 asset/build facts，不会重新推导 route 或渲染语义。
+`.ev` 是可丢弃的 generated projection，不是源状态。evjs 会从 authored input
+准备完整 image，因此可以删除该目录，再由 `ev prepare`、`ev build` 或 `ev dev`
+直接重新生成。
 
 ## 输出 Contract
 
@@ -195,14 +198,30 @@ conventions 扫描。Bundler package 从 framework config 选择，
 `@evjs/plugin-qiankun` 作为可选插件注册；CLI 与脚手架 package 由命令调用，
 而不是由应用源码 import。
 
-## 开发更新
+## 开发 Session
 
-普通 component、style 与 asset 修改留在 bundler HMR/watch 路径。配置、Page
-anchor/config、layout、boundary、server-route anchor、middleware 或 framework
-marker 变化会重新创建 CoreGraph 与 BuildPlan。Plan diff 会告诉选中的 adapter
-是否需要更新 entry、HTML、resolution、server compilation、Document、runtime data
-或开发路由。
+普通 component、style 与 asset 修改留在 bundler HMR/watch 路径。长生命周期
+Supervisor 会监听框架拥有的 config、plugin input、Page/API 声明与 route topology；
+generated `.ev`、route/plugin 声明文件和 `dist` output 不属于这些输入。
 
-两个内置 adapter 都支持 generated/HTML-only plan update。Entry、Route、server
-topology、resolution 与 bundler config 变化需要重启 `ev dev`。`ev inspect --json`
-运行同一套 preflight analysis，但不调用 bundler，也不写 generated output。
+真实 framework input 发生变化时，Supervisor 会在不写 generated output、也不干扰
+当前 Session 的前提下准备 candidate revision：
+
+```text
+监听到 input 变化
+  -> 无写入地重新加载并分析
+  -> candidate CoreGraph + BuildPlan + generated IR
+  -> 稳定的语义指纹
+  -> 指纹相同则保留当前 Session
+  -> 指纹不同时关闭旧 Session，并启动 immutable replacement
+```
+
+一个 immutable Session 固定拥有一组 config、graph、plan、plugin hook、generated IR
+image 与 bundler controller。Adapter 继续负责 Session 内的普通 module HMR；框架
+不会要求 adapter 原地替换 framework config 或 bundler config。
+
+Candidate preparation 失败时，当前 Session 会继续运行，并等待下一次真实 input
+变化后再尝试。Session replacement 一旦开始，旧 Session 已经关闭；此后 publication、
+plugin setup 或 adapter startup 失败会停止 `ev dev`，避免混合不同 generation。
+修改请求的 dev 端口仍需重启 `ev dev`。`ev inspect --json` 执行 preflight analysis，
+但不调用 bundler，也不写 generated output。

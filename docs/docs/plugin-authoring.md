@@ -5,13 +5,22 @@ typed configuration contracts, and the framework stages the plugin extends.
 Applications consume the returned factory through `config.plugins`.
 
 The authoring model has three layers: `pluginOptions()` declares plugin-owned
-Application or Page data, descriptor methods such as `configure()` and
-`emitIR()` participate in framework planning, and `setup()` returns
-imperative lifecycle hooks. A behavior should live in only one layer.
-These are responsibility layers rather than adjacent time blocks:
-`configure()` runs before `setup()`, while `emitIR()` runs later during graph
-planning. Descriptor methods never belong in the object returned by `setup()`,
-and lifecycle hooks never belong on the descriptor.
+Application or Page data, descriptor methods declare framework-planning or dev
+CLI contributions, and `setup()` returns imperative lifecycle hooks. A behavior
+should live in only one layer. These are responsibility layers rather than
+adjacent time blocks: `configure()` runs before `setup()`, `emitIR()` runs
+during graph planning, and `cliShortcuts()` is collected once for each immutable
+development Session when the shortcuts engine is enabled. Descriptor methods
+never belong in the object returned by `setup()`, and lifecycle hooks never
+belong on the descriptor.
+
+`cliShortcuts()` declares terminal keys and actions independently from setup
+state. Session replacement reruns plugin setup; when the engine is enabled, it
+also collects a fresh shortcut set. An ordinary bundler/HMR cycle does neither.
+Shortcut actions receive only the current client origin and a way to shut down
+the entire dev Supervisor. See
+[Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts) for the descriptor and action
+contracts.
 
 ## Define a Minimal Plugin
 
@@ -279,6 +288,7 @@ Required Application options stay required in either available factory form.
 | Need | API |
 |---|---|
 | Change framework config before discovery | `configure()` |
+| Declare interactive dev CLI keys and actions | `cliShortcuts()` |
 | Allocate shared state | `setup()` |
 | Run build lifecycle behavior | Hooks returned by `setup()` |
 | Generate modules or attach structured behavior | `emitIR()` or `emitPageIR()` |

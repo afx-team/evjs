@@ -332,7 +332,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
               name: bundler.name,
               capabilities: {
                 build: { ...bundler.capabilities.build },
-                dev: { ...bundler.capabilities.dev },
               },
               gaps: bundlerGaps,
             },

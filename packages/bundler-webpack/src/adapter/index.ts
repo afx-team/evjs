@@ -10,22 +10,17 @@ import type {
   BundlerBuildFactsDisposition,
   BundlerDevContext,
   BundlerDevController,
-  BundlerDevGeneration,
-  BundlerDevUpdateOptions,
-  BundlerDevUpdateTransition,
 } from "@evjs/ev/_internal/build";
 import {
   assertPortableRelativeArtifactPath,
   assertSafeBuildOutputPaths,
-  isArtifactOnlyBuildPlanUpdate,
-  isEmptyBuildPlanUpdate,
   portableArtifactPathsConflict,
   resolveBuildOutputPaths,
   writeOwnedOutputFile,
 } from "@evjs/ev/_internal/build";
 import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
 import { pageRoutePathToRegExp } from "@evjs/shared";
-import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
+import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { createFsFromVolume, Volume } from "memfs";
 import type { Compiler, MultiCompiler, MultiStats, Stats } from "webpack";
@@ -63,10 +58,8 @@ interface WebpackDevStatsSnapshot {
 }
 
 interface WebpackDevStatsReservation {
-  /** Undefined when the compile started while generated input was staging. */
-  readonly buildState: WebpackDevBuildState | undefined;
-  readonly recoverable: boolean;
-  readonly sessionGeneration: number;
+  readonly buildState: WebpackDevBuildState;
+  readonly sessionEpoch: number;
   /** Child compilers that have started in this terminal-stats cycle. */
   readonly startedCompilers: WeakSet<Compiler>;
   snapshot?: WebpackDevStatsSnapshot;
@@ -74,7 +67,6 @@ interface WebpackDevStatsReservation {
 }
 
 interface WebpackDevBuildState {
-  readonly generation: BundlerDevGeneration;
   readonly plan: BuildPlan;
   latestClientStats: WebpackStatsLike | undefined;
   latestServerStats: WebpackStatsLike | undefined;
@@ -87,19 +79,6 @@ interface WebpackDevBuildState {
 type WebpackDevArtifactResult =
   | BundlerBuildFactsDisposition
   | "waiting-for-facts";
-
-interface WebpackDevPlanTransition extends BundlerDevUpdateTransition {
-  stage(rollback: () => void): void;
-  abort(): void;
-}
-
-interface WebpackDevPublication {
-  readonly buildState: WebpackDevBuildState;
-  readonly primaryKinds: Set<"client" | "server">;
-  readonly promise: Promise<void>;
-  reject(error: unknown): void;
-  resolve(): void;
-}
 
 interface WebpackDevSessionDone {
   readonly promise: Promise<void>;
@@ -135,13 +114,6 @@ export const webpackAdapter: BundlerAdapter<WebpackConfigs> = {
       server: true,
       rsc: true,
       ppr: true,
-    },
-    dev: {
-      html: true,
-      entries: false,
-      routes: false,
-      server: false,
-      resolution: false,
     },
   },
 
@@ -207,7 +179,8 @@ export const webpackAdapter: BundlerAdapter<WebpackConfigs> = {
 
   async dev(
     ctx: BundlerDevContext<WebpackConfigs>,
-  ): Promise<BundlerDevController<WebpackConfigs>> {
+  ): Promise<BundlerDevController> {
+    throwIfWebpackDevAborted(ctx.signal);
     const session = new WebpackDevSession(ctx);
     try {
       await session.start();
@@ -227,65 +200,60 @@ export const webpackAdapter: BundlerAdapter<WebpackConfigs> = {
   },
 };
 
-class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
+class WebpackDevSession implements BundlerDevController {
+  readonly origin: string;
   readonly done: Promise<void>;
-  private config: ResolvedConfig<WebpackConfigs>;
-  private plan: BuildPlan;
-  private buildGeneration: BundlerDevGeneration;
+  private readonly config: ResolvedConfig<WebpackConfigs>;
+  private readonly plan: BuildPlan;
   private buildState: WebpackDevBuildState;
-  private pendingPlanTransition: WebpackDevPlanTransition | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private clientServer: WebpackDevServerInstance | undefined;
   private serverWatching: WebpackWatching | undefined;
-  private startGeneration = 0;
+  private lifecycleEpoch = 0;
   private fatalError: Error | undefined;
-  private closing = false;
-  private closed = false;
   private closePromise: Promise<void> | undefined;
   private readonly sessionDone = createWebpackDevSessionDone();
   private statsReservations = new Map<
     "client" | "server",
     WebpackDevStatsReservation
   >();
-  private taintedTerminalKinds = new Set<"client" | "server">();
-  private transitionBuildState: WebpackDevBuildState | undefined;
-  private transitionNeedsRefresh = false;
-  private pendingPublication: WebpackDevPublication | undefined;
   private hasEmittedDevArtifacts = false;
-  private initialDone:
-    | {
-        required: Set<"client" | "server">;
-        resolve: () => void;
-        reject: (error: unknown) => void;
-        promise: Promise<void>;
-      }
-    | undefined;
 
   constructor(private ctx: BundlerDevContext<WebpackConfigs>) {
     this.done = this.sessionDone.promise;
     void this.done.catch(() => {});
     this.config = ctx.config;
     this.plan = ctx.plan;
-    this.buildGeneration = ctx.generation;
-    this.buildState = createWebpackDevBuildState(ctx.plan, ctx.generation);
+    this.buildState = createWebpackDevBuildState(ctx.plan);
+    this.origin = `${ctx.config.dev.https ? "https" : "http"}://localhost:${ctx.config.dev.port}`;
+    ctx.signal.addEventListener(
+      "abort",
+      () => {
+        void this.close().catch(
+          (error) =>
+            logger.error`Failed to close aborted webpack dev session: ${error}`,
+        );
+      },
+      { once: true },
+    );
   }
 
   async start(): Promise<void> {
-    const generation = ++this.startGeneration;
+    throwIfWebpackDevAborted(this.ctx.signal);
+    const sessionEpoch = ++this.lifecycleEpoch;
     const outputPaths = resolveBuildOutputPaths(this.ctx.cwd, this.plan);
 
     logger.info`Starting development server with webpack...`;
 
     await assertSafeBuildOutputPaths(this.ctx.cwd, outputPaths);
+    throwIfWebpackDevAborted(this.ctx.signal);
     await fs.promises.rm(outputPaths.rootDir, {
       recursive: true,
       force: true,
     });
+    throwIfWebpackDevAborted(this.ctx.signal);
 
-    this.buildState = createWebpackDevBuildState(
-      this.plan,
-      this.buildGeneration,
-    );
+    this.buildState = createWebpackDevBuildState(this.plan);
 
     const configs = await createWebpackConfigs(
       this.config,
@@ -294,6 +262,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
       this.ctx.hooks,
       { clean: false, addWatchFile: this.ctx.addWatchFile },
     );
+    throwIfWebpackDevAborted(this.ctx.signal);
     const clientConfigs = configs.filter((config) => config.name === "client");
     const serverConfigs = configs.filter(
       (config) =>
@@ -303,39 +272,39 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     );
     const needsClient = clientConfigs.length > 0;
     const needsServer = serverConfigs.length > 0;
-    this.initialDone = createInitialBuildBarrier({ needsClient, needsServer });
 
     if (needsClient) {
       const compiler = createWebpackCompiler(clientConfigs);
-      this.trackCompileStart("client", generation, compiler);
+      this.trackCompileStart("client", sessionEpoch, compiler);
       compiler.hooks.done.tap("EvjsWebpackDevClientSnapshot", (stats) => {
-        this.captureStatsReservation("client", generation, stats);
+        this.captureStatsReservation("client", sessionEpoch, stats);
       });
-      this.trackCompileCompletion("client", generation, compiler);
+      this.trackCompileCompletion("client", sessionEpoch, compiler);
       const clientServer = new WebpackDevServer(
         createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
         compiler,
       );
       this.clientServer = clientServer;
       await clientServer.start();
+      throwIfWebpackDevAborted(this.ctx.signal);
     }
 
     if (needsServer) {
       const compiler = createWebpackCompiler(serverConfigs);
       const memoryOutput = configureBuildOnlyMemoryOutputs(compiler);
-      this.trackCompileStart("server", generation, compiler);
+      this.trackCompileStart("server", sessionEpoch, compiler);
       compiler.hooks.done.tap("EvjsWebpackDevServerSnapshot", (stats) => {
         this.captureStatsReservation(
           "server",
-          generation,
+          sessionEpoch,
           stats,
           collectMemoryFiles(memoryOutput.volume, memoryOutput.outputPaths),
         );
       });
-      this.trackCompileCompletion("server", generation, compiler);
+      this.trackCompileCompletion("server", sessionEpoch, compiler);
       this.serverWatching = compiler.watch({}, (error) => {
         if (error) {
-          this.failStatsReservation("server", generation, error);
+          this.failStatsReservation("server", sessionEpoch, error);
         }
       });
     }
@@ -351,35 +320,18 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
       );
       this.clientServer = clientServer;
       await clientServer.start();
+      throwIfWebpackDevAborted(this.ctx.signal);
     }
 
-    const initialDone = this.initialDone;
-    if (!needsClient && !needsServer) {
-      initialDone.resolve();
-    }
-
-    await initialDone.promise;
-    if (this.clientServer) {
-      const protocol = this.config.dev.https ? "https" : "http";
-      await this.ctx.callbacks.onDevServerReady?.({
-        origin: `${protocol}://localhost:${this.config.dev.port}`,
-      });
-    }
+    throwIfWebpackDevAborted(this.ctx.signal);
   }
 
   async close(): Promise<void> {
     this.closePromise ??= (async () => {
-      this.closing = true;
-      this.pendingPlanTransition?.abort();
-      this.pendingPublication?.reject(
-        new Error("[evjs] Webpack development session closed during update."),
-      );
       try {
         await this.stop();
-        this.closed = true;
         this.sessionDone.resolve();
       } catch (error) {
-        this.closed = true;
         this.failDevSession(error);
         throw error;
       }
@@ -387,142 +339,8 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     return this.closePromise;
   }
 
-  async beginUpdate(): Promise<BundlerDevUpdateTransition> {
-    this.throwIfUnavailable();
-    if (this.pendingPlanTransition) {
-      throw new Error(
-        "[evjs] Webpack dev received overlapping framework plan updates. Wait for the active update boundary to settle before starting another update.",
-      );
-    }
-    this.transitionNeedsRefresh = false;
-    const transition = createWebpackDevPlanTransition({
-      onOpenSelect: () => {
-        this.buildState = createWebpackDevBuildState(
-          this.plan,
-          this.buildGeneration,
-        );
-      },
-      onResume: () => this.publishFreshBuildState(),
-      onSettled: (completed) => {
-        const refresh = completed && this.transitionNeedsRefresh;
-        this.transitionNeedsRefresh = false;
-        this.transitionBuildState = undefined;
-        if (this.pendingPlanTransition === transition) {
-          this.pendingPlanTransition = undefined;
-        }
-        // Stats that completed after the selected publication were consumed
-        // only to close their compiler hooks. Rebuild once outside the
-        // transaction so the latest source state is published normally.
-        if (refresh && this.plan.entries.length > 0) {
-          this.invalidateFinalBuildInputs();
-        }
-      },
-    });
-    // Mark the boundary before yielding. Compiles that start from this point
-    // are tainted; work already reserved remains bound to the old generation.
-    this.pendingPlanTransition = transition;
-    const precedingWork = this.devWorkQueue;
-    await precedingWork;
-    this.throwIfUnavailable();
-    if (this.pendingPlanTransition !== transition) {
-      throw new Error(
-        "[evjs] Webpack development update boundary settled before it became ready.",
-      );
-    }
-    return transition;
-  }
-
-  updatePlan(
-    update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<WebpackConfigs>,
-  ): Promise<void> {
-    return this.preparePlanUpdate(update, options);
-  }
-
-  private async preparePlanUpdate(
-    update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<WebpackConfigs>,
-  ): Promise<void> {
-    this.throwIfUnavailable();
-    const transition = this.pendingPlanTransition;
-    if (!transition || options.transition !== transition) {
-      throw new Error(
-        "[evjs] Webpack dev updatePlan() must receive the active transition returned by beginUpdate().",
-      );
-    }
-    if (options.configChanged) {
-      throw new Error(
-        "[evjs] Webpack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
-      );
-    }
-    if (
-      !isEmptyBuildPlanUpdate(update) &&
-      !isArtifactOnlyBuildPlanUpdate(update)
-    ) {
-      throw new Error(
-        "[evjs] Webpack dev cannot safely replace persistent compiler entries, routes, server topology, or module resolution in place. Restart ev dev to apply this framework plan change.",
-      );
-    }
-    if (!isEmptyBuildPlanUpdate(update)) {
-      await assertSafeBuildOutputPaths(
-        this.ctx.cwd,
-        resolveBuildOutputPaths(this.ctx.cwd, update.next),
-      );
-    }
-    this.throwIfUnavailable();
-    return this.enqueueDevWork(() =>
-      this.applyPlanUpdate(update, options, transition),
-    );
-  }
-
-  private async applyPlanUpdate(
-    update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<WebpackConfigs>,
-    transition: WebpackDevPlanTransition,
-  ): Promise<void> {
-    const previousPlan = this.plan;
-    const previousGeneration = this.buildGeneration;
-    const previousBuildState = this.buildState;
-    let activated = false;
-
-    try {
-      this.throwIfUnavailable();
-      if (this.pendingPlanTransition !== transition) {
-        throw new Error(
-          "[evjs] Webpack development update boundary settled before updatePlan() applied it.",
-        );
-      }
-      options.activate();
-      activated = true;
-      this.plan = update.next;
-      this.buildGeneration = options.generation;
-      // Cached stats and memory modules belong to the previous compiler
-      // inputs. Candidate output remains blocked until accept() invalidates
-      // both compilers and a complete fresh facts set is available.
-      this.buildState = createWebpackDevBuildState(
-        update.next,
-        options.generation,
-      );
-      transition.stage(() => {
-        this.plan = previousPlan;
-        this.buildGeneration = previousGeneration;
-        this.buildState = createWebpackDevBuildState(
-          previousPlan,
-          previousGeneration,
-        );
-      });
-    } catch (error) {
-      if (activated) {
-        this.plan = previousPlan;
-        this.buildGeneration = previousGeneration;
-        this.buildState = previousBuildState;
-      }
-      throw error;
-    }
-  }
-
   private async stop(): Promise<void> {
-    this.startGeneration++;
+    this.lifecycleEpoch++;
     this.cancelStatsReservations();
     const errors: unknown[] = [];
 
@@ -556,72 +374,47 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
 
   private trackCompileStart(
     kind: "client" | "server",
-    sessionGeneration: number,
+    sessionEpoch: number,
     compiler: Compiler | MultiCompiler,
   ): void {
     const reserve = (startedCompiler: Compiler) => {
-      if (sessionGeneration !== this.startGeneration) return;
+      if (sessionEpoch !== this.lifecycleEpoch) return;
       const existing = this.statsReservations.get(kind);
       if (existing) {
         if (!existing.startedCompilers.has(startedCompiler)) {
           existing.startedCompilers.add(startedCompiler);
           return;
         }
-        // Webpack skips done/afterDone when an in-flight watch compile is
-        // invalidated, then starts the same child compiler again. Retire that
-        // unterminated reservation so the replacement compile can carry the
-        // selected generation instead of inheriting staging ownership. A
-        // MultiCompiler aggregate waits for this replacement child result, so
-        // the abandoned pass cannot later finalize the new reservation.
+        // Webpack may skip done/afterDone when an in-flight watch compile is
+        // invalidated. Retire the unterminated reservation so the replacement
+        // compile can publish a complete snapshot.
         this.supersedeStatsReservation(kind, existing);
-      }
-      let buildState = this.pendingPlanTransition
-        ? this.transitionBuildState
-        : this.buildState;
-      const publication = this.pendingPublication;
-      if (this.pendingPlanTransition && buildState) {
-        if (
-          !publication ||
-          publication.buildState !== buildState ||
-          publication.primaryKinds.has(kind)
-        ) {
-          // A selected generation publishes exactly one fresh compile per
-          // environment inside the Core transaction. A later compile may
-          // have observed newer source while API readiness was still pending;
-          // consume its terminal hooks without publishing stale transaction
-          // output, then rebuild after finalize().
-          this.transitionNeedsRefresh = true;
-          buildState = undefined;
-        } else {
-          publication.primaryKinds.add(kind);
-        }
       }
       const reservation = this.reserveStatsWork(
         kind,
-        sessionGeneration,
-        buildState,
-        Boolean(this.pendingPlanTransition && buildState),
+        sessionEpoch,
+        this.buildState,
       );
       reservation.startedCompilers.add(startedCompiler);
     };
-    compiler.hooks.run.tap("EvjsWebpackDevGeneration", reserve);
-    compiler.hooks.watchRun.tap("EvjsWebpackDevGeneration", reserve);
+    compiler.hooks.run.tap("EvjsWebpackDevSession", reserve);
+    compiler.hooks.watchRun.tap("EvjsWebpackDevSession", reserve);
     const compilers = "compilers" in compiler ? compiler.compilers : [compiler];
     for (const childCompiler of compilers) {
-      childCompiler.hooks.failed.tap("EvjsWebpackDevGeneration", (error) => {
-        this.failStatsReservation(kind, sessionGeneration, error);
+      childCompiler.hooks.failed.tap("EvjsWebpackDevSession", (error) => {
+        this.failStatsReservation(kind, sessionEpoch, error);
       });
     }
   }
 
   private trackCompileCompletion(
     kind: "client" | "server",
-    sessionGeneration: number,
+    sessionEpoch: number,
     compiler: Compiler | MultiCompiler,
   ): void {
     if (!("compilers" in compiler)) {
-      compiler.hooks.afterDone.tap("EvjsWebpackDevGeneration", () => {
-        this.finalizeStatsReservation(kind, sessionGeneration);
+      compiler.hooks.afterDone.tap("EvjsWebpackDevSession", () => {
+        this.finalizeStatsReservation(kind, sessionEpoch);
       });
       return;
     }
@@ -631,11 +424,11 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     const completeAggregate = () => {
       if (!expectedStats?.every((stats) => completedStats.has(stats))) return;
       expectedStats = undefined;
-      this.finalizeStatsReservation(kind, sessionGeneration);
+      this.finalizeStatsReservation(kind, sessionEpoch);
     };
     compiler.hooks.done.tap(
       {
-        name: "EvjsWebpackDevGenerationComplete",
+        name: "EvjsWebpackDevSessionComplete",
         stage: Number.POSITIVE_INFINITY,
       },
       (stats) => {
@@ -645,7 +438,7 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     );
     for (const childCompiler of compiler.compilers) {
       childCompiler.hooks.afterDone.tap(
-        "EvjsWebpackDevGenerationComplete",
+        "EvjsWebpackDevSessionComplete",
         (stats) => {
           completedStats.add(stats);
           completeAggregate();
@@ -656,13 +449,11 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
 
   private reserveStatsWork(
     kind: "client" | "server",
-    sessionGeneration: number,
-    buildState: WebpackDevBuildState | undefined,
-    recoverable: boolean,
+    sessionEpoch: number,
+    buildState: WebpackDevBuildState,
   ): WebpackDevStatsReservation {
     const existing = this.statsReservations.get(kind);
     if (existing) return existing;
-    this.taintedTerminalKinds.delete(kind);
 
     let complete!: (snapshot: WebpackDevStatsSnapshot | undefined) => void;
     const snapshot = new Promise<WebpackDevStatsSnapshot | undefined>(
@@ -672,27 +463,17 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     );
     const reservation: WebpackDevStatsReservation = {
       buildState,
-      recoverable,
-      sessionGeneration,
+      sessionEpoch,
       startedCompilers: new WeakSet(),
       complete,
     };
     this.statsReservations.set(kind, reservation);
-    // A compile that started after beginUpdate() may have read intermediate
-    // generated files. Pair its hooks, but never enqueue or reclassify facts.
-    if (!buildState) return reservation;
     void this.enqueueDevWork(async () => {
       const ready = await snapshot;
       if (!ready) return;
-      await this.handleStats(
-        kind,
-        reservation.sessionGeneration,
-        buildState,
-        ready,
-      );
+      await this.handleStats(kind, reservation.sessionEpoch, buildState, ready);
     }).catch((error) => {
-      this.failInitialBuild(error);
-      if (recoverable) this.rejectPendingPublication(buildState, error);
+      this.failDevSession(error);
       logger.error`Failed to process webpack ${kind} dev build: ${error}`;
     });
     return reservation;
@@ -705,26 +486,21 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     if (this.statsReservations.get(kind) !== reservation) return;
     this.statsReservations.delete(kind);
     reservation.complete(undefined);
-    const publication = this.pendingPublication;
-    if (publication && publication.buildState === reservation.buildState) {
-      publication.primaryKinds.delete(kind);
-    }
   }
 
   private captureStatsReservation(
     kind: "client" | "server",
-    sessionGeneration: number,
+    sessionEpoch: number,
     stats: Stats | MultiStats,
     memoryFiles?: Map<string, Buffer>,
   ): void {
-    if (sessionGeneration !== this.startGeneration) return;
+    if (sessionEpoch !== this.lifecycleEpoch) return;
     const reservation = this.statsReservations.get(kind);
     if (!reservation) {
-      if (this.taintedTerminalKinds.has(kind)) return;
+      if (this.fatalError) return;
       const error = new Error(
-        `[evjs] Webpack ${kind} compilation completed without a generation reservation.`,
+        `[evjs] Webpack ${kind} compilation completed without a session reservation.`,
       );
-      this.failInitialBuild(error);
       this.failDevSession(error);
       logger.error`${error.message}`;
       return;
@@ -735,16 +511,6 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     } catch (error) {
       this.statsReservations.delete(kind);
       reservation.complete(undefined);
-      if (!reservation.buildState) {
-        this.taintedTerminalKinds.add(kind);
-        return;
-      }
-      if (reservation.recoverable) {
-        this.taintedTerminalKinds.add(kind);
-        this.rejectPendingPublication(reservation.buildState, error);
-        return;
-      }
-      this.failInitialBuild(error);
       this.failDevSession(error);
       logger.error`Failed to snapshot webpack ${kind} dev build: ${error}`;
       return;
@@ -753,40 +519,25 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
 
   private finalizeStatsReservation(
     kind: "client" | "server",
-    sessionGeneration: number,
+    sessionEpoch: number,
   ): void {
-    if (sessionGeneration !== this.startGeneration) return;
+    if (sessionEpoch !== this.lifecycleEpoch) return;
     const reservation = this.statsReservations.get(kind);
     if (!reservation) {
-      if (this.taintedTerminalKinds.has(kind)) return;
       if (this.fatalError) return;
       const error = new Error(
-        `[evjs] Webpack ${kind} compilation completed without a captured generation snapshot.`,
+        `[evjs] Webpack ${kind} compilation completed without a captured session snapshot.`,
       );
-      this.failInitialBuild(error);
       this.failDevSession(error);
       logger.error`${error.message}`;
       return;
     }
     this.statsReservations.delete(kind);
-    if (!reservation.buildState) {
-      this.taintedTerminalKinds.add(kind);
-    }
     if (!reservation.snapshot) {
-      if (!reservation.buildState) {
-        reservation.complete(undefined);
-        return;
-      }
       const error = new Error(
         `[evjs] Webpack ${kind} compilation completed without readable stats.`,
       );
       reservation.complete(undefined);
-      if (reservation.recoverable) {
-        this.taintedTerminalKinds.add(kind);
-        this.rejectPendingPublication(reservation.buildState, error);
-        return;
-      }
-      this.failInitialBuild(error);
       this.failDevSession(error);
       logger.error`${error.message}`;
       return;
@@ -796,27 +547,15 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
 
   private failStatsReservation(
     kind: "client" | "server",
-    sessionGeneration: number,
+    sessionEpoch: number,
     error: unknown,
   ): void {
-    if (sessionGeneration !== this.startGeneration) return;
+    if (sessionEpoch !== this.lifecycleEpoch) return;
     const reservation = this.statsReservations.get(kind);
     if (reservation) {
       this.statsReservations.delete(kind);
       reservation.complete(undefined);
-      if (!reservation.buildState) {
-        this.taintedTerminalKinds.add(kind);
-        return;
-      }
-      if (reservation.recoverable) {
-        this.taintedTerminalKinds.add(kind);
-        this.rejectPendingPublication(reservation.buildState, error);
-        return;
-      }
-    } else if (this.taintedTerminalKinds.has(kind)) {
-      return;
     }
-    this.failInitialBuild(error);
     if (!this.fatalError) {
       logger.error`Webpack ${kind} compilation failed: ${error}`;
     }
@@ -828,7 +567,6 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
       reservation.complete(undefined);
     }
     this.statsReservations.clear();
-    this.taintedTerminalKinds.clear();
   }
 
   private enqueueDevWork<T>(work: () => Promise<T>): Promise<T> {
@@ -842,24 +580,15 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
 
   private async handleStats(
     kind: "client" | "server",
-    sessionGeneration: number,
+    sessionEpoch: number,
     buildState: WebpackDevBuildState,
     snapshot: WebpackDevStatsSnapshot,
   ): Promise<void> {
-    if (sessionGeneration !== this.startGeneration) return;
+    if (sessionEpoch !== this.lifecycleEpoch) return;
     if (buildState !== this.buildState) return;
-    if (
-      this.pendingPlanTransition &&
-      buildState !== this.transitionBuildState
-    ) {
-      return;
-    }
 
     if (snapshot.error) {
-      const error = new Error(snapshot.error);
-      this.failInitialBuild(error);
-      this.rejectPendingPublication(buildState, error);
-      logger.error`${error.message}`;
+      logger.error`${snapshot.error}`;
       return;
     }
 
@@ -896,24 +625,13 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
 
     const result = await this.generateDevArtifacts(buildState);
     if (result === "discarded") {
-      if (this.pendingPlanTransition) this.transitionNeedsRefresh = true;
-      this.rejectPendingPublication(
-        buildState,
-        new Error(
-          "[evjs] Core discarded the selected Webpack facts snapshot before publication completed.",
-        ),
-      );
       return;
     }
     const published = result === "published";
-    if (published) {
-      this.completeInitialBuild();
-    }
     if (published && buildState.serverReadyPending) {
       buildState.serverReadyPending = false;
-      await this.ctx.callbacks.onServerBundleReady(buildState.generation);
+      await this.ctx.callbacks.onServerBundleReady();
     }
-    if (published) this.resolvePendingPublication(buildState);
   }
 
   private async generateDevArtifacts(
@@ -964,11 +682,9 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
         buildState.latestServerMemoryFiles,
       );
     }
-    const disposition = await this.ctx.callbacks.onBuildFacts(
-      buildState.generation,
-      facts,
-      { isRebuild },
-    );
+    const disposition = await this.ctx.callbacks.onBuildFacts(facts, {
+      isRebuild,
+    });
     if (disposition === "discarded") return disposition;
     this.hasEmittedDevArtifacts = true;
     return disposition;
@@ -980,104 +696,20 @@ class WebpackDevSession implements BundlerDevController<WebpackConfigs> {
     return new Set(readWebpackEmittedFiles(buildState.latestClientStats) ?? []);
   }
 
-  private completeInitialBuild(): void {
-    if (!this.initialDone) return;
-    this.initialDone.required.clear();
-    this.initialDone.resolve();
-  }
-
-  private failInitialBuild(error: unknown): void {
-    this.initialDone?.reject(error);
-  }
-
   private failDevSession(error: unknown): void {
     if (this.fatalError) return;
     this.fatalError = error instanceof Error ? error : new Error(String(error));
     this.sessionDone.reject(this.fatalError);
   }
-
-  private async publishFreshBuildState(): Promise<void> {
-    this.throwIfUnavailable();
-    const buildState = this.buildState;
-    this.transitionBuildState = buildState;
-    const publication = createWebpackDevPublication(buildState);
-    this.pendingPublication = publication;
-    let published = false;
-
-    try {
-      if (buildState.plan.entries.length === 0) {
-        const result = await this.generateDevArtifacts(buildState);
-        if (result === "published") {
-          this.resolvePendingPublication(buildState);
-        } else if (result === "discarded") {
-          throw new Error(
-            "[evjs] Core discarded the selected Webpack facts snapshot before publication completed.",
-          );
-        }
-      } else {
-        this.invalidateFinalBuildInputs();
-      }
-      await publication.promise;
-      published = true;
-    } catch (error) {
-      this.rejectPendingPublication(buildState, error);
-      throw error;
-    } finally {
-      if (this.pendingPublication === publication) {
-        this.pendingPublication = undefined;
-      }
-      // A failed resume re-closes the producer until Core selects rollback.
-      // On success, retain the selected state through Core commit/finalize so
-      // rebuilds that start in that gap remain bound to this generation.
-      if (!published && this.pendingPlanTransition) {
-        this.transitionBuildState = undefined;
-      }
-    }
-  }
-
-  private resolvePendingPublication(buildState: WebpackDevBuildState): void {
-    if (this.pendingPublication?.buildState !== buildState) return;
-    this.pendingPublication.resolve();
-  }
-
-  private rejectPendingPublication(
-    buildState: WebpackDevBuildState,
-    error: unknown,
-  ): void {
-    if (this.pendingPublication?.buildState !== buildState) return;
-    this.pendingPublication.reject(error);
-  }
-
-  private invalidateFinalBuildInputs(): void {
-    if (this.closing || this.closed || this.fatalError) return;
-    try {
-      this.clientServer?.invalidate();
-      this.serverWatching?.invalidate();
-    } catch (error) {
-      if (this.pendingPublication) {
-        this.pendingPublication.reject(error);
-        return;
-      }
-      this.failDevSession(error);
-    }
-  }
-
-  private throwIfUnavailable(): void {
-    if (this.fatalError) throw this.fatalError;
-    if (this.closing || this.closed) {
-      throw new Error(
-        "[evjs] Webpack dev cannot update its framework plan during or after close().",
-      );
-    }
-  }
 }
 
-function createWebpackDevBuildState(
-  plan: BuildPlan,
-  generation: BundlerDevGeneration,
-): WebpackDevBuildState {
+function throwIfWebpackDevAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  throw new Error("[evjs] Webpack development startup was aborted.");
+}
+
+function createWebpackDevBuildState(plan: BuildPlan): WebpackDevBuildState {
   return {
-    generation,
     plan,
     latestClientStats: undefined,
     latestServerStats: undefined,
@@ -1085,113 +717,6 @@ function createWebpackDevBuildState(
     latestServerPublicFiles: [],
     serverPublicAssetOwnership: new Map(),
     serverReadyPending: false,
-  };
-}
-
-function createWebpackDevPlanTransition(options: {
-  onOpenSelect(): void;
-  onResume(): void | Promise<void>;
-  onSettled(completed: boolean): void;
-}): WebpackDevPlanTransition {
-  let state:
-    | "open"
-    | "staged"
-    | "selected"
-    | "resuming"
-    | "resume-failed"
-    | "resumed"
-    | "finalization-prepared"
-    | "settled" = "open";
-  let outcome: "accept" | "rollback" | undefined;
-  let aborted = false;
-  let rollbackStagedState: (() => void) | undefined;
-  const assertOutcomeSelectable = (operation: string) => {
-    if (
-      state === "selected" ||
-      state === "resuming" ||
-      state === "finalization-prepared" ||
-      state === "settled"
-    ) {
-      throw new Error(
-        `[evjs] Webpack development update transition cannot ${operation} in state ${state}.`,
-      );
-    }
-  };
-  return {
-    abort() {
-      if (aborted || state === "settled") return;
-      aborted = true;
-      options.onSettled(false);
-    },
-    stage(rollback) {
-      assertOutcomeSelectable("stage a candidate");
-      if (state !== "open") {
-        throw new Error(
-          "[evjs] Webpack development update transition staged more than one candidate.",
-        );
-      }
-      rollbackStagedState = rollback;
-      state = "staged";
-    },
-    accept() {
-      assertOutcomeSelectable("accept");
-      if (state !== "open" && state !== "staged") {
-        throw new Error(
-          "[evjs] Webpack development update transition cannot accept after a failed or completed resume.",
-        );
-      }
-      if (state === "open") options.onOpenSelect();
-      outcome = "accept";
-      state = "selected";
-    },
-    rollback() {
-      assertOutcomeSelectable("roll back");
-      if (outcome === "rollback") {
-        throw new Error(
-          "[evjs] Webpack development update transition selected rollback more than once.",
-        );
-      }
-      if (rollbackStagedState) rollbackStagedState();
-      else options.onOpenSelect();
-      outcome = "rollback";
-      state = "selected";
-    },
-    async resume() {
-      if (state !== "selected") {
-        throw new Error(
-          "[evjs] Webpack development update transition resumed before selecting an outcome.",
-        );
-      }
-      state = "resuming";
-      if (aborted) {
-        state = "resumed";
-        return;
-      }
-      try {
-        await options.onResume();
-        state = "resumed";
-      } catch (error) {
-        state = "resume-failed";
-        throw error;
-      }
-    },
-    prepareFinalize() {
-      if (state !== "resumed") {
-        throw new Error(
-          "[evjs] Webpack development update transition prepared finalization before resume succeeded.",
-        );
-      }
-      state = "finalization-prepared";
-    },
-    finalize() {
-      if (state !== "finalization-prepared") {
-        throw new Error(
-          "[evjs] Webpack development update transition finalized before preparation succeeded.",
-        );
-      }
-      state = "settled";
-      if (!aborted) options.onSettled(true);
-    },
   };
 }
 
@@ -1216,56 +741,6 @@ function createWebpackDevSessionDone(): WebpackDevSessionDone {
       resolveDone();
     },
   };
-}
-
-function createWebpackDevPublication(
-  buildState: WebpackDevBuildState,
-): WebpackDevPublication {
-  let settled = false;
-  let resolvePublication!: () => void;
-  let rejectPublication!: (error: unknown) => void;
-  const promise = new Promise<void>((resolve, reject) => {
-    resolvePublication = resolve;
-    rejectPublication = reject;
-  });
-  return {
-    buildState,
-    primaryKinds: new Set(),
-    promise,
-    reject(error) {
-      if (settled) return;
-      settled = true;
-      rejectPublication(error);
-    },
-    resolve() {
-      if (settled) return;
-      settled = true;
-      resolvePublication();
-    },
-  };
-}
-
-function createInitialBuildBarrier(options: {
-  needsClient: boolean;
-  needsServer: boolean;
-}): {
-  required: Set<"client" | "server">;
-  resolve: () => void;
-  reject: (error: unknown) => void;
-  promise: Promise<void>;
-} {
-  const required = new Set<"client" | "server">();
-  if (options.needsClient) required.add("client");
-  if (options.needsServer) required.add("server");
-
-  let resolve!: () => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<void>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
-  });
-
-  return { required, resolve, reject, promise };
 }
 
 function createWebpackCompiler(

@@ -4,13 +4,19 @@ import type {
   DevServerReadyContext,
   PathRewrite,
 } from "@utoo/pack";
+import type {
+  UtoopackDevWorkerCommand,
+  UtoopackDevWorkerLifecycleMessage,
+} from "./dev-worker-shutdown.js";
 
 const PATH_REWRITE_HEADER_INTS = 3;
 const PATH_REWRITE_BUFFER_BYTES = 256 * 1024;
+const DEV_WORKER_CLOSE_TIMEOUT_MS = 10_000;
 
 interface UtoopackDevWorkerOptions {
   cwd: string;
   config: ConfigComplete;
+  workerSchedulerBindingPath: string;
   spaHistoryFallbackRuleIndex?: number;
   server: {
     port: number;
@@ -46,13 +52,14 @@ type UtoopackDevWorkerMessage =
       ruleIndex: number;
       path: string;
       shared: SharedArrayBuffer;
-    };
+    }
+  | UtoopackDevWorkerLifecycleMessage;
 
 export interface UtoopackDevWorkerHandle {
   ready: Promise<UtoopackDevWorkerReadyContext>;
-  /** Rejects whenever the worker exits before `close()` is requested. */
+  /** Resolves after a successful close and rejects on infrastructure failure. */
   done: Promise<void>;
-  /** Rejects on unexpected exit and remains pending after an intentional close. */
+  /** Rejects on failure and remains pending after a successful close. */
   failure: Promise<never>;
   throwIfFailed(): void;
   close(): Promise<void>;
@@ -66,18 +73,21 @@ export interface UtoopackDevWorkerHandle {
 export function startUtoopackDevWorker(
   options: UtoopackDevWorkerOptions,
   workerUrl = new URL("./dev-worker.js", import.meta.url),
+  closeTimeoutMs = DEV_WORKER_CLOSE_TIMEOUT_MS,
 ): UtoopackDevWorkerHandle {
   const prepared = prepareUtoopackDevWorkerOptions(options);
   const worker = new Worker(workerUrl, {
     workerData: prepared.workerOptions,
   });
   let closing = false;
+  let closeAccepted = false;
   let failureReason: unknown;
   let readySettled = false;
   let resolveReady!: (context: UtoopackDevWorkerReadyContext) => void;
   let rejectReady!: (error: unknown) => void;
   let resolveDone!: () => void;
   let rejectDone!: (error: unknown) => void;
+  let resolveExit!: (code: number) => void;
   const ready = new Promise<UtoopackDevWorkerReadyContext>(
     (resolve, reject) => {
       resolveReady = resolve;
@@ -87,6 +97,9 @@ export function startUtoopackDevWorker(
   const done = new Promise<void>((resolve, reject) => {
     resolveDone = resolve;
     rejectDone = reject;
+  });
+  const exited = new Promise<number>((resolve) => {
+    resolveExit = resolve;
   });
   // Consumers attach the lifecycle race after startup completes. Keep an
   // early failure from becoming an unhandled rejection in that interval.
@@ -110,6 +123,10 @@ export function startUtoopackDevWorker(
       executePathRewrite(prepared.pathRewriteFunctions, message);
       return;
     }
+    if (message.type === "close-accepted") {
+      closeAccepted = true;
+      return;
+    }
     const error = createWorkerError(message);
     failureReason = error;
     if (!readySettled) {
@@ -127,15 +144,13 @@ export function startUtoopackDevWorker(
     rejectDone(error);
   });
   worker.once("exit", (code) => {
-    if (closing) {
+    resolveExit(code);
+    if (closing && closeAccepted && code === 0 && failureReason === undefined) {
       resolveDone();
       return;
     }
-    const error = new Error(
-      readySettled
-        ? `[evjs] Utoopack development worker exited unexpectedly with code ${code}.`
-        : `[evjs] Utoopack development worker exited before readiness with code ${code}.`,
-    );
+    const error =
+      failureReason ?? createWorkerExitError(code, closing, readySettled);
     failureReason = error;
     if (!readySettled) {
       readySettled = true;
@@ -154,11 +169,27 @@ export function startUtoopackDevWorker(
     },
     close() {
       closePromise ??= (async () => {
+        const failureBeforeClose = failureReason;
         closing = true;
-        await worker.terminate();
-        // `done` is observed by startup/the orchestrator. Do not report the
-        // same unexpected-exit rejection again as a cleanup failure.
-        await done.catch(() => {});
+        try {
+          worker.postMessage({
+            type: "close",
+          } satisfies UtoopackDevWorkerCommand);
+        } catch (error) {
+          await worker.terminate();
+          await exited;
+          if (failureBeforeClose === undefined) throw error;
+          return;
+        }
+
+        await waitForGracefulWorkerExit(worker, exited, closeTimeoutMs);
+
+        // Preserve the existing no-duplicate-error behavior when close follows
+        // an already reported failure, but never hide a shutdown failure that
+        // began after close was requested.
+        if (failureBeforeClose === undefined && failureReason !== undefined) {
+          throw failureReason;
+        }
       })();
       return closePromise;
     },
@@ -266,4 +297,50 @@ function createWorkerError(
   const error = new Error(message.message);
   if (message.stack) error.stack = message.stack;
   return error;
+}
+
+function createWorkerExitError(
+  code: number,
+  closing: boolean,
+  readySettled: boolean,
+): Error {
+  if (closing) {
+    return new Error(
+      `[evjs] Utoopack development worker exited with code ${code} before confirming graceful shutdown.`,
+    );
+  }
+  if (readySettled) {
+    return new Error(
+      `[evjs] Utoopack development worker exited unexpectedly with code ${code}.`,
+    );
+  }
+  return new Error(
+    `[evjs] Utoopack development worker exited before readiness with code ${code}.`,
+  );
+}
+
+async function waitForGracefulWorkerExit(
+  worker: Worker,
+  exited: Promise<number>,
+  timeoutMs: number,
+): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutError = new Error(
+    `[evjs] Timed out after ${timeoutMs}ms while waiting for the Utoopack development worker to release its resources. Restart ev dev to recover safely.`,
+  );
+  try {
+    await Promise.race([
+      exited,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(timeoutError), timeoutMs);
+        timeout.unref();
+      }),
+    ]);
+  } catch (error) {
+    await worker.terminate();
+    await exited;
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }

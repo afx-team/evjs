@@ -292,11 +292,12 @@ export interface Plugin<TBundlerCfg = unknown> {
   /**
    * Declare interactive CLI keyboard shortcuts for `ev dev`.
    *
-   * This contribution is collected once for each resolved plugin snapshot.
-   * Its static descriptors are independent from setup lifecycle state; each
-   * `action` receives the live {@link PluginDevSession} when its key is pressed.
-   * Core ships no built-in shortcuts, including help. The first plugin to
-   * register a key owns it, and the engine is a no-op in CI / non-TTY contexts.
+   * This contribution is collected once from the fixed resolved plugin set of
+   * each immutable dev Session. Its static descriptors are independent from
+   * setup lifecycle state; each `action` receives the live
+   * {@link PluginDevSession} when its key is pressed. Core ships no built-in
+   * shortcuts, including help. The first plugin to register a key owns it, and
+   * the engine is a no-op in CI / non-TTY contexts.
    */
   cliShortcuts?: () =>
     | readonly PluginCliShortcut[]
@@ -808,8 +809,8 @@ export interface PluginHooks<TBundlerCfg = unknown> {
  *
  * This is the dev-facing shape; the build orchestrator (`_internal/build`)
  * constructs the concrete implementation. `origin` is the client dev server
- * URL reported by `BundlerDevContext.callbacks.onDevServerReady({ origin })`.
- * Surface is intentionally minimal: it exposes only data and a shutdown
+ * URL exposed by the active immutable bundler controller. Surface is
+ * intentionally minimal: it exposes only data and a Supervisor shutdown
  * trigger. Core ships no built-in shortcut actions (no `restart`, `open`,
  * etc.); plugins that want such behavior implement it themselves from these
  * primitives plus their own utilities.

@@ -18,19 +18,20 @@ architecture boundaries enforced by the current implementation.
 - Plugins can own namespaced Application, Page, Route, and Document data and
   attach generated entry, wrapper, middleware, HTML, alias, and external
   contributions.
+- A long-lived dev Supervisor owns framework-input watching and replaces a
+  complete immutable Session for semantic config, graph, plan, or generated-IR
+  changes. Bundler adapters own ordinary module watch/HMR inside a Session.
 - Built-in Node, static, and edge deployment adapters consume the linked
   output model.
 
-## Bundler Capabilities
+## Bundler Build Capabilities
 
 | Capability | Utoopack | Webpack |
 | --- | --- | --- |
 | Client build | Supported | Supported |
-| Server rendering build | Unsupported | Supported |
+| Server rendering build | Supported | Supported |
 | RSC build | Unsupported | Supported |
 | PPR build | Unsupported | Supported |
-| Generated/HTML-only dev plan update | Supported | Supported |
-| Entry/Route/server/resolution dev plan update | Restart required | Restart required |
 
 Framework preflight reads these declarations from the selected adapter and
 fails before bundling when a BuildPlan requires an unsupported build
@@ -38,9 +39,7 @@ capability.
 
 ## Open Adapter Gaps
 
-- Utoopack build facts and entry APIs for server rendering, PPR, and RSC.
-- In-process structural dev-plan updates for entries, Routes, server topology,
-  module resolution, and bundler configuration.
+- Utoopack build facts and entry APIs for PPR and RSC.
 
 Track completed work in the changelog. Keep this page aligned with adapter
 capability declarations and focused tests.

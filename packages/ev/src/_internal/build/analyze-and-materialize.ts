@@ -6,7 +6,11 @@ import type {
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type { PluginSetupContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
-import { materializeFrameworkIR } from "./generated-contributions.js";
+import {
+  type GeneratedIRImage,
+  prepareFrameworkIR,
+  publishFrameworkIR,
+} from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
 import {
@@ -38,6 +42,7 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
   options: AnalyzeAndMaterializeOptions<TBundlerCfg>,
 ): Promise<{
   analysis: GraphAnalysisResult;
+  generatedIR: GeneratedIRImage;
   plan: BuildPlan;
 }> {
   const planOptions: CreateBuildPlanOptions = {
@@ -48,10 +53,10 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       createBuildGenerationId(options.plan?.mode ?? options.mode),
   };
 
-  async function materialize(
+  async function prepare(
     analysis: GraphAnalysisResult,
-  ): Promise<BuildPlan> {
-    return materializeFrameworkIR({
+  ): Promise<{ image: GeneratedIRImage; plan: BuildPlan }> {
+    return prepareFrameworkIR({
       cwd: options.cwd,
       mode: options.mode,
       config: options.config,
@@ -59,7 +64,6 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       plugins: options.config.plugins,
       pluginContext: options.pluginContext,
       plan: createBuildPlan(options.config, analysis.graph, planOptions),
-      write: options.write,
     });
   }
 
@@ -94,13 +98,16 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);
-    const plan = await materialize(analysis);
+    const { image, plan } = await prepare(analysis);
     const nextAliases = getFrameworkSourceAliases(options.cwd, plan);
     if (haveSameAliases(aliases, nextAliases)) {
-      if (options.write !== false && options.config.routing) {
-        await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
+      if (options.write !== false) {
+        await publishFrameworkIR(options.cwd, image);
+        if (options.config.routing) {
+          await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
+        }
       }
-      return { analysis, plan };
+      return { analysis, generatedIR: image, plan };
     }
     aliases = nextAliases;
   }

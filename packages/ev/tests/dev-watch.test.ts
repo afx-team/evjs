@@ -9,6 +9,7 @@ import {
   createWatchFilesPlan,
   listConfigDependencyFiles,
   prepareWatchFilesPlan,
+  readWatchInputSnapshot,
   resolveInitialDevWatchMode,
   watchFiles,
 } from "../src/_internal/build/dev-watch.js";
@@ -172,7 +173,7 @@ describe("watchFiles", () => {
     expect(collectWatchFilesChangedSince(baseline, baseline)).toEqual([]);
   });
 
-  it("reconciles a replaced nearest ancestor while a target stays missing", async () => {
+  it("keeps a missing snapshot stable when an equivalent ancestor replaces it", async () => {
     const root = await createTemporaryDirectory();
     const missing = path.join(root, "nested", "dependency.ts");
     const oldAncestor = path.join(root, "nested-old");
@@ -191,9 +192,55 @@ describe("watchFiles", () => {
     );
 
     expect(baselineSnapshot).toContain('"missing"');
-    expect(current.baselineSnapshots.get(missing)).not.toBe(baselineSnapshot);
-    expect(collectWatchFilesChangedSince(baseline, current)).toEqual([missing]);
+    expect(current.baselineSnapshots.get(missing)).toBe(baselineSnapshot);
+    expect(collectWatchFilesChangedSince(baseline, current)).toEqual([]);
   });
+
+  it("snapshots file content and stable directory topology", async () => {
+    const root = await createTemporaryDirectory();
+    const directory = path.join(root, "pages");
+    const file = path.join(directory, "page.ts");
+    const replacement = path.join(root, "replacement.ts");
+    await writeFile(file);
+
+    const fileSnapshot = readWatchInputSnapshot(file);
+    const directorySnapshot = readWatchInputSnapshot(directory);
+    await fs.promises.writeFile(replacement, "test", "utf-8");
+    await fs.promises.unlink(file);
+    await fs.promises.rename(replacement, file);
+
+    expect(readWatchInputSnapshot(file)).toBe(fileSnapshot);
+    expect(readWatchInputSnapshot(directory)).toBe(directorySnapshot);
+
+    await fs.promises.writeFile(file, "changed", "utf-8");
+    expect(readWatchInputSnapshot(file)).not.toBe(fileSnapshot);
+    expect(readWatchInputSnapshot(directory)).toBe(directorySnapshot);
+
+    await fs.promises.mkdir(path.join(directory, "nested"));
+    expect(readWatchInputSnapshot(directory)).not.toBe(directorySnapshot);
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "uses symbolic-link destinations as stable directory identity",
+    async () => {
+      const root = await createTemporaryDirectory();
+      const firstTarget = path.join(root, "first.ts");
+      const secondTarget = path.join(root, "second.ts");
+      const link = path.join(root, "link.ts");
+      await writeFile(firstTarget);
+      await writeFile(secondTarget);
+      await fs.promises.symlink(firstTarget, link, "file");
+
+      const firstSnapshot = readWatchInputSnapshot(root);
+      await fs.promises.unlink(link);
+      await fs.promises.symlink(firstTarget, link, "file");
+      expect(readWatchInputSnapshot(root)).toBe(firstSnapshot);
+
+      await fs.promises.unlink(link);
+      await fs.promises.symlink(secondTarget, link, "file");
+      expect(readWatchInputSnapshot(root)).not.toBe(firstSnapshot);
+    },
+  );
 
   it.runIf(process.platform !== "win32")(
     "keeps a missing route-root fallback inside cwd when a parent symlink escapes",
@@ -232,21 +279,93 @@ describe("watchFiles", () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.target).toBe(directory);
 
+    await fs.promises.writeFile(first, "changed", "utf-8");
     records[0]?.listener("change", path.basename(first));
-    expect(changes).toEqual([directory, first]);
+    expect(changes).toEqual([first]);
+
+    records[0]?.listener("change", path.basename(first));
+    expect(changes).toEqual([first]);
 
     changes.length = 0;
+    await writeFile(path.join(directory, "unrelated.ts"));
     records[0]?.listener("rename", "unrelated.ts");
     expect(changes).toEqual([directory]);
 
     changes.length = 0;
     records[0]?.listener("rename", null);
-    expect(changes).toEqual([directory, first, second]);
+    expect(changes).toEqual([]);
+
+    await fs.promises.unlink(second);
+    records[0]?.listener("rename", null);
+    expect(changes).toEqual([directory, second]);
     expect(errors).toEqual([]);
 
     stop();
     stop();
     expect(records[0]?.watcher.closeCalls).toBe(1);
+  });
+
+  it("deduplicates native events by the latest real input snapshot", async () => {
+    const root = await createTemporaryDirectory();
+    const file = path.join(root, "dependency.ts");
+    await writeFile(file);
+
+    const records = mockWatch();
+    const changes: string[] = [];
+    const stop = watchFiles(
+      [file],
+      (changedFile) => changes.push(changedFile),
+      {
+        onError: vi.fn(),
+      },
+    );
+
+    await fs.promises.writeFile(file, "test", "utf-8");
+    records[0]?.listener("change", path.basename(file));
+    expect(changes).toEqual([]);
+
+    await fs.promises.writeFile(file, "changed", "utf-8");
+    records[0]?.listener("change", path.basename(file));
+    records[0]?.listener("change", path.basename(file));
+    records[0]?.listener("rename", null);
+    expect(changes).toEqual([file]);
+    stop();
+  });
+
+  it("filters ignored generated paths from snapshots and native events", async () => {
+    const root = await createTemporaryDirectory();
+    const authored = path.join(root, "ev.config.ts");
+    const generatedRoot = path.join(root, ".ev");
+    const generated = path.join(generatedRoot, "framework", "plan.json");
+    await writeFile(authored);
+    await writeFile(generated);
+    const ignorePath = (candidate: string) =>
+      candidate === generatedRoot ||
+      candidate.startsWith(`${generatedRoot}${path.sep}`);
+    const directorySnapshot = readWatchInputSnapshot(root, { ignorePath });
+
+    const records = mockWatch();
+    const changes: string[] = [];
+    const plan = prepareWatchFilesPlan(createWatchFilesPlan([root, authored]), {
+      ignorePath,
+    });
+    const stop = watchFiles(plan, (file) => changes.push(file), {
+      ignorePath,
+      onError: vi.fn(),
+    });
+
+    await fs.promises.writeFile(generated, "generated", "utf-8");
+    records[0]?.listener("change", path.relative(root, generated));
+    records[0]?.listener("rename", null);
+    expect(readWatchInputSnapshot(root, { ignorePath })).toBe(
+      directorySnapshot,
+    );
+    expect(changes).toEqual([]);
+
+    await fs.promises.writeFile(authored, "changed", "utf-8");
+    records[0]?.listener("change", path.basename(authored));
+    expect(changes).toEqual([authored]);
+    stop();
   });
 
   it("stops dispatching a shared event after an onChange callback closes it", async () => {
@@ -267,6 +386,7 @@ describe("watchFiles", () => {
       { onError: vi.fn() },
     );
 
+    await fs.promises.unlink(file);
     records[0]?.listener("rename", null);
 
     expect(changes).toEqual([directory]);
@@ -298,12 +418,13 @@ describe("watchFiles", () => {
     records[0]?.listener("rename", "apis-old");
     expect(changes).toEqual([]);
 
+    await fs.promises.mkdir(apiRoot);
     records[0]?.listener("rename", "apis");
     expect(changes).toEqual([apiRoot, usersRoute]);
 
     changes.length = 0;
     records[0]?.listener("rename", null);
-    expect(changes).toEqual([apiRoot, usersRoute]);
+    expect(changes).toEqual([]);
     stop();
   });
 
@@ -328,12 +449,17 @@ describe("watchFiles", () => {
       const targetWatcher = records.find((record) => record.target === link);
       const parentWatcher = records.find((record) => record.target === root);
 
+      await fs.promises.writeFile(target, "changed", "utf-8");
       targetWatcher?.listener("change", path.basename(target));
       expect(changes).toEqual([link]);
 
       changes.length = 0;
       parentWatcher?.listener("rename", "unrelated.ts");
       expect(changes).toEqual([]);
+      const secondTarget = path.join(root, "second-target.ts");
+      await fs.promises.writeFile(secondTarget, "second", "utf-8");
+      await fs.promises.unlink(link);
+      await fs.promises.symlink(secondTarget, link, "file");
       parentWatcher?.listener("rename", path.basename(link));
       expect(changes).toEqual([link]);
       stop();
@@ -374,11 +500,11 @@ describe("watchFiles", () => {
       expect(boundaryWatcher).toBeDefined();
       boundaryWatcher?.listener("rename", "unrelated");
       expect(changes).toEqual([]);
-      boundaryWatcher?.listener("rename", path.basename(link));
-      expect(changes).toEqual([logicalFile]);
 
       await fs.promises.unlink(link);
       await fs.promises.symlink(secondTarget, link, "dir");
+      boundaryWatcher?.listener("rename", path.basename(link));
+      expect(changes).toEqual([logicalFile]);
       const secondPlan = createWatchFilesPlan([logicalFile]);
       expect(secondPlan.key).not.toBe(firstPlan.key);
       stop();
@@ -411,6 +537,10 @@ describe("watchFiles", () => {
       );
       boundaryWatcher?.listener("rename", "unrelated");
       expect(changes).toEqual([]);
+      const secondTarget = path.join(root, "second-target", "nested");
+      await fs.promises.mkdir(secondTarget, { recursive: true });
+      await fs.promises.unlink(link);
+      await fs.promises.symlink(path.dirname(secondTarget), link, "dir");
       boundaryWatcher?.listener("rename", path.basename(link));
       expect(changes).toEqual([missing]);
       stop();
@@ -447,11 +577,11 @@ describe("watchFiles", () => {
       expect(innerBoundaryWatcher).toBeDefined();
       innerBoundaryWatcher?.listener("rename", "unrelated");
       expect(changes).toEqual([]);
-      innerBoundaryWatcher?.listener("rename", path.basename(innerLink));
-      expect(changes).toEqual([logicalFile]);
 
       await fs.promises.unlink(innerLink);
       await fs.promises.symlink("../second-target", innerLink, "dir");
+      innerBoundaryWatcher?.listener("rename", path.basename(innerLink));
+      expect(changes).toEqual([logicalFile]);
       const secondPlan = createWatchFilesPlan([logicalFile]);
       expect(secondPlan.key).not.toBe(firstPlan.key);
       stop();
@@ -508,6 +638,36 @@ describe("watchFiles", () => {
     await fs.promises.writeFile(file, "changed", "utf-8");
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(changes).toEqual([]);
+  });
+
+  it("deduplicates polling writes with unchanged file content", async () => {
+    const root = await createTemporaryDirectory();
+    const file = path.join(root, "stable.ts");
+    await writeFile(file);
+
+    const changes: string[] = [];
+    const stop = watchFiles(
+      [file],
+      (changedFile) => changes.push(changedFile),
+      {
+        mode: "polling",
+        onError: vi.fn(),
+      },
+    );
+
+    try {
+      await fs.promises.writeFile(file, "test", "utf-8");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(changes).toEqual([]);
+
+      await fs.promises.writeFile(file, "changed", "utf-8");
+      await waitForChange(changes, file);
+      await fs.promises.writeFile(file, "changed", "utf-8");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(changes).toEqual([file]);
+    } finally {
+      stop();
+    }
   });
 
   it("runs polling cycles single-flight and reuses reads within each cycle", async () => {
@@ -671,6 +831,11 @@ describe("watchFiles", () => {
       if (target === healthy) healthyReads += 1;
       return fs.lstatSync(target, { bigint: true });
     }) as typeof fs.promises.lstat);
+    vi.spyOn(fs.promises, "readFile").mockImplementation((async (
+      ...args: unknown[]
+    ) => fs.readFileSync(String(args[0]))) as typeof fs.promises.readFile);
+    vi.spyOn(fs.promises, "realpath").mockImplementation((async (file) =>
+      fs.realpathSync(file)) as typeof fs.promises.realpath);
 
     const changes: string[] = [];
     const errors: Error[] = [];
@@ -982,8 +1147,7 @@ describe("watchFiles", () => {
       "closed unexpectedly",
     );
     expect(records.map((record) => record.watcher.closeCalls)).toEqual([1, 1]);
-    expect(changes).toEqual([first]);
-    changes.length = 0;
+    expect(changes).toEqual([]);
 
     try {
       await fs.promises.writeFile(second, "changed", "utf-8");

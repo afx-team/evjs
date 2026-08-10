@@ -1,7 +1,20 @@
+import { createRequire } from "node:module";
 import { parentPort, workerData } from "node:worker_threads";
 
 const HEADER_INTS = 3;
 const BUFFER_BYTES = 256 * 1024;
+const require = createRequire(import.meta.url);
+const lockPath = workerData.config.define?.TEST_CACHE_LOCK_PATH;
+const cacheLock = lockPath
+  ? require("@utoo/pack/cjs/utils/lockfile.js").PersistentCacheLock.tryAcquire(
+      lockPath,
+      JSON.stringify({ pid: process.pid, processName: "evjs worker test" }),
+    )
+  : undefined;
+
+if (lockPath && !cacheLock) {
+  throw new Error(`Unable to acquire test cache lock at ${lockPath}.`);
+}
 
 function invokePathRewrite(ruleIndex, requestPath) {
   const shared = new SharedArrayBuffer(
@@ -55,5 +68,13 @@ parentPort.postMessage({
 if (workerData.config.define?.TEST_EXIT === "true") {
   parentPort.close();
 } else {
-  parentPort.on("message", () => {});
+  parentPort.on("message", (message) => {
+    if (message?.type !== "close") return;
+    if (workerData.config.define?.TEST_IGNORE_CLOSE === "true") return;
+    if (workerData.config.define?.TEST_SKIP_CLOSE_ACK !== "true") {
+      parentPort.postMessage({ type: "close-accepted" });
+    }
+    cacheLock?.unlockSync();
+    parentPort.close();
+  });
 }

@@ -7,8 +7,9 @@ interface for `ev build` and `ev dev`.
 
 The adapter integrates with Utoopack's programmatic API, compiles the concrete
 entries in `BuildPlan`, and returns build facts for framework output linking.
-Its declared capabilities are the authoritative boundary: plans that require
-unsupported server rendering, RSC, or PPR fail during framework preflight.
+Its declared capabilities are the authoritative boundary: conventional
+server-rendered Page entries are supported, while plans that require RSC or
+PPR fail during framework preflight.
 
 ## Usage
 

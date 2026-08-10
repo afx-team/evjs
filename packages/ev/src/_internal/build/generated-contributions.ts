@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -152,7 +152,7 @@ type TargetedSlotPlanItem =
   | PageWrapperSlotPlanItem
   | HtmlTagSlotPlanItem;
 
-interface MaterializeFrameworkIROptions<TBundlerCfg> {
+export interface PrepareFrameworkIROptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
   config: ResolvedFrameworkConfig<TBundlerCfg>;
@@ -160,7 +160,33 @@ interface MaterializeFrameworkIROptions<TBundlerCfg> {
   plan: BuildPlan;
   plugins: Plugin<TBundlerCfg>[];
   pluginContext: PluginSetupContext<TBundlerCfg>;
+}
+
+interface MaterializeFrameworkIROptions<TBundlerCfg>
+  extends PrepareFrameworkIROptions<TBundlerCfg> {
   write?: boolean;
+}
+
+export interface GeneratedIRImageFile {
+  /** Portable path relative to the canonical `.ev` root. */
+  readonly file: string;
+  readonly source: string;
+}
+
+/**
+ * Fully rendered framework IR ready for filesystem publication.
+ *
+ * `files` intentionally excludes `manifest.json`: publication writes every
+ * other leaf first and uses `manifest` as the completion marker.
+ */
+export interface GeneratedIRImage {
+  readonly files: readonly GeneratedIRImageFile[];
+  readonly manifest: string;
+}
+
+export interface PreparedFrameworkIR {
+  readonly plan: BuildPlan;
+  readonly image: GeneratedIRImage;
 }
 
 /**
@@ -172,6 +198,21 @@ interface MaterializeFrameworkIROptions<TBundlerCfg> {
 export async function materializeFrameworkIR<TBundlerCfg>(
   options: MaterializeFrameworkIROptions<TBundlerCfg>,
 ): Promise<BuildPlan> {
+  const prepared = await prepareFrameworkIR(options);
+  if (options.write ?? true) {
+    await publishFrameworkIR(options.cwd, prepared.image);
+  }
+  return prepared.plan;
+}
+
+/**
+ * Resolve and validate one complete framework IR image without touching the
+ * filesystem. Dev orchestration can retain the returned image until the old
+ * immutable session has stopped, then publish it explicitly.
+ */
+export async function prepareFrameworkIR<TBundlerCfg>(
+  options: PrepareFrameworkIROptions<TBundlerCfg>,
+): Promise<PreparedFrameworkIR> {
   const plan = cloneJson(options.plan);
   const collector = new ContributionCollector({
     cwd: options.cwd,
@@ -199,17 +240,14 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   generated.entries = entries;
   rewritePlanEntriesToGeneratedFiles(plan, entries);
 
-  if (options.write ?? true) {
-    await writeGeneratedIR(
-      options.cwd,
-      options.graph,
-      plan,
-      collector.modules,
-      generated,
-    );
-  }
-
-  return plan;
+  const image = renderGeneratedIRImage(
+    options.cwd,
+    options.graph,
+    plan,
+    collector.modules,
+    generated,
+  );
+  return { plan, image };
 }
 
 export function applyHtmlTagContributions(
@@ -907,232 +945,214 @@ function isTargetedSlotPlanItem(
   );
 }
 
-/**
- * Replace the framework-owned `.ev` tree with one validated IR snapshot. The
- * complete BuildPlan has its own framework snapshot, while the compact manifest
- * links graph, generated artifacts, and final entry projections for inspection.
- */
-async function writeGeneratedIR(
+/** Render every generated leaf before publication mutates canonical `.ev`. */
+function renderGeneratedIRImage(
   cwd: string,
   graph: CoreGraph,
   plan: BuildPlan,
   modules: InternalGeneratedModule[],
   generated: GeneratedFrameworkPlan,
-): Promise<void> {
+): GeneratedIRImage {
   const rootDir = path.resolve(cwd, GENERATED_IR_DIR);
-  const candidateRoot = await fs.mkdtemp(
-    path.join(cwd, `${GENERATED_IR_DIR}-candidate-`),
+  const files = new Map<string, GeneratedIRImageFile>();
+  const addFile = (absoluteFile: string, source: string): void => {
+    const file = toGeneratedIRImagePath(rootDir, absoluteFile);
+    if (file === GENERATED_IR_MANIFEST) {
+      throw new Error(
+        `[evjs] Generated IR leaf "${file}" conflicts with the reserved completion manifest.`,
+      );
+    }
+    if (files.has(file)) {
+      throw new Error(`[evjs] Generated IR leaf "${file}" was rendered twice.`);
+    }
+    files.set(file, Object.freeze({ file, source }));
+  };
+
+  addFile(path.join(rootDir, GENERATED_IR_TYPES), createGeneratedTypesSource());
+  addFile(
+    path.join(rootDir, "framework/core-graph.json"),
+    stringifyGeneratedJson({ generatedBy: "evjs", graph }),
+  );
+  addFile(
+    path.join(rootDir, "framework/build-plan.json"),
+    stringifyGeneratedJson({ version: 1, generatedBy: "evjs", plan }),
   );
 
-  try {
-    const modulesByKey = new Map(modules.map((module) => [module.key, module]));
-    await completeGeneratedIRWrites([
-      writeGeneratedTypes(candidateRoot),
-      ...writeGeneratedFrameworkFiles(candidateRoot, graph, plan),
-      ...modules.map((module) =>
-        writeGeneratedModule(cwd, rootDir, candidateRoot, module, modulesByKey),
-      ),
-      ...generated.entries.map((entry) =>
-        writeGeneratedEntry(cwd, rootDir, candidateRoot, plan, entry),
-      ),
-    ]);
-
-    await fs.writeFile(
-      path.join(candidateRoot, GENERATED_IR_MANIFEST),
-      `${JSON.stringify(createManifestView(plan, graph), null, 2)}\n`,
-      "utf-8",
+  for (const module of modules) {
+    if (module.resolvedSource === undefined) {
+      throw new Error(
+        `[evjs] Generated module "${module.key}" source was not resolved before rendering.`,
+      );
+    }
+    addFile(
+      module.absoluteFile,
+      withGeneratedHeader(module.resolvedSource, module.extension, {
+        fromFile: module.absoluteFile,
+        rootDir,
+      }),
     );
-    await publishGeneratedIR(rootDir, candidateRoot);
+  }
+
+  for (const entry of generated.entries) {
+    const buildEntry = plan.entries.find((item) => item.name === entry.name);
+    if (!buildEntry) {
+      throw new Error(
+        `[evjs] Generated entry "${entry.name}" has no matching BuildPlan entry.`,
+      );
+    }
+    const absoluteFile = path.resolve(cwd, entry.file);
+    addFile(
+      absoluteFile,
+      withGeneratedHeader(
+        createEntrySource(cwd, buildEntry, entry, plan),
+        ".ts",
+        { fromFile: absoluteFile, rootDir },
+      ),
+    );
+  }
+
+  return Object.freeze({
+    files: Object.freeze(
+      [...files.values()].sort((left, right) =>
+        left.file.localeCompare(right.file),
+      ),
+    ),
+    manifest: stringifyGeneratedJson(createManifestView(plan, graph)),
+  });
+}
+
+/**
+ * Replace canonical `.ev` directly from a fully rendered image.
+ *
+ * There is deliberately no whole-tree candidate or previous snapshot. A
+ * failed publication leaves `manifest.json` absent, so the incomplete tree is
+ * never mistaken for a complete framework IR generation.
+ */
+export async function publishFrameworkIR(
+  cwd: string,
+  image: GeneratedIRImage,
+): Promise<void> {
+  const rootDir = path.resolve(cwd, GENERATED_IR_DIR);
+  const prepared = validateGeneratedIRImage(rootDir, image);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+  await fs.mkdir(rootDir, { recursive: true });
+  for (const { file, source } of prepared.files) {
+    const outputFile = path.resolve(rootDir, ...file.split("/"));
+    await fs.mkdir(path.dirname(outputFile), { recursive: true });
+    await fs.writeFile(outputFile, source, "utf-8");
+  }
+
+  const manifestFile = path.join(rootDir, GENERATED_IR_MANIFEST);
+  try {
+    await fs.writeFile(manifestFile, prepared.manifest, "utf-8");
   } catch (error) {
-    await fs
-      .rm(candidateRoot, { recursive: true, force: true })
-      .catch(() => {});
+    await fs.rm(manifestFile, { force: true }).catch(() => {});
     throw error;
   }
 }
 
-async function completeGeneratedIRWrites(
-  writes: readonly Promise<void>[],
-): Promise<void> {
-  const results = await Promise.allSettled(writes);
-  const errors = results.flatMap((result) =>
-    result.status === "rejected" ? [result.reason] : [],
-  );
-  if (errors.length === 1) throw errors[0];
-  if (errors.length > 1) {
-    throw new AggregateError(
-      errors,
-      "[evjs] Multiple generated IR writes failed.",
+function createGeneratedTypesSource(): string {
+  return [
+    "/* This file is generated by evjs. Do not edit it directly. */",
+    'declare module "evjs:generated/*";',
+    'declare module "*.css";',
+    'declare module "*.less";',
+    'declare module "*.scss";',
+    'declare module "*.sass";',
+    'declare module "*.json";',
+    'declare module "*.svg";',
+    'declare module "*.png";',
+    'declare module "*.jpg";',
+    'declare module "*.jpeg";',
+    'declare module "*.gif";',
+    'declare module "*.webp";',
+    'declare module "*.avif";',
+    "",
+  ].join("\n");
+}
+
+function stringifyGeneratedJson(value: unknown): string {
+  const serialized = JSON.stringify(value, null, 2);
+  if (serialized === undefined) {
+    throw new Error("[evjs] Generated IR JSON value is not serializable.");
+  }
+  return `${serialized}\n`;
+}
+
+function toGeneratedIRImagePath(rootDir: string, absoluteFile: string): string {
+  const relative = toPosixPath(path.relative(rootDir, absoluteFile));
+  assertGeneratedIRImagePath(relative);
+  return relative;
+}
+
+function assertGeneratedIRImagePath(file: string): void {
+  if (
+    file === "" ||
+    file === "." ||
+    file.includes("\\") ||
+    path.posix.isAbsolute(file) ||
+    path.posix.normalize(file) !== file ||
+    file === ".." ||
+    file.startsWith("../")
+  ) {
+    throw new Error(
+      `[evjs] Generated IR image path ${JSON.stringify(file)} must be a normalized portable path inside .ev.`,
     );
   }
 }
 
-function writeGeneratedFrameworkFiles(
+function validateGeneratedIRImage(
   rootDir: string,
-  graph: CoreGraph,
-  plan: BuildPlan,
-): Promise<void>[] {
-  return [
-    writeJsonFile(path.join(rootDir, "framework/core-graph.json"), {
-      generatedBy: "evjs",
-      graph,
-    }),
-    writeJsonFile(path.join(rootDir, "framework/build-plan.json"), {
-      version: 1,
-      generatedBy: "evjs",
-      plan,
-    }),
-  ];
-}
-
-async function writeJsonFile(file: string, value: unknown): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
-}
-
-async function writeGeneratedTypes(rootDir: string): Promise<void> {
-  await fs.writeFile(
-    path.join(rootDir, GENERATED_IR_TYPES),
-    [
-      "/* This file is generated by evjs. Do not edit it directly. */",
-      'declare module "evjs:generated/*";',
-      'declare module "*.css";',
-      'declare module "*.less";',
-      'declare module "*.scss";',
-      'declare module "*.sass";',
-      'declare module "*.json";',
-      'declare module "*.svg";',
-      'declare module "*.png";',
-      'declare module "*.jpg";',
-      'declare module "*.jpeg";',
-      'declare module "*.gif";',
-      'declare module "*.webp";',
-      'declare module "*.avif";',
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
-}
-
-async function writeGeneratedModule(
-  cwd: string,
-  finalRoot: string,
-  candidateRoot: string,
-  module: InternalGeneratedModule,
-  modulesByKey: Map<string, InternalGeneratedModule>,
-): Promise<void> {
-  const outputFile = path.join(
-    candidateRoot,
-    path.relative(finalRoot, module.absoluteFile),
-  );
-  const resolvedSource =
-    module.resolvedSource ??
-    (typeof module.source === "function"
-      ? module.source({
-          importOf(ref) {
-            const key = assertGeneratedModuleRef(ref).key;
-            const referenced = modulesByKey.get(key);
-            if (!referenced) {
-              throw new Error(
-                "[evjs] Generated module ref does not belong to this build.",
-              );
-            }
-            return toGeneratedImportSpecifier(
-              cwd,
-              module.absoluteFile,
-              referenced.file,
-            );
-          },
-          importFile(file) {
-            return toGeneratedImportSpecifier(cwd, module.absoluteFile, file);
-          },
-        })
-      : module.source);
-  await fs.mkdir(path.dirname(outputFile), { recursive: true });
-  await fs.writeFile(
-    outputFile,
-    withGeneratedHeader(resolvedSource, module.extension, {
-      fromFile: outputFile,
-      rootDir: candidateRoot,
-    }),
-    "utf-8",
-  );
-}
-
-async function writeGeneratedEntry(
-  cwd: string,
-  finalRoot: string,
-  candidateRoot: string,
-  plan: BuildPlan,
-  entry: GeneratedEntryPlan,
-): Promise<void> {
-  const buildEntry = plan.entries.find((item) => item.name === entry.name);
-  if (!buildEntry) return;
-  const logicalFile = path.resolve(cwd, entry.file);
-  const outputFile = path.join(
-    candidateRoot,
-    path.relative(finalRoot, logicalFile),
-  );
-  await fs.mkdir(path.dirname(outputFile), { recursive: true });
-  await fs.writeFile(
-    outputFile,
-    withGeneratedHeader(
-      createEntrySource(cwd, buildEntry, entry, plan),
-      ".ts",
-      {
-        fromFile: outputFile,
-        rootDir: candidateRoot,
-      },
-    ),
-    "utf-8",
-  );
-}
-
-async function publishGeneratedIR(
-  rootDir: string,
-  candidateRoot: string,
-): Promise<void> {
-  const backupRoot = path.join(
-    path.dirname(rootDir),
-    `${path.basename(rootDir)}-previous-${randomUUID()}`,
-  );
-  let previousMoved = false;
-  let published = false;
-  try {
-    try {
-      await fs.rename(rootDir, backupRoot);
-      previousMoved = true;
-    } catch (error) {
-      if (!isMissingPathError(error)) throw error;
-    }
-
-    try {
-      await fs.rename(candidateRoot, rootDir);
-      published = true;
-    } catch (publishError) {
-      if (!previousMoved) throw publishError;
-      try {
-        await fs.rename(backupRoot, rootDir);
-      } catch (restoreError) {
-        throw new AggregateError(
-          [publishError, restoreError],
-          "[evjs] Failed to publish generated IR and restore the previous snapshot.",
-          { cause: publishError },
-        );
-      }
-      throw publishError;
-    }
-  } finally {
-    if (previousMoved && published) {
-      // The canonical directory is already complete. Backup cleanup must not
-      // turn a successful atomic publication into a reported build failure.
-      await fs.rm(backupRoot, { recursive: true, force: true }).catch(() => {});
-    }
+  image: GeneratedIRImage,
+): { files: GeneratedIRImageFile[]; manifest: string } {
+  if (!image || typeof image !== "object") {
+    throw new TypeError("[evjs] Generated IR image must be an object.");
   }
-}
+  if (!Array.isArray(image.files)) {
+    throw new TypeError("[evjs] Generated IR image files must be an array.");
+  }
+  if (typeof image.manifest !== "string") {
+    throw new TypeError("[evjs] Generated IR image manifest must be a string.");
+  }
 
-function isMissingPathError(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+  const seen = new Set<string>();
+  const files = image.files.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new TypeError(
+        `[evjs] Generated IR image files[${index}] must be an object.`,
+      );
+    }
+    const { file, source } = entry;
+    if (typeof file !== "string" || typeof source !== "string") {
+      throw new TypeError(
+        `[evjs] Generated IR image files[${index}] must contain string file and source fields.`,
+      );
+    }
+    assertGeneratedIRImagePath(file);
+    if (file === GENERATED_IR_MANIFEST) {
+      throw new Error(
+        `[evjs] Generated IR image files must not contain reserved ${GENERATED_IR_MANIFEST}; provide it through image.manifest.`,
+      );
+    }
+    if (seen.has(file)) {
+      throw new Error(
+        `[evjs] Generated IR image contains duplicate "${file}".`,
+      );
+    }
+    seen.add(file);
+    const absoluteFile = path.resolve(rootDir, ...file.split("/"));
+    const relativeToRoot = path.relative(rootDir, absoluteFile);
+    if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+      throw new Error(
+        `[evjs] Generated IR image path ${JSON.stringify(file)} escapes .ev.`,
+      );
+    }
+    return { file, source };
+  });
+
+  files.sort((left, right) => left.file.localeCompare(right.file));
+  return { files, manifest: image.manifest };
 }
 
 /** Compact index for inspecting linked generated artifacts and plan entries. */

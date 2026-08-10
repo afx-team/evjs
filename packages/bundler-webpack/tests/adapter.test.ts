@@ -3,16 +3,11 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type {
-  BundlerBuildFacts,
-  BundlerDevController,
-  BundlerDevGeneration,
-} from "@evjs/ev/_internal/build";
+import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
 import {
   buildHtml,
   createBuildPlan,
   createCoreGraph,
-  diffBuildPlan,
   generateHtml,
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
@@ -29,7 +24,6 @@ import { Volume } from "memfs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Compiler } from "webpack";
 import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
-import { createPageClientBuildEntryName } from "../../ev/src/_internal/build/build-entry-conventions.js";
 import { linkAndEmitBuildOutput } from "../../ev/src/_internal/build/framework-output.js";
 import {
   createClientRuntime,
@@ -54,11 +48,6 @@ const WEBPACK_DEV_TEST_NAMES = {
   unclaimedApiFallback: "serves unclaimed paths through SPA fallback",
   concurrentDone:
     "serializes concurrent client and server dev completion callbacks",
-  htmlOnlyUpdate:
-    "applies html-only plan updates without rebuilding webpack configs",
-  rollback: "rolls back internal dev state when a plan update fails",
-  pageAddition:
-    "rejects page additions that require persistent compiler replacement",
 } as const;
 const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
 const allocatedDevPorts = new Set<number>();
@@ -89,37 +78,6 @@ async function waitForCondition(
     if (Date.now() >= deadline) throw new Error(message);
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-}
-
-function createTestDevGeneration(): BundlerDevGeneration {
-  return {} as BundlerDevGeneration;
-}
-
-async function createTestDevUpdateOptions(
-  controller: BundlerDevController<WebpackConfigs> | undefined,
-  config: ResolvedConfig<WebpackConfigs>,
-  configChanged = false,
-) {
-  if (!controller) throw new Error("Expected webpack dev controller");
-  const transition = await controller.beginUpdate();
-  return {
-    activate: vi.fn(),
-    config,
-    configChanged,
-    generation: createTestDevGeneration(),
-    transition,
-  };
-}
-
-async function settleTestDevUpdate(
-  options: Awaited<ReturnType<typeof createTestDevUpdateOptions>>,
-  outcome: "accept" | "rollback",
-): Promise<void> {
-  if (outcome === "accept") await options.transition.accept();
-  else await options.transition.rollback();
-  await options.transition.resume();
-  await options.transition.prepareFinalize();
-  options.transition.finalize();
 }
 
 function buildIt(name: string, run: () => void | Promise<void>) {
@@ -155,6 +113,141 @@ afterEach(async () => {
     ),
   );
 });
+
+async function createFixture(files: Record<string, string>) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-webpack-"));
+  tempDirs.push(dir);
+
+  for (const [file, content] of Object.entries(files)) {
+    const absolute = path.join(dir, file);
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, content, "utf-8");
+  }
+
+  await fs.symlink(
+    path.resolve(import.meta.dirname, "../../..", "node_modules"),
+    path.join(dir, "node_modules"),
+    "dir",
+  );
+
+  return dir;
+}
+
+async function getAvailablePort(): Promise<number> {
+  for (let offset = 0; offset < 1_000; offset++) {
+    const port = WEBPACK_DEV_PORT_BASE + offset;
+    if (allocatedDevPorts.has(port)) continue;
+    if (await canListenOnPort(port)) {
+      allocatedDevPorts.add(port);
+      return port;
+    }
+  }
+
+  throw new Error("Failed to allocate a webpack dev test port.");
+}
+
+async function canListenOnPort(port: number): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", (error) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EADDRINUSE" || code === "EACCES") {
+        resolve(false);
+        return;
+      }
+      reject(error);
+    });
+    server.listen(port, "0.0.0.0", () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+interface DevResponse {
+  status: number;
+  headers: Headers;
+  text: string;
+}
+
+async function fetchDevResponse(
+  url: string,
+  init?: RequestInit,
+): Promise<DevResponse> {
+  let lastError: unknown;
+
+  const maxAttempts = 20;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      const text = await response.text();
+      if (!text) {
+        throw new Error(
+          `Empty webpack dev response from ${url} after attempt ${attempt}.`,
+        );
+      }
+      return {
+        status: response.status,
+        headers: response.headers,
+        text,
+      };
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  throw lastError;
+}
+
+async function fetchDevText(url: string): Promise<string> {
+  const response = await fetchDevResponse(url);
+  return response.text;
+}
+
+function readEmbeddedClientRuntime(html: string): unknown {
+  const match = html.match(
+    /<script\b(?=[^>]*\bid="__EVJS_CLIENT_RUNTIME__")(?=[^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/,
+  );
+  if (!match) {
+    throw new Error("Expected embedded client runtime script.");
+  }
+  return JSON.parse(match[1]);
+}
+
+async function requestServerEntry(
+  cwd: string,
+  manifest: BuildOutput,
+  pathname: string,
+): Promise<Response> {
+  const serverEntryPath = path.join(
+    cwd,
+    "dist/server",
+    manifest.server?.entry ?? "",
+  );
+  const serverDir = path.dirname(serverEntryPath);
+  const frameworkRuntime =
+    frameworkRuntimeByOutput.get(manifest) ?? createFrameworkRuntime(manifest);
+  const runtimeGlobals = globalThis as ServerRuntimeGlobals;
+  runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__ = frameworkRuntime;
+  runtimeGlobals.__EVJS_SERVER_MODULE_LOADER__ = async (asset: string) => {
+    const mod = await import(
+      pathToFileURL(path.resolve(serverDir, asset)).href
+    );
+    const nested =
+      mod && typeof mod.default === "object" ? mod.default : undefined;
+    return nested && ("default" in nested || "render" in nested) ? nested : mod;
+  };
+
+  try {
+    const serverModule = await import(pathToFileURL(serverEntryPath).href);
+    const handler =
+      serverModule.default?.default ?? serverModule.default ?? serverModule;
+    return await handler.fetch(new Request(`https://example.com${pathname}`));
+  } finally {
+    delete runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__;
+    delete runtimeGlobals.__EVJS_SERVER_MODULE_LOADER__;
+  }
+}
 
 async function buildWithFrameworkArtifacts(options: {
   config: ResolvedConfig<WebpackConfigs>;
@@ -217,8 +310,7 @@ function createFrameworkCallbacks(options: {
   plan: BuildPlan;
   hooks?: PluginHooks<WebpackConfigs>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
-  onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
-  onServerBundleReady?: () => void | Promise<void>;
+  onServerBundleReady?: () => Promise<void>;
 }) {
   let graph = options.graph;
   let plan = options.plan;
@@ -231,7 +323,6 @@ function createFrameworkCallbacks(options: {
     },
     callbacks: {
       async onBuildFacts(
-        _generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
         callbackOptions: { isRebuild: boolean },
       ) {
@@ -247,10 +338,9 @@ function createFrameworkCallbacks(options: {
         });
         return "published" as const;
       },
-      onDevServerReady: options.onDevServerReady,
       onServerBundleReady:
         options.onServerBundleReady ??
-        (() => {
+        (async () => {
           // no-op
         }),
     },
@@ -2485,48 +2575,6 @@ describe("webpackAdapter build", () => {
 });
 
 describe("webpackAdapter dev", () => {
-  devIt(
-    "cleans up a listening dev server when initial artifact linking fails",
-    async () => {
-      const port = await getAvailablePort();
-      const cwd = await createFixture({
-        "index.html":
-          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-        "src/pages/home/page.tsx":
-          "export default function Home() { return null; }",
-      });
-      const config = await resolveProjectConfig(cwd, {
-        dev: { port },
-        routing: { mode: "mpa", mount: "#root" },
-      });
-      const analysis = await createCoreGraph(config, cwd);
-      const plan = await materializeTestPlan({
-        config,
-        cwd,
-        graph: analysis.graph,
-        plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
-      });
-
-      await expect(
-        webpackAdapter.dev({
-          config,
-          cwd,
-          generation: createTestDevGeneration(),
-          plan,
-          hooks: [],
-          callbacks: {
-            async onBuildFacts() {
-              throw new Error("initial artifact failure");
-            },
-            async onServerBundleReady() {},
-          },
-        }),
-      ).rejects.toThrow("initial artifact failure");
-
-      await expectPortCanListen(port);
-    },
-  );
-
   devIt("serves a no-client SSG plan through the static dev host", async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
@@ -2562,11 +2610,11 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
-      generation: createTestDevGeneration(),
+      signal: new AbortController().signal,
       plan,
       hooks: [],
       callbacks: {
-        async onBuildFacts(_generation, facts, options) {
+        async onBuildFacts(facts, options) {
           await linkAndEmitBuildOutput({
             bundlerFacts: facts,
             graph: analysis.graph,
@@ -2590,6 +2638,14 @@ describe("webpackAdapter dev", () => {
     });
     if (!controller) throw new Error("Expected webpack dev controller");
     try {
+      await waitForCondition(
+        () =>
+          fs.access(path.join(cwd, "dist/client/home/index.html")).then(
+            () => true,
+            () => false,
+          ),
+        "Webpack did not emit the initial static page",
+      );
       const response = await fetchDevResponse(`http://127.0.0.1:${port}/home`);
       expect(plan.entries.some((entry) => entry.environment === "client")).toBe(
         false,
@@ -2631,26 +2687,28 @@ describe("webpackAdapter dev", () => {
       }),
     });
     const onBuildOutput = vi.fn();
-    const onDevServerReady = vi.fn();
     const framework = createFrameworkCallbacks({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       onBuildOutput,
-      onDevServerReady,
     });
 
     const controller = await webpackAdapter.dev({
       config,
       cwd,
-      generation: createTestDevGeneration(),
+      signal: new AbortController().signal,
       plan,
       hooks: [],
       callbacks: framework.callbacks,
     });
     if (!controller) throw new Error("Expected webpack dev controller");
     try {
+      await waitForCondition(
+        () => onBuildOutput.mock.calls.length > 0,
+        "Webpack did not publish initial build facts",
+      );
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
       if (!output) throw new Error("Expected linked BuildOutput.");
       assertFrameworkManifestShape(output, "Webpack dev MPA BuildOutput");
@@ -2662,9 +2720,7 @@ describe("webpackAdapter dev", () => {
       );
 
       expect(onBuildOutput).toHaveBeenCalled();
-      expect(onDevServerReady).toHaveBeenCalledWith({
-        origin: `http://localhost:${port}`,
-      });
+      expect(controller.origin).toBe(`http://localhost:${port}`);
       expect(output.pages.home.assets.js).toEqual(["page-client-home.js"]);
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
@@ -2676,19 +2732,6 @@ describe("webpackAdapter dev", () => {
       await expect(
         fs.access(path.join(cwd, "dist/runtime.json")),
       ).rejects.toThrow();
-      const updateOptions = await createTestDevUpdateOptions(
-        controller,
-        config,
-        true,
-      );
-      await expect(
-        controller.updatePlan(
-          diffBuildPlan(plan, plan, "config"),
-          updateOptions,
-        ),
-      ).rejects.toThrow("Restart ev dev to apply the updated config");
-      await settleTestDevUpdate(updateOptions, "rollback");
-      expect(updateOptions.activate).not.toHaveBeenCalled();
     } finally {
       await controller.close?.();
     }
@@ -2789,7 +2832,6 @@ describe("webpackAdapter dev", () => {
     const callbacks = {
       ...framework.callbacks,
       async onBuildFacts(
-        generation: BundlerDevGeneration,
         facts: BundlerBuildFacts,
         options: { isRebuild: boolean },
       ) {
@@ -2798,11 +2840,7 @@ describe("webpackAdapter dev", () => {
         rebuildFlags.push(options.isRebuild);
         try {
           await new Promise((resolve) => setTimeout(resolve, 100));
-          return await framework.callbacks.onBuildFacts(
-            generation,
-            facts,
-            options,
-          );
+          return await framework.callbacks.onBuildFacts(facts, options);
         } finally {
           activeBuildFacts -= 1;
         }
@@ -2812,14 +2850,17 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
-      generation: createTestDevGeneration(),
+      signal: new AbortController().signal,
       plan,
       hooks,
       callbacks,
     });
     let closed = false;
     try {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await waitForCondition(
+        () => doneCount >= 2 && rebuildFlags.length > 0,
+        "Webpack did not complete both initial compilers",
+      );
       await controller?.close?.();
       closed = true;
 
@@ -2866,12 +2907,20 @@ describe("webpackAdapter dev", () => {
     const controller = await webpackAdapter.dev({
       config,
       cwd,
-      generation: createTestDevGeneration(),
+      signal: new AbortController().signal,
       plan,
       hooks: [],
       callbacks: framework.callbacks,
     });
     try {
+      await waitForCondition(
+        () =>
+          fs.access(path.join(cwd, "dist/client/index.html")).then(
+            () => true,
+            () => false,
+          ),
+        "Webpack did not emit the SPA HTML",
+      );
       const page = await fetchDevResponse(`http://127.0.0.1:${port}/dashboard`);
       const api = await fetchDevResponse(
         `http://127.0.0.1:${port}/api/unknown`,
@@ -2905,120 +2954,17 @@ describe("webpackAdapter dev", () => {
     }
   });
 
-  devIt(WEBPACK_DEV_TEST_NAMES.htmlOnlyUpdate, async () => {
-    const port = await getAvailablePort();
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="root">initial</div></body></html>',
-      "next.html":
-        '<!doctype html><html><head></head><body><div id="root">next-shell</div></body></html>',
-      "src/pages/home/page.tsx": `
-        import { createElement } from "react";
-
-        export default function Home() {
-          return createElement("h1", null, "Home");
-        }
-      `,
-    });
-    const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist/client", server: "dist/server" },
-      dev: { port },
-      routing: { mode: "mpa", html: "./index.html", mount: "#root" },
-    });
-    const analysis = await createCoreGraph(config, cwd);
-    const plan = await materializeTestPlan({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan: createBuildPlan(config, analysis.graph, {
-        mode: "development",
-      }),
-    });
-    let failBundlerConfig = false;
-    const hooks: PluginHooks<WebpackConfigs>[] = [
-      {
-        configureBundler() {
-          if (failBundlerConfig) {
-            throw new Error("html-only update should not rebuild webpack");
-          }
-        },
-      },
-    ];
-    const framework = createFrameworkCallbacks({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks,
-    });
-
-    const controller = await webpackAdapter.dev({
-      config,
-      cwd,
-      generation: createTestDevGeneration(),
-      plan,
-      hooks,
-      callbacks: framework.callbacks,
-    });
-    try {
-      const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist/client", server: "dist/server" },
-        dev: { port },
-        routing: { mode: "mpa", html: "./next.html", mount: "#root" },
-      });
-      const nextAnalysis = await createCoreGraph(nextConfig, cwd);
-      const updateOptions = await createTestDevUpdateOptions(
-        controller,
-        nextConfig,
-      );
-      const nextPlan = await materializeTestPlan({
-        config: nextConfig,
-        cwd,
-        graph: nextAnalysis.graph,
-        plan: createBuildPlan(nextConfig, nextAnalysis.graph, {
-          mode: "development",
-        }),
-      });
-      const update = diffBuildPlan(plan, nextPlan, "config");
-
-      failBundlerConfig = true;
-      framework.update(nextAnalysis.graph, nextPlan);
-      await controller?.updatePlan(update, updateOptions);
-      await settleTestDevUpdate(updateOptions, "accept");
-
-      const html = await fetchDevText(
-        `http://127.0.0.1:${port}/home/index.html`,
-      );
-
-      expect(update.entries.added).toHaveLength(0);
-      expect(update.entries.changed).toHaveLength(0);
-      expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
-      expect(updateOptions.activate).toHaveBeenCalledTimes(1);
-      expect(html).toContain("next-shell");
-      expect(html).toContain('src="/page-client-home.js"');
-    } finally {
-      await controller?.close?.();
-    }
-  });
-
   devIt(
-    "publishes a candidate after superseding an invalidated transition compile",
+    "keeps the dev session alive after an initial compile error",
     async () => {
       const port = await getAvailablePort();
       const cwd = await createFixture({
         "index.html":
           '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-        "src/pages/home/page.tsx": `
-          import { createElement } from "react";
-
-          export default function Home() {
-            return createElement("h1", null, "Home");
-          }
-        `,
-        "src/pages/home/page.config.ts": 'export default { render: "ssr" };',
+        "src/pages/home/page.tsx":
+          "export default function Home() { return null; }",
       });
       const config = await resolveProjectConfig(cwd, {
-        output: { client: "dist/client", server: "dist/server" },
         dev: { port },
         routing: { mode: "mpa", mount: "#root" },
       });
@@ -3027,638 +2973,91 @@ describe("webpackAdapter dev", () => {
         config,
         cwd,
         graph: analysis.graph,
-        plan: createBuildPlan(config, analysis.graph, {
-          mode: "development",
-        }),
+        plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
       });
-
+      const pageFile = path.join(cwd, "src/pages/home/page.tsx");
+      await fs.writeFile(pageFile, "export default function Home( {", "utf-8");
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+      });
       let clientCompiler: Compiler | undefined;
-      let observeTransitionRuns = false;
-      let transitionWatchRuns = 0;
-      let blockNextClientMake = false;
-      let markBlockedClientMake!: () => void;
-      const blockedClientMake = new Promise<void>((resolve) => {
-        markBlockedClientMake = resolve;
-      });
-      let releaseBlockedClientMake!: () => void;
-      const blockedClientMakeGate = new Promise<void>((resolve) => {
-        releaseBlockedClientMake = resolve;
-      });
-      const blockTransitionCompilePlugin = {
+      const captureCompilerPlugin = {
         apply(compiler: Compiler) {
-          if (compiler.options.name !== "client") return;
           clientCompiler = compiler;
-          compiler.hooks.watchRun.tap("EvjsTestTransitionCompileRuns", () => {
-            if (observeTransitionRuns) transitionWatchRuns += 1;
-          });
-          compiler.hooks.make.tapPromise(
-            "EvjsTestBlockTransitionCompile",
-            async () => {
-              if (!blockNextClientMake) return;
-              blockNextClientMake = false;
-              markBlockedClientMake();
-              await blockedClientMakeGate;
-            },
-          );
         },
       };
       const hooks: PluginHooks<WebpackConfigs>[] = [
         {
           configureBundler(configs) {
             const clientConfig = configs.find(
-              (webpackConfig) => webpackConfig.name === "client",
+              (candidate) => candidate.name === "client",
             );
             if (!clientConfig) throw new Error("Expected client config.");
+            clientConfig.watchOptions = {
+              ...clientConfig.watchOptions,
+              ignored: /node_modules/,
+              poll: 100,
+            };
             clientConfig.plugins = [
               ...(clientConfig.plugins ?? []),
-              blockTransitionCompilePlugin,
+              captureCompilerPlugin,
             ];
           },
         },
       ];
-      const onBuildOutput = vi.fn();
-      const onServerBundleReady = vi.fn();
-      const framework = createFrameworkCallbacks({
-        config,
-        cwd,
-        graph: analysis.graph,
-        plan,
-        hooks,
-        onBuildOutput,
-        onServerBundleReady,
-      });
-
+      const rebuildFlags: boolean[] = [];
       const controller = await webpackAdapter.dev({
         config,
         cwd,
-        generation: createTestDevGeneration(),
+        signal: new AbortController().signal,
         plan,
         hooks,
-        callbacks: framework.callbacks,
-      });
-      let resumePromise: Promise<void> | undefined;
-      try {
-        onBuildOutput.mockClear();
-        onServerBundleReady.mockClear();
-        const nextGraph = structuredClone(analysis.graph);
-        const page = nextGraph.pages.home;
-        if (!page) throw new Error("Expected home Page.");
-        page.metadata = { title: "Updated home" };
-        const updateOptions = await createTestDevUpdateOptions(
-          controller,
-          config,
-        );
-
-        observeTransitionRuns = true;
-        blockNextClientMake = true;
-        const nextPlan = await materializeTestPlan({
-          config,
-          cwd,
-          graph: nextGraph,
-          plan: createBuildPlan(config, nextGraph, {
-            mode: "development",
-          }),
-        });
-        const update = diffBuildPlan(plan, nextPlan, "config");
-
-        framework.update(nextGraph, nextPlan);
-        await controller?.updatePlan(update, updateOptions);
-        const watching = clientCompiler?.watching;
-        if (!watching) throw new Error("Expected client compiler watching.");
-        watching.invalidate();
-        await blockedClientMake;
-
-        await updateOptions.transition.accept();
-        let resumeSettled = false;
-        const selectedResume = Promise.resolve(
-          updateOptions.transition.resume(),
-        );
-        resumePromise = selectedResume;
-        const observedResume = selectedResume.then(
-          () => {
-            resumeSettled = true;
+        callbacks: {
+          ...framework.callbacks,
+          async onBuildFacts(facts, options) {
+            rebuildFlags.push(options.isRebuild);
+            return framework.callbacks.onBuildFacts(facts, options);
           },
-          () => {
-            resumeSettled = true;
-          },
-        );
-        releaseBlockedClientMake();
-
-        await waitForCondition(
-          () => resumeSettled,
-          "Webpack did not replace the invalidated transition compile.",
-          5_000,
-        );
-        await observedResume;
-        await selectedResume;
-        await updateOptions.transition.prepareFinalize();
-        updateOptions.transition.finalize();
-
-        expect(transitionWatchRuns).toBeGreaterThanOrEqual(2);
-        expect(update.generatedChanged).toBe(true);
-        expect(updateOptions.activate).toHaveBeenCalledTimes(1);
-        expect(onBuildOutput).toHaveBeenCalledTimes(1);
-        expect(onBuildOutput.mock.calls[0]?.[0].pages.home?.metadata).toEqual({
-          title: "Updated home",
-        });
-        expect(onServerBundleReady).toHaveBeenCalledTimes(1);
-      } finally {
-        releaseBlockedClientMake();
-        await controller?.close?.();
-        await resumePromise?.catch(() => {});
-      }
-    },
-  );
-
-  devIt(
-    "refreshes the server runtime after page metadata-only plan updates",
-    async () => {
-      const port = await getAvailablePort();
-      const cwd = await createFixture({
-        "index.html":
-          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-        "src/pages/home/page.tsx": `
-          import { createElement } from "react";
-
-          export default function Home() {
-            return createElement("h1", null, "Home");
-          }
-        `,
-        "src/pages/home/page.config.ts": 'export default { render: "ssr" };',
+        },
       });
-      const config = await resolveProjectConfig(cwd, {
-        output: { client: "dist/client", server: "dist/server" },
-        dev: { port },
-        routing: { mode: "mpa", mount: "#root" },
+      let doneSettled = false;
+      void controller.done.finally(() => {
+        doneSettled = true;
       });
-      const analysis = await createCoreGraph(config, cwd);
-      const plan = await materializeTestPlan({
-        config,
-        cwd,
-        graph: analysis.graph,
-        plan: createBuildPlan(config, analysis.graph, {
-          mode: "development",
-        }),
-      });
-      let blockNextServerReady = false;
-      let markBlockedServerReady!: () => void;
-      const blockedServerReady = new Promise<void>((resolve) => {
-        markBlockedServerReady = resolve;
-      });
-      let releaseServerReady!: () => void;
-      const serverReadyGate = new Promise<void>((resolve) => {
-        releaseServerReady = resolve;
-      });
-      const onServerBundleReady = vi.fn(async () => {
-        if (!blockNextServerReady) return;
-        blockNextServerReady = false;
-        markBlockedServerReady();
-        await serverReadyGate;
-      });
-      const framework = createFrameworkCallbacks({
-        config,
-        cwd,
-        graph: analysis.graph,
-        plan,
-        onServerBundleReady,
-      });
-
-      const controller = await webpackAdapter.dev({
-        config,
-        cwd,
-        generation: createTestDevGeneration(),
-        plan,
-        hooks: [],
-        callbacks: framework.callbacks,
-      });
-      let settling: Promise<void> | undefined;
       try {
-        onServerBundleReady.mockClear();
-        blockNextServerReady = true;
-        const nextGraph = structuredClone(analysis.graph);
-        const page = nextGraph.pages.home;
-        if (!page) throw new Error("Expected home Page.");
-        page.metadata = {
-          title: "Updated home",
-          meta: { description: "Updated description" },
-        };
-        const updateOptions = await createTestDevUpdateOptions(
-          controller,
-          config,
-        );
-        const nextPlan = await materializeTestPlan({
-          config,
-          cwd,
-          graph: nextGraph,
-          plan: createBuildPlan(config, nextGraph, {
-            mode: "development",
-          }),
-          // Page metadata does not change the generated entry source. Keep
-          // this test focused on transition publication and server refresh.
-          write: false,
-        });
-        const update = diffBuildPlan(plan, nextPlan, "config");
-
-        framework.update(nextGraph, nextPlan);
-        await controller?.updatePlan(update, updateOptions);
-        settling = settleTestDevUpdate(updateOptions, "accept");
-        const transitionState = await Promise.race([
-          blockedServerReady.then(() => "blocked" as const),
-          settling.then(() => "settled" as const),
-        ]);
-        expect(transitionState).toBe("blocked");
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(rebuildFlags).toEqual([]);
+        expect(doneSettled).toBe(false);
 
         await fs.writeFile(
-          path.join(cwd, "src/pages/home/page.tsx"),
-          `
-            import { createElement } from "react";
-
-            export default function Home() {
-              return createElement("h1", null, "late-transition-source");
-            }
-          `,
+          pageFile,
+          "export default function Home() { return null; }",
           "utf-8",
         );
-        const clientBundle = path.join(cwd, "dist/client/page-client-home.js");
+        const activeClientCompiler = clientCompiler;
+        const watching = activeClientCompiler?.watching;
+        if (!activeClientCompiler || !watching) {
+          throw new Error("Expected client compiler watching.");
+        }
+        const inputFileSystem = activeClientCompiler.inputFileSystem as {
+          purge?(target?: string | string[]): void;
+        };
+        inputFileSystem.purge?.(pageFile);
+        activeClientCompiler.modifiedFiles = new Set([pageFile]);
+        watching.invalidate();
         await waitForCondition(
-          async () =>
-            (await fs.readFile(clientBundle, "utf-8").catch(() => "")).includes(
-              "late-transition-source",
-            ),
-          "Webpack did not finish the late transition compile.",
+          () => rebuildFlags.length > 0,
+          "Webpack did not recover after the source error was fixed",
         );
-
-        releaseServerReady();
-        await settling;
-        await waitForCondition(
-          () => onServerBundleReady.mock.calls.length >= 2,
-          "Webpack did not republish dirty transition input after finalize.",
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        expect(update.entries.added).toHaveLength(0);
-        expect(update.entries.removed).toHaveLength(0);
-        expect(update.entries.changed).toHaveLength(0);
-        expect(update.html.changed).toHaveLength(0);
-        expect(update.generatedChanged).toBe(true);
-        expect(update.serverCompilationChanged).toBe(false);
-        expect(update.serverDocumentsChanged).toBe(true);
-        expect(update.devRoutingChanged).toBe(false);
-        expect(updateOptions.activate).toHaveBeenCalledTimes(1);
-        expect(onServerBundleReady).toHaveBeenCalledTimes(2);
+        expect(rebuildFlags[0]).toBe(false);
+        expect(doneSettled).toBe(false);
       } finally {
-        releaseServerReady();
-        await controller?.close?.();
-        await settling?.catch(() => {});
+        await controller.close();
       }
+      await expect(controller.done).resolves.toBeUndefined();
     },
   );
-
-  devIt(WEBPACK_DEV_TEST_NAMES.rollback, async () => {
-    const port = await getAvailablePort();
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-      "src/pages/home/page.tsx": `
-        import { createElement } from "react";
-
-        export default function Home() {
-          return createElement("h1", null, "Home");
-        }
-      `,
-    });
-    const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist/client", server: "dist/server" },
-      dev: { port },
-      routing: { mode: "mpa", mount: "#root" },
-    });
-    const analysis = await createCoreGraph(config, cwd);
-    const plan = await materializeTestPlan({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan: createBuildPlan(config, analysis.graph, {
-        mode: "development",
-      }),
-    });
-    let failBundlerConfig = false;
-    const hooks: PluginHooks<WebpackConfigs>[] = [
-      {
-        configureBundler() {
-          if (failBundlerConfig) {
-            throw new Error("forced update failure");
-          }
-        },
-      },
-    ];
-    const framework = createFrameworkCallbacks({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks,
-    });
-
-    const controller = await webpackAdapter.dev({
-      config,
-      cwd,
-      generation: createTestDevGeneration(),
-      plan,
-      hooks,
-      callbacks: framework.callbacks,
-    });
-    try {
-      await fs.mkdir(path.join(cwd, "src/pages/about"), { recursive: true });
-      await fs.writeFile(
-        path.join(cwd, "src/pages/about/page.tsx"),
-        `
-          import { createElement } from "react";
-
-          export default function About() {
-            return createElement("h1", null, "About");
-          }
-        `,
-        "utf-8",
-      );
-      const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist/client", server: "dist/server" },
-        dev: { port },
-        routing: { mode: "mpa", mount: "#root" },
-      });
-      const nextAnalysis = await createCoreGraph(nextConfig, cwd);
-      const updateOptions = await createTestDevUpdateOptions(
-        controller,
-        nextConfig,
-      );
-      const nextPlan = await materializeTestPlan({
-        config: nextConfig,
-        cwd,
-        graph: nextAnalysis.graph,
-        plan: createBuildPlan(nextConfig, nextAnalysis.graph, {
-          mode: "development",
-        }),
-      });
-      const update = diffBuildPlan(plan, nextPlan, "config");
-
-      failBundlerConfig = true;
-      await expect(
-        controller?.updatePlan(update, updateOptions),
-      ).rejects.toThrow("cannot safely replace persistent compiler entries");
-      framework.update(analysis.graph, plan);
-      await settleTestDevUpdate(updateOptions, "rollback");
-      expect(updateOptions.activate).not.toHaveBeenCalled();
-
-      const session = controller as unknown as {
-        plan: { entries: Array<{ name: string }> };
-      };
-      expect(session.plan.entries.map((entry) => entry.name)).toEqual([
-        createPageClientBuildEntryName("home"),
-      ]);
-    } finally {
-      await controller?.close?.();
-    }
-  });
-
-  devIt(WEBPACK_DEV_TEST_NAMES.pageAddition, async () => {
-    const port = await getAvailablePort();
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-      "src/pages/home/page.tsx": `
-        import { createElement } from "react";
-
-        export default function Home() {
-          return createElement("h1", null, "Home");
-        }
-      `,
-    });
-    const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist/client", server: "dist/server" },
-      dev: { port },
-      routing: { mode: "mpa", mount: "#root" },
-    });
-    const analysis = await createCoreGraph(config, cwd);
-    const plan = await materializeTestPlan({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan: createBuildPlan(config, analysis.graph, {
-        mode: "development",
-      }),
-    });
-    const onBuildOutput = vi.fn();
-    const framework = createFrameworkCallbacks({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      onBuildOutput,
-    });
-
-    const controller = await webpackAdapter.dev({
-      config,
-      cwd,
-      generation: createTestDevGeneration(),
-      plan,
-      hooks: [],
-      callbacks: framework.callbacks,
-    });
-    try {
-      await fs.mkdir(path.join(cwd, "src/pages/about"), { recursive: true });
-      await fs.writeFile(
-        path.join(cwd, "src/pages/about/page.tsx"),
-        `
-          import { createElement } from "react";
-
-          export default function About() {
-            return createElement("h1", null, "About");
-          }
-        `,
-        "utf-8",
-      );
-
-      const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist/client", server: "dist/server" },
-        dev: { port },
-        routing: { mode: "mpa", mount: "#root" },
-      });
-      const nextAnalysis = await createCoreGraph(nextConfig, cwd);
-      const updateOptions = await createTestDevUpdateOptions(
-        controller,
-        nextConfig,
-      );
-      const nextPlan = await materializeTestPlan({
-        config: nextConfig,
-        cwd,
-        graph: nextAnalysis.graph,
-        plan: createBuildPlan(nextConfig, nextAnalysis.graph, {
-          mode: "development",
-        }),
-      });
-      const update = diffBuildPlan(plan, nextPlan, "config");
-      const buildOutputCallsBeforeUpdate = onBuildOutput.mock.calls.length;
-
-      framework.update(nextAnalysis.graph, nextPlan);
-      await expect(
-        controller?.updatePlan(update, updateOptions),
-      ).rejects.toThrow("cannot safely replace persistent compiler entries");
-      framework.update(analysis.graph, plan);
-      await settleTestDevUpdate(updateOptions, "rollback");
-      expect(updateOptions.activate).not.toHaveBeenCalled();
-
-      expect(update.entries.added.map((entry) => entry.name)).toEqual([
-        createPageClientBuildEntryName("about"),
-      ]);
-      expect(onBuildOutput).toHaveBeenCalledTimes(
-        buildOutputCallsBeforeUpdate + 1,
-      );
-      const session = controller as unknown as {
-        plan: { entries: Array<{ name: string }> };
-      };
-      expect(session.plan.entries.map((entry) => entry.name)).toEqual([
-        createPageClientBuildEntryName("home"),
-      ]);
-    } finally {
-      await controller?.close?.();
-    }
-  });
 });
-
-async function createFixture(files: Record<string, string>) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-webpack-"));
-  tempDirs.push(dir);
-
-  for (const [file, content] of Object.entries(files)) {
-    const absolute = path.join(dir, file);
-    await fs.mkdir(path.dirname(absolute), { recursive: true });
-    await fs.writeFile(absolute, content, "utf-8");
-  }
-
-  await fs.symlink(
-    path.resolve(import.meta.dirname, "../../..", "node_modules"),
-    path.join(dir, "node_modules"),
-    "dir",
-  );
-
-  return dir;
-}
-
-async function getAvailablePort(): Promise<number> {
-  for (let offset = 0; offset < 1_000; offset++) {
-    const port = WEBPACK_DEV_PORT_BASE + offset;
-    if (allocatedDevPorts.has(port)) continue;
-    if (await canListenOnPort(port)) {
-      allocatedDevPorts.add(port);
-      return port;
-    }
-  }
-
-  throw new Error("Failed to allocate a webpack dev test port.");
-}
-
-async function canListenOnPort(port: number): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", (error) => {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EADDRINUSE" || code === "EACCES") {
-        resolve(false);
-        return;
-      }
-      reject(error);
-    });
-    server.listen(port, "0.0.0.0", () => {
-      server.close(() => resolve(true));
-    });
-  });
-}
-
-async function expectPortCanListen(port: number): Promise<void> {
-  await expect(canListenOnPort(port)).resolves.toBe(true);
-}
-
-interface DevResponse {
-  status: number;
-  headers: Headers;
-  text: string;
-}
-
-async function fetchDevResponse(
-  url: string,
-  init?: RequestInit,
-): Promise<DevResponse> {
-  let lastError: unknown;
-
-  const maxAttempts = 20;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const response = await fetch(url, init);
-      const text = await response.text();
-      if (!text) {
-        throw new Error(
-          `Empty webpack dev response from ${url} after attempt ${attempt}.`,
-        );
-      }
-      return {
-        status: response.status,
-        headers: response.headers,
-        text,
-      };
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  }
-
-  throw lastError;
-}
-
-async function fetchDevText(url: string): Promise<string> {
-  const response = await fetchDevResponse(url);
-  return response.text;
-}
-
-function readEmbeddedClientRuntime(html: string): unknown {
-  const match = html.match(
-    /<script\b(?=[^>]*\bid="__EVJS_CLIENT_RUNTIME__")(?=[^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/,
-  );
-  if (!match) {
-    throw new Error("Expected embedded client runtime script.");
-  }
-  return JSON.parse(match[1]);
-}
-
-async function requestServerEntry(
-  cwd: string,
-  manifest: BuildOutput,
-  pathname: string,
-): Promise<Response> {
-  const serverEntryPath = path.join(
-    cwd,
-    "dist/server",
-    manifest.server?.entry ?? "",
-  );
-  const serverDir = path.dirname(serverEntryPath);
-  const frameworkRuntime =
-    frameworkRuntimeByOutput.get(manifest) ?? createFrameworkRuntime(manifest);
-  const runtimeGlobals = globalThis as ServerRuntimeGlobals;
-  runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__ = frameworkRuntime;
-  runtimeGlobals.__EVJS_SERVER_MODULE_LOADER__ = async (asset: string) => {
-    const mod = await import(
-      pathToFileURL(path.resolve(serverDir, asset)).href
-    );
-    const nested =
-      mod && typeof mod.default === "object" ? mod.default : undefined;
-    return nested && ("default" in nested || "render" in nested) ? nested : mod;
-  };
-
-  try {
-    const serverModule = await import(pathToFileURL(serverEntryPath).href);
-    const handler =
-      serverModule.default?.default ?? serverModule.default ?? serverModule;
-    return await handler.fetch(new Request(`https://example.com${pathname}`));
-  } finally {
-    delete runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__;
-    delete runtimeGlobals.__EVJS_SERVER_MODULE_LOADER__;
-  }
-}

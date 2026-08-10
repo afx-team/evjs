@@ -564,15 +564,8 @@ const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
   "build",
   "dev",
 ]);
-const PUBLIC_BUNDLER_CAPABILITY_KEYS = new Set(["build", "dev"]);
+const PUBLIC_BUNDLER_CAPABILITY_KEYS = new Set(["build"]);
 const PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS = new Set(["server", "rsc", "ppr"]);
-const PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS = new Set([
-  "html",
-  "entries",
-  "routes",
-  "server",
-  "resolution",
-]);
 
 function normalizePath(value: string): string {
   const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
@@ -921,7 +914,7 @@ function validateBundlerCapabilities(value: unknown, path: string): void {
     capabilities,
     PUBLIC_BUNDLER_CAPABILITY_KEYS,
     path,
-    "build or dev",
+    "build",
   );
   const build = assertPlainConfigRecord(
     capabilities.build,
@@ -936,20 +929,6 @@ function validateBundlerCapabilities(value: unknown, path: string): void {
   );
   for (const key of PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS) {
     assertRequiredBoolean(build[key], `${path}.build.${key}`);
-  }
-  const dev = assertPlainConfigRecord(
-    capabilities.dev,
-    `${path}.dev`,
-    "a dev capabilities object",
-  );
-  assertKnownConfigKeys(
-    dev,
-    PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS,
-    `${path}.dev`,
-    "html, entries, routes, server, or resolution",
-  );
-  for (const key of PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS) {
-    assertRequiredBoolean(dev[key], `${path}.dev.${key}`);
   }
 }
 

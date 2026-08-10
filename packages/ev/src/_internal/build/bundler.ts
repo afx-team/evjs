@@ -1,8 +1,4 @@
-import type {
-  AssetGroup,
-  BuildPlan,
-  BuildPlanUpdate,
-} from "@evjs/shared/manifest";
+import type { AssetGroup, BuildPlan } from "@evjs/shared/manifest";
 import {
   assertPortableRelativeBrowserArtifactPath,
   assertServerRelativeArtifactPath,
@@ -194,162 +190,35 @@ export interface BundlerBuildContext<TBundlerCfg = unknown> {
   addWatchFile?(file: string): void;
 }
 
-/**
- * Opaque identity for one adapter-visible development build generation.
- *
- * Adapters receive these identities from the framework and must return the
- * identity captured by the compile that produced each facts snapshot. This
- * keeps late compile results bound to the config and plan that started them.
- */
-declare const bundlerDevGenerationBrand: unique symbol;
-
-export interface BundlerDevGeneration {
-  readonly [bundlerDevGenerationBrand]: true;
-}
-
 export interface BundlerDevContext<TBundlerCfg = unknown>
   extends BundlerBuildContext<TBundlerCfg> {
-  /** Generation owned by the initial dev plan. */
-  generation: BundlerDevGeneration;
+  /** Aborted when the immutable framework development session is closing. */
+  signal: AbortSignal;
   callbacks: {
     /**
-     * Called after the client development server is listening and framework
-     * dev artifacts have been emitted.
-     */
-    onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
-    /**
      * Called by the bundler adapter after a dev compile has fresh build facts,
-     * or with previously published facts that remain valid across a proven
-     * topology-preserving artifact update.
+     * with `isRebuild: false` for the first successfully published compile in
+     * this immutable session and `true` for later successful compiles.
      * The ev orchestrator owns beforeBuild, framework output linking,
-     * transformOutput, manifest emission, and HTML emission. Adapters may
-     * acknowledge facts or notify server readiness only after `published`;
-     * `discarded` facts were not consumed and must be retried from fresh
-     * compiler state.
+     * transformOutput, manifest emission, and HTML emission. `discarded`
+     * means that the owning session closed before the snapshot was consumed.
      */
     onBuildFacts: (
-      generation: BundlerDevGeneration,
       facts: BundlerBuildFacts,
       options: { readonly isRebuild: boolean },
-    ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>;
-    /** Notify the framework that this generation's server bundle is ready. */
-    onServerBundleReady: (
-      generation: BundlerDevGeneration,
-    ) => void | Promise<void>;
+    ) => Promise<BundlerBuildFactsDisposition>;
+    /** Notify the framework that this session's server bundle is ready. */
+    onServerBundleReady: () => Promise<void>;
   };
 }
 
-export interface BundlerDevUpdateOptions<TBundlerCfg = unknown> {
-  /** The resolved config that produced the next plan. */
-  config: ResolvedFrameworkConfig<TBundlerCfg>;
-  /**
-   * True when framework config or a `configureBundler()` dependency changed and
-   * the adapter must refresh its effective bundler configuration.
-   */
-  configChanged: boolean;
-  /** The exact transition reserved before Core wrote candidate input. */
-  transition: BundlerDevUpdateTransition;
-  /** Generation owned by `update.next`. */
-  generation: BundlerDevGeneration;
-  /**
-   * Activate `generation` exactly once at the adapter's serialized plan
-   * boundary: after every prior-generation facts callback has completed and
-   * before adopting `update.next` or publishing its facts.
-   */
-  activate(): void;
-}
-
-/**
- * Adapter-owned boundary reserved before Core materializes candidate `.ev`
- * inputs. Core explicitly accepts the final input or rolls back only after it
- * has restored the previous generated state. Adapters must drop any compile
- * that could have observed input while this boundary was active, then obtain
- * fresh facts for the selected state. A topology-preserving artifact update
- * may instead relink with the last published facts while the compiler handles
- * its generated-input rebuild independently.
- */
-export interface BundlerDevUpdateTransition {
-  /** Select the final generated input while keeping the current generation. */
-  accept(): void | Promise<void>;
-  /** Select the previous generation after Core restored its generated input. */
-  rollback(): void | Promise<void>;
-  /** Release deferred compiler work after Core opens the selected consumer. */
-  resume(): void | Promise<void>;
-  /**
-   * Complete any fallible settlement work while the adapter boundary remains
-   * reserved. A rejection must leave the resumed outcome selectable for
-   * rollback.
-   */
-  prepareFinalize(): void | Promise<void>;
-  /**
-   * Release the adapter boundary after Core commits the selected output.
-   * This operation must be synchronous and must not throw.
-   */
-  finalize(): void;
-}
-
-export interface BundlerDevController<TBundlerCfg = unknown> {
-  /** Settles if the adapter-owned dev service terminates independently. */
-  done?: Promise<void>;
-  close?(): void | Promise<void>;
-  /**
-   * Establish a fail-closed boundary before candidate generated inputs are
-   * written. The returned promise may wait for compiles that started before
-   * the boundary to finish; compiles that start after it must not publish
-   * facts until the adapter has observed the final accepted input state.
-   */
-  beginUpdate():
-    | BundlerDevUpdateTransition
-    | Promise<BundlerDevUpdateTransition>;
-  updatePlan(
-    update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<TBundlerCfg>,
-  ): void | Promise<void>;
-}
-
-/** Whether a plan update carries no observable build or delivery change. */
-export function isEmptyBuildPlanUpdate(update: BuildPlanUpdate): boolean {
-  return (
-    update.entries.added.length === 0 &&
-    update.entries.removed.length === 0 &&
-    update.entries.changed.length === 0 &&
-    update.html.added.length === 0 &&
-    update.html.removed.length === 0 &&
-    update.html.changed.length === 0 &&
-    !update.generatedChanged &&
-    !update.resolveChanged &&
-    !update.runtimeChanged &&
-    !update.deliveryChanged &&
-    !update.serverCompilationChanged &&
-    !update.serverDocumentsChanged &&
-    !update.devRoutingChanged
-  );
-}
-
-/**
- * Whether persistent compiler and routing topology can stay in place while
- * framework-owned HTML, manifests, or server document shells are refreshed.
- */
-export function isArtifactOnlyBuildPlanUpdate(
-  update: BuildPlanUpdate,
-): boolean {
-  return (
-    !update.serverCompilationChanged &&
-    !update.devRoutingChanged &&
-    !update.runtimeChanged &&
-    !update.resolveChanged &&
-    update.previous.distDir === update.next.distDir &&
-    update.previous.output.clientDir === update.next.output.clientDir &&
-    update.entries.added.length === 0 &&
-    update.entries.removed.length === 0 &&
-    update.entries.changed.length === 0 &&
-    (update.deliveryChanged ||
-      update.generatedChanged ||
-      update.serverDocumentsChanged ||
-      update.html.added.length > 0 ||
-      update.html.removed.length > 0 ||
-      update.html.changed.length > 0)
-  );
+export interface BundlerDevController {
+  /** The actual client development origin. */
+  readonly origin: string;
+  /** Resolves after an intentional close and rejects on unexpected shutdown. */
+  readonly done: Promise<void>;
+  /** Stop all adapter-owned development resources. Must be idempotent. */
+  close(): Promise<void>;
 }
 
 export interface BundlerCapabilities {
@@ -361,25 +230,10 @@ export interface BundlerCapabilities {
     /** Build partial-prerender shell and region entries. */
     ppr: boolean;
   };
-  dev: {
-    /** Relink generated framework artifacts and HTML without restarting. */
-    html: boolean;
-    /** Add, remove, or replace bundler entries without restarting. */
-    entries: boolean;
-    /** Apply client/server route-plan changes without restarting. */
-    routes: boolean;
-    /** Reconfigure server output without restarting. */
-    server: boolean;
-    /** Reconfigure aliases or externals without restarting. */
-    resolution: boolean;
-  };
 }
 
 export type BundlerBuildCapability = keyof BundlerCapabilities["build"];
-export type BundlerDevCapability = keyof BundlerCapabilities["dev"];
-export type BundlerCapability =
-  | `build.${BundlerBuildCapability}`
-  | `dev.${BundlerDevCapability}`;
+export type BundlerCapability = `build.${BundlerBuildCapability}`;
 
 export interface BundlerCapabilityGap {
   capability: BundlerCapability;
@@ -403,14 +257,11 @@ export interface BundlerAdapter<TBundlerCfg = unknown> {
   /**
    * Start a development server.
    *
-   * @param callbacks.onServerBundleReady - Called when the server bundle is compiled.
-   * The CLI uses this to launch the API server runtime.
-   * @returns A dev controller when the adapter can expose explicit lifecycle
-   * or dynamic plan update hooks.
+   * Resolves after compiler watches are installed and the development server
+   * is listening. It does not wait for the first successful application
+   * compile or framework build facts.
    */
-  dev(
-    ctx: BundlerDevContext<TBundlerCfg>,
-  ): Promise<BundlerDevController<TBundlerCfg> | undefined>;
+  dev(ctx: BundlerDevContext<TBundlerCfg>): Promise<BundlerDevController>;
 }
 
 export function getBundlerBuildCapabilityGaps(
@@ -446,67 +297,6 @@ export function getBundlerBuildCapabilityGaps(
   );
 }
 
-export function getBundlerDevCapabilityGaps(
-  bundler: Pick<BundlerAdapter, "capabilities">,
-  update: BuildPlanUpdate,
-): BundlerCapabilityGap[] {
-  const requirements: Array<{
-    capability: BundlerDevCapability;
-    required: boolean;
-    reason: string;
-  }> = [
-    {
-      capability: "html",
-      required:
-        update.deliveryChanged ||
-        update.generatedChanged ||
-        update.serverDocumentsChanged ||
-        update.html.added.length > 0 ||
-        update.html.removed.length > 0 ||
-        update.html.changed.length > 0,
-      reason: "generated framework artifacts or HTML changed",
-    },
-    {
-      capability: "entries",
-      required:
-        update.entries.added.length > 0 ||
-        update.entries.removed.length > 0 ||
-        update.entries.changed.length > 0 ||
-        update.previous.output.clientDir !== update.next.output.clientDir,
-      reason: "bundler entries or client output changed",
-    },
-    {
-      capability: "routes",
-      required: update.devRoutingChanged,
-      reason: "client or server route plans changed",
-    },
-    {
-      capability: "server",
-      required:
-        update.serverCompilationChanged ||
-        update.runtimeChanged ||
-        [
-          ...update.entries.added,
-          ...update.entries.removed,
-          ...update.entries.changed,
-        ].some((entry) => entry.environment === "server"),
-      reason:
-        "server compilation inputs, server output, or framework runtime changed",
-    },
-    {
-      capability: "resolution",
-      required: update.resolveChanged,
-      reason: "module aliases or externals changed",
-    },
-  ];
-
-  return requirements.flatMap(({ capability, required, reason }) =>
-    required && !bundler.capabilities.dev[capability]
-      ? [{ capability: `dev.${capability}` as const, reason }]
-      : [],
-  );
-}
-
 export function preflightBundlerBuild(
   bundler: Pick<BundlerAdapter, "name" | "capabilities">,
   plan: BuildPlan,
@@ -514,16 +304,6 @@ export function preflightBundlerBuild(
   assertNoBundlerCapabilityGaps(
     bundler.name,
     getBundlerBuildCapabilityGaps(bundler, plan),
-  );
-}
-
-export function preflightBundlerDevUpdate(
-  bundler: Pick<BundlerAdapter, "name" | "capabilities">,
-  update: BuildPlanUpdate,
-): void {
-  assertNoBundlerCapabilityGaps(
-    bundler.name,
-    getBundlerDevCapabilityGaps(bundler, update),
   );
 }
 

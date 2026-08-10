@@ -17,19 +17,14 @@ import type {
   BundlerBuildFactsDisposition,
   BundlerDevContext,
   BundlerDevController,
-  BundlerDevGeneration,
-  BundlerDevUpdateOptions,
-  BundlerDevUpdateTransition,
   ResolvedBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
 import {
   assertSafeBuildOutputPaths,
-  isArtifactOnlyBuildPlanUpdate,
-  isEmptyBuildPlanUpdate,
   resolveBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
-import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
+import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
@@ -37,6 +32,11 @@ import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./dev-worker-client.js";
+import {
+  ensureUtoopackProcessWorkerScheduler,
+  markUtoopackProcessForBuild,
+  type UtoopackProcessWorkerScheduler,
+} from "./dev-worker-scheduler.js";
 import { assertSafeUtoopackCleanOutput } from "./output-paths.js";
 import { runUtoopackBuild } from "./runtime.js";
 import {
@@ -51,7 +51,6 @@ const { version: utoopackVersion } = require("@utoo/pack/package.json") as {
   version: string;
 };
 type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build">;
-const INITIAL_DEV_STATS_TIMEOUT_MS = 10_000;
 const DEV_STATS_POLL_INTERVAL_MS = 25;
 
 async function cleanServerOutput(
@@ -68,12 +67,10 @@ async function cleanServerOutput(
 async function generateDevArtifacts(
   cwd: string,
   plan: BuildPlan,
-  generation: BundlerDevGeneration,
   onBuildFacts: (
-    generation: BundlerDevGeneration,
     facts: BundlerBuildFacts,
     options: { isRebuild: boolean },
-  ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>,
+  ) => Promise<BundlerBuildFactsDisposition>,
   options: { isRebuild: boolean },
   facts?: BundlerBuildFacts,
 ): Promise<BundlerBuildFactsDisposition> {
@@ -81,14 +78,13 @@ async function generateDevArtifacts(
   const buildFacts =
     facts ??
     (await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts());
-  return onBuildFacts(generation, buildFacts, options);
+  return onBuildFacts(buildFacts, options);
 }
 
 async function waitForReadableDevStats(
   cwd: string,
   plan: BuildPlan,
-  timeoutMs = INITIAL_DEV_STATS_TIMEOUT_MS,
-  signal?: AbortSignal,
+  signal: AbortSignal,
 ): Promise<BundlerBuildFacts> {
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   const requiredStats = [
@@ -103,8 +99,6 @@ async function waitForReadableDevStats(
     return new UtoopackManifestGenerator(cwd, plan).collectBuildFacts();
   }
 
-  const deadline = Date.now() + timeoutMs;
-  let lastError: unknown;
   while (true) {
     throwIfPollingAborted(
       signal,
@@ -112,25 +106,7 @@ async function waitForReadableDevStats(
     );
     try {
       return await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts();
-    } catch (error) {
-      lastError = error;
-    }
-    if (Date.now() >= deadline) {
-      const paths = requiredStats
-        .map((statsPath) =>
-          JSON.stringify(
-            path
-              .relative(outputPaths.rootDir, statsPath)
-              .split(path.sep)
-              .join("/"),
-          ),
-        )
-        .join(", ");
-      throw new Error(
-        `[evjs] Timed out waiting for readable Utoopack development stats at ${paths}.`,
-        { cause: lastError },
-      );
-    }
+    } catch {}
     await waitForPollingDelay(
       signal,
       "[evjs] Utoopack development session closed while waiting for build stats.",
@@ -138,15 +114,12 @@ async function waitForReadableDevStats(
   }
 }
 
-function throwIfPollingAborted(
-  signal: AbortSignal | undefined,
-  message: string,
-): void {
-  if (signal?.aborted) throw new Error(message);
+function throwIfPollingAborted(signal: AbortSignal, message: string): void {
+  if (signal.aborted) throw new Error(message);
 }
 
 function waitForPollingDelay(
-  signal: AbortSignal | undefined,
+  signal: AbortSignal,
   abortMessage: string,
 ): Promise<void> {
   throwIfPollingAborted(signal, abortMessage);
@@ -155,14 +128,30 @@ function waitForPollingDelay(
     timer.unref();
     const onAbort = () => {
       clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
+      signal.removeEventListener("abort", onAbort);
       reject(new Error(abortMessage));
     };
     function finish() {
-      signal?.removeEventListener("abort", onAbort);
+      signal.removeEventListener("abort", onAbort);
       resolve();
     }
-    signal?.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function waitForAbort(signal: AbortSignal): Promise<never> {
+  if (signal.aborted) {
+    return Promise.reject(
+      new Error("[evjs] Utoopack development startup was aborted."),
+    );
+  }
+  return new Promise<never>((_resolve, reject) => {
+    signal.addEventListener(
+      "abort",
+      () =>
+        reject(new Error("[evjs] Utoopack development startup was aborted.")),
+      { once: true },
+    );
   });
 }
 
@@ -179,17 +168,11 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       rsc: false,
       ppr: false,
     },
-    dev: {
-      html: true,
-      entries: false,
-      routes: false,
-      server: false,
-      resolution: false,
-    },
   },
   async build(
     ctx: BundlerBuildContext<ConfigComplete>,
   ): Promise<BundlerBuildFacts> {
+    markUtoopackProcessForBuild();
     const { addWatchFile, config, cwd, hooks, plan } = ctx;
     const { createUtoopackConfig } = await import("./create-config.js");
     const utoopackConfig = await createUtoopackConfig(
@@ -219,19 +202,20 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
   async dev(
     ctx: BundlerDevContext<ConfigComplete>,
-  ): Promise<BundlerDevController<ConfigComplete>> {
+  ): Promise<BundlerDevController> {
     return startUtoopackDev(ctx);
   },
 };
 
 async function startUtoopackDev(
   ctx: BundlerDevContext<ConfigComplete>,
-  statsTimeoutMs = INITIAL_DEV_STATS_TIMEOUT_MS,
 ): Promise<UtoopackDevController> {
-  const { addWatchFile, callbacks, config, cwd, generation, hooks, plan } = ctx;
+  const { addWatchFile, callbacks, config, cwd, hooks, plan, signal } = ctx;
+  throwIfUtoopackDevAborted(signal);
   const { createUtoopackConfig, getSpaHistoryFallbackRuleIndex } = await import(
     "./create-config.js"
   );
+  throwIfUtoopackDevAborted(signal);
   const utoopackConfig = await createUtoopackConfig(
     config,
     plan,
@@ -239,15 +223,20 @@ async function startUtoopackDev(
     hooks,
     addWatchFile,
   );
+  throwIfUtoopackDevAborted(signal);
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
 
   logger.info`Using @utoo/pack@${utoopackVersion}.`;
   logger.info`Starting development server with utoopack...`;
   await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
+  throwIfUtoopackDevAborted(signal);
+  const workerScheduler = await ensureUtoopackProcessWorkerScheduler();
+  throwIfUtoopackDevAborted(signal);
 
   const worker = startUtoopackDevWorker({
     cwd,
     config: utoopackConfig,
+    workerSchedulerBindingPath: workerScheduler.bindingPath,
     spaHistoryFallbackRuleIndex: getSpaHistoryFallbackRuleIndex(utoopackConfig),
     server: {
       port: config.dev.port,
@@ -258,19 +247,43 @@ async function startUtoopackDev(
   });
   const controller = new UtoopackDevController({
     cwd,
-    generation,
     plan,
     worker,
+    workerScheduler,
     onBuildFacts: callbacks.onBuildFacts,
     onServerBundleReady: callbacks.onServerBundleReady,
   });
+  if (signal.aborted) {
+    void controller
+      .close()
+      .catch(
+        (error) =>
+          logger.error`Failed to close aborted Utoopack dev session: ${error}`,
+      );
+  } else {
+    signal.addEventListener(
+      "abort",
+      () => {
+        void controller
+          .close()
+          .catch(
+            (error) =>
+              logger.error`Failed to close aborted Utoopack dev session: ${error}`,
+          );
+      },
+      { once: true },
+    );
+  }
 
   try {
-    const ready = await Promise.race([worker.ready, worker.failure]);
-    const devServerOrigin = formatDevServerOrigin(
-      config,
-      ready.port,
-      ready.hostname,
+    const ready = await Promise.race([
+      worker.ready,
+      worker.failure,
+      workerScheduler.failure,
+      waitForAbort(signal),
+    ]);
+    controller.setOrigin(
+      formatDevServerOrigin(config, ready.port, ready.hostname),
     );
     const fallbackUpdated = ready.spaHistoryFallbackUpdated;
     if (ready.port !== config.dev.port) {
@@ -288,36 +301,12 @@ async function startUtoopackDev(
     const initialServerStatsVersion = hasServerEntries(plan)
       ? await readServerStatsVersion(serverStatsPath)
       : undefined;
-    const initialFacts = await controller.waitForReadableStats(
-      plan,
-      statsTimeoutMs,
-    );
-    const initialDisposition = await generateDevArtifacts(
-      cwd,
-      plan,
-      generation,
-      callbacks.onBuildFacts,
-      { isRebuild: false },
-      initialFacts,
-    );
-    if (initialDisposition !== "published") {
-      throw new Error(
-        "[evjs] Core discarded the initial Utoopack facts snapshot.",
-      );
-    }
-    controller.markBuildPublished(initialFacts, initialServerStatsVersion);
-    worker.throwIfFailed();
-
-    if (hasRuntimeServerEntry(plan)) {
-      await callbacks.onServerBundleReady(generation);
-      worker.throwIfFailed();
-    }
     if (hasServerEntries(plan)) {
       const monitor = startUtoopackServerStatsMonitor({
         statsPath: serverStatsPath,
         initialVersion: initialServerStatsVersion,
         async onChange(version) {
-          return controller.processServerStatsChange(version, statsTimeoutMs);
+          return controller.processServerStatsChange(version);
         },
         onError(error) {
           logger.error`Failed to process Utoopack server rebuild: ${error}`;
@@ -325,9 +314,9 @@ async function startUtoopackDev(
       });
       controller.attachServerStatsMonitor(monitor);
     }
-
-    await callbacks.onDevServerReady?.({ origin: devServerOrigin });
+    controller.startInitialFacts();
     worker.throwIfFailed();
+    workerScheduler.throwIfFailed();
     return controller;
   } catch (error) {
     try {
@@ -341,6 +330,11 @@ async function startUtoopackDev(
     }
     throw error;
   }
+}
+
+function throwIfUtoopackDevAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  throw new Error("[evjs] Utoopack development startup was aborted.");
 }
 
 function hasRuntimeServerEntry(plan: BuildPlan): boolean {
@@ -364,45 +358,35 @@ function formatDevServerOrigin(
   return `${protocol}://${host}:${port}`;
 }
 
-interface UtoopackDevBuildState {
-  readonly generation: BundlerDevGeneration;
-  readonly plan: BuildPlan;
-}
-
-interface UtoopackDevPlanTransition extends BundlerDevUpdateTransition {
-  stage(options: {
-    publish(): void | Promise<void>;
-    rollback():
-      | (() => void | Promise<void>)
-      | Promise<() => void | Promise<void>>;
-  }): void;
-  defer(): Promise<boolean>;
-  abort(): void;
-}
-
-class UtoopackDevController implements BundlerDevController<ConfigComplete> {
+class UtoopackDevController implements BundlerDevController {
+  origin = "";
+  readonly done: Promise<void>;
   private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
-  private pendingPlanTransition: UtoopackDevPlanTransition | undefined;
-  private publishedFacts: BundlerBuildFacts | undefined;
-  private publishedServerStatsVersion: string | undefined;
-  private closing = false;
+  private hasEmittedDevArtifacts = false;
   private closed = false;
   private closePromise: Promise<void> | undefined;
   private readonly closingController = new AbortController();
-  readonly done: Promise<void>;
 
   constructor(
-    private options: {
+    private readonly options: {
       cwd: string;
-      generation: BundlerDevGeneration;
       plan: BuildPlan;
       worker: UtoopackDevWorkerHandle;
+      workerScheduler: UtoopackProcessWorkerScheduler;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
       onServerBundleReady: BundlerDevContext<ConfigComplete>["callbacks"]["onServerBundleReady"];
     },
   ) {
-    this.done = options.worker.done;
+    this.done = Promise.race([
+      options.worker.done,
+      options.workerScheduler.failure,
+    ]);
+    void this.done.catch(() => {});
+  }
+
+  setOrigin(origin: string): void {
+    this.origin = origin;
   }
 
   attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
@@ -414,20 +398,23 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     this.serverStatsMonitor = monitor;
   }
 
-  markBuildPublished(
-    facts: BundlerBuildFacts,
-    serverStatsVersion: string | undefined,
-  ): void {
-    this.publishedFacts = facts;
-    this.publishedServerStatsVersion = serverStatsVersion;
+  startInitialFacts(): void {
+    void this.enqueueDevWork(async () => {
+      const disposition = await this.processBuildFacts(false);
+      if (disposition === "published") {
+        this.hasEmittedDevArtifacts = true;
+      }
+    }).catch((error) => {
+      if (!this.closed) {
+        logger.error`Failed to process initial Utoopack dev build: ${error}`;
+      }
+    });
   }
 
   async close(): Promise<void> {
     this.closePromise ??= (async () => {
-      this.closing = true;
       this.closed = true;
       this.closingController.abort();
-      this.pendingPlanTransition?.abort();
       const errors: unknown[] = [];
       try {
         await this.serverStatsMonitor?.close();
@@ -436,6 +423,11 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
       }
       try {
         await this.options.worker.close();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        this.options.workerScheduler.throwIfFailed();
       } catch (error) {
         errors.push(error);
       }
@@ -452,234 +444,46 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     return this.closePromise;
   }
 
-  async beginUpdate(): Promise<BundlerDevUpdateTransition> {
-    this.throwIfUnavailable();
-    if (this.pendingPlanTransition) {
-      throw new Error(
-        "[evjs] Utoopack dev received overlapping framework plan updates. Wait for the active update boundary to settle before starting another update.",
-      );
-    }
-    const initialPlan = this.options.plan;
-    const initialGeneration = this.options.generation;
-    const transition = createUtoopackDevPlanTransition({
-      onOpenAccept: () => async () => {
-        const publish = this.prepareArtifactPublication(
-          initialPlan,
-          initialGeneration,
-        );
-        await publish();
-      },
-      onOpenRollback: () => async () => {
-        const publish = this.prepareArtifactPublication(
-          initialPlan,
-          initialGeneration,
-        );
-        await publish();
-      },
-      onSettled: () => {
-        if (this.pendingPlanTransition === transition) {
-          this.pendingPlanTransition = undefined;
-        }
-      },
-    });
-    this.pendingPlanTransition = transition;
-    const precedingWork = this.devWorkQueue;
-    await precedingWork;
-    this.throwIfUnavailable();
-    if (this.pendingPlanTransition !== transition) {
-      throw new Error(
-        "[evjs] Utoopack development update boundary settled before it became ready.",
-      );
-    }
-    return transition;
-  }
-
-  async updatePlan(
-    update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<ConfigComplete>,
-  ): Promise<void> {
-    this.throwIfUnavailable();
-    const transition = this.pendingPlanTransition;
-    if (!transition || options.transition !== transition) {
-      throw new Error(
-        "[evjs] Utoopack dev updatePlan() must receive the active transition returned by beginUpdate().",
-      );
-    }
-    if (options.configChanged) {
-      throw new Error(
-        "[evjs] Utoopack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
-      );
-    }
-    await assertSafeBuildOutputPaths(
-      this.options.cwd,
-      resolveBuildOutputPaths(this.options.cwd, update.next),
-    );
-    if (
-      !isEmptyBuildPlanUpdate(update) &&
-      !isArtifactOnlyBuildPlanUpdate(update)
-    ) {
-      throw new Error(
-        `[evjs] Utoopack dev cannot apply framework plan changes without restarting ev dev (${formatUnsupportedPlanUpdate(update)}). HTML/generated-only framework plan updates are supported; entry additions, removals, resolution changes, server changes, and route metadata changes still require a lower-layer Utoopack update API.`,
-      );
-    }
-    return this.enqueueDevWork(() =>
-      this.applyPlanUpdate(update, options, transition),
-    );
-  }
-
-  processServerStatsChange(
-    version: string,
-    statsTimeoutMs: number,
-  ): Promise<boolean> {
+  processServerStatsChange(_version: string): Promise<boolean> {
     if (this.closed) return Promise.resolve(true);
-    if (version === this.publishedServerStatsVersion) {
-      return Promise.resolve(true);
-    }
-    const transition = this.pendingPlanTransition;
-    if (!transition) {
-      const buildState: UtoopackDevBuildState = {
-        generation: this.options.generation,
-        plan: this.options.plan,
-      };
-      return this.enqueueDevWork(async () => {
-        const disposition = await this.processServerStatsForState(
-          buildState,
-          statsTimeoutMs,
-        );
-        if (disposition === "published") {
-          this.publishedServerStatsVersion = version;
-          return true;
-        }
-        return false;
-      });
-    }
-    // The observed stats may come from any intermediate `.ev` snapshot. Defer
-    // it until Core selects the final state, then leave the monitor baseline
-    // unchanged so that state is collected on the next polling cycle.
-    return transition.defer();
+    return this.enqueueDevWork(async () => {
+      const disposition = await this.processBuildFacts(true);
+      return disposition !== "discarded";
+    });
   }
 
-  private async processServerStatsForState(
-    buildState: UtoopackDevBuildState,
-    statsTimeoutMs: number,
-  ): Promise<BundlerBuildFactsDisposition> {
-    if (this.closed) return "discarded";
-    const { generation, plan } = buildState;
-    const facts = await this.waitForReadableStats(plan, statsTimeoutMs);
-    const disposition = await generateDevArtifacts(
-      this.options.cwd,
-      plan,
-      generation,
-      this.options.onBuildFacts,
-      { isRebuild: true },
-      facts,
-    );
-    if (disposition === "published") {
-      this.publishedFacts = facts;
-    }
-    if (
-      disposition === "published" &&
-      hasRuntimeServerEntry(plan) &&
-      !this.closed
-    ) {
-      await this.options.onServerBundleReady(generation);
-    }
-    return disposition;
-  }
-
-  private async applyPlanUpdate(
-    update: BuildPlanUpdate,
-    options: BundlerDevUpdateOptions<ConfigComplete>,
-    transition: UtoopackDevPlanTransition,
-  ): Promise<void> {
-    const previousPlan = this.options.plan;
-    const previousGeneration = this.options.generation;
-    let activated = false;
-    try {
-      this.throwIfUnavailable();
-      if (this.pendingPlanTransition !== transition) {
-        throw new Error(
-          "[evjs] Utoopack development update boundary settled before updatePlan() applied it.",
-        );
-      }
-      options.activate();
-      activated = true;
-      this.options.plan = update.next;
-      this.options.generation = options.generation;
-      transition.stage({
-        publish: async () => {
-          const publish = this.prepareArtifactPublication(
-            update.next,
-            options.generation,
-          );
-          await publish();
-        },
-        rollback: async () => {
-          this.options.plan = previousPlan;
-          this.options.generation = previousGeneration;
-          if (this.closed) return async () => {};
-          return async () => {
-            const publish = this.prepareArtifactPublication(
-              previousPlan,
-              previousGeneration,
-            );
-            await publish();
-          };
-        },
-      });
-    } catch (error) {
-      if (activated) {
-        this.options.plan = previousPlan;
-        this.options.generation = previousGeneration;
-      }
-      throw error;
-    }
-  }
-
-  waitForReadableStats(
-    plan: BuildPlan,
-    timeoutMs: number,
-  ): Promise<BundlerBuildFacts> {
+  waitForReadableStats(plan: BuildPlan): Promise<BundlerBuildFacts> {
     return Promise.race([
       waitForReadableDevStats(
         this.options.cwd,
         plan,
-        timeoutMs,
         this.closingController.signal,
       ),
       this.options.worker.failure,
+      this.options.workerScheduler.failure,
     ]);
   }
 
-  private prepareArtifactPublication(
-    plan: BuildPlan,
-    generation: BundlerDevGeneration,
-  ): () => Promise<void> {
-    const facts = this.publishedFacts;
-    if (!facts) {
-      throw new Error(
-        "[evjs] Utoopack cannot relink development artifacts before its initial build facts are published.",
-      );
-    }
-    // Artifact-only updates preserve entry and output identity. Reuse the last
-    // published asset inventory to relink framework-owned HTML/manifests while
-    // Utoopack independently watches and rebuilds generated `.ev` input.
-    return async () => {
-      if (this.closed) return;
-      const disposition = await generateDevArtifacts(
-        this.options.cwd,
-        plan,
-        generation,
-        this.options.onBuildFacts,
-        { isRebuild: true },
-        facts,
-      );
-      if (disposition !== "published") {
-        throw new Error(
-          "[evjs] Core discarded the selected Utoopack facts snapshot before publication completed.",
-        );
+  private async processBuildFacts(
+    isRebuild: boolean,
+  ): Promise<BundlerBuildFactsDisposition> {
+    if (this.closed) return "discarded";
+    const facts = await this.waitForReadableStats(this.options.plan);
+    if (this.closed) return "discarded";
+    const disposition = await generateDevArtifacts(
+      this.options.cwd,
+      this.options.plan,
+      this.options.onBuildFacts,
+      { isRebuild: isRebuild || this.hasEmittedDevArtifacts },
+      facts,
+    );
+    if (disposition === "published") {
+      this.hasEmittedDevArtifacts = true;
+      if (hasRuntimeServerEntry(this.options.plan) && !this.closed) {
+        await this.options.onServerBundleReady();
       }
-    };
+    }
+    return disposition;
   }
 
   private enqueueDevWork<T>(work: () => Promise<T>): Promise<T> {
@@ -690,203 +494,6 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
     );
     return result;
   }
-
-  private throwIfUnavailable(): void {
-    this.options.worker.throwIfFailed();
-    if (this.closing || this.closed) {
-      throw new Error(
-        "[evjs] Utoopack dev cannot update its framework plan during or after close().",
-      );
-    }
-  }
-}
-
-function createUtoopackDevPlanTransition(options: {
-  onOpenAccept():
-    | (() => void | Promise<void>)
-    | Promise<() => void | Promise<void>>;
-  onOpenRollback():
-    | (() => void | Promise<void>)
-    | Promise<() => void | Promise<void>>;
-  onSettled(): void;
-}): UtoopackDevPlanTransition {
-  let state:
-    | "open"
-    | "staged"
-    | "selected"
-    | "resuming"
-    | "resume-failed"
-    | "resumed"
-    | "finalization-prepared"
-    | "settled" = "open";
-  let outcome: "accept" | "rollback" | undefined;
-  let staged:
-    | {
-        publish(): void | Promise<void>;
-        rollback():
-          | (() => void | Promise<void>)
-          | Promise<() => void | Promise<void>>;
-      }
-    | undefined;
-  let selectedPublish: (() => void | Promise<void>) | undefined;
-  let aborted = false;
-  const deferred: Array<(consumed: boolean) => void> = [];
-  const releaseDeferred = (consumed: boolean) => {
-    for (const resolve of deferred.splice(0)) resolve(consumed);
-  };
-  const assertSelectable = (operation: string) => {
-    if (
-      state === "selected" ||
-      state === "resuming" ||
-      state === "finalization-prepared" ||
-      state === "settled"
-    ) {
-      throw new Error(
-        `[evjs] Utoopack development update transition cannot ${operation} after selecting an outcome.`,
-      );
-    }
-  };
-  const select = async (nextOutcome: "accept" | "rollback") => {
-    assertSelectable(nextOutcome);
-    if (nextOutcome === "accept") {
-      if (state !== "open" && state !== "staged") {
-        throw new Error(
-          "[evjs] Utoopack development update transition cannot accept after a failed or completed resume.",
-        );
-      }
-      if (aborted) {
-        selectedPublish = async () => {};
-      } else if (state === "open") {
-        selectedPublish = await options.onOpenAccept();
-      } else {
-        selectedPublish = staged?.publish;
-      }
-    } else {
-      if (outcome === "rollback") {
-        throw new Error(
-          "[evjs] Utoopack development update transition selected rollback more than once.",
-        );
-      }
-      if (staged) {
-        selectedPublish = await staged.rollback();
-      } else {
-        selectedPublish = aborted
-          ? async () => {}
-          : await options.onOpenRollback();
-      }
-    }
-    outcome = nextOutcome;
-    state = "selected";
-  };
-  return {
-    abort() {
-      if (aborted || state === "settled") return;
-      aborted = true;
-      options.onSettled();
-      releaseDeferred(true);
-    },
-    stage(next) {
-      assertSelectable("stage a candidate");
-      if (state !== "open") {
-        throw new Error(
-          "[evjs] Utoopack development update transition staged more than one candidate.",
-        );
-      }
-      staged = next;
-      state = "staged";
-    },
-    defer() {
-      if (aborted || state === "settled") return Promise.resolve(true);
-      return new Promise<boolean>((resolve) => deferred.push(resolve));
-    },
-    accept() {
-      return select("accept");
-    },
-    rollback() {
-      return select("rollback");
-    },
-    async resume() {
-      if (state !== "selected") {
-        throw new Error(
-          "[evjs] Utoopack development update transition resumed before selecting an outcome.",
-        );
-      }
-      state = "resuming";
-      try {
-        if (!aborted) await selectedPublish?.();
-        state = "resumed";
-      } catch (error) {
-        state = "resume-failed";
-        throw error;
-      }
-    },
-    prepareFinalize() {
-      if (state !== "resumed") {
-        throw new Error(
-          "[evjs] Utoopack development update transition prepared finalization before resume succeeded.",
-        );
-      }
-      state = "finalization-prepared";
-    },
-    finalize() {
-      if (state !== "finalization-prepared") {
-        throw new Error(
-          "[evjs] Utoopack development update transition finalized before preparation succeeded.",
-        );
-      }
-      state = "settled";
-      if (!aborted) options.onSettled();
-      // Accepted state must retry an observation that may have been produced
-      // before its final `.ev` snapshot was visible. Rollback discards that
-      // candidate observation and waits for a later restored-state rebuild.
-      releaseDeferred(outcome !== "accept");
-    },
-  };
-}
-
-function formatUnsupportedPlanUpdate(update: BuildPlanUpdate): string {
-  const changes = [
-    formatPlanItems("entry additions", update.entries.added, formatBuildEntry),
-    formatPlanItems("entry removals", update.entries.removed, formatBuildEntry),
-    formatPlanItems("entry changes", update.entries.changed, formatBuildEntry),
-    formatPlanItems("HTML additions", update.html.added, formatHtmlPlan),
-    formatPlanItems("HTML removals", update.html.removed, formatHtmlPlan),
-    formatPlanItems("HTML changes", update.html.changed, formatHtmlPlan),
-    update.generatedChanged ? "generated framework IR changed" : undefined,
-    update.resolveChanged ? "module resolution changed" : undefined,
-    update.runtimeChanged ? "framework runtime changed" : undefined,
-    update.deliveryChanged ? "framework artifact delivery changed" : undefined,
-    update.previous.distDir !== update.next.distDir
-      ? "framework output root changed"
-      : undefined,
-    update.previous.output.clientDir !== update.next.output.clientDir
-      ? "client output changed"
-      : undefined,
-    update.serverCompilationChanged
-      ? "server compilation topology changed"
-      : undefined,
-    update.serverDocumentsChanged ? "server documents changed" : undefined,
-    update.devRoutingChanged ? "development routing changed" : undefined,
-  ].filter((change): change is string => Boolean(change));
-
-  return changes.length > 0 ? changes.join("; ") : "unknown plan change";
-}
-
-function formatPlanItems<T>(
-  label: string,
-  items: T[],
-  formatItem: (item: T) => string,
-): string | undefined {
-  if (items.length === 0) return undefined;
-  return `${label}: ${items.map(formatItem).join(", ")}`;
-}
-
-function formatBuildEntry(entry: BuildPlan["entries"][number]): string {
-  return `${entry.name} (${entry.kind})`;
-}
-
-function formatHtmlPlan(html: BuildPlan["html"][number]): string {
-  return `${html.id} -> ${html.fileName}`;
 }
 
 export const __testing = {

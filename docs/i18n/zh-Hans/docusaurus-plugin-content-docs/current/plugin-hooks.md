@@ -38,7 +38,7 @@ flowchart TB
   AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
   BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
   Link --> BuildOutput --> HTML --> BuildEnd
-  BuildEnd -. production end / server close / snapshot replacement .-> Dispose
+  BuildEnd -. production end / server close / Session replacement .-> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
@@ -70,32 +70,44 @@ flowchart TB
 每个 `afterBuild()` hook 都会收到 canonical build result 的一份隔离快照。修改只在当前
 hook 内可见，不会改变后续 hook 或 deployment adapter 收到的输入。
 
-在 dev 中，初次输出的两个 hook 都收到 `isRebuild: false`；之后每次 evjs 可观测的
-output cycle 都收到 `isRebuild: true`，并按 `beforeBuild() → afterBuild()` 成对执行。
-`beforeBuild()` 表示 fresh bundler facts 已就绪、evjs 即将链接并发布 canonical output，
-并不是底层 bundler 的 compile-start 回调。
+在 dev 中，`beforeBuild()` 与 `afterBuild()` 成对执行。每个 immutable Session 首次成功
+发布的 output 使用 `isRebuild: false`；同一 Session 中后续 bundler/HMR output cycle
+使用 `isRebuild: true`。`beforeBuild()` 表示 fresh bundler facts 已就绪、evjs 即将链接并
+发布 canonical output，并不是底层 bundler 的 compile-start 回调。
 
 如果 bundler 在产生 fresh facts 前失败，两者都不会执行。如果 `beforeBuild()`、链接、
 output transform、HTML 发射或发布失败，`afterBuild()` 不会执行。`prepare` 与 `inspect`
 只暂存 framework state、不发布 output，因此也不会触发这两个 hook。
 
-`afterBuild()` 明确定义在发布之后。若它失败，evjs 会报告构建失败或停止 dev session，
-但不会回滚 canonical output，也不会删除更早的 `afterBuild()` hook 已输出的产物。
+`afterBuild()` 明确定义在发布之后。若它失败，evjs 会报告 production build 失败，或
+fail-stop 它所属的 development Session。
 
-每个 setup snapshot 的 `dispose()` 最多执行一次，并按 plugin 逆序运行。触发场景包括
-production build 结束、dev server 关闭、config reload 替换旧 snapshot，以及
-setup/初始化失败后的回滚；普通 dev rebuild 之后不会执行它。
+每次 plugin setup 的 `dispose()` 最多执行一次，并按 plugin 逆序运行。触发场景包括
+production build 结束、development Session 关闭或被替换，以及 plugin 初始化后 Session
+构造失败；同一 Session 内的普通 bundler/HMR rebuild 不会执行它。
 
 `setup()`、`emitIR()` 和 `configureBundler()` context 提供 `addWatchFile()` 来注册
 analysis/config 依赖；`BeforeBuildContext` 明确不提供它，晚期 output、HTML 与 dispose
-context 也不提供。文件变化时，框架复用已提交的
-config、Application options 与 setup hooks，再重新执行 contributions 和 graph analysis。
-需要读取变化数据时，应在 `emitIR()` 中读取，不要在 `setup()` 中缓存。
+context 也不提供。`emitIR()` 依赖参与无写入的候选 preparation；`setup()` 与
+`configureBundler()` 依赖是 opaque constructor input，其内容会进入候选 semantic
+fingerprint。变化的 analysis 数据应在 `emitIR()` 中读取；setup state 在所属 Session
+内保持不变。
 
-`configureBundler()` context 的 `addWatchFile()` 注册实际 bundler config 依赖。文件变化时，
-框架会先暂存一份完整的 config 与 plugin 快照，再应用对应的 plan update。如果所选
-adapter 无法安全地原地替换配置，更新会 fail-closed 并明确提示重启，不会继续使用混合
-或过期状态。
+真实监听输入发生变化后，长生命周期 Supervisor 会在内存中准备 config、CoreGraph、
+BuildPlan 与 generated IR。Preparation 不执行 build hook；如果失败，当前 Session 仍会
+继续运行。Semantic fingerprint 不变即为 no-op；指纹变化时，Supervisor 先关闭旧 Session，
+再构造替代 Session，并针对固定输入重新运行 plugin setup 与 `configureBundler()`。Adapter
+不会原地替换 bundler config。Session 替换一旦开始，plugin setup 或 adapter startup
+失败会停止 dev，不会混合新旧 Session 状态。
+
+Descriptor 顶层的 `cliShortcuts()` 遵循相同的 Session 边界，但它不是 lifecycle hook，
+也不属于 bundler/HMR cycle。快捷键引擎启用时，semantic no-op 或候选 preparation 失败
+会保留当前 terminal binding。发生 Session replacement 时，Supervisor 会在关闭旧 Session
+前解绑旧集合，从 replacement Session 的 descriptor 收集 contribution，并且只在其
+bundler controller 提供实际 client origin 后绑定新集合。Shortcut action 的
+`PluginDevSession.close()` 会关闭整个 Supervisor 和本次 `ev dev` 运行，而不是只关闭它
+所属的 immutable Session。参见
+[插件 CLI 快捷键](./dev#插件-cli-快捷键)。
 
 ## Build Output 所有权
 
@@ -195,6 +207,10 @@ config 类型。
 setting，但不能覆盖 framework client/server 输出路径。即使关闭 recursive clean，
 adapter 也会在 hook 运行后按 BuildPlan 校验这些路径。Plugin 持有的 clean output
 同样必须位于 framework 持有的 `distDir` 内，且不能与 client/server output 重叠。
+
+最终 bundler config 在一个 development Session 内不可变。被监听的 plugin config
+发生变化时，由 Supervisor preparation 与自动 Session replacement 处理；adapter helper
+不需要原地更新路径。
 
 Framework 持有的 client/server config 还必须在每个 hook 后保留完全一致的 entry
 集合，以及每个 entry 对应的 BuildPlan import。需要改变 framework 启动组合时，

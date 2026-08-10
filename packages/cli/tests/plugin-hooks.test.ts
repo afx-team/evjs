@@ -122,16 +122,13 @@ describe("resolveConfig", () => {
       name: "utoopack",
       capabilities: {
         build: { server: false, rsc: false, ppr: false },
-        dev: {
-          html: true,
-          entries: false,
-          routes: false,
-          server: false,
-          resolution: false,
-        },
       },
       build: async () => ({}),
-      dev: async () => {},
+      dev: async () => ({
+        origin: "http://localhost",
+        done: Promise.resolve(),
+        async close() {},
+      }),
     } as BundlerAdapter;
 
     const config = {
