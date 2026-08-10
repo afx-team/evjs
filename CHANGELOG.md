@@ -25,6 +25,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   validated in memory, then rebuilt directly under canonical `.ev` after the
   previous session closes. Whole-tree candidate, previous, restore, and system
   temporary snapshots are no longer created.
+- **Graceful Utoopack session replacement** — Utoopack now completes native
+  project, server, and persistent-cache cleanup before a replacement Session
+  starts. A stuck or failed shutdown stops replacement instead of overlapping
+  two workers on the same cache and ports.
 
 ---
 

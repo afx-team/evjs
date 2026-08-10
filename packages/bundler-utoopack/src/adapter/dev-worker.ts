@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { parentPort, workerData } from "node:worker_threads";
 import type { ConfigComplete, DevServerReadyContext } from "@utoo/pack";
+import { installUtoopackGracefulShutdownBridge } from "./dev-worker-shutdown.js";
 import { runUtoopackDevServer } from "./runtime.js";
 
 const PATH_REWRITE_HEADER_INTS = 3;
@@ -24,6 +25,7 @@ const require = createRequire(import.meta.url);
 const data = workerData as UtoopackDevWorkerData;
 
 installPathRewriteBridges(data);
+installUtoopackGracefulShutdownBridge(parentPort);
 
 async function run(): Promise<void> {
   const { serve } = require("@utoo/pack") as Pick<
