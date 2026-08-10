@@ -6,12 +6,32 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.7] — 2026-08-10
+
 ### ⚠️ Breaking Changes
 
 - **Immutable bundler development sessions** — Internal bundler adapters now
   return a controller with `origin`, `done`, and idempotent `close()` instead of
   implementing in-place framework plan transitions. Development callbacks are
   scoped to one fixed config, plugin, graph, and plan snapshot.
+
+### ✨ Features
+
+- **Utoopack multi-entry server builds** — Utoopack now forwards named
+  `server-runtime` and `page-server` BuildPlan entries, maps each entry back to
+  its emitted server assets, and preserves shared chunks. Regular server builds
+  are supported while the legacy scalar runtime entry remains compatible.
+- **Plugin-driven development shortcuts** — Interactive `ev dev` terminals can
+  expose plugin-contributed keyboard shortcuts with descriptions, asynchronous
+  actions, and shutdown support. Bindings update safely across configuration
+  replacement and can be disabled with `dev.cliShortcuts` or
+  `ev dev --no-shortcuts`.
+- **Canonical MPA Document URLs** — MPA Pages now materialize as `index.html`,
+  `about.html`, and nested `foo/bar.html` Documents while retaining their
+  semantic routes. Development SSR and PPR requests use the same public URLs
+  and resolve back to their canonical Pages.
 
 ### 🐛 Bug Fixes
 
