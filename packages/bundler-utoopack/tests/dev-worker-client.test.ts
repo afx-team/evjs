@@ -41,6 +41,7 @@ function createOptions(
   return {
     cwd: process.cwd(),
     config,
+    workerSchedulerBindingPath: "/virtual/@utoo/pack/cjs/binding.js",
     spaHistoryFallbackRuleIndex: 1,
     server: {
       port: 3000,

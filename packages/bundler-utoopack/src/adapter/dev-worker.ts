@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { parentPort, workerData } from "node:worker_threads";
 import type { ConfigComplete, DevServerReadyContext } from "@utoo/pack";
+import { delegateUtoopackWorkerSchedulerToHost } from "./dev-worker-scheduler.js";
 import { installUtoopackGracefulShutdownBridge } from "./dev-worker-shutdown.js";
 import { runUtoopackDevServer } from "./runtime.js";
 
@@ -11,6 +12,7 @@ const PATH_REWRITE_TIMEOUT_MS = 5_000;
 interface UtoopackDevWorkerData {
   cwd: string;
   config: ConfigComplete;
+  workerSchedulerBindingPath: string;
   pathRewriteFunctionIndexes: number[];
   spaHistoryFallbackRuleIndex?: number;
   server: {
@@ -24,6 +26,7 @@ interface UtoopackDevWorkerData {
 const require = createRequire(import.meta.url);
 const data = workerData as UtoopackDevWorkerData;
 
+delegateUtoopackWorkerSchedulerToHost(data.workerSchedulerBindingPath);
 installPathRewriteBridges(data);
 installUtoopackGracefulShutdownBridge(parentPort);
 

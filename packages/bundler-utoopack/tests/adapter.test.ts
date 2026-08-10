@@ -33,6 +33,14 @@ const utoopackMock = vi.hoisted(() => ({
   initialClientStats: undefined as string | undefined,
   clientStats: undefined as string | undefined,
   omitClientStats: false,
+  schedulerFailure: new Promise<never>(() => {}),
+  schedulerThrowIfFailed: vi.fn(),
+  markUtoopackProcessForBuild: vi.fn(),
+  ensureUtoopackProcessWorkerScheduler: vi.fn(async () => ({
+    bindingPath: "/virtual/@utoo/pack/cjs/binding.js",
+    failure: utoopackMock.schedulerFailure,
+    throwIfFailed: utoopackMock.schedulerThrowIfFailed,
+  })),
   workerClose: vi.fn(async () => {}),
   startUtoopackDevWorker: vi.fn(
     ({ config, server }: { config: ConfigComplete; server: unknown }) => {
@@ -144,12 +152,45 @@ const utoopackMock = vi.hoisted(() => ({
         hostname: "0.0.0.0",
       });
     }),
-    build: vi.fn(),
+    build: vi.fn(
+      async ({ config }: { config: ConfigComplete }, projectPath: string) => {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const outputPath = config.output?.path;
+        if (!outputPath) throw new Error("Mock build output path is required.");
+        const clientOutDir = path.resolve(projectPath, outputPath);
+        const entrypoints = Object.fromEntries(
+          config.entry.map((entry) => [
+            entry.name,
+            { assets: [{ name: `${entry.name}.js` }] },
+          ]),
+        );
+        await fs.promises.mkdir(clientOutDir, { recursive: true });
+        await Promise.all(
+          config.entry.map((entry) =>
+            fs.promises.writeFile(
+              path.join(clientOutDir, `${entry.name}.js`),
+              "",
+            ),
+          ),
+        );
+        await fs.promises.writeFile(
+          path.join(clientOutDir, "stats.json"),
+          JSON.stringify({ entrypoints }),
+        );
+      },
+    ),
   })),
 }));
 
 vi.mock("../src/adapter/dev-worker-client.js", () => ({
   startUtoopackDevWorker: utoopackMock.startUtoopackDevWorker,
+}));
+
+vi.mock("../src/adapter/dev-worker-scheduler.js", () => ({
+  markUtoopackProcessForBuild: utoopackMock.markUtoopackProcessForBuild,
+  ensureUtoopackProcessWorkerScheduler:
+    utoopackMock.ensureUtoopackProcessWorkerScheduler,
 }));
 
 vi.mock("node:module", async (importOriginal) => {
@@ -223,8 +264,13 @@ afterEach(async () => {
   utoopackMock.initialClientStats = undefined;
   utoopackMock.clientStats = undefined;
   utoopackMock.omitClientStats = false;
+  utoopackMock.schedulerFailure = new Promise<never>(() => {});
   utoopackMock.workerClose.mockClear();
   utoopackMock.startUtoopackDevWorker.mockClear();
+  utoopackMock.ensureUtoopackProcessWorkerScheduler.mockClear();
+  utoopackMock.schedulerThrowIfFailed.mockClear();
+  utoopackMock.markUtoopackProcessForBuild.mockClear();
+  utoopackMock.requireUtoopack.mockClear();
   await Promise.all(
     tempDirs.splice(0).map((dir) =>
       fs.promises.rm(dir, {
@@ -351,6 +397,29 @@ function embedClientRuntime(
   body.appendChild(script);
 }
 
+describe("utoopackAdapter build", () => {
+  it("checks the process mode before starting a Project", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+
+    await expect(
+      utoopackAdapter.build({
+        config,
+        cwd,
+        plan: buildContext.plan,
+        hooks: [],
+      }),
+    ).resolves.toBeDefined();
+    expect(utoopackMock.markUtoopackProcessForBuild).toHaveBeenCalledTimes(1);
+    expect(
+      utoopackMock.markUtoopackProcessForBuild.mock.invocationCallOrder[0],
+    ).toBeLessThan(utoopackMock.requireUtoopack.mock.invocationCallOrder[0]);
+  });
+});
+
 describe("utoopackAdapter output safety", () => {
   it("preserves external files when the server output traverses a symlink", async () => {
     const cwd = await makeProject();
@@ -435,6 +504,14 @@ describe("utoopackAdapter dev", () => {
 
     try {
       expect(controller.origin).toBe("http://localhost:3210");
+      expect(
+        utoopackMock.ensureUtoopackProcessWorkerScheduler,
+      ).toHaveBeenCalledTimes(1);
+      expect(utoopackMock.startUtoopackDevWorker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workerSchedulerBindingPath: "/virtual/@utoo/pack/cjs/binding.js",
+        }),
+      );
       expect(onBuildOutput).not.toHaveBeenCalled();
       await waitForCondition(
         () => onBuildOutput.mock.calls.length > 0,

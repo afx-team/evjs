@@ -16,6 +16,7 @@ const DEV_WORKER_CLOSE_TIMEOUT_MS = 10_000;
 interface UtoopackDevWorkerOptions {
   cwd: string;
   config: ConfigComplete;
+  workerSchedulerBindingPath: string;
   spaHistoryFallbackRuleIndex?: number;
   server: {
     port: number;
