@@ -33,13 +33,13 @@ enforces them:
 | Capability | Utoopack | Webpack |
 | --- | --- | --- |
 | Client build | Yes | Yes |
-| Server rendering build | No | Yes |
+| Server rendering build | Yes | Yes |
 | RSC build | No | Yes |
 | PPR build | No | Yes |
 
 ## Open Adapter Gaps
 
-- Utoopack build facts and entry APIs for server rendering, PPR, and RSC.
+- Utoopack build facts and entry APIs for PPR and RSC.
 
 These gaps should be closed by changing adapter capabilities and their focused
 tests together. User-facing docs should describe the declared capability

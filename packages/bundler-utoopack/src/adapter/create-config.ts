@@ -108,7 +108,8 @@ export async function createUtoopackConfig(
     ...(spaHistoryFallbackRule ? [spaHistoryFallbackRule] : []),
   ];
 
-  const finalServerEntry = resolveServerEntry(plan);
+  const finalServerEntry = resolveServerEntries(plan);
+  const expectedServerEntry = snapshotUtoopackServerEntry(finalServerEntry);
 
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
@@ -225,7 +226,7 @@ export async function createUtoopackConfig(
   for (const h of hooks) {
     if (h.configureBundler) {
       await h.configureBundler(utoopackConfig, ctx);
-      assertUtoopackServerEntryMatchesPlan(utoopackConfig, finalServerEntry);
+      assertUtoopackServerEntryMatchesPlan(utoopackConfig, expectedServerEntry);
       assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
         requireServerOutput: finalServerEntry !== undefined,
       });
@@ -235,7 +236,7 @@ export async function createUtoopackConfig(
     }
   }
 
-  assertUtoopackServerEntryMatchesPlan(utoopackConfig, finalServerEntry);
+  assertUtoopackServerEntryMatchesPlan(utoopackConfig, expectedServerEntry);
   assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
     requireServerOutput: finalServerEntry !== undefined,
   });
@@ -258,17 +259,39 @@ export async function createUtoopackConfig(
 
 function assertUtoopackServerEntryMatchesPlan(
   config: ConfigComplete,
-  expected: string | undefined,
+  expected: UtoopackServerEntry | undefined,
 ): void {
   const actual = config.server?.entry;
-  if (actual === expected) return;
+  if (isSameUtoopackServerEntry(actual, expected)) return;
 
   throw new Error(
     `[evjs] Utoopack server.entry ${formatUtoopackServerEntry(actual)} must remain the exact framework-owned BuildPlan server.entry ${formatUtoopackServerEntry(expected)}. configureBundler hooks cannot override the framework server entry.`,
   );
 }
 
-function formatUtoopackServerEntry(value: string | undefined): string {
+function isSameUtoopackServerEntry(
+  actual: UtoopackServerEntry | undefined,
+  expected: UtoopackServerEntry | undefined,
+): boolean {
+  if (typeof actual === "string" || typeof expected === "string") {
+    return actual === expected;
+  }
+  if (actual === undefined || expected === undefined) {
+    return actual === expected;
+  }
+  return (
+    actual.length === expected.length &&
+    actual.every(
+      (entry, index) =>
+        entry.name === expected[index]?.name &&
+        entry.import === expected[index]?.import,
+    )
+  );
+}
+
+function formatUtoopackServerEntry(
+  value: UtoopackServerEntry | undefined,
+): string {
   return value === undefined ? "<missing>" : JSON.stringify(value);
 }
 
@@ -551,9 +574,18 @@ function hasClientEntries(plan: BuildPlan): boolean {
 }
 
 function validateUtoopackPlanSupport(plan: BuildPlan): void {
+  const serverRuntimeEntries = plan.entries.filter(
+    (entry) =>
+      entry.environment === "server" && entry.kind === "server-runtime",
+  );
+  if (serverRuntimeEntries.length > 1) {
+    throw new Error(
+      `[evjs] The Utoopack adapter supports exactly one server-runtime entry; found ${serverRuntimeEntries.length}: ${serverRuntimeEntries.map((entry) => JSON.stringify(entry.name)).join(", ")}.`,
+    );
+  }
+
   const unsupportedServerEntries = plan.entries.filter(
     (entry) =>
-      entry.kind === "page-server" ||
       entry.kind === "rsc-page" ||
       entry.kind === "ppr-shell" ||
       entry.kind === "ppr-region",
@@ -567,7 +599,7 @@ function validateUtoopackPlanSupport(plan: BuildPlan): void {
     ...new Set(unsupportedServerEntries.map((entry) => entry.kind)),
   ].join(", ");
   throw new Error(
-    `[evjs] The Utoopack adapter cannot build framework server page entries (${details}). Unsupported entry kinds: ${kinds}. Use a bundler adapter that supports multiple server entries for SSR/PPR/RSC validation.`,
+    `[evjs] The Utoopack adapter cannot build framework server entries (${details}). Unsupported entry kinds: ${kinds}. Use a bundler adapter that supports PPR/RSC validation.`,
   );
 }
 
@@ -592,9 +624,44 @@ function formatBuildEntryOwner(
   return parts.join(", ") || undefined;
 }
 
-function resolveServerEntry(plan: BuildPlan): string | undefined {
-  const entry = plan.server.entry;
-  if (!entry) return undefined;
+type UtoopackServerEntry = NonNullable<
+  NonNullable<ConfigComplete["server"]>["entry"]
+>;
+
+function snapshotUtoopackServerEntry(
+  entry: UtoopackServerEntry | undefined,
+): UtoopackServerEntry | undefined {
+  return Array.isArray(entry) ? entry.map((item) => ({ ...item })) : entry;
+}
+
+function resolveServerEntries(
+  plan: BuildPlan,
+): UtoopackServerEntry | undefined {
+  const serverEntries = plan.entries.filter(
+    (entry) =>
+      entry.environment === "server" &&
+      (entry.kind === "server-runtime" || entry.kind === "page-server"),
+  );
+  if (serverEntries.length === 0) return undefined;
+
+  const serverRuntimeEntry = serverEntries.find(
+    (entry) => entry.kind === "server-runtime",
+  );
+  if (serverEntries.length === 1 && serverRuntimeEntry) {
+    return resolveServerImport(serverRuntimeEntry.import);
+  }
+
+  const orderedEntries = [
+    ...(serverRuntimeEntry ? [serverRuntimeEntry] : []),
+    ...serverEntries.filter((entry) => entry !== serverRuntimeEntry),
+  ];
+  return orderedEntries.map((entry) => ({
+    name: entry.name,
+    import: resolveServerImport(entry.import),
+  }));
+}
+
+function resolveServerImport(entry: string): string {
   if (entry.startsWith(".") || path.isAbsolute(entry)) return entry;
   return require.resolve(entry);
 }

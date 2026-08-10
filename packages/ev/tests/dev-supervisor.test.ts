@@ -501,7 +501,7 @@ describe("immutable dev supervisor", { timeout: 15_000 }, () => {
           },
         }),
       );
-      await vi.waitFor(() => expect(controlled.starts).toHaveLength(2));
+      await vi.waitFor(() => expect(controlled.events).toContain("start:2"));
 
       const close = controlled.events.indexOf("close:1");
       const publish = controlled.events.indexOf("published:2:true");

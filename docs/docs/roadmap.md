@@ -29,7 +29,7 @@ architecture boundaries enforced by the current implementation.
 | Capability | Utoopack | Webpack |
 | --- | --- | --- |
 | Client build | Supported | Supported |
-| Server rendering build | Unsupported | Supported |
+| Server rendering build | Supported | Supported |
 | RSC build | Unsupported | Supported |
 | PPR build | Unsupported | Supported |
 
@@ -39,7 +39,7 @@ capability.
 
 ## Open Adapter Gaps
 
-- Utoopack build facts and entry APIs for server rendering, PPR, and RSC.
+- Utoopack build facts and entry APIs for PPR and RSC.
 
 Track completed work in the changelog. Keep this page aligned with adapter
 capability declarations and focused tests.

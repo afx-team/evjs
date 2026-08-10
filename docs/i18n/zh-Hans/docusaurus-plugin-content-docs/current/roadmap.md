@@ -25,7 +25,7 @@
 | 能力 | Utoopack | Webpack |
 | --- | --- | --- |
 | Client build | 支持 | 支持 |
-| Server rendering build | 不支持 | 支持 |
+| Server rendering build | 支持 | 支持 |
 | RSC build | 不支持 | 支持 |
 | PPR build | 不支持 | 支持 |
 
@@ -34,7 +34,7 @@ Framework preflight 从选中的 adapter 读取这些声明；当 BuildPlan 需�
 
 ## Adapter 待补能力
 
-- Utoopack 用于 server rendering、PPR 与 RSC 的 build fact 和 entry API。
+- Utoopack 用于 PPR 与 RSC 的 build fact 和 entry API。
 
 已完成工作记录到 changelog；本页应始终与 adapter capability declaration 和聚焦
 测试保持一致。

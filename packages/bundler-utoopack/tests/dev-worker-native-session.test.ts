@@ -130,7 +130,10 @@ function createConfig(loaderPath: string): ConfigComplete {
       clean: true,
       publicPath: "auto",
     },
-    persistentCaching: true,
+    // Native cache-lock release is covered by dev-worker-client.test.ts. This
+    // process-owned scheduler test must be able to remove its temporary
+    // project before the Vitest worker itself exits.
+    persistentCaching: false,
     pluginRuntimeStrategy: "workerThreads",
     module: {
       rules: {

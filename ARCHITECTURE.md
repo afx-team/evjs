@@ -54,7 +54,7 @@ are derived from Page config into the same graph and build plan.
 | `@evjs/client` | Standalone browser runtime plus the client primitives used behind generated framework entries. |
 | `@evjs/server` | Standalone Hono/Fetch runtime plus server functions, request routes, request context, and framework rendering coordination. |
 | `@evjs/bundler-utoopack` | Default bundler adapter selected by the CLI. |
-| `@evjs/bundler-webpack` | Validation/fallback adapter for server rendering, RSC, and PPR builds. |
+| `@evjs/bundler-webpack` | Validation/fallback adapter for RSC and PPR builds. |
 | `@evjs/cli` | Command parsing and selection of the default bundler. |
 | `@evjs/create-app` | Project scaffolding from repository templates. |
 | `@evjs/plugin-qiankun` | Optional qiankun integration through typed plugin configuration and generated contributions. |
