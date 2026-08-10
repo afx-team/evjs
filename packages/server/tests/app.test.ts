@@ -4247,6 +4247,42 @@ describe("createApp", () => {
     );
   });
 
+  it("allows MPA Document rendering without a dev proxy header", async () => {
+    const manifest = createMpaManifest();
+    manifest.server = {
+      renderers: {
+        "dashboard-server": {
+          kind: "page-server",
+          owner: { pageId: "dashboard" },
+          assets: { js: ["dashboard-server.js"], css: [] },
+        },
+      },
+    };
+    vi.stubGlobal("__EVJS_FRAMEWORK_RUNTIME__", manifest);
+    vi.stubGlobal(
+      "__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__",
+      "x-evjs-dev-page-render",
+    );
+    vi.stubGlobal("__EVJS_SERVER_MODULE_LOADER__", async () => ({
+      default({ pageId }: { pageId?: string }) {
+        return `Page ${pageId}`;
+      },
+    }));
+
+    const framework = createReactFrameworkServer();
+    if (!framework) throw new Error("Expected framework options");
+    const app = createApp({ framework });
+
+    const document = await app.request("/dashboard.html");
+    const semanticRoute = await app.request("/dashboard");
+
+    expect(document.status).toBe(200);
+    expect(await document.text()).toContain(
+      '<div id="app">Page dashboard</div>',
+    );
+    expect(semanticRoute.status).toBe(404);
+  });
+
   it("mounts RSC flight handling on the framework server path", async () => {
     const manifest = createManifest();
     configureRscManifest(manifest);

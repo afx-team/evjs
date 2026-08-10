@@ -103,7 +103,7 @@ export function createReactFrameworkServer(
           fallback: options.fallback,
         })
       : undefined,
-    allowPageRenderRequest: createDevPageRenderGuard(),
+    allowPageRenderRequest: createDevPageRenderGuard(runtime),
     rsc,
   };
 }
@@ -171,9 +171,13 @@ function assertOptionalRscCoordinator(value: unknown, source: string): void {
   );
 }
 
-function createDevPageRenderGuard():
-  | FrameworkServerOptions["allowPageRenderRequest"]
-  | undefined {
+function createDevPageRenderGuard(
+  runtime: FrameworkRuntime,
+): FrameworkServerOptions["allowPageRenderRequest"] | undefined {
+  if (runtime.routing.kind === "mpa") {
+    return (request) => new URL(request.url).pathname.endsWith(".html");
+  }
+
   const headerName = globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__;
   if (!headerName) return undefined;
 
