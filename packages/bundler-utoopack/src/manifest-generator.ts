@@ -156,12 +156,13 @@ export class UtoopackManifestGenerator {
       );
     }
     byName = projectNativeServerRuntimeEntrypoint(this.plan, byName);
+    byName = selectServerEntrypointAssets(this.plan, byName);
     this.serverEntryAssets = resolveBundlerServerEntryAssets(
       this.plan,
       byName,
       "Utoopack server stats",
     );
-    assertExactServerJavaScriptInventory(
+    assertServerJavaScriptInventory(
       stats.assets,
       Object.values(this.serverEntryAssets).flatMap((assets) => assets.js),
     );
@@ -206,10 +207,10 @@ export class UtoopackManifestGenerator {
 }
 
 /**
- * Utoopack's server API accepts one entry import but no entry name, so its
- * stats expose that entry under a generated native name. Canonicalize only the
- * one shape the adapter can identify without guessing: one planned runtime
- * entry, owned by plan.server.entry, and one emitted stats entrypoint.
+ * Utoopack's legacy scalar server entry accepts one import but no entry name,
+ * so its stats expose that entry under a generated native name. Canonicalize
+ * only the one shape the adapter can identify without guessing: one planned
+ * runtime entry, owned by plan.server.entry, and one emitted stats entrypoint.
  */
 function projectNativeServerRuntimeEntrypoint(
   plan: BuildPlan,
@@ -295,6 +296,72 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function selectServerEntrypointAssets(
+  plan: BuildPlan,
+  available: Record<string, AssetGroup>,
+): Record<string, AssetGroup> {
+  const plannedEntries = plan.entries.filter(
+    (entry) => entry.environment === "server",
+  );
+  const plannedNames = new Set(plannedEntries.map((entry) => entry.name));
+  const hasPageServerEntry = plannedEntries.some(
+    (entry) => entry.kind === "page-server",
+  );
+  const strictNamedEntryNames = new Set(
+    plannedEntries
+      .filter(
+        (entry) =>
+          entry.kind === "page-server" ||
+          (hasPageServerEntry && entry.kind === "server-runtime"),
+      )
+      .map((entry) => entry.name),
+  );
+  const selected: Record<string, AssetGroup> = {};
+
+  for (const [name, assets] of Object.entries(available)) {
+    defineRecordValue(
+      selected,
+      name,
+      plannedNames.has(name)
+        ? {
+            js: [
+              selectServerJavaScriptAsset(
+                name,
+                assets,
+                !strictNamedEntryNames.has(name),
+              ),
+            ],
+            css: [...assets.css],
+          }
+        : assets,
+    );
+  }
+
+  return selected;
+}
+
+function selectServerJavaScriptAsset(
+  entryName: string,
+  assets: AssetGroup,
+  allowUnmatchedSingleAsset: boolean,
+): string {
+  const candidates = assets.js.filter((asset) =>
+    isNamedEntryAsset(entryName, asset),
+  );
+  if (candidates.length === 1) return candidates[0] as string;
+  if (allowUnmatchedSingleAsset && assets.js.length === 1) {
+    return assets.js[0] as string;
+  }
+  throw new Error(
+    `[evjs] Utoopack server stats entrypoint "${entryName}" must identify exactly one JavaScript entry asset; found ${assets.js.length} JavaScript assets and ${candidates.length} named candidates.`,
+  );
+}
+
+function isNamedEntryAsset(entryName: string, asset: string): boolean {
+  const fileName = asset.split("/").pop() ?? asset;
+  return fileName === `${entryName}.js` || fileName.startsWith(`${entryName}.`);
+}
+
 function readEmittedFiles(stats: {
   assets?: UtoopackStatsAsset[];
 }): string[] | undefined {
@@ -343,7 +410,7 @@ function defineRecordValue<T>(
   });
 }
 
-function assertExactServerJavaScriptInventory(
+function assertServerJavaScriptInventory(
   assets: UtoopackStatsAsset[] | undefined,
   ownedJavaScript: readonly string[],
 ): void {
@@ -365,17 +432,10 @@ function assertExactServerJavaScriptInventory(
       ),
     );
   }
-  const owned = new Set(ownedJavaScript);
-  for (const asset of owned) {
+  for (const asset of new Set(ownedJavaScript)) {
     if (emittedJavaScript.has(asset)) continue;
     throw new Error(
       `[evjs] Utoopack server stats are missing exact server entry JavaScript asset "${asset}" from the complete emitted inventory.`,
-    );
-  }
-  for (const asset of emittedJavaScript) {
-    if (owned.has(asset)) continue;
-    throw new Error(
-      `[evjs] Utoopack server stats emitted unowned JavaScript asset "${asset}". Every server entry must be self-contained in its exact entry asset.`,
     );
   }
 }

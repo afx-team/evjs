@@ -133,16 +133,26 @@ const utoopackMock = vi.hoisted(() => ({
       if (config.server) {
         const serverOutDir = config.server.output.path;
         await fs.promises.mkdir(serverOutDir, { recursive: true });
-        await fs.promises.writeFile(path.join(serverOutDir, "server.js"), "");
+        const serverEntryNames: string[] = Array.isArray(config.server.entry)
+          ? config.server.entry.map((entry: { name: string }) => entry.name)
+          : ["server"];
+        await Promise.all(
+          serverEntryNames.map((name) =>
+            fs.promises.writeFile(path.join(serverOutDir, `${name}.js`), ""),
+          ),
+        );
         await fs.promises.writeFile(
           path.join(serverOutDir, "stats.json"),
           JSON.stringify({
-            assets: [{ name: "server.js" }],
-            entrypoints: {
-              server: {
-                assets: [{ name: "server.js" }],
-              },
-            },
+            assets: serverEntryNames.map((name) => ({
+              name: `${name}.js`,
+            })),
+            entrypoints: Object.fromEntries(
+              serverEntryNames.map((name) => [
+                name,
+                { assets: [{ name: `${name}.js` }] },
+              ]),
+            ),
           }),
         );
       }
@@ -1066,6 +1076,87 @@ describe("utoopackAdapter dev", () => {
       );
       expect(onServerBundleReady).toHaveBeenCalledWith(generation);
       expect(onBuildOutput).toHaveBeenCalledTimes(3);
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("keeps all configured page-server entries after a server stats rebuild", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "spa" },
+    });
+    const baseContext = await createBuildContext(config, cwd);
+    const graph = structuredClone(baseContext.graph);
+    const page = graph.pages.index;
+    if (!page) throw new Error("Expected index Page.");
+    page.render = "ssr";
+    const plan = createBuildPlan(config, graph, { mode: "development" });
+    const onServerBundleReady = vi.fn();
+    const onBuildOutput = vi.fn();
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      generation: createDevGeneration(),
+      plan,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        graph,
+        plan,
+        onBuildOutput,
+        onServerBundleReady,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      expect(onBuildOutput.mock.calls[0]?.[0].server.renderers).toMatchObject({
+        "page-server-index": {
+          kind: "page-server",
+          assets: { js: ["page-server-index.js"], css: [] },
+        },
+      });
+      await fs.promises.writeFile(
+        path.join(cwd, "dist/server/stats.json"),
+        JSON.stringify({
+          assets: [
+            { name: "server.js" },
+            { name: "page-server-index.updated.js" },
+            { name: "server-shared.updated.js" },
+          ],
+          entrypoints: {
+            server: {
+              assets: [
+                { name: "server.js" },
+                { name: "server-shared.updated.js" },
+              ],
+            },
+            "page-server-index": {
+              assets: [
+                { name: "page-server-index.updated.js" },
+                { name: "server-shared.updated.js" },
+              ],
+            },
+          },
+        }),
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(onBuildOutput).toHaveBeenCalledTimes(2);
+          expect(onServerBundleReady).toHaveBeenCalledTimes(2);
+        },
+        { timeout: 5_000 },
+      );
+      expect(onBuildOutput.mock.calls[1]?.[0].server.renderers).toMatchObject({
+        "page-server-index": {
+          kind: "page-server",
+          assets: { js: ["page-server-index.updated.js"], css: [] },
+        },
+      });
     } finally {
       await controller.close?.();
     }
