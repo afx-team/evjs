@@ -106,11 +106,16 @@ or edit deployment metadata.
 Both use the same `src/pages/**/page.*` entry, directory scope, and
 semantic route pattern.
 
-Static SSG Pages use their semantic route as the output path in either mode:
-`/` writes `index.html`, while `/report` writes `report/index.html`. The output
-is never derived from the Page id. When a root SSG Page owns `index.html` in a
-mixed SPA that also needs a client-route fallback, Core keeps the Application
-shell separately at `__evjs/<application-id>.html`.
+Static SPA SSG Pages use their semantic route as the output path: `/` writes
+`index.html`, while `/report` writes `report/index.html`. When a root SSG Page
+owns `index.html` in a mixed SPA that also needs a client-route fallback, Core
+keeps the Application shell separately at `__evjs/<application-id>.html`.
+
+MPA keeps those semantic routes internally but exposes Page Documents as HTML
+URLs: `/` writes and serves `index.html`, `/report` uses `report.html`, and
+`/foo/bar` uses `foo/bar.html`. CSR emits those files; SSR and PPR use the same
+URLs for request-time rendering. Outputs are derived from route segments, not
+Page ids.
 
 MPA materializes only static Page routes. `$param` and terminal
 `$...splat` remain valid SPA route identities, but selecting MPA for either

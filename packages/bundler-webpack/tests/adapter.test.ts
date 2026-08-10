@@ -2033,7 +2033,7 @@ describe("webpackAdapter build", () => {
 
       assertFrameworkManifestShape(output, "Webpack MPA BuildOutput");
       const html = await fs.readFile(
-        path.join(cwd, "dist/client/home/index.html"),
+        path.join(cwd, "dist/client/home.html"),
         "utf-8",
       );
       const bundle = await fs.readFile(
@@ -2136,7 +2136,7 @@ describe("webpackAdapter build", () => {
         `https://evjs.invalid/${cssAsset}`,
       ).pathname.slice(1);
       const html = await fs.readFile(
-        path.join(clientDir, "home/index.html"),
+        path.join(clientDir, "home.html"),
         "utf-8",
       );
 
@@ -2640,7 +2640,7 @@ describe("webpackAdapter dev", () => {
     try {
       await waitForCondition(
         () =>
-          fs.access(path.join(cwd, "dist/client/home/index.html")).then(
+          fs.access(path.join(cwd, "dist/client/home.html")).then(
             () => true,
             () => false,
           ),
@@ -2712,9 +2712,7 @@ describe("webpackAdapter dev", () => {
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
       if (!output) throw new Error("Expected linked BuildOutput.");
       assertFrameworkManifestShape(output, "Webpack dev MPA BuildOutput");
-      const html = await fetchDevText(
-        `http://127.0.0.1:${port}/home/index.html`,
-      );
+      const html = await fetchDevText(`http://127.0.0.1:${port}/home.html`);
       const unsupportedManifestResponse = await fetchDevResponse(
         `http://127.0.0.1:${port}/manifest.json`,
       );

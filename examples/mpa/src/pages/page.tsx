@@ -9,7 +9,7 @@ export default function HomePage() {
       </p>
       <PageScopeNote />
       <p>
-        <a href="/about">Go to About page</a>
+        <a href="/about.html">Go to About page</a>
       </p>
     </main>
   );

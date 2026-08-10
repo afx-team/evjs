@@ -98,11 +98,15 @@ metadata。
 二者使用相同 `src/pages/**/page.*` entry、目录 scope 与语义 route
 pattern。
 
-两种 mode 下，静态 SSG Page 都按语义 route 决定输出路径：`/` 写入
-`index.html`，`/report` 写入 `report/index.html`，不会从 Page id 推导文件名。
-如果混合 SPA 的根 SSG Page 已拥有 `index.html`，同时其他 client route 还需要
-fallback，Core 会把 Application shell 单独保留在
-`__evjs/<application-id>.html`。
+静态 SPA SSG Page 按语义 route 决定输出路径：`/` 写入 `index.html`，
+`/report` 写入 `report/index.html`。如果混合 SPA 的根 SSG Page 已拥有
+`index.html`，同时其他 client route 还需要 fallback，Core 会把 Application
+shell 单独保留在 `__evjs/<application-id>.html`。
+
+MPA 在内部保留这些语义 route，但通过 HTML URL 暴露 Page Document：`/` 写入并
+访问 `index.html`，`/report` 使用 `report.html`，`/foo/bar` 使用
+`foo/bar.html`。CSR 会发射这些文件；SSR 与 PPR 的请求时渲染也使用相同 URL。
+输出由 route segment 推导，不使用 Page id。
 
 MPA 只物化静态 Page route。`$param` 与终止 `$...splat` 仍是有效的 SPA
 route 身份，但为它们选择 MPA 会在 graph 校验失败，因为一个动态 pattern

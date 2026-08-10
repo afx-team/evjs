@@ -3361,7 +3361,7 @@ describe("build", () => {
     await build(config("old"), { cwd, bundler });
     const metadataPath = path.join(cwd, "dist/deployment-metadata.json");
     const htmlPaths = ["alpha", "beta"].map((pageId) =>
-      path.join(clientDir, pageId, "index.html"),
+      path.join(clientDir, `${pageId}.html`),
     );
     const previousDist = await readDirectorySnapshot(distDir);
 
@@ -4703,7 +4703,7 @@ describe("build", () => {
     ].join("");
 
     expect(transformedFiles).toEqual([
-      mode === "spa" ? "index.html" : "dashboard/index.html",
+      mode === "spa" ? "index.html" : "dashboard.html",
     ]);
     expect(html).toContain('<html lang="zh-CN"');
     expect(html).toContain('data-template="configured"');
@@ -4910,11 +4910,11 @@ describe("build", () => {
       "utf-8",
     );
     const homeHtml = await fs.promises.readFile(
-      path.join(cwd, "dist/client/home/index.html"),
+      path.join(cwd, "dist/client/home.html"),
       "utf-8",
     );
     const adminHtml = await fs.promises.readFile(
-      path.join(cwd, "dist/client/admin/index.html"),
+      path.join(cwd, "dist/client/admin.html"),
       "utf-8",
     );
 
@@ -5494,10 +5494,7 @@ describe("build", () => {
 
     expect(events).toEqual(["html:product:./src/pages/product/index.html"]);
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "dist/client/product/index.html"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "dist/client/product.html"), "utf-8"),
     ).resolves.toContain('<main id="app">');
   });
 
@@ -5514,7 +5511,7 @@ describe("build", () => {
       `
         export default {
           document: {
-            aliases: ["about.html", "legacy/about.htm"],
+            aliases: ["about-alias.html", "legacy/about.htm"],
           },
         };
       `,
@@ -5574,8 +5571,8 @@ describe("build", () => {
 
     await build(config, { cwd, bundler });
 
-    const primaryPath = path.join(cwd, "dist/client/about/index.html");
-    const aliasPath = path.join(cwd, "dist/client/about.html");
+    const primaryPath = path.join(cwd, "dist/client/about.html");
+    const aliasPath = path.join(cwd, "dist/client/about-alias.html");
     const nestedAliasPath = path.join(cwd, "dist/client/legacy/about.htm");
     const [primary, alias, nestedAlias] = await Promise.all([
       fs.promises.readFile(primaryPath, "utf-8"),
@@ -5586,7 +5583,9 @@ describe("build", () => {
     expect(nestedAlias).toBe(primary);
     expect(primary).toContain("alias-transform");
     expect(transformCalls).toBe(1);
-    expect(frameworkAliases).toEqual([["about.html", "legacy/about.htm"]]);
+    expect(frameworkAliases).toEqual([
+      ["about-alias.html", "legacy/about.htm"],
+    ]);
     const firstDeployment = JSON.parse(
       await fs.promises.readFile(
         path.join(cwd, "dist/deployment-metadata.json"),
@@ -5596,8 +5595,8 @@ describe("build", () => {
     expect(firstDeployment.documents).toContainEqual({
       kind: "page",
       id: "about",
-      fileName: "about/index.html",
-      aliases: ["about.html", "legacy/about.htm"],
+      fileName: "about.html",
+      aliases: ["about-alias.html", "legacy/about.htm"],
       assets: { js: ["page-client-about.js"], css: [] },
     });
 
@@ -5606,7 +5605,7 @@ describe("build", () => {
 
     expect(transformCalls).toBe(2);
     expect(frameworkAliases).toEqual([
-      ["about.html", "legacy/about.htm"],
+      ["about-alias.html", "legacy/about.htm"],
       undefined,
     ]);
     await expect(fs.promises.access(aliasPath)).rejects.toThrow();
@@ -5948,7 +5947,7 @@ describe("build", () => {
     );
 
     const html = fs.readFileSync(
-      path.join(cwd, "dist/client/report/index.html"),
+      path.join(cwd, "dist/client/report.html"),
       "utf-8",
     );
     const transformOutput = JSON.parse(
@@ -5956,7 +5955,7 @@ describe("build", () => {
     );
 
     expect(html).toContain("Prerendered Report");
-    expect(html).toContain("http://evjs.local/report");
+    expect(html).toContain("http://evjs.local/report.html");
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
     expect(html).not.toContain("data-evjs-hydrate");
@@ -5964,7 +5963,7 @@ describe("build", () => {
     expect(transformOutput.documents).toContainEqual({
       kind: "page",
       id: "report",
-      fileName: "report/index.html",
+      fileName: "report.html",
     });
     expect(transformOutput.routes).toEqual([
       {
@@ -6036,7 +6035,7 @@ describe("build", () => {
     );
 
     const html = fs.readFileSync(
-      path.join(cwd, "dist/client/report/index.html"),
+      path.join(cwd, "dist/client/report.html"),
       "utf-8",
     );
     expect(html).toContain(
@@ -6244,8 +6243,8 @@ describe("build", () => {
       { cwd, bundler },
     );
 
-    const reportHtml = path.join(cwd, "dist/client/report/index.html");
-    const archiveHtml = path.join(cwd, "dist/client/archive/index.html");
+    const reportHtml = path.join(cwd, "dist/client/report.html");
+    const archiveHtml = path.join(cwd, "dist/client/archive.html");
     const unrelatedHtml = path.join(cwd, "dist/client/manual.html");
     expect(fs.existsSync(reportHtml)).toBe(true);
     expect(fs.existsSync(archiveHtml)).toBe(true);
@@ -6261,7 +6260,7 @@ describe("build", () => {
     );
     await fs.promises.rm(reportPage);
     await fs.promises.rm(archivePage);
-    bundlerOwnedFile = "report/index.html";
+    bundlerOwnedFile = "report.html";
 
     await build(
       { output: { client: "dist/client" }, routing: { mode: "mpa" } },

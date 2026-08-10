@@ -472,6 +472,8 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           },
         };
       `,
+      "src/pages/foo/bar/page.tsx":
+        "export default function Nested() { return null; }",
       "index.html": '<main id="app"></main>',
     });
     const spaConfig = await createCanonicalConfig(cwd, "spa");
@@ -491,6 +493,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(spa.graph.pages).toMatchObject({
       index: { render: "csr" },
       about: { render: "csr" },
+      foo_bar: { render: "csr" },
     });
     expect(spa.graph.pages.index).not.toHaveProperty("hydrate");
     expect(spa.graph.pages.about).not.toHaveProperty("hydrate");
@@ -499,13 +502,13 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     );
     expect(spa.graph.applications.default).toMatchObject({
       routingMode: "spa",
-      pageIds: ["index", "about"],
+      pageIds: ["index", "about", "foo_bar"],
       documentIds: ["index"],
     });
     expect(mpa.graph.applications.default).toMatchObject({
       routingMode: "mpa",
-      pageIds: ["index", "about"],
-      documentIds: ["index", "about"],
+      pageIds: ["index", "about", "foo_bar"],
+      documentIds: ["index", "about", "foo_bar"],
     });
     expect(mpa.graph.pages.about.metadata).toEqual({
       title: "About",
@@ -521,9 +524,14 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         bootstrap: { kind: "page", pageId: "index" },
       },
       about: {
-        output: "about/index.html",
+        output: "about.html",
         owner: { kind: "page", pageId: "about" },
         bootstrap: { kind: "page", pageId: "about" },
+      },
+      foo_bar: {
+        output: "foo/bar.html",
+        owner: { kind: "page", pageId: "foo_bar" },
+        bootstrap: { kind: "page", pageId: "foo_bar" },
       },
     });
 
@@ -564,6 +572,13 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         render: "csr",
         hydrate: "load",
       },
+      {
+        name: createPageClientBuildEntryName("foo_bar"),
+        owner: { appId: "default", pageId: "foo_bar" },
+        layers: [{ kind: "layout", module: "./src/pages/layout.tsx" }],
+        render: "csr",
+        hydrate: "load",
+      },
     ]);
     expect(mpaPlan.html).toEqual([
       {
@@ -575,7 +590,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       {
         id: "about",
         template: "./index.html",
-        fileName: "about/index.html",
+        fileName: "about.html",
         owner: { appId: "default", pageId: "about" },
         metadata: {
           title: "About",
@@ -584,6 +599,12 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
             Robots: "index,follow",
           },
         },
+      },
+      {
+        id: "foo_bar",
+        template: "./index.html",
+        fileName: "foo/bar.html",
+        owner: { appId: "default", pageId: "foo_bar" },
       },
     ]);
 
@@ -599,15 +620,20 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           js: ["about.js"],
           css: ["about.css"],
         },
+        [createPageClientBuildEntryName("foo_bar")]: {
+          js: ["nested.js"],
+          css: [],
+        },
       },
     });
     expect(output.apps).toEqual({});
     expect(output.routes).toEqual([
       { id: "index", path: "/", pageId: "index" },
       { id: "about", path: "/about", pageId: "about" },
+      { id: "foo_bar", path: "/foo/bar", pageId: "foo_bar" },
     ]);
     expect(output.pages.about.document).toEqual({
-      fileName: "about/index.html",
+      fileName: "about.html",
     });
     expect(output.pages.about.metadata).toEqual({
       title: "About",
@@ -624,7 +650,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         "export default function About() { return null; }",
       "src/pages/about/page.config.ts": `
         export default {
-          document: { aliases: ["about.html", "legacy/about.htm"] },
+          document: { aliases: ["legacy/about.html", "legacy/about.htm"] },
         };
       `,
       "index.html": '<main id="app"></main>',
@@ -636,16 +662,16 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
 
     expect(analysis.graph.documents.about).toMatchObject({
-      output: "about/index.html",
-      aliases: ["about.html", "legacy/about.htm"],
+      output: "about.html",
+      aliases: ["legacy/about.html", "legacy/about.htm"],
       owner: { kind: "page", pageId: "about" },
     });
     expect(plan.html).toEqual([
       {
         id: "about",
         template: "./index.html",
-        fileName: "about/index.html",
-        aliases: ["about.html", "legacy/about.htm"],
+        fileName: "about.html",
+        aliases: ["legacy/about.html", "legacy/about.htm"],
         owner: { appId: "default", pageId: "about" },
       },
     ]);
@@ -661,8 +687,8 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       },
     });
     expect(output.pages.about.document).toEqual({
-      fileName: "about/index.html",
-      aliases: ["about.html", "legacy/about.htm"],
+      fileName: "about.html",
+      aliases: ["legacy/about.html", "legacy/about.htm"],
     });
   });
 
@@ -798,9 +824,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       );
     }
 
-    document.aliases = ["REPORT/INDEX.HTML"];
+    document.aliases = ["REPORT.HTML"];
     expect(() => createBuildPlan(config, analysis.graph)).toThrow(
-      'Duplicate HTML output file "REPORT/INDEX.HTML"',
+      'Duplicate HTML output file "REPORT.HTML"',
     );
 
     document.aliases = [`${originalOutput}/nested.html`];
@@ -819,7 +845,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       "src/pages/about/page.tsx":
         "export default function About() { return null; }",
       "src/pages/about/page.config.ts":
-        'export default { document: { aliases: ["about.html"] } };',
+        'export default { document: { aliases: ["legacy/about.html"] } };',
       "index.html": '<main id="app"></main>',
     });
     const previousConfig = await createCanonicalConfig(cwd, "mpa");
@@ -848,7 +874,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       {
         id: "about",
         template: "./index.html",
-        fileName: "about/index.html",
+        fileName: "about.html",
         owner: { appId: "default", pageId: "about" },
       },
     ]);
@@ -993,7 +1019,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
     expect(plan.dev.serverRequestRoutePaths).toEqual([]);
     expect(new Set(plan.dev.serverRenderedPagePaths)).toEqual(
-      new Set(["/ssr", "/rsc", "/ppr"]),
+      new Set(["/ssr.html", "/rsc.html", "/ppr.html"]),
     );
     expect(plan.dev.serverRenderedPagePaths).not.toContain("/ssg");
     expect(plan.entries).toEqual(
@@ -1083,7 +1109,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         documentId: "ppr",
         applicationId: "default",
         template: "./index.html",
-        fileName: "ppr/index.html",
+        fileName: "ppr.html",
         mount: "#app",
       },
       {
@@ -1091,7 +1117,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         documentId: "rsc",
         applicationId: "default",
         template: "./index.html",
-        fileName: "rsc/index.html",
+        fileName: "rsc.html",
         mount: "#app",
       },
       {
@@ -1099,13 +1125,43 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         documentId: "ssr",
         applicationId: "default",
         template: "./index.html",
-        fileName: "ssr/index.html",
+        fileName: "ssr.html",
         mount: "#app",
       },
     ]);
     expect(
       plan.server.documents?.some((document) => document.pageId === "ssg"),
     ).toBe(false);
+  });
+
+  it("uses MPA Document URLs for server-rendered dev paths without changing SPA routes", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/pages/page.config.ts": 'export default { render: "ssr" };',
+      "src/pages/about/page.tsx":
+        "export default function About() { return null; }",
+      "src/pages/about/page.config.ts": 'export default { render: "ssr" };',
+      "index.html": '<main id="app"></main>',
+    });
+    const spaConfig = await createCanonicalConfig(cwd, "spa");
+    const mpaConfig = await createCanonicalConfig(cwd, "mpa");
+    const spa = await createCoreGraph(spaConfig, cwd);
+    const mpa = await createCoreGraph(mpaConfig, cwd);
+    const spaPlan = createBuildPlan(spaConfig, spa.graph, {
+      mode: "development",
+    });
+    const mpaPlan = createBuildPlan(mpaConfig, mpa.graph, {
+      mode: "development",
+    });
+
+    expect(clientRouteProjection(mpa.graph)).toEqual(
+      clientRouteProjection(spa.graph),
+    );
+    expect(spaPlan.dev.serverRenderedPagePaths).toEqual(["/", "/about"]);
+    expect(mpaPlan.dev.serverRenderedPagePaths).toEqual([
+      "/index.html",
+      "/about.html",
+    ]);
   });
 
   it("uses the SPA Application Document as an explicit SSR Page shell without emitting it twice", async () => {
@@ -2493,7 +2549,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       {
         id: "orders",
         template: "./index.html",
-        fileName: "orders/index.html",
+        fileName: "orders.html",
         owner: { appId: "default", pageId: "orders" },
       },
     ]);

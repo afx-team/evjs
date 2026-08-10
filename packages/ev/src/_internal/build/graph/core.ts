@@ -19,7 +19,10 @@ import {
   PAGE_ANCHOR_PROVIDER_ID,
 } from "@evjs/shared/manifest";
 import type { ResolvedPageFileConfig } from "../page-config-module.js";
-import { createStaticPageDocumentOutput } from "../page-document-output.js";
+import {
+  createRouteHtmlDocumentOutput,
+  createRouteIndexDocumentOutput,
+} from "../page-document-output.js";
 import { resolvePageRenderMode } from "../page-rendering-contract.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../page-route-conventions.js";
 import type { GraphConfig } from "./index.js";
@@ -565,7 +568,7 @@ function materializeSpaPageDocumentsInPlace(options: {
     }
     const route = pageRoutes[0];
     if (!route) continue;
-    const output = createStaticPageDocumentOutput(route.pattern);
+    const output = createRouteIndexDocumentOutput(route.pattern);
     if (!output) {
       throw new Error(
         `[evjs] SPA SSG Page "${pageId}" config "${source}" cannot materialize dynamic Route "${formatRoutePattern(route.pattern)}" as one static HTML output.`,
@@ -676,7 +679,7 @@ function createCanonicalMpaDocumentOutput(route: CoreClientRouteNode): string {
       `[evjs] Canonical MPA Route "${route.id}" cannot materialize dynamic segment "${dynamic.kind === "param" ? `$${dynamic.name}` : "$..."}" as one static HTML document. Use routing.mode "spa".`,
     );
   }
-  const output = createStaticPageDocumentOutput(route.pattern);
+  const output = createRouteHtmlDocumentOutput(route.pattern);
   if (output) return output;
   throw new Error(
     `[evjs] Canonical MPA Route "${route.id}" contains a non-static segment after materialization validation.`,

@@ -247,8 +247,10 @@ Page-owned Documents without requiring a browser router. It accepts
 only static Page paths; `$param`, terminal `$...splat`, and router-only
 boundaries fail graph validation. Layouts compose around Pages in both modes.
 `ev inspect` and `ev build` reject unsupported combinations instead of asking
-applications to use a second route model. A colocated `index.html` supplies that MPA Page's
-Document template.
+applications to use a second route model. The semantic routes stay `/`,
+`/report`, and `/foo/bar`, while their MPA Document URLs are `/index.html`,
+`/report.html`, and `/foo/bar.html`. A colocated `index.html` supplies that MPA
+Page's Document template.
 
 ## Page Configuration
 

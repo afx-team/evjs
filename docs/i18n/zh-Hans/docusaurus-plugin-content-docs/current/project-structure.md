@@ -74,6 +74,9 @@ export default defineConfig({
 });
 ```
 
+语义 Page route 仍是 `/`、`/about` 与 `/foo/bar`。MPA 的静态输出和请求时渲染
+都通过 `/index.html`、`/about.html` 与 `/foo/bar.html` 暴露对应 Document。
+
 ## 约定发现边界
 
 顶层 `conventions: false` 会把框架持有的文件系统约定作为一个整体关闭：

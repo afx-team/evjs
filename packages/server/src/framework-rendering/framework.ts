@@ -1255,9 +1255,8 @@ export async function handleFrameworkRenderRequest(
   }
 
   const url = new URL(request.url);
-  const routes = getFrameworkRuntimeRoutes(options.runtime);
   const pages = getFrameworkRuntimePages(options.runtime);
-  const route = matchRoute(routes, url.pathname);
+  const route = matchFrameworkPageRoute(options.runtime, url.pathname);
   const pageId = route?.pageId;
   const page = pageId ? pages[pageId] : undefined;
 
@@ -1859,7 +1858,14 @@ function getPprRegionPagePaths(
   const routePaths = getFrameworkRuntimeRoutes(runtime)
     .filter((route) => route.pageId === pageId)
     .map((route) => route.path);
-  return routePaths.length > 0 ? routePaths : page?.path ? [page.path] : [];
+  const paths =
+    routePaths.length > 0 ? routePaths : page?.path ? [page.path] : [];
+  return runtime.routing.kind === "mpa"
+    ? paths.flatMap((path) => {
+        const documentPath = createRouteHtmlDocumentPath(path);
+        return documentPath ? [documentPath] : [];
+      })
+    : paths;
 }
 
 function isStaticPagePath(pathname: string): boolean {
@@ -1973,6 +1979,9 @@ function pageUrlMatchesPage(
   );
 
   if (pageRoutes.length > 0) {
+    if (runtime.routing.kind === "mpa") {
+      return matchFrameworkPageRoute(runtime, pathname)?.pageId === pageId;
+    }
     return pageRoutes.some((route) =>
       pageRoutePathMatches(route.path, pathname),
     );
@@ -2251,6 +2260,34 @@ function matchRoute(
   pathname: string,
 ): FrameworkRouteRuntime | undefined {
   return findBestPageRoute(routes, pathname);
+}
+
+function matchFrameworkPageRoute(
+  runtime: FrameworkRuntime,
+  pathname: string,
+): FrameworkRouteRuntime | undefined {
+  const routes = getFrameworkRuntimeRoutes(runtime);
+  if (runtime.routing.kind === "spa") return matchRoute(routes, pathname);
+  if (!pathname.endsWith(".html")) return undefined;
+
+  const direct = matchRoute(routes, pathname);
+  if (direct) return direct;
+
+  return routes.find((route) => {
+    const documentPath = createRouteHtmlDocumentPath(route.path);
+    return documentPath ? pageRoutePathMatches(documentPath, pathname) : false;
+  });
+}
+
+function createRouteHtmlDocumentPath(pathname: string): string | undefined {
+  if (!isStaticPagePath(pathname)) return undefined;
+  const normalizedPath = normalizeRoutePathname(pathname);
+  if (normalizedPath === "/") return "/index.html";
+
+  const segments = normalizedPath.slice(1).split("/");
+  const last = segments.at(-1);
+  if (!last) return undefined;
+  return `/${[...segments.slice(0, -1), `${last}.html`].join("/")}`;
 }
 
 function matchPprRegion(

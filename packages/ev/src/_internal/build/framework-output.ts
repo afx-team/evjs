@@ -793,7 +793,10 @@ async function prerenderStaticPageHtml(options: {
     options;
   const pageId = html.owner.pageId;
   const page = output.pages[pageId];
-  const pathname = findStaticPagePath(output, pageId, page);
+  const pathname =
+    frameworkRuntime.routing.kind === "mpa"
+      ? `/${html.fileName}`
+      : findStaticPagePath(output, pageId, page);
   if (!page || !pathname) return;
 
   const { createReactFrameworkServer } = await import("@evjs/server/react");
