@@ -92,8 +92,8 @@ server routes, examples, or scaffolds change.
     Use the generated React framework server bridge unless a deployment adapter
     intentionally owns the runtime integration.
 11. Utoopack is the default user path. Webpack is the validation/fallback
-    adapter for capabilities that require its broader build or dev-update
-    support.
+    adapter for capabilities that require its broader build support. In dev,
+    both adapters run inside immutable Sessions replaced by the Supervisor.
 12. Keep English and Chinese documentation behaviorally equivalent. Prefer
     declarative current behavior over migration history or speculative future
     design; release history belongs in `CHANGELOG.md` and active gaps belong in

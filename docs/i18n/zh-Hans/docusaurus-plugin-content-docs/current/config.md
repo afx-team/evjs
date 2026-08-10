@@ -287,6 +287,7 @@ export default defineConfig({
   routing: { mode: "spa" },
   dev: {
     port: 4000,
+    cliShortcuts: true,
     proxy: [
       {
         context: ["/api"],
@@ -306,6 +307,12 @@ export default defineConfig({
 dev 证书时应选择 Webpack adapter。
 `server.dev.https` 只接受 `false` 或显式 `{ key, cert }`；framework server 不会为
 `true` 自动生成证书。
+
+`dev.cliShortcuts` 是严格 boolean，用于控制交互式 terminal shortcuts 引擎，默认值为
+`true`。Core 不添加任何按键；插件通过 descriptor 顶层的 `cliShortcuts()` 声明快捷键。
+该引擎在 CI 和非 TTY 场景下仍为 no-op。`ev dev --no-shortcuts` 会在整次运行中覆盖该配置，
+包括 replacement Session。除此之外，监听到该配置变化时，evjs 会通过正常的 immutable
+Session replacement 应用新值。参见[插件 CLI 快捷键](./dev#插件-cli-快捷键)。
 
 ### Output
 
@@ -366,10 +373,11 @@ export default defineConfig({
 });
 ```
 
-每个 adapter 都声明 server rendering、RSC、PPR build capability，以及 HTML、
-entry、route、server output、resolution 的 dev-plan update capability。
-`ev inspect` 会报告选中的 adapter 与 plan gap；缺少必要 capability 时，build/dev
-会在执行 adapter 前失败。
+每个 adapter 都声明 server rendering、RSC 与 PPR build capability。
+`ev inspect` 会报告选中的 adapter 与 build-capability gap；缺少必要 capability 时，
+build/dev 会在执行 adapter 前失败。开发期间，adapter 负责一个 immutable Session
+内的普通 module watch/HMR。Framework input 发生语义变化时，Supervisor 会替换完整
+Session；adapter input 在该 Session 的整个生命周期内保持固定。
 
 ## 路由输入
 

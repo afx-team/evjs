@@ -145,9 +145,22 @@ materialize .ev
 deployment metadata and Documents, and runs `afterBuild` only after canonical
 output is published. `prepare` and `inspect` do not run the before/after pair.
 
-`ev dev` keeps normal source edits on the bundler watch/HMR path. Framework
-input changes recreate and diff the graph/plan, then call the adapter's
-`updatePlan()` capability when needed.
+`ev dev` keeps normal source edits on the bundler watch/HMR path. A long-lived
+Supervisor watches framework-owned inputs and prepares candidate revisions
+without writing `.ev`. It compares a stable semantic fingerprint of config,
+graph, plan, generated IR, plugin settings, and opaque dependency content.
+Semantic no-ops keep the active immutable Session; semantic changes close it
+and start a new Session with fixed config, graph, plan, hooks, and adapter
+inputs.
+
+Preparation errors keep the active Session and wait for another real input
+change instead of retrying automatically. After replacement starts, errors are
+fail-stop; do not attempt to resurrect or overlap a closed Session. Port
+changes remain a manual `ev dev` restart. Dev adapters implement one immutable
+`dev(context)` lifetime, honor its abort signal, return an idempotently
+closable controller, and leave ordinary module watching and HMR adapter-owned.
+Generated `.ev` state is disposable and must be reconstructible directly from
+authored inputs.
 
 ## Commands
 

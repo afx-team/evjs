@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { ResolvedConfig } from "../../config/index.js";
@@ -9,9 +10,21 @@ export interface RouteDirectoryWatchState {
   unsafeBoundary?: string;
 }
 
+export interface CollectRouteDirectoryWatchStateOptions {
+  /** Observe a directory before its topology is read. */
+  readonly beforeDirectoryRead?: (directory: string) => void;
+}
+
 export type WatchFilesMode = "events" | "polling";
 
-export interface WatchFilesOptions {
+export type IgnoreWatchPath = (file: string) => boolean;
+
+export interface WatchInputSnapshotOptions {
+  /** Receives resolved logical paths before they enter a watch snapshot. */
+  readonly ignorePath?: IgnoreWatchPath;
+}
+
+export interface WatchFilesOptions extends WatchInputSnapshotOptions {
   readonly mode?: WatchFilesMode;
   readonly onError: (error: Error) => void;
   readonly onFallback?: (error: Error) => void;
@@ -62,6 +75,7 @@ export interface PreparedWatchFilesPlan extends WatchFilesPlan {
 
 interface PollingReadCache {
   readonly directories: Map<string, Promise<string[] | undefined>>;
+  readonly files: Map<string, Promise<Buffer | undefined>>;
   readonly lstats: Map<string, Promise<fs.BigIntStats | undefined>>;
   readonly readlinks: Map<string, Promise<string | undefined>>;
   readonly realpaths: Map<string, Promise<string | undefined>>;
@@ -70,8 +84,7 @@ interface PollingReadCache {
 
 interface StartPollingOptions {
   readonly fallbackError?: Error;
-  readonly forceInvalidateTargets?: ReadonlySet<string>;
-  readonly invalidateChangedTargets?: boolean;
+  readonly reconcileSnapshots?: boolean;
 }
 
 interface PollingResourceRetryState {
@@ -82,6 +95,7 @@ interface PollingResourceRetryState {
 const POLLING_INTERVAL_MS = 100;
 const MAX_POLLING_RESOURCE_RETRY_MS = 2_000;
 const POLLING_READ_CANCELLED = Symbol("polling-read-cancelled");
+const IGNORED_WATCH_INPUT_SNAPSHOT = JSON.stringify(["ignored"]);
 
 export function resolveInitialDevWatchMode(
   platform: NodeJS.Platform = process.platform,
@@ -223,12 +237,13 @@ export function createWatchFilesPlan(
 
 export function prepareWatchFilesPlan(
   plan: WatchFilesPlan,
+  options: WatchInputSnapshotOptions = {},
 ): PreparedWatchFilesPlan {
   const baselineSnapshots = new Map<string, string>();
   const unknownBaselineTargets = new Set<string>();
   for (const file of plan.logicalTargets) {
     try {
-      baselineSnapshots.set(file, readPollingSnapshot(file));
+      baselineSnapshots.set(file, readWatchInputSnapshot(file, options));
     } catch (error) {
       if (isWatchResourceError(error)) {
         unknownBaselineTargets.add(file);
@@ -242,6 +257,14 @@ export function prepareWatchFilesPlan(
     baselineSnapshots,
     unknownBaselineTargets,
   };
+}
+
+/** Returns an opaque semantic identity for a file or directory watch input. */
+export function readWatchInputSnapshot(
+  file: string,
+  options: WatchInputSnapshotOptions = {},
+): string {
+  return readWatchInputSnapshotValue(path.resolve(file), options);
 }
 
 export function collectWatchFilesChangedSince(
@@ -280,6 +303,7 @@ export function watchFiles(
             filesOrPlan,
             options.recoverableMissingTargets ?? new Set(),
           ),
+          options,
         )
       : (filesOrPlan as PreparedWatchFilesPlan);
   } catch (error) {
@@ -289,8 +313,9 @@ export function watchFiles(
   }
   const { baselineSnapshots, groups, logicalTargets, unknownBaselineTargets } =
     plan;
+  const observedSnapshots = new Map(baselineSnapshots);
+  const observedUnknownTargets = new Set(unknownBaselineTargets);
   const watchers: fs.FSWatcher[] = [];
-  const pollingSnapshots = new Map<string, string>();
   const pollingResourceRetries = new Map<string, PollingResourceRetryState>();
   let eventWatchersClosed = false;
   let polling = false;
@@ -319,7 +344,6 @@ export function watchFiles(
     polling = false;
     if (pollingTimer) clearTimeout(pollingTimer);
     pollingTimer = undefined;
-    pollingSnapshots.clear();
     pollingResourceRetries.clear();
     return [];
   };
@@ -358,7 +382,7 @@ export function watchFiles(
     const unknownTargets = new Set<string>();
     for (const file of logicalTargets) {
       try {
-        snapshots.set(file, readPollingSnapshot(file));
+        snapshots.set(file, readWatchInputSnapshot(file, options));
       } catch (error) {
         if (isWatchResourceError(error)) {
           unknownTargets.add(file);
@@ -374,29 +398,51 @@ export function watchFiles(
     return { snapshots, unknownTargets };
   };
 
+  const invalidateObservedTarget = (
+    file: string,
+    nextSnapshot: string | undefined,
+    isUnknown: boolean,
+    expectedMode: "events" | "polling",
+  ): Error | undefined => {
+    if (stopped || (expectedMode === "polling" ? !polling : polling)) {
+      return reportedFailure;
+    }
+    const wasUnknown = observedUnknownTargets.has(file);
+    const previousSnapshot = observedSnapshots.get(file);
+    if (isUnknown) {
+      observedSnapshots.delete(file);
+      observedUnknownTargets.add(file);
+    } else {
+      observedUnknownTargets.delete(file);
+      if (nextSnapshot !== undefined) observedSnapshots.set(file, nextSnapshot);
+    }
+    if (
+      wasUnknown === isUnknown &&
+      (isUnknown || previousSnapshot === nextSnapshot)
+    ) {
+      return undefined;
+    }
+    try {
+      onChange(file);
+    } catch (error) {
+      return reportFailure(file, error);
+    }
+    return undefined;
+  };
+
   const invalidateChangedTargets = (
     snapshots: ReadonlyMap<string, string>,
     unknownTargets: ReadonlySet<string>,
     expectedMode: "events" | "polling",
-    forceInvalidateTargets: ReadonlySet<string> = new Set(),
   ): Error | undefined => {
     for (const file of logicalTargets) {
-      if (stopped || (expectedMode === "polling" ? !polling : polling)) {
-        return reportedFailure;
-      }
-      if (
-        !forceInvalidateTargets.has(file) &&
-        !unknownBaselineTargets.has(file) &&
-        !unknownTargets.has(file) &&
-        baselineSnapshots.get(file) === snapshots.get(file)
-      ) {
-        continue;
-      }
-      try {
-        onChange(file);
-      } catch (error) {
-        return reportFailure(file, error);
-      }
+      const failure = invalidateObservedTarget(
+        file,
+        snapshots.get(file),
+        unknownTargets.has(file),
+        expectedMode,
+      );
+      if (failure || stopped) return failure ?? reportedFailure;
     }
     return undefined;
   };
@@ -413,6 +459,7 @@ export function watchFiles(
           file,
           cache,
           () => !stopped && polling,
+          options,
         );
         if (snapshot === POLLING_READ_CANCELLED) return;
         pollingResourceRetries.delete(file);
@@ -438,14 +485,8 @@ export function watchFiles(
 
     for (const [file, nextSnapshot] of nextSnapshots) {
       if (stopped || !polling) return;
-      if (nextSnapshot === pollingSnapshots.get(file)) continue;
-      pollingSnapshots.set(file, nextSnapshot);
-      try {
-        onChange(file);
-      } catch (error) {
-        reportFailure(file, error);
+      if (invalidateObservedTarget(file, nextSnapshot, false, "polling"))
         return;
-      }
     }
   };
 
@@ -475,8 +516,7 @@ export function watchFiles(
 
   const startPolling = ({
     fallbackError,
-    forceInvalidateTargets = new Set(),
-    invalidateChangedTargets: shouldInvalidateChangedTargets = false,
+    reconcileSnapshots = false,
   }: StartPollingOptions = {}): Error | undefined => {
     if (stopped || polling) return reportedFailure;
     const closeErrors = closeEventWatchers();
@@ -493,9 +533,6 @@ export function watchFiles(
     polling = true;
     const current = readCurrentSnapshots();
     if (current.error) return current.error;
-    for (const [file, snapshot] of current.snapshots) {
-      pollingSnapshots.set(file, snapshot);
-    }
     if (fallbackError) {
       try {
         options.onFallback?.(fallbackError);
@@ -503,12 +540,11 @@ export function watchFiles(
         return reportFatalError(toError(error));
       }
     }
-    if (shouldInvalidateChangedTargets) {
+    if (reconcileSnapshots) {
       const invalidationFailure = invalidateChangedTargets(
         current.snapshots,
         current.unknownTargets,
         "polling",
-        forceInvalidateTargets,
       );
       if (invalidationFailure) return invalidationFailure;
     }
@@ -520,14 +556,10 @@ export function watchFiles(
     group: PhysicalWatchGroup,
     error: unknown,
   ): Readonly<{ failure?: Error; handled: boolean }> => {
-    const forceInvalidateTargets = new Set(
-      group.targets.map((target) => target.file),
-    );
     if (isMissingPathError(error)) {
       return {
         failure: startPolling({
-          forceInvalidateTargets,
-          invalidateChangedTargets: true,
+          reconcileSnapshots: true,
         }),
         handled: true,
       };
@@ -545,8 +577,7 @@ export function watchFiles(
         return {
           failure: startPolling({
             fallbackError: createWatchError(group.watchTarget, probeError),
-            forceInvalidateTargets,
-            invalidateChangedTargets: true,
+            reconcileSnapshots: true,
           }),
           handled: true,
         };
@@ -564,8 +595,7 @@ export function watchFiles(
     }
     return {
       failure: startPolling({
-        forceInvalidateTargets,
-        invalidateChangedTargets: true,
+        reconcileSnapshots: true,
       }),
       handled: true,
     };
@@ -586,7 +616,7 @@ export function watchFiles(
   if (options.mode === "polling" || plan.fallbackError) {
     const pollingFailure = startPolling({
       fallbackError: plan.fallbackError,
-      invalidateChangedTargets: true,
+      reconcileSnapshots: true,
     });
     if (pollingFailure) throw pollingFailure;
     return stop;
@@ -596,22 +626,45 @@ export function watchFiles(
     const { targets, watchTarget } = group;
     try {
       const listener: fs.WatchListener<string> = (_eventType, filename) => {
-        if (!stopped && !polling) {
-          const dispatchedFiles = new Set<string>();
-          for (const target of targets) {
-            if (stopped || polling) return;
-            if (
-              !dispatchedFiles.has(target.file) &&
-              watchEventMatchesTarget(watchTarget, target, filename)
-            ) {
-              dispatchedFiles.add(target.file);
-              try {
-                onChange(target.file);
-              } catch (error) {
-                reportFailure(target.file, error);
-                return;
-              }
+        if (stopped || polling) return;
+        if (filename !== null && options.ignorePath) {
+          try {
+            const changedPath = path.resolve(watchTarget, filename.toString());
+            if (options.ignorePath(changedPath)) return;
+          } catch (error) {
+            reportFailure(watchTarget, error);
+            return;
+          }
+        }
+
+        const observedFiles = new Set<string>();
+        for (const target of targets) {
+          if (stopped || polling) return;
+          if (
+            observedFiles.has(target.file) ||
+            !watchEventMatchesTarget(watchTarget, target, filename)
+          ) {
+            continue;
+          }
+          observedFiles.add(target.file);
+          let snapshot: string;
+          try {
+            snapshot = readWatchInputSnapshot(target.file, options);
+          } catch (error) {
+            if (isWatchResourceError(error)) {
+              startPolling({
+                fallbackError: createWatchError(target.file, error),
+                reconcileSnapshots: true,
+              });
+            } else {
+              reportFailure(target.file, error);
             }
+            return;
+          }
+          if (
+            invalidateObservedTarget(target.file, snapshot, false, "events")
+          ) {
+            return;
           }
         }
       };
@@ -624,8 +677,7 @@ export function watchFiles(
             watchTarget,
             new Error("Native filesystem watcher closed unexpectedly."),
           ),
-          forceInvalidateTargets: new Set(targets.map((target) => target.file)),
-          invalidateChangedTargets: true,
+          reconcileSnapshots: true,
         });
       });
       watcher.on("error", (error) => {
@@ -633,7 +685,7 @@ export function watchFiles(
         if (isNativeWatchUnavailableError(error)) {
           startPolling({
             fallbackError: createWatchError(watchTarget, error),
-            invalidateChangedTargets: true,
+            reconcileSnapshots: true,
           });
           return;
         }
@@ -643,8 +695,8 @@ export function watchFiles(
       });
     } catch (error) {
       // The target may have been removed between graph analysis and watcher
-      // setup. Poll every logical target and invalidate them once rather than
-      // leaving this group unobserved until some unrelated graph change.
+      // setup. Poll every logical target and reconcile semantic snapshots so
+      // this group does not stay unobserved until an unrelated graph change.
       const recovery = recoverStaleWatchTopology(group, error);
       if (recovery.handled) {
         if (recovery.failure) throw recovery.failure;
@@ -653,7 +705,7 @@ export function watchFiles(
       if (isNativeWatchUnavailableError(error)) {
         const pollingFailure = startPolling({
           fallbackError: createWatchError(watchTarget, error),
-          invalidateChangedTargets: true,
+          reconcileSnapshots: true,
         });
         if (pollingFailure) throw pollingFailure;
         break;
@@ -679,19 +731,22 @@ export function watchFiles(
 export async function collectServerRouteWatchState<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
+  options: CollectRouteDirectoryWatchStateOptions = {},
 ): Promise<RouteDirectoryWatchState> {
   if (!config.conventions) return { dependencies: [] };
   const root = path.resolve(cwd, CANONICAL_SERVER_ROUTE_ROOT);
-  return collectRouteDirectoryWatchState(cwd, root);
+  return collectRouteDirectoryWatchState(cwd, root, options);
 }
 
 export async function collectRouteDirectoryWatchState(
   cwd: string,
   root: string,
+  options: CollectRouteDirectoryWatchStateOptions = {},
 ): Promise<RouteDirectoryWatchState> {
   if (!isInsideCwd(cwd, root)) return { dependencies: [] };
 
   const directories = new Set([root]);
+  options.beforeDirectoryRead?.(root);
   try {
     if (!(await isRealPathInsideCwd(cwd, root))) {
       return collectSafeLexicalWatchFallback(cwd, root);
@@ -706,6 +761,7 @@ export async function collectRouteDirectoryWatchState(
   }
 
   async function visit(current: string): Promise<void> {
+    options.beforeDirectoryRead?.(current);
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(current, { withFileTypes: true });
@@ -968,36 +1024,103 @@ function isReadlinkTopologyRaceError(error: unknown): boolean {
   return isMissingPathError(error) || isErrnoCode(error, "EINVAL");
 }
 
-function readPollingSnapshot(file: string): string {
+type WatchInputType =
+  | "block-device"
+  | "character-device"
+  | "directory"
+  | "fifo"
+  | "file"
+  | "other"
+  | "socket"
+  | "symlink";
+
+type DirectoryTopologyEntry = readonly string[];
+
+function readWatchInputSnapshotValue(
+  absoluteFile: string,
+  options: WatchInputSnapshotOptions,
+): string {
+  if (options.ignorePath?.(absoluteFile)) return IGNORED_WATCH_INPUT_SNAPSHOT;
+
   let own: fs.BigIntStats;
   try {
-    own = fs.lstatSync(file, { bigint: true });
+    own = fs.lstatSync(absoluteFile, { bigint: true });
   } catch (error) {
-    if (isMissingPathError(error)) return readMissingPollingSnapshot(file);
+    if (isMissingPathError(error)) {
+      return readMissingWatchInputSnapshot(absoluteFile);
+    }
     throw error;
   }
 
-  const ownSnapshot = serializeStat(own);
   if (own.isDirectory()) {
-    return `${ownSnapshot}|entries:${readDirectorySnapshot(file)}`;
+    const snapshot = readDirectoryTopologySnapshot(absoluteFile, options);
+    return snapshot ?? readMissingWatchInputSnapshot(absoluteFile);
   }
-  if (!own.isSymbolicLink()) return ownSnapshot;
-  try {
-    const target = fs.statSync(file, { bigint: true });
-    return [
-      ownSnapshot,
-      `target:${serializeStat(target)}`,
-      ...(target.isDirectory()
-        ? [`entries:${readDirectorySnapshot(file)}`]
-        : []),
-    ].join("|");
-  } catch (error) {
-    if (isMissingPathError(error)) return `${ownSnapshot}|target:missing`;
-    throw error;
+  if (own.isFile()) {
+    const contents = readFileContents(absoluteFile);
+    return contents
+      ? serializeFileSnapshot(contents, readRealPath(absoluteFile))
+      : readMissingWatchInputSnapshot(absoluteFile);
   }
+  if (!own.isSymbolicLink()) {
+    return serializeTypedInputSnapshot(readWatchInputType(own));
+  }
+  return readSymlinkWatchInputSnapshot(absoluteFile, options);
 }
 
-function readMissingPollingSnapshot(file: string): string {
+function readSymlinkWatchInputSnapshot(
+  file: string,
+  options: WatchInputSnapshotOptions,
+): string {
+  let linkTarget: string;
+  try {
+    linkTarget = fs.readlinkSync(file);
+  } catch (error) {
+    if (isMissingPathError(error)) return readMissingWatchInputSnapshot(file);
+    if (isErrnoCode(error, "EINVAL"))
+      return readWatchInputSnapshotValue(file, options);
+    throw error;
+  }
+
+  let realPath: string | undefined;
+  try {
+    realPath = fs.realpathSync(file);
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
+  }
+
+  let target: fs.BigIntStats | undefined;
+  try {
+    target = fs.statSync(file, { bigint: true });
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
+  }
+  if (!target) {
+    return serializeSymlinkSnapshot(linkTarget, realPath, undefined, "missing");
+  }
+
+  const targetType = readWatchInputType(target);
+  let targetSnapshot: string;
+  if (target.isDirectory()) {
+    targetSnapshot =
+      readDirectoryTopologySnapshot(file, options) ?? "target:missing";
+  } else if (target.isFile()) {
+    const contents = readFileContents(file);
+    targetSnapshot = contents
+      ? serializeFileSnapshot(contents, realPath)
+      : "target:missing";
+  } else {
+    targetSnapshot = serializeTypedInputSnapshot(targetType);
+  }
+  return serializeSymlinkSnapshot(
+    linkTarget,
+    realPath,
+    targetType,
+    targetSnapshot,
+  );
+}
+
+function readMissingWatchInputSnapshot(file: string): string {
   let ancestor = path.dirname(file);
   while (true) {
     try {
@@ -1022,7 +1145,7 @@ function readMissingPollingSnapshot(file: string): string {
           if (!isMissingPathError(error)) throw error;
         }
       }
-      return serializeMissingPollingSnapshot(
+      return serializeMissingWatchInputSnapshot(
         ancestor,
         own,
         realPath,
@@ -1038,59 +1161,98 @@ function readMissingPollingSnapshot(file: string): string {
   }
 }
 
-function serializeMissingPollingSnapshot(
+function serializeMissingWatchInputSnapshot(
   ancestor: string,
   own: fs.BigIntStats,
   realPath: string | undefined,
   linkTarget: string | undefined,
   target: fs.BigIntStats | undefined,
 ): string {
-  // Mutable directory metadata would turn unrelated sibling writes (including
-  // .ev generation) into config invalidations. Stable inode and real-path
-  // identity still detects replacement while the logical target stays absent.
+  // Mutable metadata and inode identity would turn atomic same-input writes or
+  // unrelated sibling generation into false framework invalidations.
   return JSON.stringify([
     "missing",
     ancestor,
-    serializeWatchIdentity(own),
+    readWatchInputType(own),
     realPath ?? "realpath:missing",
     ...(own.isSymbolicLink()
       ? [
           `link:${linkTarget ?? "missing"}`,
-          `target:${target ? serializeWatchIdentity(target) : "missing"}`,
+          `target:${target ? readWatchInputType(target) : "missing"}`,
         ]
       : []),
   ]);
 }
 
-function readDirectorySnapshot(directory: string): string {
+function readDirectoryTopologySnapshot(
+  directory: string,
+  options: WatchInputSnapshotOptions,
+): string | undefined {
   let entries: string[];
   try {
     entries = fs.readdirSync(directory).sort();
   } catch (error) {
-    if (isMissingPathError(error)) return "missing";
+    if (isMissingPathError(error)) return undefined;
     throw error;
   }
-  return entries
-    .map((entry) => {
-      const file = path.join(directory, entry);
-      try {
-        return JSON.stringify([
-          entry,
-          serializeStat(fs.lstatSync(file, { bigint: true })),
-        ]);
-      } catch (error) {
-        if (isMissingPathError(error)) {
-          return JSON.stringify([entry, "missing"]);
-        }
-        throw error;
-      }
-    })
-    .join(",");
+  const realPath = readRealPath(directory);
+  if (!realPath) return undefined;
+
+  const snapshots: DirectoryTopologyEntry[] = [];
+  for (const entry of entries) {
+    const file = path.join(directory, entry);
+    if (options.ignorePath?.(file)) continue;
+    const snapshot = readDirectoryTopologyEntry(entry, file);
+    if (snapshot) snapshots.push(snapshot);
+  }
+  return serializeDirectorySnapshot(realPath, snapshots);
+}
+
+function readDirectoryTopologyEntry(
+  entry: string,
+  file: string,
+): DirectoryTopologyEntry | undefined {
+  let own: fs.BigIntStats;
+  try {
+    own = fs.lstatSync(file, { bigint: true });
+  } catch (error) {
+    if (isMissingPathError(error)) return undefined;
+    throw error;
+  }
+  const type = readWatchInputType(own);
+  if (!own.isSymbolicLink()) return [entry, type];
+
+  let linkTarget: string | undefined;
+  try {
+    linkTarget = fs.readlinkSync(file);
+  } catch (error) {
+    if (!isReadlinkTopologyRaceError(error)) throw error;
+  }
+  let realPath: string | undefined;
+  try {
+    realPath = fs.realpathSync(file);
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
+  }
+  let target: fs.BigIntStats | undefined;
+  try {
+    target = fs.statSync(file, { bigint: true });
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
+  }
+  return [
+    entry,
+    type,
+    `link:${linkTarget ?? "missing"}`,
+    `realpath:${realPath ?? "missing"}`,
+    `target:${target ? readWatchInputType(target) : "missing"}`,
+  ];
 }
 
 function createPollingReadCache(): PollingReadCache {
   return {
     directories: new Map(),
+    files: new Map(),
     lstats: new Map(),
     readlinks: new Map(),
     realpaths: new Map(),
@@ -1102,35 +1264,89 @@ async function readPollingSnapshotAsync(
   file: string,
   cache: PollingReadCache,
   isActive: () => boolean,
+  options: WatchInputSnapshotOptions,
 ): Promise<string | typeof POLLING_READ_CANCELLED> {
   if (!isActive()) return POLLING_READ_CANCELLED;
+  if (options.ignorePath?.(file)) return IGNORED_WATCH_INPUT_SNAPSHOT;
   const own = await readCachedLstat(file, cache);
   if (!isActive()) return POLLING_READ_CANCELLED;
-  if (!own) return readMissingPollingSnapshotAsync(file, cache, isActive);
+  if (!own) return readMissingWatchInputSnapshotAsync(file, cache, isActive);
 
-  const ownSnapshot = serializeStat(own);
   if (own.isDirectory()) {
-    const entries = await readDirectorySnapshotAsync(file, cache, isActive);
-    return entries === POLLING_READ_CANCELLED
-      ? entries
-      : `${ownSnapshot}|entries:${entries}`;
+    const snapshot = await readDirectoryTopologySnapshotAsync(
+      file,
+      cache,
+      isActive,
+      options,
+    );
+    if (snapshot === POLLING_READ_CANCELLED) return snapshot;
+    return (
+      snapshot ?? readMissingWatchInputSnapshotAsync(file, cache, isActive)
+    );
   }
-  if (!own.isSymbolicLink()) return ownSnapshot;
-  const target = await readCachedStat(file, cache);
-  if (!isActive()) return POLLING_READ_CANCELLED;
-  if (!target) return `${ownSnapshot}|target:missing`;
-  const entries = target.isDirectory()
-    ? await readDirectorySnapshotAsync(file, cache, isActive)
-    : undefined;
-  if (entries === POLLING_READ_CANCELLED) return entries;
-  return [
-    ownSnapshot,
-    `target:${serializeStat(target)}`,
-    ...(entries === undefined ? [] : [`entries:${entries}`]),
-  ].join("|");
+  if (own.isFile()) {
+    const contents = await readCachedFile(file, cache);
+    if (!isActive()) return POLLING_READ_CANCELLED;
+    const realPath = await readCachedRealpath(file, cache);
+    if (!isActive()) return POLLING_READ_CANCELLED;
+    return contents
+      ? serializeFileSnapshot(contents, realPath)
+      : readMissingWatchInputSnapshotAsync(file, cache, isActive);
+  }
+  if (!own.isSymbolicLink()) {
+    return serializeTypedInputSnapshot(readWatchInputType(own));
+  }
+  return readSymlinkWatchInputSnapshotAsync(file, cache, isActive, options);
 }
 
-async function readMissingPollingSnapshotAsync(
+async function readSymlinkWatchInputSnapshotAsync(
+  file: string,
+  cache: PollingReadCache,
+  isActive: () => boolean,
+  options: WatchInputSnapshotOptions,
+): Promise<string | typeof POLLING_READ_CANCELLED> {
+  const linkTarget = await readCachedReadlink(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  if (linkTarget === undefined) {
+    return readMissingWatchInputSnapshotAsync(file, cache, isActive);
+  }
+  const realPath = await readCachedRealpath(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  const target = await readCachedStat(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  if (!target) {
+    return serializeSymlinkSnapshot(linkTarget, realPath, undefined, "missing");
+  }
+
+  const targetType = readWatchInputType(target);
+  let targetSnapshot: string | typeof POLLING_READ_CANCELLED;
+  if (target.isDirectory()) {
+    targetSnapshot =
+      (await readDirectoryTopologySnapshotAsync(
+        file,
+        cache,
+        isActive,
+        options,
+      )) ?? "target:missing";
+  } else if (target.isFile()) {
+    const contents = await readCachedFile(file, cache);
+    if (!isActive()) return POLLING_READ_CANCELLED;
+    targetSnapshot = contents
+      ? serializeFileSnapshot(contents, realPath)
+      : "target:missing";
+  } else {
+    targetSnapshot = serializeTypedInputSnapshot(targetType);
+  }
+  if (targetSnapshot === POLLING_READ_CANCELLED) return targetSnapshot;
+  return serializeSymlinkSnapshot(
+    linkTarget,
+    realPath,
+    targetType,
+    targetSnapshot,
+  );
+}
+
+async function readMissingWatchInputSnapshotAsync(
   file: string,
   cache: PollingReadCache,
   isActive: () => boolean,
@@ -1151,7 +1367,7 @@ async function readMissingPollingSnapshotAsync(
         target = await readCachedStat(ancestor, cache);
         if (!isActive()) return POLLING_READ_CANCELLED;
       }
-      return serializeMissingPollingSnapshot(
+      return serializeMissingWatchInputSnapshot(
         ancestor,
         own,
         realPath,
@@ -1165,25 +1381,62 @@ async function readMissingPollingSnapshotAsync(
   }
 }
 
-async function readDirectorySnapshotAsync(
+async function readDirectoryTopologySnapshotAsync(
   directory: string,
   cache: PollingReadCache,
   isActive: () => boolean,
-): Promise<string | typeof POLLING_READ_CANCELLED> {
+  options: WatchInputSnapshotOptions,
+): Promise<string | undefined | typeof POLLING_READ_CANCELLED> {
   if (!isActive()) return POLLING_READ_CANCELLED;
   const entries = await readCachedDirectory(directory, cache);
   if (!isActive()) return POLLING_READ_CANCELLED;
-  if (!entries) return "missing";
+  if (!entries) return undefined;
+  const realPath = await readCachedRealpath(directory, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  if (!realPath) return undefined;
 
-  const snapshots: string[] = [];
+  const snapshots: DirectoryTopologyEntry[] = [];
   for (const entry of entries) {
     if (!isActive()) return POLLING_READ_CANCELLED;
-    const stat = await readCachedLstat(path.join(directory, entry), cache);
-    snapshots.push(
-      JSON.stringify([entry, stat ? serializeStat(stat) : "missing"]),
+    const file = path.join(directory, entry);
+    if (options.ignorePath?.(file)) continue;
+    const snapshot = await readDirectoryTopologyEntryAsync(
+      entry,
+      file,
+      cache,
+      isActive,
     );
+    if (snapshot === POLLING_READ_CANCELLED) return snapshot;
+    if (snapshot) snapshots.push(snapshot);
   }
-  return snapshots.join(",");
+  return serializeDirectorySnapshot(realPath, snapshots);
+}
+
+async function readDirectoryTopologyEntryAsync(
+  entry: string,
+  file: string,
+  cache: PollingReadCache,
+  isActive: () => boolean,
+): Promise<DirectoryTopologyEntry | undefined | typeof POLLING_READ_CANCELLED> {
+  const own = await readCachedLstat(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  if (!own) return undefined;
+  const type = readWatchInputType(own);
+  if (!own.isSymbolicLink()) return [entry, type];
+
+  const linkTarget = await readCachedReadlink(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  const realPath = await readCachedRealpath(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  const target = await readCachedStat(file, cache);
+  if (!isActive()) return POLLING_READ_CANCELLED;
+  return [
+    entry,
+    type,
+    `link:${linkTarget ?? "missing"}`,
+    `realpath:${realPath ?? "missing"}`,
+    `target:${target ? readWatchInputType(target) : "missing"}`,
+  ];
 }
 
 function readCachedLstat(
@@ -1215,6 +1468,20 @@ function readCachedStat(
       throw error;
     });
   cache.stats.set(file, pending);
+  return pending;
+}
+
+function readCachedFile(
+  file: string,
+  cache: PollingReadCache,
+): Promise<Buffer | undefined> {
+  const cached = cache.files.get(file);
+  if (cached) return cached;
+  const pending = fs.promises.readFile(file).catch((error: unknown) => {
+    if (isMissingPathError(error)) return undefined;
+    throw error;
+  });
+  cache.files.set(file, pending);
   return pending;
 }
 
@@ -1263,16 +1530,70 @@ function readCachedDirectory(
   return pending;
 }
 
-function serializeStat(stat: fs.BigIntStats): string {
-  return [
-    stat.dev,
-    stat.ino,
-    stat.mode,
-    stat.nlink,
-    stat.size,
-    stat.mtimeNs,
-    stat.ctimeNs,
-  ].join(":");
+function readFileContents(file: string): Buffer | undefined {
+  try {
+    return fs.readFileSync(file);
+  } catch (error) {
+    if (isMissingPathError(error)) return undefined;
+    throw error;
+  }
+}
+
+function readRealPath(file: string): string | undefined {
+  try {
+    return fs.realpathSync(file);
+  } catch (error) {
+    if (isMissingPathError(error)) return undefined;
+    throw error;
+  }
+}
+
+function readWatchInputType(stat: fs.BigIntStats): WatchInputType {
+  if (stat.isFile()) return "file";
+  if (stat.isDirectory()) return "directory";
+  if (stat.isSymbolicLink()) return "symlink";
+  if (stat.isBlockDevice()) return "block-device";
+  if (stat.isCharacterDevice()) return "character-device";
+  if (stat.isFIFO()) return "fifo";
+  if (stat.isSocket()) return "socket";
+  return "other";
+}
+
+function serializeFileSnapshot(
+  contents: Uint8Array,
+  realPath: string | undefined,
+): string {
+  return JSON.stringify([
+    "file",
+    `realpath:${realPath ?? "missing"}`,
+    createHash("sha256").update(contents).digest("hex"),
+  ]);
+}
+
+function serializeDirectorySnapshot(
+  realPath: string,
+  entries: readonly DirectoryTopologyEntry[],
+): string {
+  return JSON.stringify(["directory", `realpath:${realPath}`, entries]);
+}
+
+function serializeTypedInputSnapshot(type: WatchInputType): string {
+  return JSON.stringify(["type", type]);
+}
+
+function serializeSymlinkSnapshot(
+  linkTarget: string,
+  realPath: string | undefined,
+  targetType: WatchInputType | undefined,
+  targetSnapshot: string,
+): string {
+  return JSON.stringify([
+    "symlink",
+    `link:${linkTarget}`,
+    `realpath:${realPath ?? "missing"}`,
+    `target:${targetType ?? "missing"}`,
+    targetSnapshot,
+  ]);
 }
 
 function compareJsonValues(left: unknown, right: unknown): number {

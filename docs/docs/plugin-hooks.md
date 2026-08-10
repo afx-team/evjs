@@ -39,7 +39,7 @@ flowchart TB
   AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
   BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
   Link --> BuildOutput --> HTML --> BuildEnd
-  BuildEnd -. production end / server close / snapshot replacement .-> Dispose
+  BuildEnd -. production end / server close / Session replacement .-> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
@@ -72,11 +72,12 @@ Each `afterBuild()` hook receives an isolated snapshot of the canonical build
 result. Mutating that snapshot is local to the hook and cannot change the input
 seen by later hooks or deployment adapters.
 
-In dev, `beforeBuild()` and `afterBuild()` run as a pair for the initial output
-with `isRebuild: false`, then for every evjs-observable output cycle with
-`isRebuild: true`. `beforeBuild()` means fresh bundler facts are available and
-evjs is about to link and publish canonical output; it is not the underlying
-bundler's compile-start callback.
+In dev, `beforeBuild()` and `afterBuild()` run as a pair. The first successfully
+published output in each immutable Session uses `isRebuild: false`; later
+bundler/HMR output cycles in that same Session use `isRebuild: true`.
+`beforeBuild()` means fresh bundler facts are available and evjs is about to
+link and publish canonical output; it is not the underlying bundler's
+compile-start callback.
 
 Neither hook runs when bundling fails before producing fresh facts. If
 `beforeBuild()`, linking, an output transform, HTML emission, or publication
@@ -84,27 +85,39 @@ fails, `afterBuild()` does not run. `prepare` and `inspect` stage framework
 state without publishing output, so they trigger neither hook.
 
 `afterBuild()` is deliberately post-publication. If it fails, evjs reports the
-build or fail-stops the dev session, but it does not roll back canonical output
-or artifacts already emitted by earlier `afterBuild()` hooks.
+production build failure or fail-stops the owning development Session.
 
-`dispose()` runs at most once for each setup snapshot, in reverse plugin order,
-when a production build ends, a dev server closes, a config reload replaces
-the snapshot, or setup/initialization rolls back. It does not run after an
-ordinary dev rebuild.
+`dispose()` runs at most once for each plugin setup, in reverse plugin order,
+when a production build ends, a development Session closes or is replaced, or
+Session construction fails after plugins have initialized. It does not run
+after an ordinary bundler/HMR rebuild inside the same Session.
 
 The `setup()`, `emitIR()`, and `configureBundler()` contexts expose
 `addWatchFile()` for analysis/config dependencies. `BeforeBuildContext`
 deliberately does not; output, HTML, and disposal contexts do not either.
-Changing an analysis dependency reuses the committed config,
-Application options, and setup hooks, then reruns contributions and graph
-analysis. Read changing watched data inside `emitIR()` rather than
-caching it in `setup()`.
+`emitIR()` dependencies participate in write-free candidate preparation.
+`setup()` and `configureBundler()` dependencies are opaque constructor inputs
+whose content is included in the candidate semantic fingerprint. Read changing
+analysis data inside `emitIR()`; setup state remains fixed for its Session.
 
-`configureBundler()` context `addWatchFile()` registers an effective bundler-config
-dependency. Changing it stages a complete config and plugin snapshot before
-applying the resulting plan update. If the selected adapter cannot safely
-replace that configuration in place, the update fails closed with an explicit
-restart diagnostic instead of continuing with mixed or stale state.
+A real watched-input change asks the long-lived Supervisor to prepare config,
+the CoreGraph, BuildPlan, and generated IR in memory. Preparation runs neither
+build hook and leaves the current Session active if it fails. An unchanged
+semantic fingerprint is a no-op. A changed fingerprint closes the old Session
+and then constructs a replacement, rerunning plugin setup and
+`configureBundler()` against its fixed inputs. Adapters do not replace bundler
+config in place. Once replacement starts, plugin setup or adapter startup
+failure stops dev rather than combining old and new Session state.
+
+Descriptor-level `cliShortcuts()` follows the same Session boundary but is not
+a lifecycle hook or bundler/HMR cycle. When the shortcuts engine is enabled, a
+semantic no-op or candidate-preparation failure keeps the current terminal
+binding. For a replacement, the Supervisor detaches that binding before closing
+the old Session, collects contributions from the replacement Session's
+descriptors, and binds them only after its bundler controller supplies the
+actual client origin. A shortcut action's `PluginDevSession.close()` shuts down
+the whole Supervisor and `ev dev` run, not only its owning immutable Session. See
+[Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts).
 
 ## Build Output Ownership
 
@@ -211,6 +224,10 @@ override framework client/server output paths. Adapters validate those paths
 against the BuildPlan after hooks run, even when recursive cleaning is disabled.
 Any plugin-owned clean output must also stay inside the framework-owned
 `distDir` without overlapping client or server output.
+
+The resulting bundler config is immutable for one development Session. A
+watched plugin-config change is handled by Supervisor preparation and automatic
+Session replacement; adapter helpers do not need an in-place update path.
 
 Framework-owned client and server configs must also preserve their exact entry
 set and each entry's BuildPlan import after every hook. Use generated

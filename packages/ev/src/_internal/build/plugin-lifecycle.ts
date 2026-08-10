@@ -543,9 +543,9 @@ export async function runAfterBuildHooks<TBundlerCfg>(
 /**
  * Collect every plugin-contributed CLI shortcut, in plugin order.
  *
- * `cliShortcuts` is a descriptor-level contribution collected once per
- * resolved plugin snapshot. Shortcut `action` callbacks receive the live
- * {@link PluginDevSession} only when the key is later pressed.
+ * `cliShortcuts` is a descriptor-level contribution collected once from each
+ * immutable dev Session's fixed plugin set. Shortcut `action` callbacks
+ * receive the live {@link PluginDevSession} only when the key is later pressed.
  */
 export async function collectPluginCliShortcuts<TBundlerCfg>(
   plugins: readonly Plugin<TBundlerCfg>[],

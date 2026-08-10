@@ -12,15 +12,9 @@ export {
   type BundlerCapabilities,
   type BundlerCapability,
   type BundlerCapabilityGap,
-  type BundlerDevCapability,
   type BundlerDevContext,
   type BundlerDevController,
-  type BundlerDevGeneration,
-  type BundlerDevUpdateOptions,
-  type BundlerDevUpdateTransition,
   type BundlerEmittedFiles,
-  isArtifactOnlyBuildPlanUpdate,
-  isEmptyBuildPlanUpdate,
   resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
 } from "./bundler.js";
@@ -44,11 +38,19 @@ export {
 } from "./commands.js";
 export type { LoadConfigFileOptions } from "./config-module.js";
 export { loadConfigFile } from "./config-module.js";
+export type {
+  GeneratedIRImage,
+  GeneratedIRImageFile,
+  PreparedFrameworkIR,
+  PrepareFrameworkIROptions,
+} from "./generated-contributions.js";
 export {
   applyHtmlTagContributions,
   GENERATED_IR_DIR,
   GENERATED_IR_MANIFEST,
   materializeFrameworkIR,
+  prepareFrameworkIR,
+  publishFrameworkIR,
 } from "./generated-contributions.js";
 export type {
   CreateCoreGraphOptions,

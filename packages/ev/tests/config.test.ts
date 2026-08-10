@@ -149,13 +149,6 @@ declare module "../src/config/index.js" {
 
 const fullBundlerCapabilities = {
   build: { server: true, rsc: true, ppr: true },
-  dev: {
-    html: true,
-    entries: true,
-    routes: true,
-    server: true,
-    resolution: true,
-  },
 } as const;
 
 describe("config authoring", () => {
@@ -367,7 +360,11 @@ describe("config authoring", () => {
         return {};
       },
       async dev() {
-        return undefined;
+        return {
+          origin: "http://localhost",
+          done: Promise.resolve(),
+          async close() {},
+        };
       },
     };
     const plugin = customBundlerPlugin();
@@ -1112,7 +1109,7 @@ describe("resolveConfig", () => {
     }
   });
 
-  it("validates the full bundler capability matrix", () => {
+  it("validates bundler build capabilities", () => {
     const adapter = {
       name: "test",
       capabilities: fullBundlerCapabilities,
@@ -1144,6 +1141,17 @@ describe("resolveConfig", () => {
         } as never,
       }),
     ).toThrow("bundler.capabilities.build.rsc must be a boolean");
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          ...adapter,
+          capabilities: {
+            ...fullBundlerCapabilities,
+            dev: {},
+          },
+        } as never,
+      }),
+    ).toThrow("bundler.capabilities.dev is not supported");
   });
 
   it("accepts only the single plugin descriptor shape", () => {

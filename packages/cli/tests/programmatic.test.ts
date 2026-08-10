@@ -77,13 +77,6 @@ describe("programmatic API", () => {
       name: "mock",
       capabilities: {
         build: { server: true, rsc: true, ppr: true },
-        dev: {
-          html: true,
-          entries: true,
-          routes: true,
-          server: true,
-          resolution: true,
-        },
       },
       async build({ cwd: buildCwd, plan }) {
         events.push(`build:${buildCwd}:${plan.entries[0]?.name}`);
@@ -95,6 +88,11 @@ describe("programmatic API", () => {
       },
       async dev() {
         events.push("dev");
+        return {
+          origin: "http://localhost",
+          done: Promise.resolve(),
+          async close() {},
+        };
       },
     };
 
@@ -116,13 +114,6 @@ describe("programmatic API", () => {
       name: "custom",
       capabilities: {
         build: { server: true, rsc: true, ppr: true },
-        dev: {
-          html: true,
-          entries: true,
-          routes: true,
-          server: true,
-          resolution: true,
-        },
       },
       async build({ config }) {
         events.push(String(config.bundler?.name));
@@ -134,6 +125,11 @@ describe("programmatic API", () => {
       },
       async dev() {
         events.push("dev");
+        return {
+          origin: "http://localhost",
+          done: Promise.resolve(),
+          async close() {},
+        };
       },
     };
 

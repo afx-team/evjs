@@ -127,9 +127,6 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
     lines.push(
       `  bundler.build: ${formatCapabilities(result.bundler.capabilities.build)}`,
     );
-    lines.push(
-      `  bundler.dev: ${formatCapabilities(result.bundler.capabilities.dev)}`,
-    );
     for (const gap of result.bundler.gaps) {
       lines.push(`  bundler.gap: ${gap.capability} (${gap.reason})`);
     }

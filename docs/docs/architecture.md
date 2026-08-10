@@ -137,7 +137,10 @@ neither hook.
 
 The IR records generated modules, import edges, framework slots, and concrete
 entry facades. Bundler adapters compile those entries and return asset/build
-facts; they do not reconstruct route or rendering semantics.
+facts; they do not reconstruct route or rendering semantics. `.ev` is a
+disposable generated projection rather than source state. evjs prepares a
+complete image from authored inputs, so the directory can be deleted and
+regenerated directly by `ev prepare`, `ev build`, or `ev dev`.
 
 ## Output Contracts
 
@@ -210,16 +213,33 @@ framework config, `@evjs/plugin-qiankun` is registered as an optional plugin,
 and the CLI/scaffolder packages are invoked rather than imported by application
 source.
 
-## Development Updates
+## Development Sessions
 
 Normal component, style, and asset edits remain on the bundler HMR/watch path.
-Changes to config, Page anchors/config, layouts, boundaries, server-route
-anchors, middleware, or framework markers recreate the CoreGraph and
-BuildPlan. The plan diff tells the selected adapter whether it must update
-entries, HTML, resolution, server compilation, Documents, runtime data, or
-development routing.
+Framework-owned config, plugin inputs, Page/API declarations, and route
+topology are watched by a long-lived Supervisor. Generated `.ev`, route/plugin
+declaration files, and `dist` output are excluded from those inputs.
 
-Both built-in adapters handle generated/HTML-only plan updates. Entry, Route,
-server-topology, resolution, and bundler-config changes require an `ev dev`
-restart. `ev inspect --json` runs the same preflight analysis without invoking
-a bundler or writing generated output.
+When a real framework input changes, the Supervisor prepares a candidate
+revision without writing generated output or disturbing the active Session:
+
+```text
+watch input change
+  -> reload and analyze without writes
+  -> candidate CoreGraph + BuildPlan + generated IR
+  -> stable semantic fingerprint
+  -> keep the Session when equal
+  -> close old Session and start an immutable replacement when different
+```
+
+An immutable Session owns one config, graph, plan, plugin-hook set, generated
+IR image, and bundler controller. Adapters continue to own ordinary module HMR
+inside that Session; they are not asked to replace framework or bundler config
+in place.
+
+Candidate preparation failure leaves the current Session running and waits for
+another real input change before retrying. Once replacement starts, the old
+Session has already closed, so a publication, plugin setup, or adapter startup
+failure stops `ev dev` instead of mixing generations. Changing requested dev
+ports still requires restarting `ev dev`. `ev inspect --json` performs
+preflight analysis without invoking a bundler or writing generated output.

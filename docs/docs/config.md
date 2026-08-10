@@ -309,6 +309,7 @@ export default defineConfig({
   routing: { mode: "spa" },
   dev: {
     port: 4000,
+    cliShortcuts: true,
     proxy: [
       {
         context: ["/api"],
@@ -329,6 +330,14 @@ certificate instead of discarding it; select the Webpack adapter when custom
 client-dev certificates are required.
 `server.dev.https` accepts `false` or an explicit `{ key, cert }` object; the
 framework server does not synthesize a certificate for `true`.
+
+`dev.cliShortcuts` is a strict boolean that gates the interactive terminal
+shortcuts engine and defaults to `true`. Core does not add any keys; plugins
+declare them through descriptor-level `cliShortcuts()`. The engine remains a
+no-op in CI and non-TTY contexts. `ev dev --no-shortcuts` overrides the setting
+for the full run, including replacement Sessions. A watched config change to
+this setting otherwise takes effect through normal immutable Session
+replacement. See [Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts).
 
 ### Output
 
@@ -396,10 +405,12 @@ export default defineConfig({
 });
 ```
 
-Every adapter declares build capabilities for server rendering, RSC, and PPR,
-plus dev-plan update capabilities for HTML, entries, routes, server output, and
-resolution. `ev inspect` reports the selected adapter and any plan gaps; build
+Every adapter declares build capabilities for server rendering, RSC, and PPR.
+`ev inspect` reports the selected adapter and any build-capability gaps; build
 and dev fail before adapter execution when a required capability is missing.
+During development, adapters own ordinary module watch/HMR inside one immutable
+Session. A semantic framework-input change makes the Supervisor replace the
+complete Session; adapter inputs remain fixed for that Session's lifetime.
 
 ## Route Inputs
 

@@ -4,7 +4,7 @@ Webpack adapter used to validate the evjs graph / build plan / manifest contract
 
 The default evjs bundler is Utoopack. This package is the explicit
 validation/fallback adapter for plans that require its declared webpack build
-or development capabilities.
+capabilities.
 
 To switch a project to webpack, pass the adapter explicitly:
 
@@ -35,16 +35,19 @@ export default defineConfig({
 });
 ```
 
-Implemented build capabilities:
+Implemented capabilities:
 
 - production build through webpack;
 - dev mode through webpack-dev-server for client entries;
 - server watch builds for SSR/PPR/server runtime entries;
 - manifest and HTML relinking from `BuildPlan` + webpack stats;
-- generated/HTML-only dev plan updates without restarting the compiler;
 - framework-managed component pages, SSR, PPR, and RSC Page/Flight builds;
 - RSC request validation, renderer matching, Flight
   content-type validation, and defensive server error responses.
 
-Entry, Route, server-topology, resolution, or bundler-config changes require
-restarting `ev dev`; the adapter rejects those plan updates explicitly.
+Ordinary module edits stay on webpack watch/HMR inside one immutable Session.
+For semantic framework config, graph, plan, generated-IR, or bundler-config
+changes, the dev Supervisor closes that controller and starts a complete
+replacement Session. Framework and bundler inputs remain fixed for the
+controller's lifetime. Changing the requested dev ports still requires
+restarting `ev dev`.

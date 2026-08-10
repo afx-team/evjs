@@ -6,6 +6,26 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Immutable bundler development sessions** — Internal bundler adapters now
+  return a controller with `origin`, `done`, and idempotent `close()` instead of
+  implementing in-place framework plan transitions. Development callbacks are
+  scoped to one fixed config, plugin, graph, and plan snapshot.
+
+### 🐛 Bug Fixes
+
+- **Stable framework update recovery** — `ev dev` now keeps filesystem watching,
+  ports, and scheduling in a long-lived supervisor. Authored changes are
+  prepared without filesystem output and replace the active bundler session
+  only when their semantic fingerprint changes. Invalid or transient inputs
+  keep the last valid session and are retried only after another real input
+  change, preventing repeated manifest generation and restart-required loops.
+- **Disposable generated development IR** — Framework IR is rendered and
+  validated in memory, then rebuilt directly under canonical `.ev` after the
+  previous session closes. Whole-tree candidate, previous, restore, and system
+  temporary snapshots are no longer created.
+
 ---
 
 ## [0.3.6] — 2026-08-06

@@ -15,9 +15,12 @@
   deployment projection。
 - 插件可以拥有 namespaced Application、Page、Route 与 Document 数据，并挂载
   generated entry、wrapper、middleware、HTML、alias 与 external contribution。
+- 长生命周期 dev Supervisor 负责监听 framework input；config、graph、plan 或
+  generated IR 发生语义变化时，它会替换完整的 immutable Session。Bundler adapter
+  只负责 Session 内的普通 module watch/HMR。
 - 内置 Node、static 与 edge deployment adapter 消费链接后的输出模型。
 
-## Bundler 能力
+## Bundler 构建能力
 
 | 能力 | Utoopack | Webpack |
 | --- | --- | --- |
@@ -25,8 +28,6 @@
 | Server rendering build | 不支持 | 支持 |
 | RSC build | 不支持 | 支持 |
 | PPR build | 不支持 | 支持 |
-| Generated/HTML-only dev plan update | 支持 | 支持 |
-| Entry/Route/server/resolution dev plan update | 需要重启 | 需要重启 |
 
 Framework preflight 从选中的 adapter 读取这些声明；当 BuildPlan 需要未支持的构建
 能力时，会在调用 bundler 前失败。
@@ -34,8 +35,6 @@ Framework preflight 从选中的 adapter 读取这些声明；当 BuildPlan 需�
 ## Adapter 待补能力
 
 - Utoopack 用于 server rendering、PPR 与 RSC 的 build fact 和 entry API。
-- Entry、Route、server topology、module resolution 与 bundler config 的进程内
-  structural dev-plan update。
 
 已完成工作记录到 changelog；本页应始终与 adapter capability declaration 和聚焦
 测试保持一致。

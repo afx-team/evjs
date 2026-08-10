@@ -144,6 +144,10 @@ process-global function state. Bundlers compile those concrete entries. `.ev`,
 `src/route-types.d.ts`, `src/plugin-types.d.ts`, and `dist` are generated
 output and are not application source. The plugin declaration stays under
 `src` so normal application TypeScript programs consume its augmentation.
+`.ev` is a disposable projection of authored inputs: Core prepares a complete
+IR image in memory and publishes it only for the selected build or immutable
+development Session. It can be deleted and regenerated directly; recovery
+never depends on treating an older `.ev` tree as source state.
 
 ## Runtime And Deployment Contracts
 
@@ -172,17 +176,31 @@ Built-in adapters under `@evjs/ev/deployment` can additionally emit:
 - static hosting: `deployment.static.json` and `_redirects`;
 - edge: `deployment.edge.json` and, when needed, `worker.mjs`.
 
-## Development Updates
+## Development Supervision
 
 Normal component, style, and asset edits stay on the bundler HMR/watch path.
-Changes to config, Page anchors/config, layouts and boundaries, server-route
-anchors, middleware, or framework markers recreate the graph and plan.
-`diffBuildPlan()` classifies entry, HTML, resolution, runtime, server,
-Document, and dev-routing changes for `BundlerDevController.updatePlan()`.
+A long-lived Supervisor owns framework dependency watching, reserved ports,
+signals, and a sequence of immutable development Sessions. Each Session owns
+one fixed config, CoreGraph, BuildPlan, plugin-hook set, generated IR image,
+and bundler controller; adapters are never asked to replace those inputs in
+place.
 
-Both built-in adapters apply generated/HTML-only updates in process. Entry,
-route, server-topology, resolution, and bundler-config changes report that
-`ev dev` must restart.
+Framework watchers cover opaque config/plugin inputs, semantic analysis
+dependencies, and Page/API topology. They compare file content and stable
+directory topology, ignore generated output, and fall back from native events
+to polling when necessary. A real input change starts side-effect-free
+preparation: Core reloads inputs, analyzes the graph, creates a BuildPlan and
+generated IR image without writing them, and computes a stable semantic
+fingerprint that excludes volatile fields such as `buildId`.
+
+If the fingerprint is unchanged, the active Session remains in place. If it
+changes, the Supervisor closes the old Session completely, publishes the
+candidate generated image, and starts a new Session. Preparation failure keeps
+the old Session active and is retried only after another real input change.
+Once replacement begins, failure is fail-stop because the old Session has
+already released its resources; the next `ev dev` reconstructs `.ev` directly
+from authored inputs. Requested dev-port changes are not applied to a running
+Supervisor and still require a manual restart.
 
 ## Programmatic Preparation
 

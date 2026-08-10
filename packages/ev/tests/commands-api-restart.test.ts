@@ -9,125 +9,25 @@ import type {
   BundlerBuildFacts,
   BundlerBuildFactsDisposition,
   BundlerDevController,
-  BundlerDevUpdateTransition,
 } from "../src/_internal/build/bundler.js";
 import { dev } from "../src/_internal/build/commands.js";
-import type { Config } from "../src/config/index.js";
 
 const API_READY_MARKER = "__EVJS_API_READY__";
 const updateTimeoutMs = 10_000;
 
-type TestDevTransitionOutcome = "accept" | "rollback";
-
-function createTestDevController(
-  implementation: Omit<
-    BundlerDevController<Record<string, never>>,
-    "beginUpdate"
-  >,
-  hooks: {
-    onBegin?(): void | Promise<void>;
-    onPrepareFinalize?(): void | Promise<void>;
-    onFinalize?(): unknown;
-    onResume?(outcome: TestDevTransitionOutcome): void | Promise<void>;
-  } = {},
-): BundlerDevController<Record<string, never>> {
-  let active:
-    | {
-        outcome?: TestDevTransitionOutcome;
-        prepared: boolean;
-        resumed: boolean;
-        resumeFailed: boolean;
-        transition: BundlerDevUpdateTransition;
-      }
-    | undefined;
-
+function createTestDevController(): BundlerDevController {
+  let closed = false;
+  let resolveDone!: () => void;
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
   return {
-    ...implementation,
-    async beginUpdate() {
-      if (active) {
-        throw new Error("Test bundler received overlapping update boundaries.");
-      }
-      const transition: BundlerDevUpdateTransition = {
-        accept() {
-          select("accept");
-        },
-        rollback() {
-          select("rollback");
-        },
-        async resume() {
-          if (!active?.outcome) {
-            throw new Error(
-              "Test bundler resumed an update before selecting an outcome.",
-            );
-          }
-          if (active.resumed) {
-            throw new Error("Test bundler resumed an update outcome twice.");
-          }
-          const outcome = active.outcome;
-          try {
-            await hooks.onResume?.(outcome);
-            if (active) active.resumed = true;
-          } catch (error) {
-            if (active) active.resumeFailed = true;
-            throw error;
-          }
-        },
-        async prepareFinalize() {
-          if (!active?.resumed) {
-            throw new Error(
-              "Test bundler prepared finalization before a successful resume.",
-            );
-          }
-          await hooks.onPrepareFinalize?.();
-          if (active) active.prepared = true;
-        },
-        finalize() {
-          if (!active?.prepared) {
-            throw new Error(
-              "Test bundler finalized an update before successful preparation.",
-            );
-          }
-          const result = hooks.onFinalize?.();
-          active = undefined;
-          return result as undefined;
-        },
-      };
-      const select = (outcome: TestDevTransitionOutcome) => {
-        if (!active) {
-          throw new Error("Test bundler selected a settled update boundary.");
-        }
-        if (
-          active.outcome &&
-          !(
-            active.outcome === "accept" &&
-            outcome === "rollback" &&
-            (active.resumeFailed || active.resumed) &&
-            !active.prepared
-          )
-        ) {
-          throw new Error("Test bundler selected an update outcome twice.");
-        }
-        active.outcome = outcome;
-        active.prepared = false;
-        active.resumed = false;
-        active.resumeFailed = false;
-      };
-      active = {
-        prepared: false,
-        resumed: false,
-        resumeFailed: false,
-        transition,
-      };
-      await hooks.onBegin?.();
-      return transition;
-    },
-    async updatePlan(update, options) {
-      if (!active || options.transition !== active.transition) {
-        throw new Error(
-          "Test bundler updatePlan() did not receive its active transition.",
-        );
-      }
-      await implementation.updatePlan(update, options);
+    origin: "http://localhost:4123",
+    done,
+    async close() {
+      if (closed) return;
+      closed = true;
+      resolveDone();
     },
   };
 }
@@ -269,7 +169,7 @@ async function waitForEvent(events: string[], expected: string): Promise<void> {
   }
 }
 
-describe("dev API restart rollback", () => {
+describe("immutable dev API process coverage", () => {
   it("terminates a child that fails before reporting ready", async () => {
     const cwd = await createServerProject();
     const events: string[] = [];
@@ -283,24 +183,16 @@ describe("dev API restart rollback", () => {
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "api-readiness-failure",
-      capabilities: {
-        build: { server: true, rsc: true, ppr: true },
-        dev: {
-          html: true,
-          entries: true,
-          routes: true,
-          server: true,
-          resolution: true,
-        },
-      },
+      capabilities: { build: { server: true, rsc: true, ppr: true } },
       async build() {
         return {};
       },
-      async dev({ callbacks, generation, plan }) {
+      async dev({ callbacks, plan }) {
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(generation, facts, { isRebuild: false }),
+          callbacks.onBuildFacts(facts, { isRebuild: false }),
         );
-        await callbacks.onServerBundleReady(generation);
+        await callbacks.onServerBundleReady();
+        return createTestDevController();
       },
     };
 
@@ -318,118 +210,72 @@ describe("dev API restart rollback", () => {
     ]);
   });
 
-  it("restores the previous API after a plan-update restart fails", async () => {
+  it("replaces the API process after a rebuild in the same session", async () => {
     const cwd = await createServerProject();
-    const configFile = path.join(cwd, "ev.config.ts");
-    await writeFile(configFile, "export default {};");
     const events: string[] = [];
-    const processKinds = ["previous", "candidate", "restored"] as const;
+    const processKinds = ["initial", "rebuilt"] as const;
     let processIndex = 0;
     mockedExeca.state.spawn = () => {
       const id = processKinds[processIndex++];
       if (!id) throw new Error("Unexpected additional API process.");
       const child = createFakeApiProcess(id, events);
       events.push(`start:${id}`);
-      queueMicrotask(() => {
-        if (id === "candidate") child.reportAddressInUse();
-        else child.reportReady();
-      });
+      queueMicrotask(() => child.reportReady());
       return child;
     };
-    vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-    let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist/client", server: "dist/server" },
-    };
+    let rebuild: (() => Promise<void>) | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
-      name: "api-update-rollback",
-      capabilities: {
-        build: { server: true, rsc: true, ppr: true },
-        dev: {
-          html: true,
-          entries: true,
-          routes: true,
-          server: true,
-          resolution: true,
-        },
-      },
+      name: "api-session-rebuild",
+      capabilities: { build: { server: true, rsc: true, ppr: true } },
       async build() {
         return {};
       },
-      async dev({ callbacks, generation, plan }) {
-        let currentGeneration = generation;
+      async dev({ callbacks, plan }) {
         await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(currentGeneration, facts, {
-            isRebuild: false,
-          }),
+          callbacks.onBuildFacts(facts, { isRebuild: false }),
         );
-        await callbacks.onServerBundleReady(currentGeneration);
+        await callbacks.onServerBundleReady();
         events.push("initial-api-ready");
-        let selectedPlan = plan;
-        return createTestDevController(
-          {
-            async updatePlan(update, options) {
-              options.activate();
-              currentGeneration = options.generation;
-              selectedPlan = update.next;
-            },
-          },
-          {
-            async onResume(outcome) {
-              if (outcome === "rollback") {
-                currentGeneration = generation;
-                selectedPlan = plan;
-              }
-              await emitServerBuild(cwd, selectedPlan, (facts) =>
-                callbacks.onBuildFacts(currentGeneration, facts, {
-                  isRebuild: true,
-                }),
-              );
-              await callbacks.onServerBundleReady(currentGeneration);
-            },
-          },
-        );
+        rebuild = async () => {
+          await emitServerBuild(cwd, plan, (facts) =>
+            callbacks.onBuildFacts(facts, { isRebuild: true }),
+          );
+          await callbacks.onServerBundleReady();
+          events.push("rebuilt-api-ready");
+        };
+        return createTestDevController();
       },
     };
 
-    const running = dev(currentConfig, {
-      cwd,
-      bundler,
-      loadConfig() {
-        return currentConfig;
-      },
-    });
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
     await waitForEvent(events, "initial-api-ready");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    currentConfig = {
-      ...currentConfig,
-      dev: {
-        proxy: [{ context: ["/backend"], target: "https://example.com" }],
-      },
-    };
-    await writeFile(configFile, "export default { dev: {} }; // changed");
-    await waitForEvent(events, "ready:restored");
+    if (!rebuild) throw new Error("Expected a rebuild callback.");
+    await rebuild();
     process.emit("SIGINT");
 
     await Promise.race([
       running,
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("Dev API rollback timed out.")),
+          () => reject(new Error("Dev API shutdown timed out.")),
           updateTimeoutMs,
         ),
       ),
     ]);
 
     expect(events.filter((event) => event.startsWith("start:"))).toEqual([
-      "start:previous",
-      "start:candidate",
-      "start:restored",
+      "start:initial",
+      "start:rebuilt",
     ]);
-    expect(events).toContain("kill:candidate:SIGTERM");
-    expect(events.indexOf("kill:candidate:SIGTERM")).toBeLessThan(
-      events.indexOf("start:restored"),
+    expect(events.indexOf("kill:initial:SIGTERM")).toBeLessThan(
+      events.indexOf("start:rebuilt"),
     );
-    expect(events).toContain("kill:restored:SIGTERM");
+    expect(events).toContain("ready:rebuilt");
+    expect(events).toContain("rebuilt-api-ready");
+    expect(events).toContain("kill:rebuilt:SIGTERM");
   });
 });

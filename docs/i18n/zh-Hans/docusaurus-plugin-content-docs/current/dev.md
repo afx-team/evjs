@@ -23,9 +23,10 @@ ev dev
 evjs 会在输出就绪日志前把 SPA fallback 同步到实际监听地址，因此路由请求不会再落到仍监听
 原配置端口的其他应用。
 
-同一个项目目录同一时间只允许一个 dev session，也不能并发运行 `ev dev`、`ev prepare` 或
-`ev build`。竞争命令会显示当前 operation 与进程 ID 并立即退出，避免多个进程同时覆盖
-`.ev`、route type、`dist` 或部署产物。不同项目目录可以并行启动，evjs 会在进程间协调端口预留。
+同一个项目目录同一时间只允许一个 dev Supervisor，也不能并发运行 `ev dev`、`ev prepare`
+或 `ev build`。竞争命令会显示当前 operation 与进程 ID 并立即退出，避免多个进程同时覆盖
+`.ev`、route type、`dist` 或部署产物。不同项目目录可以并行启动，evjs 会在进程间协调
+端口预留。
 
 客户端和 API 开发服务器会监听 IPv4 地址，可以同时通过 `http://localhost:<port>` 和
 `http://127.0.0.1:<port>` 访问。启动日志显示 `Local` localhost URL
@@ -61,9 +62,11 @@ flowchart TB
     Rendering["SSR / PPR / RSC"]
   end
 
-  subgraph Updates["Framework updates"]
-    Files["src/pages/**/page.*\nsrc/apis/**/api.*\nev.config.ts"]
-    Plan["refresh CoreGraph\nand .ev plan"]
+  subgraph Updates["Framework Supervisor"]
+    Files["config + plugin 输入\nPage/API 声明 + topology"]
+    Prepare["无写入 candidate\nCoreGraph + BuildPlan + IR"]
+    Fingerprint["semantic fingerprint"]
+    Session["immutable Session\nplugins + bundler"]
   end
 
   Browser --> HTML
@@ -72,9 +75,10 @@ flowchart TB
   ServerSide --> Functions
   ServerSide --> Routes
   ServerSide --> Rendering
-  Files --> Plan
-  Plan --> ClientSide
-  Plan --> ServerSide
+  Files --> Prepare --> Fingerprint
+  Fingerprint -->|changed| Session
+  Session --> ClientSide
+  Session --> ServerSide
 
   classDef browser fill:#fff7ed,stroke:#fb923c,color:#7c2d12;
   classDef client fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
@@ -83,7 +87,7 @@ flowchart TB
   class Browser browser;
   class HTML,HMR,Proxy client;
   class Functions,Routes,Rendering server;
-  class Files,Plan update;
+  class Files,Prepare,Fingerprint,Session update;
 ```
 
 ## 配置
@@ -111,20 +115,20 @@ export default defineConfig({
 开发服务器会使用生成的页面应用入口。
 
 `dev.port` 和 `server.dev.port` 是首选端口，必须是 `1` 到 `65535` 之间的 TCP
-端口整数。如果端口不可用，当前 dev session 会使用附近的可用端口并输出变更信息。
+端口整数。如果端口不可用，当前 `ev dev` 运行会使用附近的可用端口并输出变更信息。
 自定义 `dev.proxy` 规则必须提供非空 `context` pathname pattern 数组，以及 absolute
 HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白字符、query string
 或 hash，并且同一条规则内不能重复。Target 不能包含首尾空白字符。使用
 `pathRewrite` 可以在转发到 target 前改写被代理的请求路径。
 
 自定义代理规则会先于服务端运行时路径的内置代理应用，因此应用自己的 API proxy 可以保留独立的路由行为。
+启动后修改任一请求端口都无法迁移当前已预留的端口组；需要重启 `ev dev` 才能应用。
 
-`dev.cliShortcuts` 控制交互式 CLI 键盘快捷键引擎。默认开启;设为
-`dev.cliShortcuts: false` 可关闭。该引擎复刻 Vite `bindCLIShortcuts`
-的机制(readline line 事件,单键 + `Enter`),但内置不提供任何快捷键 ——
-每个键都由插件 descriptor 顶层的 `cliShortcuts()` 贡献(见
-[插件 CLI 快捷键](#插件-cli-快捷键))。无论该选项如何,在 CI / 非 TTY 场景下
-引擎始终为 no-op。
+`dev.cliShortcuts` 控制交互式 CLI 键盘快捷键引擎，默认开启；设置
+`dev.cliShortcuts: false` 可以关闭。该引擎复刻 Vite `bindCLIShortcuts` 的机制
+（readline line 事件、单键 + `Enter`），但不内置任何快捷键；每个键都由插件 descriptor
+顶层的 `cliShortcuts()` 贡献（见[插件 CLI 快捷键](#插件-cli-快捷键)）。无论该选项如何，
+引擎在 CI 和非 TTY 场景下始终为 no-op。
 
 ```ts
 // ev.config.ts
@@ -135,7 +139,8 @@ export default defineConfig({
 });
 ```
 
-`ev dev --no-shortcuts` 可在不修改配置的情况下,单次运行关闭该引擎。
+`ev dev --no-shortcuts` 可以在不修改配置的情况下，为当前整次运行关闭该引擎，
+包括后续的 replacement Session。
 
 ## 请求流
 
@@ -143,22 +148,28 @@ export default defineConfig({
 2. 服务端函数、服务端文件路由、SSR、PPR 和 RSC 请求会进入服务端开发运行时。
 3. BuildPlan 中精确的 fn/RSC endpoint 与已启用的 PPR 子树会自动代理；
    `server.basePath` 自身不是代理 namespace。
-4. 文件变化时会触发浏览器和服务端重建，file-convention Page 与 API Route topology
-   也会动态发现。修改插件 identity 或端口，或者所选 bundler 提示无法动态应用 plan update
-   时，需要重启 `ev dev`。
+4. 普通模块修改继续走 bundler HMR。Framework 输入发生变化时，evjs 会先准备候选状态；
+   只有语义确实不同才自动启用新的 immutable Session。只有请求端口变化仍需手工重启
+   `ev dev`。
 
 Framework control plane 的依赖（例如配置文件及其项目内 import、Page 与 Route 声明，
-以及插件添加的监听文件）会共享原生目录 watcher。如果操作系统的原生 watcher 资源耗尽，`ev dev` 会输出警告，
-将受影响的 watcher 集合切换为依赖轮询，并让后续创建的 framework watcher 集合继续使用轮询。
-Bundler HMR 的监听仍由 adapter 自己负责。权限错误和其他未知 watcher 错误会在执行清理后
-终止 dev session，不会在监听覆盖不完整时继续运行。
+以及插件添加的监听文件）会共享原生目录 watcher。文件输入按内容比较；目录输入按稳定的
+path、type 与 symbolic-link topology 比较。同一快照产生的重复事件会被忽略，生成的 `.ev`、
+route/plugin 声明文件、`.evjs-*.tmp` 和 `dist` 路径也不会进入 framework watcher。
+操作系统的原生 watcher 资源耗尽时，`ev dev` 会输出警告并把 framework 监听切换为依赖轮询。
+Bundler HMR 监听仍由 adapter 自己负责。权限错误和其他未知 watcher 错误会在清理后停止 dev，
+不会在监听覆盖不完整时继续运行。
 
-Framework plan update 采用事务语义。evjs 会先保留 bundler generation，再修改生成的 `.ev`
-输入，并且只使用所选 generation 的新鲜 build facts 发布 canonical manifest 与 HTML。
-如果 analysis、plugin hook、link 或 output emission 失败，evjs 会先恢复上一份生成状态和
-canonical output，再恢复原 generation。Adapter 的收尾也有明确的提交边界：可能失败的
-finalization preparation 会在输出仍可恢复时执行；只有 Core 提交所选 canonical output 后，
-adapter 才会释放延迟的编译工作。
+Supervisor 的生命周期长于它启动的 immutable Session。真实 framework 输入变化后，evjs
+先在内存中创建候选 config、CoreGraph、BuildPlan 和 generated IR image；这个阶段不写
+framework output，也不干扰 active Session。随后通过稳定 semantic fingerprint 决策：指纹
+相同即为 no-op；指纹不同则先完整关闭旧 Session，再发布候选 IR 并启动替代 Session。
+
+如果候选 preparation 失败，例如已消费的 config/plugin dependency 暂时无效，或 Graph
+analysis 拒绝候选状态，旧 Session 仍会继续提供服务。evjs 会等待下一次真实输入变化，不会
+对同一个失败快照无限重试。Session 替换一旦开始，启动失败会 fail-stop：旧 Session 已释放
+plugin、server 与 bundler 资源，evjs 不会同时运行两代状态。`.ev` 是可丢弃的生成状态；
+后续 `ev dev` 会直接从 authored input 重建它。
 
 ## 编程式 API
 
@@ -185,8 +196,9 @@ await build(appConfig, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
 
 `bundler` option 和 `ev.config.ts` 中的 adapter 契约一致：必须包含非空 `name`、
-声明过的 build/dev `capabilities`，以及 `build` / `dev` 函数。启动 adapter 前，
-framework preflight 会对照 active BuildPlan 检查这些 capability。
+声明过的 build `capabilities`，以及 `build` / `dev` 函数。Dev adapter 使用一份 immutable
+context 启动，并返回包含实际 `origin`、`done` promise 与幂等 `close()` 的 controller。
+启动 adapter 前，framework preflight 会对照 active BuildPlan 检查 build capability。
 
 `@evjs/cli` 也导出 programmatic helper，会自动注入默认的 Utoopack 适配器，与 `ev dev`
 和 `ev build` 命令保持一致。
@@ -196,17 +208,18 @@ framework preflight 会对照 active BuildPlan 检查这些 capability。
 或默认的 `loadConfig` 替换启动 config。若只希望自定义 `loadConfig` 用于后续监听重载，可以
 同时设置 `reloadInitialConfig: false`。
 
-programmatic 选项 `cliShortcuts` 可覆盖 `dev.cliShortcuts`:传 `false`
-即可无视 `ev.config.ts` 关闭交互式快捷键引擎(等价于 `ev dev --no-shortcuts`)。
-省略时以配置文件为准(默认开启)。
+programmatic 选项 `cliShortcuts` 可以覆盖 `dev.cliShortcuts`：传入 `false` 即可忽略
+`ev.config.ts` 并关闭交互式快捷键引擎，等价于 `ev dev --no-shortcuts`。省略时以配置文件
+为准，默认开启。该 override 在 Supervisor 的整个生命周期内保持固定，也适用于每个
+replacement Session。
 
 ## 插件 CLI 快捷键
 
-当 `ev dev` 运行于 TTY(且不在 `CI` 下)时,插件可注册交互式键盘快捷键。Core
-**不内置任何快捷键** —— 每个键(包括 `h` 帮助)均由插件贡献。该机制复刻 Vite
-`bindCLIShortcuts`(单键 + `Enter`,并发的按键会被丢弃),但把 action 集合留给生态。
+当 `ev dev` 运行于 TTY 且不在 `CI` 下时，插件可以注册交互式键盘快捷键。Core
+**不内置任何快捷键**；每个键（包括用于帮助的 `h`）都由插件贡献。该机制复刻 Vite
+`bindCLIShortcuts`（单键 + `Enter`，并发按键会被丢弃），但把 action 集合留给生态。
 
-在插件 descriptor 顶层声明快捷键:
+在插件 descriptor 顶层声明快捷键：
 
 ```ts
 // ev.config.ts
@@ -238,23 +251,35 @@ const shortcutsPlugin = definePlugin({
 export default defineConfig({ plugins: [shortcutsPlugin()] });
 ```
 
-`cliShortcuts()` 返回 `PluginCliShortcut[]`。evjs 会为每个 resolved plugin snapshot
-收集一次；它是声明式 contribution，不是 `setup()` lifecycle event。由于它不依赖 hooks
-对象 identity，普通 setup hooks 在其他条件允许时可以复用。Shortcut action 不应依赖
-`setup()` 内创建的私有资源。
+`cliShortcuts()` 返回
+`readonly PluginCliShortcut[] | Promise<readonly PluginCliShortcut[]>`。引擎启用时，每个
+immutable Session 固定拥有一组 resolved plugin 和一组快捷键；evjs 在构造该 Session 时
+收集一次 descriptor contribution。它是声明式 contribution，不是 `setup()` lifecycle
+event。Session replacement 会重新运行 plugin setup；引擎仍启用时，还会收集新的快捷键
+集合。同一 Session 内的普通 bundler/HMR cycle 不会执行这两项操作。Shortcut action
+不应依赖 `setup()` 内创建的私有资源。
 
-首个为某个 key 注册快捷键的插件拥有该 key(后续重复会被丢弃)。每个 `action` 会收到实时的
-`PluginDevSession`:
+`key` 必须是单个非空白字符，`description` 必须是非空字符串。输入匹配会去除首尾空白，
+并且不区分大小写。按照 resolved plugin 顺序，首个注册某个 key 的插件拥有该 key，后续重复
+会被丢弃。可以省略 `action`，仅保留 key 和 description。插件 contribution 被拒绝或无效时，
+evjs 会输出 warning 并忽略它。Action 执行期间的并发输入会被丢弃；action 失败只记录日志，
+不会停止 dev 或输入循环。
+
+每个 `action` 都会收到实时的 `PluginDevSession`：
 
 - `origin: string` —— 客户端 dev server URL(`http(s)://localhost:<port>`)。
-- `close()` —— 触发 dev 关闭(等价于 `Ctrl-C`)。
+- `close(): Promise<void>` —— 关闭整个 Supervisor 和本次 `ev dev` 运行（等价于
+  `Ctrl-C`），而不是只关闭当前 immutable Session。
 
-Core 刻意只暴露 `origin` 与 `close()`;更丰富的 action(重启、reload、profiling
-等)由插件基于这些原语加自身工具实现,而非由 core 提供。需要帮助列表的插件可
-自行注册 `h`,读取它已知的快捷键描述。
+Core 刻意只暴露 `origin` 与 `close()`；更丰富的 action（重启、reload、profiling 等）
+由插件基于这些原语和自己的工具实现，而不是由 Core 提供。需要帮助列表的插件可以自行注册
+`h`，读取它已知的快捷键描述。
 
-该引擎与 bundler 解耦：所选 Node CLI dev adapter 报告 client origin 后即可绑定。
-两个内置 adapter 都支持该 callback，且不要求存在 server/API 子进程。
+Supervisor 持有 terminal binding。Immutable Session 启动后，其 bundler controller 会提供
+实际 client `origin`，随后 Supervisor 绑定该 Session 的快捷键集合。Semantic no-op 或候选
+preparation 失败会保留当前 binding。Session replacement 会在关闭旧 Session 前解绑旧集合，
+并且只在替代 Session 成功启动后绑定新集合；替代 Session 启动失败遵循正常的 fail-stop 规则。
+该机制与 bundler 解耦，也不要求存在 server/API 子进程。
 
 ## 传输层
 

@@ -20,9 +20,12 @@ active architecture boundaries that are enforced by the current code.
 - One plugin model covers independent Application and Page options; generated
   IR contributions cover entry, wrapper, middleware, HTML, alias, and external
   slots.
+- A long-lived dev Supervisor owns framework-input watching and replaces a
+  complete immutable Session for semantic config, graph, plan, or generated-IR
+  changes. Bundler adapters own ordinary module watch/HMR inside a Session.
 - Node, static, and edge deployment adapters consume the linked output model.
 
-## Bundler Capability Matrix
+## Bundler Build Capability Matrix
 
 The adapters declare these capabilities in code and framework preflight
 enforces them:
@@ -33,14 +36,10 @@ enforces them:
 | Server rendering build | No | Yes |
 | RSC build | No | Yes |
 | PPR build | No | Yes |
-| Generated/HTML-only dev plan update | Yes | Yes |
-| Entry/Route/server/resolution dev plan update | Restart required | Restart required |
 
 ## Open Adapter Gaps
 
 - Utoopack build facts and entry APIs for server rendering, PPR, and RSC.
-- In-process structural dev-plan updates for entries, Routes, server topology,
-  module resolution, and bundler configuration.
 
 These gaps should be closed by changing adapter capabilities and their focused
 tests together. User-facing docs should describe the declared capability

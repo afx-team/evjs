@@ -4,11 +4,18 @@
 以及插件扩展的框架阶段。应用通过 `config.plugins` 使用返回的工厂。
 
 插件开发模型只有三层：`pluginOptions()` 声明插件持有的 Application 或 Page 数据；
-`configure()`、`emitIR()` 等 descriptor 方法参与框架规划；`setup()` 返回命令式
-lifecycle hooks。同一项行为只应属于其中一层。
-这三层描述的是职责，并非三个相邻的时间段：`configure()` 早于 `setup()` 执行，而
-`emitIR()` 会在之后的 graph planning 中执行。Descriptor 方法不能出现在
-`setup()` 返回值中，lifecycle hook 也不能直接写在 descriptor 上。
+descriptor 方法声明 framework planning 或 dev CLI contribution；`setup()` 返回命令式
+lifecycle hook。同一项行为只应属于其中一层。这三层描述的是职责，并非三个相邻的时间段：
+`configure()` 早于 `setup()` 执行，`emitIR()` 在 graph planning 期间执行，
+快捷键引擎启用时，`cliShortcuts()` 会为每个 immutable development Session 收集一次。
+Descriptor 方法不能出现在 `setup()` 返回值中，lifecycle hook 也不能直接写在
+descriptor 上。
+
+`cliShortcuts()` 独立于 setup state 声明 terminal key 和 action。Session replacement
+会重新运行 plugin setup；引擎启用时，还会收集新的快捷键集合。同一 Session 内的普通
+bundler/HMR cycle 不会执行这两项操作。Shortcut action 只会收到当前 client origin，
+以及关闭整个 dev Supervisor 的能力。Descriptor 和 action 合同见
+[插件 CLI 快捷键](./dev#插件-cli-快捷键)。
 
 ## 定义最小插件
 
@@ -244,6 +251,7 @@ Setup context 提供 `mode`、`cwd`、resolved `config`、`logger`、
 | 需求 | API |
 |---|---|
 | 在 discovery 前修改框架配置 | `configure()` |
+| 声明交互式 dev CLI key 和 action | `cliShortcuts()` |
 | 初始化共享状态 | `setup()` |
 | 执行 build lifecycle 行为 | `setup()` 返回的 hooks |
 | 生成模块或挂载结构化行为 | `emitIR()` 或 `emitPageIR()` |

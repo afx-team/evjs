@@ -573,19 +573,16 @@ describe("inspect", () => {
       name: "limited",
       capabilities: {
         build: { server: false, rsc: false, ppr: false },
-        dev: {
-          html: true,
-          entries: false,
-          routes: false,
-          server: false,
-          resolution: false,
-        },
       },
       async build() {
         return {};
       },
       async dev() {
-        return undefined;
+        return {
+          origin: "http://localhost",
+          done: Promise.resolve(),
+          async close() {},
+        };
       },
     };
 
@@ -600,9 +597,7 @@ describe("inspect", () => {
     const text = formatInspectText(result);
     expect(text).toContain("bundler: limited");
     expect(text).toContain("bundler.build: server=no, rsc=no, ppr=no");
-    expect(text).toContain(
-      "bundler.dev: html=yes, entries=no, routes=no, server=no, resolution=no",
-    );
+    expect(text).not.toContain("bundler.dev:");
     expect(text).toContain("bundler.gap: build.server");
     expect(result.bundler?.gaps).toEqual([
       expect.objectContaining({ capability: "build.server" }),

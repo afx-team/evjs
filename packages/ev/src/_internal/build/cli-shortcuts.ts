@@ -8,8 +8,9 @@
  * `actionRunning` guard that drops concurrent presses, and a TTY + non-CI
  * no-op default) but is bundler-agnostic and owns no default keys.
  *
- * The engine is bundler-agnostic and binds only when a dev adapter reports a
- * ready origin. Pass an explicit `enabled` to force-enable in non-TTY tests.
+ * The engine is bundler-agnostic and binds only after the Supervisor has an
+ * active immutable Session and its controller origin. Pass an explicit
+ * `enabled` to force-enable in non-TTY tests.
  *
  * @see package "vite" `packages/vite/src/node/shortcuts.ts` (mechanical reference)
  */
