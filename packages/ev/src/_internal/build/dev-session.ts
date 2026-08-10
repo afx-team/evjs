@@ -350,7 +350,7 @@ export async function startDevSession<TBundlerCfg>(
 function formatDevServerReady(
   origin: string,
   config: Pick<ResolvedFrameworkConfig, "routing">,
-  plan: Pick<BuildPlan, "html">,
+  plan: Pick<BuildPlan, "html" | "server">,
 ): string {
   const pageUrls = formatDevPageUrls(origin, config, plan);
   const lines = ["App listening at:", ...formatDevServerAddresses(origin)];
@@ -380,10 +380,10 @@ function formatDevServerAddresses(origin: string): string[] {
   return addresses;
 }
 
-function formatDevPageUrls(
+export function formatDevPageUrls(
   origin: string,
   config: Pick<ResolvedFrameworkConfig, "routing">,
-  plan: Pick<BuildPlan, "html">,
+  plan: Pick<BuildPlan, "html" | "server">,
 ): Array<{ pageId: string; url: string }> | undefined {
   if (config.routing?.mode !== "mpa") return undefined;
 
@@ -396,7 +396,16 @@ function formatDevPageUrls(
   });
   for (const route of config.routing.routes) {
     if (route.kind === "layout" || htmlPageIds.has(route.id)) continue;
-    pageUrls.push({ pageId: route.id, url: formatDevUrl(origin, route.path) });
+    const serverDocument = plan.server.documents?.find(
+      (document) => document.pageId === route.id,
+    );
+    pageUrls.push({
+      pageId: route.id,
+      url: formatDevUrl(
+        origin,
+        serverDocument ? `/${serverDocument.fileName}` : route.path,
+      ),
+    });
   }
   return pageUrls.length > 0 ? pageUrls : undefined;
 }

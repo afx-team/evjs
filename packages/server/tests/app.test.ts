@@ -25,6 +25,10 @@ type SpaFrameworkRuntime = FrameworkRuntime & {
   routing: Extract<FrameworkRuntime["routing"], { kind: "spa" }>;
 };
 
+type MpaFrameworkRuntime = FrameworkRuntime & {
+  routing: Extract<FrameworkRuntime["routing"], { kind: "mpa" }>;
+};
+
 describe("createApp", () => {
   let serverFunctions: ServerFunctionRegistry;
 
@@ -1097,6 +1101,64 @@ describe("createApp", () => {
     expect(await res.text()).toBe("<h1>dashboard:ssr</h1>");
   });
 
+  it("routes MPA Document URLs without exposing their semantic Page routes", async () => {
+    const manifest = createMpaManifest();
+    manifest.routing.pages.index = {
+      ...manifest.routing.pages.dashboard,
+      path: "/",
+      routeId: "index",
+    };
+    manifest.routing.pages.about = {
+      ...manifest.routing.pages.dashboard,
+      path: "/about",
+      routeId: "about",
+    };
+    delete manifest.routing.pages.dashboard;
+    manifest.server = {};
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render(ctx) {
+          return `<h1>${ctx.pageId}:${ctx.route?.path}</h1>`;
+        },
+      },
+    });
+
+    const rootDocument = await app.request("/index.html");
+    const aboutDocument = await app.request("/about.html");
+    const rootRoute = await app.request("/");
+    const aboutRoute = await app.request("/about");
+
+    expect(rootDocument.status).toBe(200);
+    await expect(rootDocument.text()).resolves.toBe("<h1>index:/</h1>");
+    expect(aboutDocument.status).toBe(200);
+    await expect(aboutDocument.text()).resolves.toBe("<h1>about:/about</h1>");
+    expect(rootRoute.status).toBe(404);
+    expect(aboutRoute.status).toBe(404);
+  });
+
+  it("prefers a real MPA .html semantic route over Document fallback", async () => {
+    const manifest = createMpaManifest();
+    manifest.routing.pages.literal = {
+      ...manifest.routing.pages.dashboard,
+      path: "/dashboard.html",
+      routeId: "literal",
+    };
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render(ctx) {
+          return `<h1>${ctx.pageId}</h1>`;
+        },
+      },
+    });
+
+    const response = await app.request("/dashboard.html");
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("<h1>literal</h1>");
+  });
+
   it("matches framework pages without collapsing empty path segments", async () => {
     const manifest = createManifest();
     const render = vi.fn(() => "<h1>dashboard</h1>");
@@ -1837,6 +1899,46 @@ describe("createApp", () => {
       'PPR region request url is required for page "order"',
     );
     expect(renderCount).toBe(2);
+  });
+
+  it("accepts MPA Document URLs for direct PPR region requests", async () => {
+    const spaManifest = createManifest();
+    spaManifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+        },
+      },
+    };
+    configurePprRendering(spaManifest);
+    const manifest = createMpaManifest(spaManifest);
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: (ctx: ServerRenderContext) =>
+                  new URL(ctx.pageUrl ?? "https://example.com/").pathname,
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const response = await app.request(
+      "/__evjs/ppr/dashboard/hero?url=%2Fdashboard.html",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("/dashboard.html");
   });
 
   it("leaves PPR page responses with non-html media types unchanged", async () => {
@@ -4628,6 +4730,29 @@ describe("createApp", () => {
     );
   });
 
+  it("accepts MPA Document URLs for RSC Flight page validation", async () => {
+    const spaManifest = createManifest();
+    configureRscManifest(spaManifest);
+    const manifest = createMpaManifest(spaManifest);
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        rsc(ctx) {
+          return new Response(new URL(ctx.pageUrl ?? "about:blank").pathname, {
+            headers: { "Content-Type": "text/x-component" },
+          });
+        },
+      },
+    });
+
+    const response = await app.request(
+      "/__evjs/rsc?page=dashboard&url=%2Fdashboard.html",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("/dashboard.html");
+  });
+
   it("accepts RSC Flight page urls that match dynamic page routes", async () => {
     const manifest = createManifest();
     configureRscManifest(manifest);
@@ -4805,6 +4930,32 @@ function createManifest(): SpaFrameworkRuntime {
           assets: { js: ["dashboard-server.js"], css: [] },
         },
       },
+    },
+  };
+}
+
+function createMpaManifest(
+  manifest: SpaFrameworkRuntime = createManifest(),
+): MpaFrameworkRuntime {
+  const pages = Object.fromEntries(
+    Object.entries(manifest.routing.pages).map(([pageId, page]) => {
+      const route = manifest.routing.routes.find(
+        (candidate) => candidate.pageId === pageId,
+      );
+      return [
+        pageId,
+        {
+          ...page,
+          ...(route ? { path: route.path, routeId: route.id } : {}),
+        },
+      ];
+    }),
+  );
+  return {
+    ...manifest,
+    routing: {
+      kind: "mpa",
+      pages,
     },
   };
 }

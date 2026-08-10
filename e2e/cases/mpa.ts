@@ -104,7 +104,7 @@ test.describe("mpa", () => {
 
     await page.getByRole("link", { name: "Go to About page" }).click();
 
-    await expect(page).toHaveURL(`${baseURL}/about`);
+    await expect(page).toHaveURL(`${baseURL}/about.html`);
     await expect(page.getByRole("heading", { name: "About Page" })).toBeVisible(
       {
         timeout: 10_000,
@@ -133,7 +133,7 @@ test.describe("mpa", () => {
     );
 
     const aboutHtml = fs.readFileSync(
-      path.join(publicDir, "about", "index.html"),
+      path.join(publicDir, "about.html"),
       "utf-8",
     );
     expect(aboutHtml).toContain("<title>evjs MPA About</title>");
@@ -153,7 +153,7 @@ test.describe("mpa", () => {
         expect.objectContaining({
           kind: "page",
           id: "about",
-          fileName: "about/index.html",
+          fileName: "about.html",
           assets: expect.objectContaining({
             js: expect.arrayContaining([expect.stringMatching(/about.*\.js$/)]),
             css: expect.any(Array),

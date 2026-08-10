@@ -506,7 +506,7 @@ describe("inspect", () => {
         "export default function About() { return null; }",
       "src/pages/about/page.config.ts": `
         export default {
-          document: { aliases: ["about.html", "legacy/about.htm"] },
+          document: { aliases: ["about-alias.html", "legacy/about.htm"] },
         };
       `,
     });
@@ -518,22 +518,22 @@ describe("inspect", () => {
     );
 
     expect(result.graph.documents.about?.aliases).toEqual([
-      "about.html",
+      "about-alias.html",
       "legacy/about.htm",
     ]);
     expect(result.buildPlan?.html).toEqual([
       expect.objectContaining({
         id: "about",
-        fileName: "about/index.html",
-        aliases: ["about.html", "legacy/about.htm"],
+        fileName: "about.html",
+        aliases: ["about-alias.html", "legacy/about.htm"],
       }),
     ]);
     expect(formatInspectText(result)).toContain(
-      "about: about/index.html (aliases: about.html, legacy/about.htm)",
+      "about: about.html (aliases: about-alias.html, legacy/about.htm)",
     );
     const json = JSON.parse(formatInspectJson(result));
     expect(json.buildPlan.html[0].aliases).toEqual([
-      "about.html",
+      "about-alias.html",
       "legacy/about.htm",
     ]);
   });

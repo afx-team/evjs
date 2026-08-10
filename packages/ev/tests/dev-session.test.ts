@@ -8,7 +8,10 @@ import type {
   BundlerDevController,
 } from "../src/_internal/build/bundler.js";
 import { withActiveBundler } from "../src/_internal/build/bundler-config.js";
-import { startDevSession } from "../src/_internal/build/dev-session.js";
+import {
+  formatDevPageUrls,
+  startDevSession,
+} from "../src/_internal/build/dev-session.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
 import { createBuildPlan } from "../src/_internal/build/plan/index.js";
 import { resolveConfig } from "../src/config/index.js";
@@ -117,6 +120,38 @@ afterEach(async () => {
 });
 
 describe("immutable dev session", () => {
+  it("formats server-rendered MPA Pages with their Document URLs", async () => {
+    const cwd = await createProject();
+    const controlled = createControlledBundler();
+    const input = await createSessionInput(cwd, controlled.adapter);
+    input.config.routing = {
+      mode: "mpa",
+      html: "./index.html",
+      mount: "#app",
+      routes: [
+        {
+          id: "report",
+          path: "/report",
+          module: "./src/pages/report/page.tsx",
+        },
+      ],
+    };
+    input.plan.server.documents = [
+      {
+        pageId: "report",
+        documentId: "report",
+        applicationId: "default",
+        template: "./index.html",
+        fileName: "report.html",
+        mount: "#app",
+      },
+    ];
+
+    expect(
+      formatDevPageUrls("http://localhost:3000", input.config, input.plan),
+    ).toEqual([{ pageId: "report", url: "http://localhost:3000/report.html" }]);
+  });
+
   it("discards old build facts that arrive after a replacement session starts", async () => {
     const cwd = await createProject();
     const controlled = createControlledBundler();

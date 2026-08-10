@@ -76,6 +76,10 @@ export default defineConfig({
 });
 ```
 
+The semantic Page routes remain `/`, `/about`, and `/foo/bar`. MPA exposes
+their Documents at `/index.html`, `/about.html`, and `/foo/bar.html` for both
+static output and request-time rendering.
+
 ## Convention Discovery Boundary
 
 The top-level `conventions: false` switch disables the framework-owned

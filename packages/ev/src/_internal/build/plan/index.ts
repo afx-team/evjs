@@ -29,7 +29,7 @@ import {
   SERVER_RUNTIME_BUILD_ENTRY_NAME,
 } from "../build-entry-conventions.js";
 import { assertFrameworkOutputOwnership } from "../output-path-conventions.js";
-import { createStaticPageDocumentOutput } from "../page-document-output.js";
+import { createRouteIndexDocumentOutput } from "../page-document-output.js";
 import {
   isPartialPrerenderPage,
   isRscPage,
@@ -445,12 +445,26 @@ function createDevClientRoutes(
 function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
   const paths = graph.routes.flatMap((route) => {
     if (route.target.kind !== "page") return [];
-    const page = graph.pages[route.target.pageId];
+    const pageId = route.target.pageId;
+    const page = graph.pages[pageId];
     // Full SSG renderers run only while emitting HTML. Their canonical route
     // must stay on the static dev host instead of being proxied to the server.
-    return page?.render === "ssr"
-      ? [formatCoreRoutePattern(route.pattern)]
-      : [];
+    if (page?.render !== "ssr") return [];
+
+    const application = graph.applications[route.applicationId];
+    if (application?.routingMode !== "mpa") {
+      return [formatCoreRoutePattern(route.pattern)];
+    }
+    const document = Object.values(graph.documents).find(
+      (candidate) =>
+        candidate.owner.kind === "page" && candidate.owner.pageId === pageId,
+    );
+    if (!document) {
+      throw new Error(
+        `[evjs] Server-rendered MPA Page "${pageId}" must own one HTML Document.`,
+      );
+    }
+    return [`/${document.output}`];
   });
   return [...new Set(paths)];
 }
@@ -938,7 +952,7 @@ function requirePageDocumentId(page: BuildPageFacts): string {
 function resolvePageDocumentOutput(page: BuildPageFacts): string {
   if (page.output) return page.output;
   const output = page.routePath
-    ? createStaticPageDocumentOutput(page.routePath)
+    ? createRouteIndexDocumentOutput(page.routePath)
     : undefined;
   if (page.render === "ssg" && output) return output;
   throw new Error(
@@ -1014,7 +1028,7 @@ function shouldEmitDocumentForPage(page: BuildPageFacts): boolean {
 }
 
 function isStaticPagePath(pathname: string): boolean {
-  return createStaticPageDocumentOutput(pathname) !== undefined;
+  return createRouteIndexDocumentOutput(pathname) !== undefined;
 }
 
 function createServerPlan(

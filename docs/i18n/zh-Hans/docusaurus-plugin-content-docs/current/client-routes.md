@@ -240,7 +240,9 @@ MPA 发现相同的 Page 与语义 route pattern，再物化 Page-owned Document
 浏览器 router。它只接受静态 Page path；`$param`、终止 `$...splat` 与
 router-only boundary 会在 graph 校验失败。Layout 在两种 mode 中都会为 Page
 组合。`ev inspect` 和 `ev build` 会拒绝不支持的组合，而不是要求应用改用第二套
-路由模型。同一 Page 目录的 `index.html` 可以作为该 MPA Page 的 Document 模板。
+路由模型。语义 route 仍是 `/`、`/report` 与 `/foo/bar`，对应的 MPA Document
+URL 则是 `/index.html`、`/report.html` 与 `/foo/bar.html`。同一 Page 目录的
+`index.html` 可以作为该 MPA Page 的 Document 模板。
 
 ## Page 配置
 

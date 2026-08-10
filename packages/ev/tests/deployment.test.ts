@@ -6,7 +6,7 @@ import type { BuildOutput } from "@evjs/shared/manifest";
 import { assertFrameworkManifestShape } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBuildResult } from "../src/_internal/build/build-result.js";
-import { createStaticPageDocumentOutput } from "../src/_internal/build/page-document-output.js";
+import { createRouteIndexDocumentOutput } from "../src/_internal/build/page-document-output.js";
 import {
   createLatePluginContext,
   runAfterBuildHooks,
@@ -777,7 +777,7 @@ describe("createDeploymentArtifact", () => {
       throw new Error("Expected the static pricing fixture route.");
     }
     page.path = "/%75sers";
-    const plannedFileName = createStaticPageDocumentOutput(page.path);
+    const plannedFileName = createRouteIndexDocumentOutput(page.path);
     if (!plannedFileName) throw new Error("Expected a static document output.");
     page.document.fileName = plannedFileName;
     expect(page.document.fileName).toBe("%75sers/index.html");
