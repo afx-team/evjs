@@ -933,7 +933,7 @@ describe("page.config modules", () => {
     {
       label: "a legacy namespaced plugin id",
       source: 'export default { plugins: { "@company/feature": true } };',
-      message: /must be a lowercase plugin id/,
+      message: /must be a lower camel case or lowercase kebab-case plugin id/,
     },
     {
       label: "an invalid Page plugin setting",

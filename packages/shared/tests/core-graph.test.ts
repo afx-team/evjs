@@ -27,7 +27,9 @@ describe("assertPluginId", () => {
     "com10",
     "com1-tools",
     "con-tools",
+    "errorReporting",
     "error-reporting",
+    "plugin2FA",
     "lpt0",
     "lpt10",
   ])('accepts canonical plugin id "%s"', (id) => {
@@ -39,18 +41,21 @@ describe("assertPluginId", () => {
     "1analytics",
     "-analytics",
     "Analytics",
+    "analytics-reportingPlugin",
     "analytics-",
     "analytics--reporting",
     "analytics.reporting",
     "analytics_plugin",
   ])('rejects non-canonical plugin id "%s"', (id) => {
     expect(() => assertPluginId(id, "plugin.id")).toThrow(
-      "must be a lowercase plugin id",
+      "must be a lower camel case or lowercase kebab-case plugin id",
     );
   });
 
   it.each([
     "__proto__",
+    "cOn",
+    "cOm1",
     "constructor",
     "prototype",
     ...WINDOWS_DEVICE_PLUGIN_IDS,
@@ -126,7 +131,7 @@ describe("assertCoreGraph", () => {
     getDocument(graph).owner = { kind: "plugin", pluginId: "" };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      'coreGraph.documents.app:default.owner.pluginId "" must be a lowercase plugin id',
+      'coreGraph.documents.app:default.owner.pluginId "" must be a lower camel case or lowercase kebab-case plugin id',
     );
   });
 
@@ -1052,7 +1057,14 @@ describe("assertCoreGraph", () => {
     entries["invalid.key"] = {};
     invalidIdGraph.plugins.entries = entries as never;
     expect(() => assertCoreGraph(invalidIdGraph, "coreGraph")).toThrow(
-      "must be a lowercase plugin id",
+      "must be a lower camel case or lowercase kebab-case plugin id",
+    );
+
+    const caseCollisionGraph = createValidGraph();
+    caseCollisionGraph.plugins.entries.analytics = {};
+    caseCollisionGraph.plugins.entries.anaLytics = {};
+    expect(() => assertCoreGraph(caseCollisionGraph, "coreGraph")).toThrow(
+      'plugin id "anaLytics" conflicts with "analytics"',
     );
 
     const invalidContractGraph = createValidGraph();

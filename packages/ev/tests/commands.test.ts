@@ -8234,6 +8234,18 @@ describe("build", () => {
         { cwd, bundler },
       ),
     ).rejects.toThrow('Duplicate plugin id "plugin-a"');
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [{ id: "errorReporting" }, { id: "errorreporting" }],
+        },
+        { cwd, bundler },
+      ),
+    ).rejects.toThrow(
+      'plugin id "errorreporting" conflicts with "errorReporting"',
+    );
   });
 
   it("fails on invalid plugin declarations before config hooks and bundling", async () => {
@@ -8257,7 +8269,9 @@ describe("build", () => {
         },
         { cwd, bundler },
       ),
-    ).rejects.toThrow('[evjs] plugins[0].id "" must be a lowercase plugin id');
+    ).rejects.toThrow(
+      '[evjs] plugins[0].id "" must be a lower camel case or lowercase kebab-case plugin id',
+    );
 
     expect(events).toEqual([]);
   });

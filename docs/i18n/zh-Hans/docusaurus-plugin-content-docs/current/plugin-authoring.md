@@ -152,15 +152,18 @@ symbol、bigint、非有限数值、class instance、稀疏数组与循环引用
 
 ## 标识与顺序
 
-每个插件只声明一个稳定、短小写的 `id`，例如 `analytics` 或 `error-reporting`。
+每个插件只声明一个稳定、短小的 `id`，使用小驼峰或全小写 kebab-case，例如
+`analytics`、`errorReporting` 或 `error-reporting`。
 同一个 canonical id 用于依赖与生命周期状态、generated IR；插件声明 Page 合同时，
 它也作为 `page.config.ts#plugins` 中的键。它不是 package name，也没有独立的 Page
 别名：package 可以叫 `@company/analytics`，plugin id 则是 `analytics`。id 必须以
-小写字母开头，只能包含小写字母、数字，以及用单个连字符分隔的 segment；
+小写字母开头，之后可以是不带分隔符的 ASCII 字母和数字，也可以是由连字符分隔的
+非空全小写字母数字 segment；同一个 id 不能混用驼峰与 kebab-case。
 `__proto__`、`constructor`、`prototype`，以及 Windows 设备 basename（`con`、
 `prn`、`aux`、`nul`、`com1` 至 `com9`、`lpt1` 至 `lpt9`）是保留值。这保证原样
 使用的 id 在所有支持平台上都能安全地作为 generated path 的单个 segment。一个
-Application 中的 plugin id 必须唯一。
+Application 中的 plugin id 在忽略大小写后必须唯一，因此 `errorReporting` 与
+`errorreporting` 不能同时安装。
 
 `dependencies`、`optionalDependencies` 与 `enforce` 控制 hook 顺序。未知 descriptor
 字段与拼错的 hook 会被拒绝。

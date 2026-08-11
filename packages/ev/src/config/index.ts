@@ -722,17 +722,19 @@ export function resolvePluginsConfig<TBundlerCfg = unknown>(
   }
   assertConfigArray(plugins, "plugins");
   const resolved: Plugin<TBundlerCfg>[] = [];
-  const ids = new Set<string>();
+  const idsByCaseFoldedId = new Map<string, string>();
   for (let index = 0; index < plugins.length; index++) {
     const plugin = plugins[index];
     if (plugin === false || plugin === null || plugin === undefined) continue;
     const resolvedPlugin = resolvePlugin<TBundlerCfg>(plugin, index);
-    if (ids.has(resolvedPlugin.id)) {
+    const caseFoldedId = resolvedPlugin.id.toLowerCase();
+    const existingId = idsByCaseFoldedId.get(caseFoldedId);
+    if (existingId !== undefined) {
       throw new Error(
-        `[evjs] Duplicate plugin id "${resolvedPlugin.id}". Plugin ids must be globally unique.`,
+        `[evjs] Duplicate plugin id "${resolvedPlugin.id}" conflicts with "${existingId}". Plugin ids must be globally unique, including on case-insensitive filesystems.`,
       );
     }
-    ids.add(resolvedPlugin.id);
+    idsByCaseFoldedId.set(caseFoldedId, resolvedPlugin.id);
     resolved.push(resolvedPlugin);
   }
   return resolved;
