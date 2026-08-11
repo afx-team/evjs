@@ -318,7 +318,6 @@ function createFrameworkCallbacks(options: {
         clientEntryAssets: facts.clientEntryAssets,
         serverEntryAssets: facts.serverEntryAssets,
       });
-      await options.onBuildOutput?.(output);
 
       const rootDir = path.join(options.cwd, plan.distDir);
       const clientDir = path.resolve(options.cwd, plan.output.clientDir);
@@ -379,6 +378,7 @@ function createFrameworkCallbacks(options: {
         await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
         await fs.promises.writeFile(outPath, finalHtml, "utf-8");
       }
+      await options.onBuildOutput?.(output);
       return "published" as const;
     },
     onServerBundleReady: options.onServerBundleReady ?? vi.fn(async () => {}),
