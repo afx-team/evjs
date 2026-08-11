@@ -1,5 +1,6 @@
 export const PLUGIN_HOOK_NAMES = [
   "configureBundler",
+  "devServerReady",
   "beforeBuild",
   "transformOutput",
   "transformHtml",

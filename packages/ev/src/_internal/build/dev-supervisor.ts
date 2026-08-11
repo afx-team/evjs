@@ -139,7 +139,7 @@ export async function runDevSupervisor<TBundlerCfg>(
     const customShortcuts = await collectSessionShortcuts(state);
     if (
       stopping ||
-      active !== state ||
+      active?.session !== state.session ||
       shortcutBinding ||
       pendingShortcutActions.size > 0
     ) {
@@ -352,6 +352,19 @@ export async function runDevSupervisor<TBundlerCfg>(
     );
   };
 
+  const activateSession = async (
+    state: ActiveDevState<TBundlerCfg>,
+  ): Promise<void> => {
+    try {
+      await state.session.activate();
+      if (!stopping && active?.session === state.session) {
+        await refreshCLIShortcutsSafely();
+      }
+    } catch (error) {
+      if (!stopping && active?.session === state.session) fail(error);
+    }
+  };
+
   const switchSession = async (
     prepared: PreparedDevRevision<TBundlerCfg>,
   ): Promise<void> => {
@@ -400,7 +413,7 @@ export async function runDevSupervisor<TBundlerCfg>(
     retainedFailedDependencies.clear();
     refreshWatcher(currentDependencySet());
     monitorSession(nextState);
-    await refreshCLIShortcutsSafely();
+    void activateSession(nextState);
   };
 
   const reconcileAttemptChanged = (

@@ -26,6 +26,7 @@ flowchart TB
   subgraph Build["Bundling 和输出"]
     BundlerConfig["configureBundler()"]
     Bundler["bundler build"]
+    DevReady["devServerReady()\n仅 dev"]
     Facts["fresh bundler facts"]
     BuildStart["beforeBuild()"]
     Link["link canonical BuildOutput"]
@@ -37,7 +38,9 @@ flowchart TB
 
   AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
   BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
+  Bundler -. client listener ready .-> DevReady
   Link --> BuildOutput --> HTML --> BuildEnd
+  DevReady -. Session 关闭 / 替换 .-> Dispose
   BuildEnd -. production end / server close / Session replacement .-> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
@@ -45,7 +48,7 @@ flowchart TB
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class AppOptions,Config,Resolve,Setup config;
   class Graph,PageSettings,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
+  class BundlerConfig,Bundler,DevReady,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
 通过 `definePlugin()` 创建插件时，类型安全的值在这些阶段保持扁平：configure 与 setup
@@ -56,6 +59,7 @@ flowchart TB
 | Hook | 用途 |
 |------|------|
 | `configureBundler(config, ctx)` | 修改当前 bundler 配置 |
+| `devServerReady({ origin })` | development Session 开始监听后获取实际 client origin |
 | `beforeBuild(ctx)` | fresh bundler facts 就绪后、evjs 链接或发射 canonical output 前执行 |
 | `transformOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
@@ -81,6 +85,31 @@ output transform、HTML 发射或发布失败，`afterBuild()` 不会执行。`p
 
 `afterBuild()` 明确定义在发布之后。若它失败，evjs 会报告 production build 失败，或
 fail-stop 它所属的 development Session。
+
+每个 immutable development Session 的 client bundler listener 开始监听后，
+`devServerReady()` 执行一次。它接收 adapter 实际上报的 `origin`，而不是根据
+`dev.port` 重新拼出的 URL；官方 adapter 返回 HTTP(S) URL，自定义 adapter 也可以返回
+其他 origin 字符串。Session replacement 会用新 controller 的 origin 重放该 hook；普通
+HMR rebuild、production build、`prepare` 与 `inspect` 都不会执行它。
+
+Listener ready 不代表首次 canonical output 或 server/API runtime 已就绪。首次
+`beforeBuild()` / `afterBuild()` 可能在 `devServerReady()` 之前、期间或之后完成，两者没有
+顺序保证。依赖 output 的逻辑仍应放在 `afterBuild()`。如果 `devServerReady()` reject，
+active Session 会 fail-stop，并执行正常的 controller 清理与 plugin 逆序 dispose。该
+Session 开始关闭时，hook context 的 `signal` 会 abort。
+
+```ts
+const devToolsPlugin = {
+  id: "dev-tools",
+  setup() {
+    return {
+      devServerReady({ origin }) {
+        console.log(`Client dev server: ${origin}`);
+      },
+    };
+  },
+};
+```
 
 每次 plugin setup 的 `dispose()` 最多执行一次，并按 plugin 逆序运行。触发场景包括
 production build 结束、development Session 关闭或被替换，以及 plugin 初始化后 Session

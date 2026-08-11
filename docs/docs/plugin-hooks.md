@@ -27,6 +27,7 @@ flowchart TB
   subgraph Build["Bundling and output"]
     BundlerConfig["configureBundler()"]
     Bundler["bundler build"]
+    DevReady["devServerReady()\ndev only"]
     Facts["fresh bundler facts"]
     BuildStart["beforeBuild()"]
     Link["link canonical BuildOutput"]
@@ -38,7 +39,9 @@ flowchart TB
 
   AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
   BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
+  Bundler -. client listener ready .-> DevReady
   Link --> BuildOutput --> HTML --> BuildEnd
+  DevReady -. Session close / replacement .-> Dispose
   BuildEnd -. production end / server close / Session replacement .-> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
@@ -46,7 +49,7 @@ flowchart TB
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class AppOptions,Config,Resolve,Setup config;
   class Graph,PageSettings,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
+  class BundlerConfig,Bundler,DevReady,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
 For plugins created with `definePlugin()`, typed values stay flat across these
@@ -57,6 +60,7 @@ and `ctx.pageOptions`.
 | Hook | Purpose |
 |------|---------|
 | `configureBundler(config, ctx)` | Mutate the selected bundler config |
+| `devServerReady({ origin })` | Consume the actual client origin after a development Session starts listening |
 | `beforeBuild(ctx)` | Run after fresh bundler facts arrive and before evjs links or emits canonical output |
 | `transformOutput(output, ctx)` | Adjust linked `AssetGroup` contents or add deployment metadata |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
@@ -86,6 +90,34 @@ state without publishing output, so they trigger neither hook.
 
 `afterBuild()` is deliberately post-publication. If it fails, evjs reports the
 production build failure or fail-stops the owning development Session.
+
+`devServerReady()` runs once after the client bundler listener starts for each
+immutable development Session. Its `origin` is the adapter-reported value, not
+a URL reconstructed from `dev.port`; official adapters return an HTTP(S) URL,
+while custom adapters may return another origin string. Session replacement
+replays the hook with the replacement controller's origin. Ordinary HMR
+rebuilds, production builds, `prepare`, and `inspect` do not run it.
+
+Listener readiness does not imply that the first canonical output or the
+server/API runtime is ready. The first `beforeBuild()` / `afterBuild()` pair may
+finish before, during, or after `devServerReady()`; there is no ordering
+guarantee between them. Keep output-dependent work in `afterBuild()`. A rejected
+`devServerReady()` hook fail-stops the active Session and triggers normal
+controller cleanup and reverse-order plugin disposal. Its `signal` aborts when
+that Session starts closing.
+
+```ts
+const devToolsPlugin = {
+  id: "dev-tools",
+  setup() {
+    return {
+      devServerReady({ origin }) {
+        console.log(`Client dev server: ${origin}`);
+      },
+    };
+  },
+};
+```
 
 `dispose()` runs at most once for each plugin setup, in reverse plugin order,
 when a production build ends, a development Session closes or is replaced, or

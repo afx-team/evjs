@@ -93,6 +93,33 @@ function createTestDevController(
   };
 }
 
+function createBlockingReadyPlugin(
+  events: string[],
+): Plugin<Record<string, never>> {
+  return {
+    id: "blocking-dev-server-ready",
+    setup() {
+      events.push("setup");
+      return {
+        devServerReady({ signal }) {
+          events.push("ready");
+          return new Promise<void>((resolve) => {
+            const onAbort = () => {
+              events.push("ready:aborted");
+              resolve();
+            };
+            if (signal.aborted) onAbort();
+            else signal.addEventListener("abort", onAbort, { once: true });
+          });
+        },
+        dispose() {
+          events.push("dispose");
+        },
+      };
+    },
+  };
+}
+
 interface EmbeddedClientRuntime {
   runtime: {
     server?: Record<string, unknown>;
@@ -834,6 +861,106 @@ describe("prepareFrameworkBuild", () => {
       "dispose:candidate:initial",
     ]);
     expect(flags.feature).toEqual(["initial", "caller-mutation"]);
+  });
+
+  it("aborts an active devServerReady hook during SIGINT shutdown", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "ready-sigint",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return createTestDevController(() => events.push("controller.close"));
+      },
+    };
+    const running = dev(
+      {
+        routing: { mode: "spa" },
+        plugins: [createBlockingReadyPlugin(events)],
+      },
+      { cwd, bundler },
+    );
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    try {
+      await vi.waitFor(() => expect(events).toContain("ready"));
+      process.emit("SIGINT");
+      await running;
+    } finally {
+      if (!settled) {
+        process.emit("SIGINT");
+        await running.catch(() => {});
+      }
+    }
+
+    expect(events).toEqual([
+      "setup",
+      "bundler.dev",
+      "ready",
+      "ready:aborted",
+      "controller.close",
+      "dispose",
+    ]);
+  });
+
+  it("closes a pending devServerReady hook when the controller fails", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    let rejectController!: (error: unknown) => void;
+    const controllerDone = new Promise<void>((_resolve, reject) => {
+      rejectController = reject;
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "ready-controller-failure",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          origin: "http://localhost:4123",
+          done: controllerDone,
+          async close() {
+            events.push("controller.close");
+          },
+        };
+      },
+    };
+    const running = dev(
+      {
+        routing: { mode: "spa" },
+        plugins: [createBlockingReadyPlugin(events)],
+      },
+      { cwd, bundler },
+    );
+
+    await vi.waitFor(() => expect(events).toContain("ready"));
+    rejectController(new Error("controller failed during ready hook"));
+
+    await expect(running).rejects.toThrow(
+      "controller failed during ready hook",
+    );
+    expect(events).toEqual([
+      "setup",
+      "bundler.dev",
+      "ready",
+      "ready:aborted",
+      "controller.close",
+      "dispose",
+    ]);
   });
 
   it("isolates one plugin instance across concurrent project preparations", async () => {
