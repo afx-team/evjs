@@ -8,6 +8,17 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.8] — 2026-08-11
+
+### 🐛 Bug Fixes
+
+- **Direct MPA Document development rendering** — MPA `.html` Document requests
+  now enter React framework rendering without the internal development proxy
+  header. SPA requests keep the existing header guard, and extensionless MPA
+  semantic routes remain unavailable.
+
+---
+
 ## [0.3.7] — 2026-08-10
 
 ### ⚠️ Breaking Changes
