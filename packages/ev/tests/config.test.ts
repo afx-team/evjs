@@ -982,6 +982,12 @@ describe("resolveConfig", () => {
       },
       server: {
         basePath: "/_ev",
+        resolve: {
+          alias: { "server-sdk": "./src/server/sdk.ts" },
+        },
+        externals: {
+          "native-addon": "commonjs native-addon",
+        },
         dev: {
           port: 4200,
           https: { key: "server.key", cert: "server.cert" },
@@ -1013,11 +1019,35 @@ describe("resolveConfig", () => {
       ppr: "_ev/ppr",
     });
     expect(resolved.server.routes).toEqual([]);
+    expect(resolved.server.resolve).toEqual({
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    });
+    expect(resolved.server.externals).toEqual({
+      "native-addon": "commonjs native-addon",
+    });
     expect(resolved.server.dev).toEqual({
       port: 4200,
       https: { key: "server.key", cert: "server.cert" },
     });
     expect(resolved.transport.baseUrl).toBe("https://runtime.example.com");
+  });
+
+  it("strictly validates server-only build settings", () => {
+    expect(() =>
+      resolveConfig({
+        server: { resolve: { extensions: [".ts"] } },
+      } as never),
+    ).toThrow("server.resolve.extensions is not supported");
+    expect(() =>
+      resolveConfig({
+        server: { resolve: { alias: { sdk: " " } } },
+      }),
+    ).toThrow('server.resolve.alias["sdk"] must be a non-empty string');
+    expect(() =>
+      resolveConfig({
+        server: { externals: { native: false } },
+      } as never),
+    ).toThrow('server.externals["native"] must be a non-empty string');
   });
 
   it("rejects output directories that can escape or alias the project root", () => {

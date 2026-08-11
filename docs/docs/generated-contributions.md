@@ -295,9 +295,12 @@ input must normalize to the same
 Application/Page/Document ownership before using these semantics.
 
 `resolve.external` accepts `runtime: "client" | "server" | "all"`. The
-Webpack adapter applies that filter per target. The current Utoopack adapter
-only exposes a top-level externals config, so client/all externals are mapped
-there and server-only externals fail fast when client entries are present.
+Webpack adapter applies that filter per target. Utoopack maps client/all
+externals to its top-level config and server/all externals to its independent
+`server.externals` config, so server-only contributions remain isolated in
+mixed builds. Plugin contributions remain under `plan.resolve.external`;
+authored `server.externals` is a separate server-build override applied after
+those contributions.
 
 ## Boundaries
 

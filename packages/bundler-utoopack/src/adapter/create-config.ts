@@ -110,6 +110,10 @@ export async function createUtoopackConfig(
 
   const finalServerEntry = resolveServerEntries(plan);
   const expectedServerEntry = snapshotUtoopackServerEntry(finalServerEntry);
+  const resolveEnvironment: ResolveEnvironment =
+    finalServerEntry !== undefined && !hasClientEntries(plan)
+      ? "server"
+      : "client";
 
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
@@ -135,10 +139,10 @@ export async function createUtoopackConfig(
       clean: true,
     },
     resolve: {
-      alias: createResolveAlias(cwd, plan),
+      alias: createResolveAlias(cwd, plan, resolveEnvironment),
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
-    externals: createResolveExternals(plan),
+    externals: createResolveExternals(plan, "client"),
     sourceMaps: !isProduction,
     stats: true,
     ...(isProduction
@@ -174,6 +178,7 @@ export async function createUtoopackConfig(
           // Server functions config — utoopack handles "use server" natively.
           server: {
             entry: finalServerEntry,
+            externals: createResolveExternals(plan, "server") ?? {},
             output: {
               path: outputPaths.serverDir,
               filename: isProduction
@@ -526,12 +531,13 @@ function missingFrameworkWatchCollector(file: string): never {
 function createResolveAlias(
   cwd: string,
   plan: BuildPlan,
+  environment: ResolveEnvironment,
 ): NonNullable<ConfigComplete["resolve"]>["alias"] {
   return Object.fromEntries(
-    Object.entries(plan.resolve?.alias ?? {}).map(([name, target]) => [
-      name,
-      resolveAliasTarget(cwd, target),
-    ]),
+    Object.entries({
+      ...(plan.resolve?.alias ?? {}),
+      ...(environment === "server" ? plan.server.resolve?.alias : undefined),
+    }).map(([name, target]) => [name, resolveAliasTarget(cwd, target)]),
   );
 }
 
@@ -540,28 +546,31 @@ function resolveAliasTarget(cwd: string, target: string): string {
   return target.startsWith(".") ? path.resolve(cwd, target) : target;
 }
 
+type ResolveEnvironment = "client" | "server";
+
 function createResolveExternals(
   plan: BuildPlan,
+  environment: ResolveEnvironment,
 ): Record<string, ExternalConfig> | undefined {
-  assertSupportedResolveExternals(plan);
+  const excludedEnvironment = environment === "client" ? "server" : "client";
   const external = Object.fromEntries(
     Object.entries(plan.resolve?.external ?? {})
-      .filter(([, value]) => value.runtime !== "server")
+      .filter(([, value]) => value.runtime !== excludedEnvironment)
       .map(([specifier, value]) => [specifier, value.source ?? specifier]),
   );
+  if (environment === "server") {
+    Object.assign(external, plan.server.externals);
+  }
   return Object.keys(external).length > 0 ? external : undefined;
 }
 
-function assertSupportedResolveExternals(plan: BuildPlan): void {
-  if (!hasClientEntries(plan)) return;
-
-  const serverOnly = Object.entries(plan.resolve?.external ?? {})
-    .filter(([, value]) => value.runtime === "server")
-    .map(([specifier]) => specifier);
-  if (serverOnly.length === 0) return;
-
+function assertSupportedServerResolve(plan: BuildPlan): void {
+  if (!hasClientEntries(plan) || !hasServerEntries(plan)) return;
+  if (Object.keys(plan.server.resolve?.alias ?? {}).length === 0) {
+    return;
+  }
   throw new Error(
-    `[evjs] The Utoopack adapter cannot map server-only resolve.external contributions while client entries are present: ${serverOnly.join(", ")}. Use runtime "client" or "all", switch to a bundler with server-scoped externals, or configure the lower-level bundler directly.`,
+    "[evjs] The Utoopack adapter cannot apply server.resolve independently while client entries are present. Use the Webpack adapter or remove the server-only resolve override.",
   );
 }
 
@@ -573,7 +582,12 @@ function hasClientEntries(plan: BuildPlan): boolean {
   return plan.entries.some((entry) => entry.environment === "client");
 }
 
+function hasServerEntries(plan: BuildPlan): boolean {
+  return plan.entries.some((entry) => entry.environment === "server");
+}
+
 function validateUtoopackPlanSupport(plan: BuildPlan): void {
+  assertSupportedServerResolve(plan);
   const serverRuntimeEntries = plan.entries.filter(
     (entry) =>
       entry.environment === "server" && entry.kind === "server-runtime",

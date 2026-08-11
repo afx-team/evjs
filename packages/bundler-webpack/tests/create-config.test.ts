@@ -908,9 +908,15 @@ describe("createWebpackConfigs", () => {
     });
   });
 
-  it("filters resolve.external contributions by webpack target runtime", async () => {
+  it("applies resolve contributions and server overrides by webpack target", async () => {
     const config: ResolvedConfig<WebpackConfigs> = {
       ...createResolvedConfig(),
+    };
+    config.server.resolve = {
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    };
+    config.server.externals = {
+      "shared-lib": "commonjs configured-shared-lib",
     };
     const graph = createGraph(config, {
       pages: [
@@ -955,11 +961,15 @@ describe("createWebpackConfigs", () => {
       expect.arrayContaining([
         expect.objectContaining({
           "server-only-lib": "commonjs server-only-lib",
-          "shared-lib": "SharedLib",
+          "shared-lib": "commonjs configured-shared-lib",
         }),
       ]),
     );
     expect(serverExternalsText).not.toContain("ClientOnlyLib");
+    expect(clientConfig?.resolve?.alias).not.toHaveProperty("server-sdk");
+    expect(serverConfig?.resolve?.alias).toMatchObject({
+      "server-sdk": path.resolve(process.cwd(), "src/server/sdk.ts"),
+    });
   });
 
   it("uses a generated server entry for framework-managed server routes", async () => {

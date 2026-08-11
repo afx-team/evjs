@@ -309,6 +309,10 @@ export interface HtmlPlan {
 export interface ServerBuildPlan {
   entry?: string;
   renderers?: ServerRenderPlan[];
+  /** Module resolution overrides applied only to server build entries. */
+  resolve?: ServerResolvePlan;
+  /** External modules applied only to server build entries. */
+  externals?: Record<string, string>;
   /**
    * HTML templates compiled into request-time document shells for Pages that
    * are rendered by the deployment server.
@@ -319,6 +323,8 @@ export interface ServerBuildPlan {
    */
   documents?: ServerDocumentPlan[];
 }
+
+export type ServerResolvePlan = Pick<ResolvePlan, "alias">;
 
 export interface ServerDocumentPlan {
   /** Page whose request-time HTML is inserted into this document. */
