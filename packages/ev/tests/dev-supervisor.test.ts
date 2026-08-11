@@ -10,7 +10,7 @@ import type {
 } from "../src/_internal/build/bundler.js";
 import { type DevOptions, dev } from "../src/_internal/build/commands.js";
 import type { Config } from "../src/config/index.js";
-import type { Plugin } from "../src/plugin/index.js";
+import type { Plugin, PluginCliShortcut } from "../src/plugin/index.js";
 
 const capabilities = {
   build: { server: true, rsc: true, ppr: true },
@@ -202,6 +202,165 @@ describe("immutable dev supervisor", { timeout: 15_000 }, () => {
     } finally {
       if (controlled.active > 0) await stopDev(run).catch(() => {});
       fakeStdin.restore();
+    }
+  });
+
+  it("binds shortcuts while devServerReady is pending and aborts it on shortcut close", async () => {
+    const cwd = await createProject();
+    const controlled = createControlledBundler();
+    const fakeStdin = installFakeTTYStdin();
+    const initialDataListeners = fakeStdin.input.listenerCount("data");
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      id: "pending-ready-shortcut",
+      cliShortcuts() {
+        events.push("contribute");
+        return [
+          {
+            key: "q",
+            description: "close pending ready session",
+            async action(session) {
+              events.push("shortcut:close");
+              await session.close();
+              events.push("shortcut:closed");
+            },
+          },
+        ];
+      },
+      setup() {
+        events.push("setup");
+        return {
+          devServerReady({ signal }) {
+            events.push("ready");
+            return new Promise<void>((resolve) => {
+              const onAbort = () => {
+                events.push("ready:aborted");
+                resolve();
+              };
+              if (signal.aborted) onAbort();
+              else signal.addEventListener("abort", onAbort, { once: true });
+            });
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+    const run = dev(
+      { plugins: [plugin] },
+      { cwd, bundler: controlled.adapter },
+    );
+
+    try {
+      await vi.waitFor(() => {
+        expect(events).toContain("ready");
+        expect(events).toContain("contribute");
+        expect(fakeStdin.input.listenerCount("data")).toBeGreaterThan(
+          initialDataListeners,
+        );
+      });
+      fakeStdin.input.write("q\n");
+      await run;
+
+      expect(events).toContain("shortcut:closed");
+      expect(events.indexOf("ready:aborted")).toBeGreaterThan(
+        events.indexOf("shortcut:close"),
+      );
+      expect(events.indexOf("dispose")).toBeGreaterThan(
+        events.indexOf("ready:aborted"),
+      );
+      expect(controlled.events).toEqual(["start:1", "close:1"]);
+    } finally {
+      if (controlled.active > 0) await stopDev(run).catch(() => {});
+      fakeStdin.restore();
+    }
+  });
+
+  it("replays devServerReady only when the Supervisor replaces a Session", async () => {
+    const cwd = await createProject();
+    const configFile = path.join(cwd, "dev-config.ts");
+    const packageFile = path.join(cwd, "package.json");
+    await fs.writeFile(configFile, "v1\n");
+    const controlled = createControlledBundler();
+    const events: string[] = [];
+    let loads = 0;
+    const createPlugin = (label: "v1" | "v2"): Plugin => ({
+      id: "session-ready",
+      setup() {
+        events.push(`setup:${label}`);
+        return {
+          async devServerReady({ signal }) {
+            events.push(`ready:${label}`);
+            if (label !== "v1") return;
+            await new Promise<void>((resolve) => {
+              const onAbort = () => {
+                events.push("abort:v1");
+                resolve();
+              };
+              if (signal.aborted) onAbort();
+              else signal.addEventListener("abort", onAbort, { once: true });
+            });
+            events.push("settled:v1");
+          },
+          dispose() {
+            events.push(`dispose:${label}`);
+          },
+        };
+      },
+    });
+    let currentConfig: Config = { plugins: [createPlugin("v1")] };
+    const run = dev(undefined, {
+      cwd,
+      bundler: controlled.adapter,
+      reloadInitialConfig: true,
+      loadConfig(_cwd, context) {
+        loads += 1;
+        context?.onDependency(configFile);
+        return currentConfig;
+      },
+    });
+
+    try {
+      await vi.waitFor(() => expect(events).toContain("ready:v1"));
+
+      const packageSource = await fs.readFile(packageFile, "utf-8");
+      await fs.writeFile(packageFile, `${packageSource.trim()}\n\n`);
+      await vi.waitFor(() => expect(loads).toBe(2));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(controlled.starts).toHaveLength(1);
+      expect(events.filter((event) => event === "ready:v1")).toHaveLength(1);
+
+      currentConfig = {
+        dev: {
+          proxy: [{ context: ["/api"], target: "https://v2.example" }],
+        },
+        plugins: [createPlugin("v2")],
+      };
+      await fs.writeFile(configFile, "v2\n");
+      await vi.waitFor(() => expect(events).toContain("ready:v2"));
+
+      expect(controlled.events.slice(0, 3)).toEqual([
+        "start:1",
+        "close:1",
+        "start:2",
+      ]);
+      expect(events.filter((event) => event === "ready:v1")).toHaveLength(1);
+      expect(events.filter((event) => event === "ready:v2")).toHaveLength(1);
+      expect(events.indexOf("settled:v1")).toBeGreaterThan(
+        events.indexOf("abort:v1"),
+      );
+      expect(events.indexOf("dispose:v1")).toBeGreaterThan(
+        events.indexOf("settled:v1"),
+      );
+      expect(events.indexOf("ready:v2")).toBeGreaterThan(
+        events.indexOf("dispose:v1"),
+      );
+
+      await stopDev(run);
+      expect(events).toContain("dispose:v2");
+    } finally {
+      if (controlled.active > 0) await stopDev(run).catch(() => {});
     }
   });
 
@@ -406,6 +565,97 @@ describe("immutable dev supervisor", { timeout: 15_000 }, () => {
       await stopDev(run);
     } finally {
       finishAction();
+      if (controlled.active > 0) await stopDev(run).catch(() => {});
+      fakeStdin.restore();
+    }
+  });
+
+  it("binds replacement shortcuts without waiting for a stale contribution", async () => {
+    const cwd = await createProject();
+    const configFile = path.join(cwd, "dev-config.ts");
+    await fs.writeFile(configFile, "v1\n");
+    const controlled = createControlledBundler();
+    const fakeStdin = installFakeTTYStdin();
+    const initialDataListeners = fakeStdin.input.listenerCount("data");
+    const events: string[] = [];
+    const shortcutsFor = (label: "v1" | "v2"): readonly PluginCliShortcut[] => [
+      {
+        key: "t",
+        description: label,
+        action() {
+          events.push(`shortcut:${label}`);
+        },
+      },
+    ];
+    let initialContributionReleased = false;
+    let releaseInitialContribution!: () => void;
+    const initialContribution = new Promise<readonly PluginCliShortcut[]>(
+      (resolve) => {
+        releaseInitialContribution = () => {
+          if (initialContributionReleased) return;
+          initialContributionReleased = true;
+          events.push("resolve:v1");
+          resolve(shortcutsFor("v1"));
+        };
+      },
+    );
+    const createPlugin = (
+      label: "v1" | "v2",
+    ): Plugin<Record<string, never>> => ({
+      id: "pending-shortcut-contribution",
+      cliShortcuts() {
+        events.push(`contribute:${label}`);
+        return label === "v1" ? initialContribution : shortcutsFor(label);
+      },
+    });
+    let currentConfig: Config<Record<string, never>> = {
+      plugins: [createPlugin("v1")],
+    };
+    const run = dev(undefined, {
+      cwd,
+      bundler: controlled.adapter,
+      reloadInitialConfig: true,
+      loadConfig(_cwd, context) {
+        context?.onDependency(configFile);
+        return currentConfig;
+      },
+    });
+
+    try {
+      await vi.waitFor(() => expect(events).toContain("contribute:v1"));
+      expect(fakeStdin.input.listenerCount("data")).toBe(initialDataListeners);
+
+      currentConfig = {
+        dev: {
+          proxy: [{ context: ["/api"], target: "https://v2.example" }],
+        },
+        plugins: [createPlugin("v2")],
+      };
+      await fs.writeFile(configFile, "v2\n");
+      await vi.waitFor(() => {
+        expect(controlled.starts).toHaveLength(2);
+        expect(events).toContain("contribute:v2");
+        expect(fakeStdin.input.listenerCount("data")).toBeGreaterThan(
+          initialDataListeners,
+        );
+      });
+
+      fakeStdin.input.write("t\n");
+      await vi.waitFor(() => expect(events).toContain("shortcut:v2"));
+
+      releaseInitialContribution();
+      await initialContribution;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      fakeStdin.input.write("t\n");
+      await vi.waitFor(() => {
+        expect(events.filter((event) => event === "shortcut:v2")).toHaveLength(
+          2,
+        );
+      });
+      expect(events).not.toContain("shortcut:v1");
+      await stopDev(run);
+    } finally {
+      releaseInitialContribution();
       if (controlled.active > 0) await stopDev(run).catch(() => {});
       fakeStdin.restore();
     }
@@ -669,6 +919,52 @@ describe("immutable dev supervisor", { timeout: 15_000 }, () => {
 
     expect(controlled.starts).toHaveLength(1);
     expect(controlled.events).toEqual(["start:1", "close:1"]);
+  });
+
+  it("fail-stops public dev and reverses disposal when devServerReady rejects", async () => {
+    const cwd = await createProject();
+    const controlled = createControlledBundler();
+    const events = controlled.events;
+    const createPlugin = (
+      label: "first" | "second",
+      rejectReady = false,
+    ): Plugin<Record<string, never>> => ({
+      id: `ready-${label}`,
+      setup() {
+        events.push(`setup:${label}`);
+        return {
+          devServerReady() {
+            events.push(`ready:${label}`);
+            if (rejectReady) throw new Error("dev server ready failed");
+          },
+          dispose() {
+            events.push(`dispose:${label}`);
+          },
+        };
+      },
+    });
+    const run = dev(
+      {
+        plugins: [createPlugin("first"), createPlugin("second", true)],
+      },
+      { cwd, bundler: controlled.adapter },
+    );
+
+    try {
+      await expect(run).rejects.toThrow("dev server ready failed");
+      expect(events).toEqual([
+        "setup:first",
+        "setup:second",
+        "start:1",
+        "ready:first",
+        "ready:second",
+        "close:1",
+        "dispose:second",
+        "dispose:first",
+      ]);
+    } finally {
+      if (controlled.active > 0) await stopDev(run).catch(() => {});
+    }
   });
 
   it("discards a stale preparation and starts only the latest saved config", async () => {

@@ -705,6 +705,23 @@ export interface BeforeBuildContext<TBundlerCfg = unknown>
   readonly isRebuild: boolean;
 }
 
+/**
+ * Late lifecycle context passed after the client dev server starts listening.
+ * Analysis watch registration is intentionally unavailable at this stage.
+ */
+export interface DevServerReadyContext<TBundlerCfg = unknown>
+  extends PluginBaseContext<TBundlerCfg> {
+  readonly mode: "development";
+  /** Actual client dev server origin reported by the bundler adapter. */
+  readonly origin: string;
+  /**
+   * Cooperative cancellation signal aborted when the owning immutable
+   * development Session starts closing. Aborting the signal does not settle
+   * the hook's Promise automatically; asynchronous work must observe it.
+   */
+  readonly signal: AbortSignal;
+}
+
 export interface TransformOutputContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {}
 
@@ -715,6 +732,12 @@ type BeforeBuildHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
 >(
   ctx: BeforeBuildContext<TActualBundlerCfg>,
+) => void | Promise<void>;
+
+type DevServerReadyHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  ctx: DevServerReadyContext<TActualBundlerCfg>,
 ) => void | Promise<void>;
 
 type TransformOutputHook<TBundlerCfg> = <
@@ -761,6 +784,19 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * adapter or pass a concrete config type for adapter-specific changes.
    */
   configureBundler?: ConfigureBundlerHook<TBundlerCfg>;
+
+  /**
+   * Called once after this immutable development Session's client server is
+   * listening. The actual adapter-reported origin is available on the context.
+   * Ordinary bundler/HMR rebuilds do not call this hook again.
+   *
+   * Rejecting this hook while its Session is active terminates the whole
+   * development run. Session shutdown or replacement aborts the context signal
+   * and waits for an in-flight hook to settle before running dispose hooks. CLI
+   * shortcut binding proceeds independently and does not wait for this hook to
+   * settle.
+   */
+  devServerReady?: DevServerReadyHook<TBundlerCfg>;
 
   /**
    * Called after fresh bundler facts are available and before evjs links and

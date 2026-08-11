@@ -229,8 +229,9 @@ Setup context 提供 `mode`、`cwd`、resolved `config`、`logger`、
 
 公开 context 名称与阶段一一对应：`PluginConfigureContext`、
 `PluginSetupContext`、`PluginEmitIRContext`、`ConfigureBundlerContext`、
-`BeforeBuildContext`、`TransformOutputContext`、`TransformHtmlContext` 与
-`DisposeContext`。contribution 通过 `ctx.framework` 读取规范化的 `FrameworkView`。
+`DevServerReadyContext`、`BeforeBuildContext`、`TransformOutputContext`、
+`TransformHtmlContext` 与 `DisposeContext`。contribution 通过 `ctx.framework` 读取规范化的
+`FrameworkView`。
 插件 options helper 公开 `PluginOptionsContract`、`PluginOptionsDefinition` 与
 `PluginOptionsContext`；内部 factory 推导类型不属于公开 authoring API。
 
@@ -254,6 +255,7 @@ Setup context 提供 `mode`、`cwd`、resolved `config`、`logger`、
 | 声明交互式 dev CLI key 和 action | `cliShortcuts()` |
 | 初始化共享状态 | `setup()` |
 | 执行 build lifecycle 行为 | `setup()` 返回的 hooks |
+| dev listener 启动后获取实际 client origin | `devServerReady()` |
 | 生成模块或挂载结构化行为 | `emitIR()` 或 `emitPageIR()` |
 | 编译自定义文件类型或调整优化 | `configureBundler()` |
 | 改写已解析的 HTML 文档 | `transformHtml()` |

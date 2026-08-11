@@ -32,6 +32,7 @@ import {
   collectPluginHooks,
   rethrowAfterCleanup,
   runAfterBuildHooks,
+  runDevServerReadyHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
 
@@ -59,6 +60,8 @@ export interface StartDevSessionOptions<TBundlerCfg> {
 export interface DevSession {
   readonly done: Promise<void>;
   readonly origin: string;
+  /** Notify this active Session's plugins that its client listener is ready. */
+  activate(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -90,6 +93,7 @@ export async function startDevSession<TBundlerCfg>(
   let releaseDistLock: DevRuntimeRelease | undefined;
   let unregisterDistExitCleanup = () => {};
   let pluginContextRetired = false;
+  let activationPromise: Promise<void> | undefined;
 
   const pluginContext: MutablePluginSetupContext<TBundlerCfg> = {
     mode: "development",
@@ -213,6 +217,13 @@ export async function startDevSession<TBundlerCfg>(
       } catch (error) {
         errors.push(error);
       }
+      if (activationPromise) {
+        try {
+          await activationPromise;
+        } catch {
+          // The activation caller owns the authoritative hook failure.
+        }
+      }
       try {
         await releaseDistLock?.();
       } catch (error) {
@@ -335,6 +346,16 @@ export async function startDevSession<TBundlerCfg>(
       },
       get origin() {
         return controller?.origin ?? "";
+      },
+      activate() {
+        if (closing) return activationPromise ?? Promise.resolve();
+        activationPromise ??= runDevServerReadyHooks(
+          hooks,
+          pluginContext,
+          controller?.origin ?? "",
+          abortController.signal,
+        );
+        return activationPromise;
       },
       close,
     };

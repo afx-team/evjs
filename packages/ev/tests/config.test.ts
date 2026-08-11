@@ -1215,6 +1215,16 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
+            id: "misplaced-dev-server-ready",
+            devServerReady() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("Return the hook from plugins[0].setup() instead");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
             id: "legacy-shortcuts-hook",
             configureShortcuts() {},
           } as never,

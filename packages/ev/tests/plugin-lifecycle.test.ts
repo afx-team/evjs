@@ -6,6 +6,7 @@ import {
   createPluginConfigView,
   runAfterBuildHooks,
   runBeforeBuildHooks,
+  runDevServerReadyHooks,
 } from "../src/_internal/build/plugin-lifecycle.js";
 import { resolveConfig } from "../src/config/index.js";
 import {
@@ -538,6 +539,115 @@ describe("collectPluginCliShortcuts", () => {
     ).rejects.toThrow(
       'Plugin "throwing-shortcuts" cliShortcuts contribution failed: contribution failed',
     );
+  });
+});
+
+describe("runDevServerReadyHooks", () => {
+  it("awaits hooks in order with isolated frozen contexts", async () => {
+    const abortController = new AbortController();
+    const events: string[] = [];
+    const contexts: object[] = [];
+    const observedReceivers: unknown[] = [];
+    const first: PluginHooks = {
+      async devServerReady(ctx) {
+        observedReceivers.push(this);
+        contexts.push(ctx);
+        events.push(`first:${ctx.origin}`);
+        expect(ctx.mode).toBe("development");
+        expect(ctx.signal).toBe(abortController.signal);
+        expect(Object.isFrozen(ctx)).toBe(true);
+        expect(() => {
+          (ctx as { origin: string }).origin = "mutated";
+        }).toThrow(TypeError);
+        await Promise.resolve();
+        events.push("first:done");
+      },
+    };
+    const second: PluginHooks = {
+      devServerReady(ctx) {
+        observedReceivers.push(this);
+        contexts.push(ctx);
+        events.push(`second:${ctx.origin}`);
+      },
+    };
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await runDevServerReadyHooks(
+      [first, second],
+      context,
+      "dev-server",
+      abortController.signal,
+    );
+
+    expect(events).toEqual([
+      "first:dev-server",
+      "first:done",
+      "second:dev-server",
+    ]);
+    expect(contexts[0]).not.toBe(contexts[1]);
+    expect(observedReceivers).toEqual([first, second]);
+  });
+
+  it("does not start later hooks after the Session signal aborts", async () => {
+    const abortController = new AbortController();
+    const events: string[] = [];
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await runDevServerReadyHooks(
+      [
+        {
+          devServerReady({ signal }) {
+            events.push("first");
+            abortController.abort();
+            expect(signal.aborted).toBe(true);
+          },
+        },
+        {
+          devServerReady() {
+            events.push("second");
+          },
+        },
+      ],
+      context,
+      "dev-server",
+      abortController.signal,
+    );
+
+    expect(events).toEqual(["first"]);
+  });
+
+  it("suggests the supported casing for devServerReady", async () => {
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await expect(
+      collectPluginHooks(
+        [
+          {
+            id: "ready-casing",
+            setup: () => ({ devserverready() {} }) as never,
+          },
+        ],
+        context,
+      ),
+    ).rejects.toThrow('Use "devServerReady" instead');
   });
 });
 

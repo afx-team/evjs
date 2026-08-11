@@ -6,6 +6,12 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ✨ Features
+
+- **Dev server ready plugin hook** — Plugins can consume the actual client
+  origin through `devServerReady()` once per immutable development Session,
+  without wrapping or replacing the selected bundler adapter.
+
 ---
 
 ## [0.3.8] — 2026-08-11

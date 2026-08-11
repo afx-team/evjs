@@ -262,9 +262,10 @@ contracts.
 
 Public context names follow their stages: `PluginConfigureContext`,
 `PluginSetupContext`, `PluginEmitIRContext`, `ConfigureBundlerContext`,
-`BeforeBuildContext`, `TransformOutputContext`, `TransformHtmlContext`, and
-`DisposeContext`. Contribution code reads the normalized `FrameworkView` from
-`ctx.framework`. Plugin option helpers expose `PluginOptionsContract`,
+`DevServerReadyContext`, `BeforeBuildContext`, `TransformOutputContext`,
+`TransformHtmlContext`, and `DisposeContext`. Contribution code reads the
+normalized `FrameworkView` from `ctx.framework`. Plugin option helpers expose
+`PluginOptionsContract`,
 `PluginOptionsDefinition`, and `PluginOptionsContext`; internal factory
 inference types are not part of the public authoring API.
 
@@ -291,6 +292,7 @@ Required Application options stay required in either available factory form.
 | Declare interactive dev CLI keys and actions | `cliShortcuts()` |
 | Allocate shared state | `setup()` |
 | Run build lifecycle behavior | Hooks returned by `setup()` |
+| Consume the actual client origin after the dev listener starts | `devServerReady()` |
 | Generate modules or attach structured behavior | `emitIR()` or `emitPageIR()` |
 | Compile a custom file type or tune optimization | `configureBundler()` |
 | Rewrite a parsed HTML document | `transformHtml()` |

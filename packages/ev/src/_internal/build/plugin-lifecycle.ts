@@ -13,6 +13,7 @@ import type {
   BeforeBuildContext,
   BuildResult,
   CliFlags,
+  DevServerReadyContext,
   Plugin,
   PluginCliShortcut,
   PluginConfigureContext,
@@ -509,6 +510,24 @@ export async function runBeforeBuildHooks<TBundlerCfg>(
       isRebuild,
     }) as BeforeBuildContext<TBundlerCfg>;
     await hook.beforeBuild(beforeBuildContext);
+  }
+}
+
+export async function runDevServerReadyHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  ctx: PluginSetupContext<TBundlerCfg>,
+  origin: string,
+  signal: AbortSignal,
+): Promise<void> {
+  for (const hook of hooks) {
+    if (signal.aborted) return;
+    if (!hook.devServerReady) continue;
+    const readyContext = Object.freeze({
+      ...createLatePluginContext(ctx),
+      origin,
+      signal,
+    }) as DevServerReadyContext<TBundlerCfg>;
+    await hook.devServerReady(readyContext);
   }
 }
 

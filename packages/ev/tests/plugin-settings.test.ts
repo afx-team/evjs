@@ -241,6 +241,16 @@ describe("definePlugin and pluginOptions", () => {
             // @ts-expect-error The framework config view stays read-only here.
             bundlerCtx.config.server.basePath = "/other";
           },
+          devServerReady(readyCtx) {
+            const mode: "development" = readyCtx.mode;
+            const origin: string = readyCtx.origin;
+            const signal: AbortSignal = readyCtx.signal;
+            // @ts-expect-error Ready hooks cannot add analysis watches.
+            readyCtx.addWatchFile("late.txt");
+            void mode;
+            void origin;
+            void signal;
+          },
           transformOutput(_output, outputCtx) {
             // @ts-expect-error Late output hooks cannot add analysis watches.
             outputCtx.addWatchFile("late.txt");
