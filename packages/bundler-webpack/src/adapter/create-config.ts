@@ -127,6 +127,8 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
+        serverResolveAlias: plan.server.resolve?.alias,
+        serverExternals: plan.server.externals,
         functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(
@@ -152,6 +154,8 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
+        serverResolveAlias: plan.server.resolve?.alias,
+        serverExternals: plan.server.externals,
         functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(
@@ -177,6 +181,8 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
+        serverResolveAlias: plan.server.resolve?.alias,
+        serverExternals: plan.server.externals,
         functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(
@@ -862,6 +868,8 @@ function createWebpackConfig(options: {
   publicPath: PublicPathOutput;
   resolveAlias?: NonNullable<BuildPlan["resolve"]>["alias"];
   resolveExternal?: NonNullable<BuildPlan["resolve"]>["external"];
+  serverResolveAlias?: NonNullable<BuildPlan["server"]["resolve"]>["alias"];
+  serverExternals?: BuildPlan["server"]["externals"];
   functionEndpoint: string;
   crossOriginLoading:
     | ResolvedConfig["output"]["crossOriginLoading"]
@@ -913,6 +921,7 @@ function createWebpackConfig(options: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs", ".json"],
       alias: createResolveAlias(options.cwd, {
         ...(options.resolveAlias ?? {}),
+        ...(options.serverResolveAlias ?? {}),
         ...(options.reactServerConditions
           ? {
               "@evjs/client$": clientRscPageContextEntry,
@@ -1034,6 +1043,7 @@ function createWebpackExternals(options: {
   target: "web" | "node";
   reactServerConditions: boolean;
   resolveExternal?: NonNullable<BuildPlan["resolve"]>["external"];
+  serverExternals?: BuildPlan["server"]["externals"];
 }): Configuration["externals"] {
   const contributed = Object.fromEntries(
     Object.entries(options.resolveExternal ?? {})
@@ -1047,6 +1057,9 @@ function createWebpackExternals(options: {
         external.source ?? specifier,
       ]),
   );
+  if (options.target === "node") {
+    Object.assign(contributed, options.serverExternals);
+  }
   const hasContributed = Object.keys(contributed).length > 0;
   const defaultNodeExternals =
     options.target === "node" && !options.reactServerConditions

@@ -131,6 +131,8 @@ export interface BuildPlanConfig {
       ppr?: string;
       rsc?: string;
     };
+    resolve?: ServerBuildPlan["resolve"];
+    externals?: ServerBuildPlan["externals"];
   };
 }
 
@@ -566,10 +568,14 @@ export function diffBuildPlan(
   const previousServerCompilation = {
     entry: previous.server.entry,
     renderers: previous.server.renderers,
+    resolve: previous.server.resolve,
+    externals: previous.server.externals,
   };
   const nextServerCompilation = {
     entry: next.server.entry,
     renderers: next.server.renderers,
+    resolve: next.server.resolve,
+    externals: next.server.externals,
   };
   return {
     reason,
@@ -1038,9 +1044,22 @@ function createServerPlan(
 ): ServerBuildPlan {
   const entry = createServerRuntimeEntry(config, graph, renderers)?.import;
   const documents = createServerDocumentPlans(graph);
+  const serverResolveAlias = config.server.resolve?.alias;
   return {
     ...(entry ? { entry } : {}),
     ...(renderers.length > 0 ? { renderers } : {}),
+    ...(serverResolveAlias !== undefined
+      ? {
+          resolve: {
+            alias: { ...serverResolveAlias },
+          },
+        }
+      : {}),
+    ...(config.server.externals !== undefined
+      ? {
+          externals: { ...config.server.externals },
+        }
+      : {}),
     ...(documents.length > 0 ? { documents } : {}),
   };
 }

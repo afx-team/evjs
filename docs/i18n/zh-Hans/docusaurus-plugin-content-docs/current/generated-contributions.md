@@ -275,9 +275,11 @@ Application/Page target 可以同时用于 SPA 与 MPA。展开结果记录在 g
 route-tree 输入必须先 normalize 到相同 Application/Page/Document ownership。
 
 `resolve.external` 支持 `runtime: "client" | "server" | "all"`。Webpack adapter
-会按 target 应用 filter。当前 Utoopack adapter 只暴露 top-level externals config，
-因此会映射 client/all external；当存在 client entries 时，server-only external 会
-快速失败。
+会按 target 应用 filter。Utoopack 会把 client/all external 映射到 top-level config，
+并把 server/all external 映射到独立的 `server.externals` config，因此混合构建中的
+server-only contribution 仍保持隔离。插件 contribution 仍保留在
+`plan.resolve.external`；用户声明的 `server.externals` 是独立的 server build override，
+并在这些 contribution 之后应用。
 
 ## 边界
 

@@ -298,8 +298,11 @@ describe("createUtoopackConfig", () => {
     });
   });
 
-  it("rejects server-only resolve.external contributions for mixed Utoopack plans", async () => {
+  it("maps server-only externals to the Utoopack server build", async () => {
     const config = createResolvedConfig();
+    config.server.externals = {
+      "shared-lib": "commonjs configured-shared-lib",
+    };
     const plan = await createPlan(config, {
       serverRoutes: [
         {
@@ -314,16 +317,83 @@ describe("createUtoopackConfig", () => {
       ...plan.resolve,
       external: {
         "server-only-lib": {
-          source: "server-only-lib",
+          source: "commonjs server-only-lib",
           runtime: "server",
+        },
+        "shared-lib": {
+          source: "SharedLib",
+          runtime: "all",
         },
       },
     };
 
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.externals).toEqual({
+      "shared-lib": "SharedLib",
+    });
+    expect(utoopackConfig.server?.externals).toEqual({
+      "server-only-lib": "commonjs server-only-lib",
+      "shared-lib": "commonjs configured-shared-lib",
+    });
+  });
+
+  it("rejects server.resolve for mixed Utoopack plans", async () => {
+    const config = createResolvedConfig();
+    config.server.resolve = {
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    };
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), []),
     ).rejects.toThrow(
-      "cannot map server-only resolve.external contributions while client entries are present: server-only-lib",
+      "cannot apply server.resolve independently while client entries are present",
+    );
+  });
+
+  it("maps server.resolve for server-only Utoopack plans", async () => {
+    const config = createResolvedConfig();
+    config.server.resolve = {
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    };
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+    plan.entries = plan.entries.filter(
+      (entry) => entry.environment === "server",
+    );
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.resolve?.alias?.["server-sdk"]).toBe(
+      path.resolve(process.cwd(), "src/server/sdk.ts"),
     );
   });
 

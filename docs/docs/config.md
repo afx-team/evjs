@@ -271,9 +271,29 @@ export default defineConfig({
   routing: { mode: "spa" },
   server: {
     basePath: "/__evjs",
+    resolve: {
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    },
+    externals: {
+      "native-addon": "commonjs native-addon",
+    },
   },
 });
 ```
+
+`server.resolve` and `server.externals` apply only to server build entries;
+they never modify the client compiler. `server.resolve.alias` is a string map
+whose project-relative replacements resolve from the application root.
+`server.externals` maps module specifiers to external requests such as
+`"commonjs native-addon"`. All keys and values must be non-empty strings
+without leading or trailing whitespace. Config resolution normalizes these
+entries into `plan.server.externals` as a server-build-specific string map.
+
+The Webpack adapter supports both settings in mixed client/server builds.
+Utoopack 1.5.3 supports independent `server.externals`; its current resolver
+does not expose a server-scoped resolve object, so `server.resolve` is supported
+only for server-only Utoopack plans and fails fast for mixed plans instead of
+leaking the override into client resolution.
 
 `server.basePath` owns server-function, PPR, and RSC runtime paths. It must be
 an absolute pathname using non-empty ASCII URL-safe segments containing only

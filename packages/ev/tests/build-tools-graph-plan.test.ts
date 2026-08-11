@@ -67,6 +67,36 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(explicit.buildId).toBe("release-42");
   });
 
+  it("projects server-only build settings", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    config.server.resolve = {
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    };
+    config.server.externals = {
+      "native-addon": "commonjs native-addon",
+    };
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph);
+
+    expect(plan.server.resolve).toEqual({
+      alias: config.server.resolve.alias,
+    });
+    expect(plan.server.externals).toEqual(config.server.externals);
+    expect(plan.server.resolve?.alias).not.toBe(config.server.resolve.alias);
+    expect(plan.server.externals).not.toBe(config.server.externals);
+
+    const next = structuredClone(plan);
+    delete next.server.resolve;
+    delete next.server.externals;
+    expect(diffBuildPlan(plan, next, "config").serverCompilationChanged).toBe(
+      true,
+    );
+  });
+
   it("keeps recursively cleaned outputs inside the BuildPlan distDir", async () => {
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",

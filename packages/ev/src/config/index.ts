@@ -16,6 +16,7 @@ import {
   type PageRouteNode,
   type PrerenderConfig,
   type RenderMode,
+  type ResolvePlan,
   type ServerMiddlewareNode,
   type ServerRouteNode,
 } from "@evjs/shared/manifest";
@@ -98,7 +99,15 @@ export interface ResolvedServerConfig {
   conventions?: ResolvedServerConventionsConfig;
   /** Server dev options. */
   dev: ResolvedServerDevConfig;
+  /** Module resolution overrides applied only to server build entries. */
+  resolve?: ResolvedServerResolveConfig;
+  /** External modules applied only to server build entries. */
+  externals?: ResolvedServerExternalsConfig;
 }
+
+export type ResolvedServerResolveConfig = ServerResolveConfig;
+
+export type ResolvedServerExternalsConfig = ServerExternalsConfig;
 
 export interface ResolvedServerRuntimeConfig {
   basePath: string;
@@ -243,9 +252,17 @@ export interface ServerConfig {
    * RSC is enabled by a Page's `page.config.ts`, not by server config.
    */
   rsc?: ServerRscConfig;
+  /** Module resolution overrides applied only to server build entries. */
+  resolve?: ServerResolveConfig;
+  /** External modules applied only to server build entries. */
+  externals?: ServerExternalsConfig;
   /** Server dev options. */
   dev?: ServerDevConfig;
 }
+
+export type ServerResolveConfig = Pick<ResolvePlan, "alias">;
+
+export type ServerExternalsConfig = Record<string, string>;
 
 export interface ServerRscConfig {
   /** RSC Flight endpoint path override. */
@@ -531,7 +548,14 @@ const PUBLIC_DEV_CONFIG_KEYS = new Set([
   "proxy",
   "cliShortcuts",
 ]);
-const PUBLIC_SERVER_CONFIG_KEYS = new Set(["basePath", "rsc", "dev"]);
+const PUBLIC_SERVER_CONFIG_KEYS = new Set([
+  "basePath",
+  "rsc",
+  "resolve",
+  "externals",
+  "dev",
+]);
+const PUBLIC_SERVER_RESOLVE_CONFIG_KEYS = new Set(["alias"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
@@ -610,6 +634,11 @@ export function resolveConfig<TBundlerCfg = unknown>(
   );
   validateServerConfigKeys(serverConfig);
   const serverRscConfig = resolveServerRscConfig(serverConfig.rsc);
+  const serverResolveConfig = resolveServerResolveConfig(serverConfig.resolve);
+  const serverExternalsConfig = resolveExternalsConfig(
+    serverConfig.externals,
+    "server.externals",
+  );
   const serverDevConfig = resolveOptionalConfigRecord<ServerDevConfig>(
     serverConfig.dev,
     "server.dev",
@@ -687,6 +716,12 @@ export function resolveConfig<TBundlerCfg = unknown>(
       rsc: rscEndpoint ? { endpoint: rscEndpoint } : undefined,
       routes: conventions ? [] : undefined,
       conventions: resolvedServerConventions,
+      ...(serverResolveConfig !== undefined
+        ? { resolve: serverResolveConfig }
+        : {}),
+      ...(serverExternalsConfig !== undefined
+        ? { externals: serverExternalsConfig }
+        : {}),
       dev: {
         port: serverPort,
         https: serverHttps,
@@ -1531,7 +1566,52 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "basePath, rsc, or dev",
+    "basePath, rsc, resolve, externals, or dev",
+  );
+}
+
+function resolveServerResolveConfig(
+  value: unknown,
+): ResolvedServerResolveConfig | undefined {
+  if (value === undefined) return undefined;
+  const resolve = assertPlainConfigRecord(
+    value,
+    "server.resolve",
+    "a server resolve object",
+  );
+  assertKnownConfigKeys(
+    resolve,
+    PUBLIC_SERVER_RESOLVE_CONFIG_KEYS,
+    "server.resolve",
+    "alias",
+  );
+
+  return {
+    ...(resolve.alias === undefined
+      ? {}
+      : {
+          alias: resolveStringRecord(resolve.alias, "server.resolve.alias"),
+        }),
+  };
+}
+
+function resolveExternalsConfig(
+  value: unknown,
+  path: string,
+): ResolvedServerExternalsConfig | undefined {
+  return value === undefined ? undefined : resolveStringRecord(value, path);
+}
+
+function resolveStringRecord(
+  value: unknown,
+  path: string,
+): Record<string, string> {
+  const record = assertPlainConfigRecord(value, path, "a string map");
+  return Object.fromEntries(
+    Object.entries(record).map(([key, rawValue]) => [
+      assertTrimmedNonEmptyString(key, `${path} key`),
+      assertTrimmedNonEmptyString(rawValue, `${path}[${JSON.stringify(key)}]`),
+    ]),
   );
 }
 

@@ -252,9 +252,27 @@ export default defineConfig({
   routing: { mode: "spa" },
   server: {
     basePath: "/__evjs",
+    resolve: {
+      alias: { "server-sdk": "./src/server/sdk.ts" },
+    },
+    externals: {
+      "native-addon": "commonjs native-addon",
+    },
   },
 });
 ```
+
+`server.resolve` 与 `server.externals` 只作用于 server build entry，不会修改
+client compiler。`server.resolve.alias` 是字符串映射，其中 project-relative
+replacement 从应用根目录解析。`server.externals` 把 module specifier 映射为
+`"commonjs native-addon"` 这类 external request。所有 key 与 value 都必须是无首尾
+空白的非空字符串。配置解析会将它们作为 server build 专用的字符串映射放入
+`plan.server.externals`。
+
+Webpack adapter 在 client/server 混合构建中完整支持这两个配置。Utoopack 1.5.3
+支持独立的 `server.externals`；当前 resolver 尚未暴露 server-scoped resolve
+对象，因此 `server.resolve` 只支持 server-only Utoopack plan。混合 plan 会快速
+失败，避免把 server override 泄漏到 client resolution。
 
 `server.basePath` 统一控制 server function、PPR 和 RSC runtime 路径。它必须是
 absolute pathname，由非空 ASCII URL-safe segment 组成；每个 segment 只能包含
