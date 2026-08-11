@@ -705,13 +705,20 @@ export interface BeforeBuildContext<TBundlerCfg = unknown>
   readonly isRebuild: boolean;
 }
 
-/** Context passed after the client dev server starts listening. */
+/**
+ * Late lifecycle context passed after the client dev server starts listening.
+ * Analysis watch registration is intentionally unavailable at this stage.
+ */
 export interface DevServerReadyContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {
   readonly mode: "development";
   /** Actual client dev server origin reported by the bundler adapter. */
   readonly origin: string;
-  /** Aborted when the owning immutable development Session is closing. */
+  /**
+   * Cooperative cancellation signal aborted when the owning immutable
+   * development Session starts closing. Aborting the signal does not settle
+   * the hook's Promise automatically; asynchronous work must observe it.
+   */
   readonly signal: AbortSignal;
 }
 
@@ -782,6 +789,12 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * Called once after this immutable development Session's client server is
    * listening. The actual adapter-reported origin is available on the context.
    * Ordinary bundler/HMR rebuilds do not call this hook again.
+   *
+   * Rejecting this hook while its Session is active terminates the whole
+   * development run. Session shutdown or replacement aborts the context signal
+   * and waits for an in-flight hook to settle before running dispose hooks. CLI
+   * shortcut binding proceeds independently and does not wait for this hook to
+   * settle.
    */
   devServerReady?: DevServerReadyHook<TBundlerCfg>;
 

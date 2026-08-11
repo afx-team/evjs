@@ -248,12 +248,16 @@ describe("immutable dev session", () => {
     const cwd = await createProject();
     const base = createControlledBundler(["http://localhost:4314"]);
     const events: string[] = [];
+    let initialFactsPublished!: Promise<"discarded" | "published">;
     const controlled: ControlledBundler = {
       ...base,
       adapter: {
         ...base.adapter,
-        async dev(context) {
-          await context.callbacks.onBuildFacts({}, { isRebuild: false });
+        dev(context) {
+          initialFactsPublished = context.callbacks.onBuildFacts(
+            {},
+            { isRebuild: false },
+          );
           return base.adapter.dev(context);
         },
       },
@@ -276,10 +280,60 @@ describe("immutable dev session", () => {
     };
 
     const session = await start(cwd, controlled, [plugin]);
+    await expect(initialFactsPublished).resolves.toBe("published");
+    expect(events).toEqual(["beforeBuild", "afterBuild"]);
     await session.activate();
     await session.close();
 
     expect(events).toEqual(["beforeBuild", "afterBuild", "devServerReady"]);
+  });
+
+  it("aborts and waits for an active devServerReady hook before disposal", async () => {
+    const cwd = await createProject();
+    const controlled = createControlledBundler(["http://localhost:4315"]);
+    const events: string[] = [];
+    let readySignal: AbortSignal | undefined;
+    let settleReady!: () => void;
+    const readySettled = new Promise<void>((resolve) => {
+      settleReady = resolve;
+    });
+    const plugin: Plugin<Record<string, never>> = {
+      id: "pending-dev-server-ready",
+      setup() {
+        return {
+          async devServerReady({ signal }) {
+            readySignal = signal;
+            events.push("ready");
+            await readySettled;
+            events.push("ready:settled");
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+
+    const session = await start(cwd, controlled, [plugin]);
+    const activation = session.activate();
+    expect(events).toEqual(["ready"]);
+
+    let closeSettled = false;
+    const closing = session.close().then(() => {
+      closeSettled = true;
+    });
+    await Promise.resolve();
+
+    expect(readySignal?.aborted).toBe(true);
+    expect(closeSettled).toBe(false);
+    expect(events).toEqual(["ready"]);
+
+    settleReady();
+    await activation;
+    await closing;
+
+    expect(controlled.events).toEqual(["start:1", "close:1"]);
+    expect(events).toEqual(["ready", "ready:settled", "dispose"]);
   });
 
   it("closes the controller and disposes plugins when devServerReady fails", async () => {

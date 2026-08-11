@@ -60,7 +60,7 @@ and `ctx.pageOptions`.
 | Hook | Purpose |
 |------|---------|
 | `configureBundler(config, ctx)` | Mutate the selected bundler config |
-| `devServerReady({ origin })` | Consume the actual client origin after a development Session starts listening |
+| `devServerReady({ origin, signal })` | Consume the actual client origin after a development Session starts listening, with cooperative cancellation |
 | `beforeBuild(ctx)` | Run after fresh bundler facts arrive and before evjs links or emits canonical output |
 | `transformOutput(output, ctx)` | Adjust linked `AssetGroup` contents or add deployment metadata |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
@@ -102,17 +102,29 @@ Listener readiness does not imply that the first canonical output or the
 server/API runtime is ready. The first `beforeBuild()` / `afterBuild()` pair may
 finish before, during, or after `devServerReady()`; there is no ordering
 guarantee between them. Keep output-dependent work in `afterBuild()`. A rejected
-`devServerReady()` hook fail-stops the active Session and triggers normal
-controller cleanup and reverse-order plugin disposal. Its `signal` aborts when
-that Session starts closing.
+`devServerReady()` hook terminates the entire `ev dev` run while its Session is
+active, and triggers normal controller cleanup and reverse-order plugin
+disposal.
+
+The hook's `signal` aborts when its Session starts closing. Cancellation is
+cooperative: aborting the signal cannot settle the hook's returned Promise, so
+in-flight asynchronous work must observe or forward it and then settle. Session
+shutdown and replacement wait for an in-flight `devServerReady()` hook to settle
+before running plugin `dispose()` hooks. Ignoring the signal can therefore delay
+or block shutdown or replacement.
 
 ```ts
 const devToolsPlugin = {
   id: "dev-tools",
   setup() {
+    let closeDevTools: (() => Promise<void>) | undefined;
     return {
-      devServerReady({ origin }) {
-        console.log(`Client dev server: ${origin}`);
+      async devServerReady({ origin, signal }) {
+        const devTools = await connectDevTools({ origin, signal });
+        closeDevTools = () => devTools.close();
+      },
+      async dispose() {
+        await closeDevTools?.();
       },
     };
   },
@@ -125,8 +137,9 @@ Session construction fails after plugins have initialized. It does not run
 after an ordinary bundler/HMR rebuild inside the same Session.
 
 The `setup()`, `emitIR()`, and `configureBundler()` contexts expose
-`addWatchFile()` for analysis/config dependencies. `BeforeBuildContext`
-deliberately does not; output, HTML, and disposal contexts do not either.
+`addWatchFile()` for analysis/config dependencies. `BeforeBuildContext` and the
+late `DevServerReadyContext` deliberately do not; output, HTML, and disposal
+contexts do not either.
 `emitIR()` dependencies participate in write-free candidate preparation.
 `setup()` and `configureBundler()` dependencies are opaque constructor inputs
 whose content is included in the candidate semantic fingerprint. Read changing
@@ -147,9 +160,12 @@ semantic no-op or candidate-preparation failure keeps the current terminal
 binding. For a replacement, the Supervisor detaches that binding before closing
 the old Session, collects contributions from the replacement Session's
 descriptors, and binds them only after its bundler controller supplies the
-actual client origin. A shortcut action's `PluginDevSession.close()` shuts down
-the whole Supervisor and `ev dev` run, not only its owning immutable Session. See
-[Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts).
+actual client origin. Shortcut binding and `devServerReady()` execution proceed
+independently once the Session is active; neither waits for the other, so a
+shortcut action must not assume that ready hooks have settled. A shortcut
+action's `PluginDevSession.close()` shuts down the whole Supervisor and `ev dev`
+run, not only its owning immutable Session. See [Plugin CLI
+Shortcuts](./dev#plugin-cli-shortcuts).
 
 ## Build Output Ownership
 

@@ -594,6 +594,40 @@ describe("runDevServerReadyHooks", () => {
     expect(observedReceivers).toEqual([first, second]);
   });
 
+  it("does not start later hooks after the Session signal aborts", async () => {
+    const abortController = new AbortController();
+    const events: string[] = [];
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await runDevServerReadyHooks(
+      [
+        {
+          devServerReady({ signal }) {
+            events.push("first");
+            abortController.abort();
+            expect(signal.aborted).toBe(true);
+          },
+        },
+        {
+          devServerReady() {
+            events.push("second");
+          },
+        },
+      ],
+      context,
+      "dev-server",
+      abortController.signal,
+    );
+
+    expect(events).toEqual(["first"]);
+  });
+
   it("suggests the supported casing for devServerReady", async () => {
     const context = {
       mode: "development",

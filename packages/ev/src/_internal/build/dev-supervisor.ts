@@ -104,7 +104,7 @@ export async function runDevSupervisor<TBundlerCfg>(
   let stopPromise: Promise<void> | undefined;
   let fatalError: unknown;
   let shortcutBinding: ActiveShortcutBinding | undefined;
-  let shortcutRefreshQueue = Promise.resolve();
+  let shortcutOwnerSession: DevSession | undefined;
   const pendingShortcutActions = new Set<Promise<void>>();
   const shortcutContributions = new WeakMap<
     DevSession,
@@ -132,14 +132,20 @@ export async function runDevSupervisor<TBundlerCfg>(
     return contribution;
   };
 
-  const bindActiveCLIShortcuts = async (): Promise<void> => {
+  const refreshCLIShortcuts = async (): Promise<void> => {
     if (stopping || shortcutBinding || pendingShortcutActions.size > 0) return;
     const state = active;
-    if (!state?.revision.config.dev.cliShortcuts) return;
+    if (
+      !state?.revision.config.dev.cliShortcuts ||
+      shortcutOwnerSession !== state.session
+    ) {
+      return;
+    }
     const customShortcuts = await collectSessionShortcuts(state);
     if (
       stopping ||
       active?.session !== state.session ||
+      shortcutOwnerSession !== state.session ||
       shortcutBinding ||
       pendingShortcutActions.size > 0
     ) {
@@ -155,15 +161,6 @@ export async function runDevSupervisor<TBundlerCfg>(
     shortcutBinding = {
       unbind: bindCLIShortcuts(pluginSession, { customShortcuts }),
     };
-  };
-
-  const refreshCLIShortcuts = (): Promise<void> => {
-    const refresh = shortcutRefreshQueue.then(
-      bindActiveCLIShortcuts,
-      bindActiveCLIShortcuts,
-    );
-    shortcutRefreshQueue = refresh.catch(() => {});
-    return refresh;
   };
 
   const refreshCLIShortcutsSafely = async (): Promise<void> => {
@@ -357,9 +354,6 @@ export async function runDevSupervisor<TBundlerCfg>(
   ): Promise<void> => {
     try {
       await state.session.activate();
-      if (!stopping && active?.session === state.session) {
-        await refreshCLIShortcutsSafely();
-      }
     } catch (error) {
       if (!stopping && active?.session === state.session) fail(error);
     }
@@ -369,6 +363,9 @@ export async function runDevSupervisor<TBundlerCfg>(
     prepared: PreparedDevRevision<TBundlerCfg>,
   ): Promise<void> => {
     const previous = active;
+    // Revoke eligibility before the asynchronous detach so a late contribution
+    // cannot rebind shortcuts for the Session being retired.
+    shortcutOwnerSession = undefined;
     await detachCLIShortcuts(DEV_CLI_SHORTCUT_ACTION_DRAIN_TIMEOUT_MS);
     // Detach identity before close so an intentional controller.done settle is
     // never classified as an unexpected active-session failure.
@@ -410,10 +407,12 @@ export async function runDevSupervisor<TBundlerCfg>(
       sessionWatchFiles,
     };
     active = nextState;
+    shortcutOwnerSession = session;
     retainedFailedDependencies.clear();
     refreshWatcher(currentDependencySet());
     monitorSession(nextState);
     void activateSession(nextState);
+    void refreshCLIShortcutsSafely();
   };
 
   const reconcileAttemptChanged = (

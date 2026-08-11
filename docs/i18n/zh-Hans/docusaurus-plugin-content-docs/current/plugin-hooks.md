@@ -59,7 +59,7 @@ flowchart TB
 | Hook | 用途 |
 |------|------|
 | `configureBundler(config, ctx)` | 修改当前 bundler 配置 |
-| `devServerReady({ origin })` | development Session 开始监听后获取实际 client origin |
+| `devServerReady({ origin, signal })` | development Session 开始监听后获取实际 client origin，并支持协作式取消 |
 | `beforeBuild(ctx)` | fresh bundler facts 就绪后、evjs 链接或发射 canonical output 前执行 |
 | `transformOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
@@ -95,16 +95,27 @@ HMR rebuild、production build、`prepare` 与 `inspect` 都不会执行它。
 Listener ready 不代表首次 canonical output 或 server/API runtime 已就绪。首次
 `beforeBuild()` / `afterBuild()` 可能在 `devServerReady()` 之前、期间或之后完成，两者没有
 顺序保证。依赖 output 的逻辑仍应放在 `afterBuild()`。如果 `devServerReady()` reject，
-active Session 会 fail-stop，并执行正常的 controller 清理与 plugin 逆序 dispose。该
-Session 开始关闭时，hook context 的 `signal` 会 abort。
+且所属 Session 仍为 active，整个 `ev dev` 运行都会终止，并执行正常的 controller 清理与
+plugin 逆序 dispose。
+
+该 Session 开始关闭时，hook context 的 `signal` 会 abort。取消是协作式的：signal
+abort 不会自动 settle hook 返回的 Promise，进行中的异步工作必须监听或透传 signal，
+随后自行 settle。Session 关闭或 replacement 会等待进行中的 `devServerReady()` hook
+settle，再运行 plugin `dispose()` hook。因此，忽略 signal 可能延迟或阻塞关闭与
+replacement。
 
 ```ts
 const devToolsPlugin = {
   id: "dev-tools",
   setup() {
+    let closeDevTools: (() => Promise<void>) | undefined;
     return {
-      devServerReady({ origin }) {
-        console.log(`Client dev server: ${origin}`);
+      async devServerReady({ origin, signal }) {
+        const devTools = await connectDevTools({ origin, signal });
+        closeDevTools = () => devTools.close();
+      },
+      async dispose() {
+        await closeDevTools?.();
       },
     };
   },
@@ -116,11 +127,11 @@ production build 结束、development Session 关闭或被替换，以及 plugin
 构造失败；同一 Session 内的普通 bundler/HMR rebuild 不会执行它。
 
 `setup()`、`emitIR()` 和 `configureBundler()` context 提供 `addWatchFile()` 来注册
-analysis/config 依赖；`BeforeBuildContext` 明确不提供它，晚期 output、HTML 与 dispose
-context 也不提供。`emitIR()` 依赖参与无写入的候选 preparation；`setup()` 与
-`configureBundler()` 依赖是 opaque constructor input，其内容会进入候选 semantic
-fingerprint。变化的 analysis 数据应在 `emitIR()` 中读取；setup state 在所属 Session
-内保持不变。
+analysis/config 依赖；`BeforeBuildContext` 与晚期 `DevServerReadyContext` 明确不提供它，
+output、HTML 与 dispose context 也不提供。`emitIR()` 依赖参与无写入的候选 preparation；
+`setup()` 与 `configureBundler()` 依赖是 opaque constructor input，其内容会进入候选
+semantic fingerprint。变化的 analysis 数据应在 `emitIR()` 中读取；setup state 在所属
+Session 内保持不变。
 
 真实监听输入发生变化后，长生命周期 Supervisor 会在内存中准备 config、CoreGraph、
 BuildPlan 与 generated IR。Preparation 不执行 build hook；如果失败，当前 Session 仍会
@@ -133,10 +144,11 @@ Descriptor 顶层的 `cliShortcuts()` 遵循相同的 Session 边界，但它不
 也不属于 bundler/HMR cycle。快捷键引擎启用时，semantic no-op 或候选 preparation 失败
 会保留当前 terminal binding。发生 Session replacement 时，Supervisor 会在关闭旧 Session
 前解绑旧集合，从 replacement Session 的 descriptor 收集 contribution，并且只在其
-bundler controller 提供实际 client origin 后绑定新集合。Shortcut action 的
-`PluginDevSession.close()` 会关闭整个 Supervisor 和本次 `ev dev` 运行，而不是只关闭它
-所属的 immutable Session。参见
-[插件 CLI 快捷键](./dev#插件-cli-快捷键)。
+bundler controller 提供实际 client origin 后绑定新集合。Session active 后，快捷键绑定与
+`devServerReady()` 独立执行，双方互不等待，因此 shortcut action 不能假设 ready hook
+已经 settle。Shortcut action 的 `PluginDevSession.close()` 会关闭整个 Supervisor 和本次
+`ev dev` 运行，而不是只关闭它所属的 immutable Session。参见[插件 CLI
+快捷键](./dev#插件-cli-快捷键)。
 
 ## Build Output 所有权
 
