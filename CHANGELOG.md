@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.9] — 2026-08-11
+
 ### ✨ Features
 
 - **Dev server ready plugin hook** — Plugins can consume the actual client
