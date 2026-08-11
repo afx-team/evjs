@@ -1555,9 +1555,18 @@ function assertPluginCatalog(
 ): Record<string, CorePluginCatalogEntrySnapshot> {
   const catalog = assertObjectShape(value, source, ["entries"]);
   const entries = assertRecord(catalog.entries, `${source}.entries`);
+  const pluginIdByCaseFoldedId = new Map<string, string>();
 
   for (const [pluginId, valueEntry] of Object.entries(entries)) {
     assertPluginId(pluginId, `${source}.entries plugin id`);
+    const caseFoldedId = pluginId.toLowerCase();
+    const existingId = pluginIdByCaseFoldedId.get(caseFoldedId);
+    if (existingId !== undefined) {
+      throw new Error(
+        `[evjs] ${source}.entries plugin id "${pluginId}" conflicts with "${existingId}". Plugin ids must be unique, including on case-insensitive filesystems.`,
+      );
+    }
+    pluginIdByCaseFoldedId.set(caseFoldedId, pluginId);
     const entrySource = `${source}.entries.${pluginId}`;
     const entry = assertObjectShape(
       valueEntry,
@@ -1606,12 +1615,12 @@ export function assertPluginId(
 ): asserts value is string {
   if (
     typeof value !== "string" ||
-    !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ||
-    RESERVED_PLUGIN_IDS.has(value)
+    !/^(?:[a-z][A-Za-z0-9]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)$/.test(value) ||
+    RESERVED_PLUGIN_IDS.has(value.toLowerCase())
   ) {
     const actual = typeof value === "string" ? ` "${value}"` : "";
     throw new Error(
-      `[evjs] ${source}${actual} must be a lowercase plugin id such as "analytics" or "error-reporting" and must not be a reserved object key or Windows device basename.`,
+      `[evjs] ${source}${actual} must be a lower camel case or lowercase kebab-case plugin id such as "errorReporting" or "error-reporting" and must not be a reserved object key or Windows device basename.`,
     );
   }
 }

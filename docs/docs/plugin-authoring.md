@@ -174,17 +174,21 @@ select executable runtime code.
 
 ## Identity and Ordering
 
-Every plugin declares one stable, short, lowercase `id`, such as `analytics` or
-`error-reporting`. The same canonical id identifies dependencies and lifecycle
-state, owns generated IR, and—when the plugin declares a Page contract—keys
-its entry in `page.config.ts#plugins`. It is not a package name and has no
-separate Page alias: the package may be `@company/analytics`, while its plugin
-id is `analytics`. An id must start with a lowercase letter and contain only
-non-empty lowercase alphanumeric segments separated by hyphens. `__proto__`,
+Every plugin declares one stable, short `id` in lower camel case or lowercase
+kebab-case, such as `analytics`, `errorReporting`, or `error-reporting`. The
+same canonical id identifies dependencies and lifecycle state, owns generated
+IR, and—when the plugin declares a Page contract—keys its entry in
+`page.config.ts#plugins`. It is not a package name and has no separate Page
+alias: the package may be `@company/analytics`, while its plugin id is
+`analytics`. An id must start with a lowercase letter and then use either ASCII
+letters and digits without separators, or non-empty lowercase alphanumeric
+segments separated by hyphens. Camel case and kebab-case must not be mixed in
+one id. `__proto__`,
 `constructor`, `prototype`, and Windows device basenames (`con`, `prn`, `aux`,
 `nul`, `com1` through `com9`, and `lpt1` through `lpt9`) are reserved. This
 keeps the unchanged id safe as one generated path segment on every supported
-platform. Plugin ids must be unique in one Application.
+platform. Plugin ids must be unique in one Application after case folding, so
+ids such as `errorReporting` and `errorreporting` cannot be installed together.
 
 `dependencies`, `optionalDependencies`, and `enforce` control hook ordering.
 Unknown descriptor fields and misspelled hooks are rejected.

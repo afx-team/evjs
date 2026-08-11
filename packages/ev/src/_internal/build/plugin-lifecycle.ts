@@ -39,15 +39,19 @@ export function orderPluginsByDependencies<
   TPlugin extends PluginOrderDeclaration,
 >(plugins: TPlugin[]): TPlugin[] {
   const pluginById = new Map<string, TPlugin>();
+  const pluginIdByCaseFoldedId = new Map<string, string>();
   const dependentsById = new Map<string, string[]>();
   const dependencyCountById = new Map<string, number>();
 
   for (const plugin of plugins) {
-    if (pluginById.has(plugin.id)) {
+    const caseFoldedId = plugin.id.toLowerCase();
+    const existingId = pluginIdByCaseFoldedId.get(caseFoldedId);
+    if (existingId !== undefined) {
       throw new Error(
-        `[evjs] Duplicate plugin id "${plugin.id}". Plugin ids must be globally unique.`,
+        `[evjs] Duplicate plugin id "${plugin.id}" conflicts with "${existingId}". Plugin ids must be globally unique, including on case-insensitive filesystems.`,
       );
     }
+    pluginIdByCaseFoldedId.set(caseFoldedId, plugin.id);
     pluginById.set(plugin.id, plugin);
     dependentsById.set(plugin.id, []);
     dependencyCountById.set(plugin.id, 0);

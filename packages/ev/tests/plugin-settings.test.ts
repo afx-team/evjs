@@ -112,6 +112,12 @@ describe("plugin settings registry", () => {
     expect(() => collectPluginSettingsRegistry([first(), second()])).toThrow(
       'Duplicate plugin id "shared"',
     );
+
+    const camelCase = definePlugin({ id: "errorReporting" });
+    const caseCollision = definePlugin({ id: "errorreporting" });
+    expect(() =>
+      collectPluginSettingsRegistry([camelCase(), caseCollision()]),
+    ).toThrow('plugin id "errorreporting" conflicts with "errorReporting"');
   });
 
   it("uses the same id for Application settings and the catalog", () => {
@@ -198,7 +204,7 @@ describe("plugin settings registry", () => {
         // @ts-expect-error Scoped package names are not canonical short plugin ids.
         id: "@scope/plugin-auth",
       }),
-    ).toThrow("must be a lowercase plugin id");
+    ).toThrow("must be a lower camel case or lowercase kebab-case plugin id");
     expect(() =>
       definePlugin({
         // @ts-expect-error Windows device basenames are reserved plugin ids.
@@ -209,6 +215,24 @@ describe("plugin settings registry", () => {
 });
 
 describe("definePlugin and pluginOptions", () => {
+  it("accepts a lower camel case plugin id throughout Page settings", () => {
+    const errorReporting = definePlugin({
+      id: "errorReporting",
+      page: pluginOptions({ defaults: { sampleRate: 1 } }),
+    });
+    const state = resolveInstalled(errorReporting());
+
+    expect(state.registry.byId.get("errorReporting")?.id).toBe(
+      "errorReporting",
+    );
+    expect(
+      resolvePagePluginOptions(
+        { errorReporting: { sampleRate: 0.5 } },
+        "Page config plugins",
+      ),
+    ).toEqual({ errorReporting: { sampleRate: 0.5 } });
+  });
+
   it("narrows plugin option context by owner", () => {
     const contract = pluginOptions({
       defaults(context) {
@@ -299,21 +323,21 @@ describe("definePlugin and pluginOptions", () => {
         id: "",
         page: pluginOptions({ defaults: {} }),
       }),
-    ).toThrow("must be a lowercase plugin id");
+    ).toThrow("must be a lower camel case or lowercase kebab-case plugin id");
     expect(() =>
       definePlugin({
         // @ts-expect-error Plugin ids cannot start with whitespace.
         id: " analytics",
         page: pluginOptions({ defaults: {} }),
       }),
-    ).toThrow("must be a lowercase plugin id");
+    ).toThrow("must be a lower camel case or lowercase kebab-case plugin id");
     expect(() =>
       definePlugin({
-        // @ts-expect-error Plugin ids must be lowercase.
+        // @ts-expect-error Plugin ids must start with a lowercase letter.
         id: "Analytics",
         page: pluginOptions({ defaults: {} }),
       }),
-    ).toThrow("must be a lowercase plugin id");
+    ).toThrow("must be a lower camel case or lowercase kebab-case plugin id");
     expect(() =>
       definePlugin({
         id: "analytics",
@@ -412,11 +436,15 @@ describe("definePlugin and pluginOptions", () => {
         id: "analytics--reporting",
       });
       definePlugin({
-        // @ts-expect-error Plugin ids accept lowercase letters, digits, and hyphens only.
+        // @ts-expect-error Camel case and kebab-case cannot be mixed.
+        id: "analytics-reportingPlugin",
+      });
+      definePlugin({
+        // @ts-expect-error Plugin ids accept ASCII letters, digits, or kebab-case hyphens only.
         id: "analytics.reporting",
       });
       definePlugin({
-        // @ts-expect-error Plugin ids accept lowercase letters, digits, and hyphens only.
+        // @ts-expect-error Plugin ids accept ASCII letters, digits, or kebab-case hyphens only.
         id: "analytics_plugin",
       });
       definePlugin({
@@ -438,6 +466,10 @@ describe("definePlugin and pluginOptions", () => {
       definePlugin({
         // @ts-expect-error Windows device basenames are reserved plugin ids.
         id: "con",
+      });
+      definePlugin({
+        // @ts-expect-error Windows device basenames are reserved case-insensitively.
+        id: "cOn",
       });
       definePlugin({
         // @ts-expect-error Windows device basenames are reserved plugin ids.
@@ -469,6 +501,8 @@ describe("definePlugin and pluginOptions", () => {
       definePlugin({ id: "con-tools" });
       definePlugin({ id: "a" });
       definePlugin({ id: "plugin-1" });
+      definePlugin({ id: "errorReporting" });
+      definePlugin({ id: "plugin2FA" });
       definePlugin({
         id: "optional-application",
         // @ts-expect-error Application contract presence must be statically definite.
@@ -1676,7 +1710,7 @@ describe("plugin setting diagnostics", () => {
   it("validates plugin id syntax before installation lookup", () => {
     expect(() =>
       resolvePagePluginOptions({ Analytics: true }, "Page config plugins"),
-    ).toThrow("must be a lowercase plugin id");
+    ).toThrow("must be a lower camel case or lowercase kebab-case plugin id");
   });
 });
 

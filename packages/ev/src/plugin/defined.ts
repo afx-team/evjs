@@ -124,8 +124,13 @@ type LowercasePluginIdLetter =
   | "y"
   | "z";
 
+type UppercasePluginIdLetter = Uppercase<LowercasePluginIdLetter>;
 type PluginIdDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-type PluginIdCharacter = LowercasePluginIdLetter | PluginIdDigit;
+type LowerCamelPluginIdCharacter =
+  | LowercasePluginIdLetter
+  | UppercasePluginIdLetter
+  | PluginIdDigit;
+type KebabPluginIdCharacter = LowercasePluginIdLetter | PluginIdDigit;
 
 type ReservedPluginId =
   | "__proto__"
@@ -138,21 +143,30 @@ type ReservedPluginId =
   | "prn"
   | "prototype";
 
-type HasCanonicalPluginIdTail<TValue extends string> = TValue extends ""
+type HasLowerCamelPluginIdTail<TValue extends string> = TValue extends ""
   ? true
-  : TValue extends `${PluginIdCharacter}${infer TRest}`
-    ? HasCanonicalPluginIdTail<TRest>
-    : TValue extends `-${PluginIdCharacter}${infer TRest}`
-      ? HasCanonicalPluginIdTail<TRest>
+  : TValue extends `${LowerCamelPluginIdCharacter}${infer TRest}`
+    ? HasLowerCamelPluginIdTail<TRest>
+    : false;
+
+type HasKebabPluginIdTail<TValue extends string> = TValue extends ""
+  ? true
+  : TValue extends `${KebabPluginIdCharacter}${infer TRest}`
+    ? HasKebabPluginIdTail<TRest>
+    : TValue extends `-${KebabPluginIdCharacter}${infer TRest}`
+      ? HasKebabPluginIdTail<TRest>
       : false;
 
-type CanonicalPluginId<TValue extends string> = TValue extends ReservedPluginId
-  ? never
-  : TValue extends `${LowercasePluginIdLetter}${infer TRest}`
-    ? HasCanonicalPluginIdTail<TRest> extends true
-      ? TValue
-      : never
-    : never;
+type CanonicalPluginId<TValue extends string> =
+  Lowercase<TValue> extends ReservedPluginId
+    ? never
+    : TValue extends `${LowercasePluginIdLetter}${infer TRest}`
+      ? HasLowerCamelPluginIdTail<TRest> extends true
+        ? TValue
+        : HasKebabPluginIdTail<TRest> extends true
+          ? TValue
+          : never
+      : never;
 
 /** @internal Keep only one complete, unbranded string literal. */
 export type DefinitePluginId<TValue extends string> =
