@@ -8,6 +8,17 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.11] — 2026-08-12
+
+### ✨ Features
+
+- **MPA SSR client fallback Documents** — Hydratable MPA SSR Pages now emit an
+  empty, independently bootable CSR fallback HTML Document with their client
+  assets and HTML transforms. Request-time server shells derive from that same
+  transformed Document while preserving server-rendered deployment routes.
+
+---
+
 ## [0.3.10] — 2026-08-12
 
 ### ✨ Features
