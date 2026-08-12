@@ -6,13 +6,26 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.10] — 2026-08-12
+
+### ✨ Features
+
+- **Server-specific build configuration** — Applications can declare
+  `server.resolve.alias` and `server.externals` without changing client
+  resolution. Webpack and Utoopack keep both settings isolated in mixed builds.
+- **Lower camel case plugin ids** — Plugin ids can use lower camel case as well
+  as lowercase kebab-case. Mixed camel/kebab ids and case-folded collisions
+  remain invalid so generated paths and settings stay portable across
+  case-sensitive and case-insensitive filesystems.
+
 ### 🐛 Bug Fixes
 
 - **Utoopack server alias isolation** — Mixed client/server builds now map
-  `server.resolve.alias` to Utoopack's server-scoped resolver instead of
-  rejecting the configuration, allowing matching client and server aliases to
-  resolve to different targets while preserving project-relative alias
-  replacements for Utoopack 1.5.4.
+  `server.resolve.alias` to Utoopack's server-scoped resolver, allowing matching
+  client and server aliases to resolve to different targets while preserving
+  project-relative alias replacements for Utoopack 1.5.4.
 
 ---
 
