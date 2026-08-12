@@ -82,9 +82,7 @@ describe("createUtoopackConfig", () => {
     ]);
     expect(utoopackConfig.output?.publicPath).toBe("auto");
     expect(utoopackConfig.output?.crossOriginLoading).toBe("anonymous");
-    expect(utoopackConfig.resolve?.alias?.["@"]).toBe(
-      path.resolve(process.cwd(), "src"),
-    );
+    expect(utoopackConfig.resolve?.alias?.["@"]).toBe("./src");
     expect(utoopackConfig.define).toMatchObject({
       "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify("__evjs/fn"),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify("__evjs/fn"),
@@ -270,7 +268,7 @@ describe("createUtoopackConfig", () => {
     );
     expect(plan.resolve?.alias?.["@generated/config"]).toBe(module?.file);
     expect(utoopackConfig.resolve?.alias?.["@generated/config"]).toBe(
-      path.resolve(process.cwd(), module?.file ?? ""),
+      module?.file,
     );
   });
 
@@ -376,13 +374,13 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig).toMatchObject({
       resolve: {
         alias: {
-          "server-sdk": path.resolve(process.cwd(), "src/client/sdk.ts"),
+          "server-sdk": "./src/client/sdk.ts",
         },
       },
       server: {
         resolve: {
           alias: {
-            "server-sdk": path.resolve(process.cwd(), "src/server/sdk.ts"),
+            "server-sdk": "./src/server/sdk.ts",
           },
         },
       },

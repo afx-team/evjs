@@ -45,6 +45,12 @@ describe("Utoopack multi-server entries", () => {
         import: "./src/detail.server.ts",
       },
     ]);
+    expect(config.resolve?.alias?.["platform-alias"]).toBe(
+      "./src/client-value.ts",
+    );
+    expect(config.server?.resolve?.alias?.["platform-alias"]).toBe(
+      "./src/server-value.ts",
+    );
 
     await runUtoopackBuild({ build: utoopackBuild }, config, cwd);
     await fs.promises.writeFile(
@@ -53,6 +59,10 @@ describe("Utoopack multi-server entries", () => {
     );
 
     const facts = await new UtoopackManifestGenerator(cwd, plan).build();
+    const [clientOutput, serverOutput] = await Promise.all([
+      readJavaScriptOutput(path.join(cwd, "dist/client")),
+      readJavaScriptOutput(path.join(cwd, "dist/server")),
+    ]);
     const stats = JSON.parse(
       await fs.promises.readFile(
         path.join(cwd, "dist/server/stats.json"),
@@ -72,6 +82,10 @@ describe("Utoopack multi-server entries", () => {
       "page-server-detail",
       "server",
     ]);
+    expect(clientOutput).toContain("client alias");
+    expect(clientOutput).not.toContain("server alias");
+    expect(serverOutput).toContain("server alias");
+    expect(serverOutput).not.toContain("client alias");
 
     const assetReferenceCounts = new Map<string, number>();
     for (const entrypoint of Object.values(stats.entrypoints)) {
@@ -194,6 +208,12 @@ function createPlan(): BuildPlan {
     server: {
       entry: "./src/server.ts",
       renderers,
+      resolve: {
+        alias: { "platform-alias": "./src/server-value.ts" },
+      },
+    },
+    resolve: {
+      alias: { "platform-alias": "./src/client-value.ts" },
     },
     dev: {
       clientRoutes: [],
@@ -217,7 +237,15 @@ async function writeFixture(cwd: string): Promise<void> {
   await Promise.all([
     fs.promises.writeFile(
       path.join(sourceDir, "client.ts"),
-      'console.log("client");\n',
+      'import { value } from "platform-alias";\nconsole.log(value);\n',
+    ),
+    fs.promises.writeFile(
+      path.join(sourceDir, "client-value.ts"),
+      'export const value = "client alias";\n',
+    ),
+    fs.promises.writeFile(
+      path.join(sourceDir, "server-value.ts"),
+      'export const value = "server alias";\n',
     ),
     fs.promises.writeFile(
       path.join(sourceDir, "shared-all.ts"),
@@ -229,7 +257,7 @@ async function writeFixture(cwd: string): Promise<void> {
     ),
     fs.promises.writeFile(
       path.join(sourceDir, "server.ts"),
-      'import { sharedPrimary } from "./shared-primary";\nexport const serverEntry = sharedPrimary;\n',
+      'import { value } from "platform-alias";\nimport { sharedPrimary } from "./shared-primary";\nexport const serverEntry = value + " " + sharedPrimary;\n',
     ),
     fs.promises.writeFile(
       path.join(sourceDir, "dashboard.server.ts"),
@@ -240,4 +268,15 @@ async function writeFixture(cwd: string): Promise<void> {
       'import { sharedAll } from "./shared-all";\nexport const detailEntry = sharedAll;\n',
     ),
   ]);
+}
+
+async function readJavaScriptOutput(dir: string): Promise<string> {
+  const files = (await fs.promises.readdir(dir, { recursive: true })).filter(
+    (file) => file.endsWith(".js"),
+  );
+  return (
+    await Promise.all(
+      files.map((file) => fs.promises.readFile(path.join(dir, file), "utf-8")),
+    )
+  ).join("\n");
 }

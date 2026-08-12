@@ -35,7 +35,7 @@
     "@evjs/ev": "*",
     "@evjs/shared": "*",
     "@logtape/logtape": "^2.0.4",
-    "@utoo/pack": "^1.5.3",
+    "@utoo/pack": "^1.5.4",
     "chokidar": "^3.6.0",
     "fast-glob": "^3.3.3",
     "less": "4.1.3",
