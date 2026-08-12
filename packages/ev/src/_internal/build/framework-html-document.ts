@@ -17,8 +17,9 @@ export function createFrameworkHtmlDocument<TBundlerCfg>(options: {
   plan: BuildPlan;
   html: HtmlDocumentInfo;
   clientRuntime: ReturnType<typeof createClientRuntime>;
+  purpose: "client-document" | "server-shell";
 }): ReturnType<typeof generateHtml> {
-  const { cwd, config, output, plan, html, clientRuntime } = options;
+  const { cwd, config, output, plan, html, clientRuntime, purpose } = options;
   const doc = generateHtml({
     template: path.resolve(cwd, html.template),
     publicPath: output.publicPath,
@@ -48,7 +49,7 @@ export function createFrameworkHtmlDocument<TBundlerCfg>(options: {
     applyPageMetadataToHtmlDocument(doc, page?.metadata, {
       preserveBaseline: hasSpaApplicationEntry(plan, html.applicationId),
     });
-    markPageHydrationTarget(doc, page);
+    preparePageMount(doc, page, purpose);
   }
   applyHtmlTagContributions(doc, html, plan);
   return doc;
@@ -75,7 +76,21 @@ function withHtmlAssetCrossOrigin(
   }));
 }
 
-function markPageHydrationTarget(
+function preparePageMount(
+  doc: ReturnType<typeof generateHtml>,
+  page: BuildOutput["pages"][string] | undefined,
+  purpose: "client-document" | "server-shell",
+): void {
+  const mount = page ? doc.querySelector(page.mount ?? "#app") : null;
+  if (purpose === "client-document" && page?.render === "ssr") {
+    if (mount) mount.innerHTML = "";
+    return;
+  }
+  markServerPageHydrationTarget(doc, page);
+}
+
+/** Add the server-owned hydration signal to an already generated Document. */
+export function markServerPageHydrationTarget(
   doc: ReturnType<typeof generateHtml>,
   page: BuildOutput["pages"][string] | undefined,
 ): void {

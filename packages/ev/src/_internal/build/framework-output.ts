@@ -55,7 +55,10 @@ import {
   FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
   portableArtifactPathsConflict,
 } from "./portable-artifact-path.js";
-import { compileServerDocumentShells } from "./server-document-shell.js";
+import {
+  type CanonicalClientPageDocument,
+  compileServerDocumentShells,
+} from "./server-document-shell.js";
 
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
@@ -592,6 +595,103 @@ type PageHtmlDocumentInfo = HtmlDocumentInfo & {
   owner: { kind: "page"; pageId: string };
 };
 
+async function compileFrameworkHtmlDocument<TBundlerCfg>(options: {
+  cwd: string;
+  config: ResolvedConfig<TBundlerCfg>;
+  hooks: PluginHooks<TBundlerCfg>[];
+  pluginCtx: PluginSetupContext<TBundlerCfg>;
+  output: BuildOutput;
+  plan: BuildPlan;
+  html: HtmlDocumentInfo;
+  clientRuntime: ReturnType<typeof createClientRuntime>;
+  isRebuild: boolean;
+  staticPage?: {
+    frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
+    serverDir: string;
+    loadServerModule?: (asset: string) => Promise<unknown>;
+  };
+}): Promise<string> {
+  const doc = createFrameworkHtmlDocument({
+    cwd: options.cwd,
+    config: options.config,
+    output: options.output,
+    plan: options.plan,
+    html: options.html,
+    clientRuntime: options.clientRuntime,
+    purpose: "client-document",
+  });
+  if (
+    options.staticPage &&
+    shouldPrerenderStaticPage(options.output, options.html)
+  ) {
+    await prerenderStaticPageHtml({
+      doc,
+      output: options.output,
+      html: options.html,
+      frameworkRuntime: options.staticPage.frameworkRuntime,
+      serverDir: options.staticPage.serverDir,
+      loadServerModule: options.staticPage.loadServerModule,
+    });
+  }
+  return buildHtml({
+    doc,
+    hooks: options.hooks,
+    pluginContext: options.pluginCtx,
+    html: options.html,
+    output: options.output,
+    isRebuild: options.isRebuild,
+  });
+}
+
+/**
+ * Compile MPA SSR fallback Documents before request-time shells. Each returned
+ * HTML string is the canonical, fully transformed client Document from which
+ * the corresponding server shell is derived.
+ */
+async function compileCanonicalClientPageDocuments<TBundlerCfg>(options: {
+  cwd: string;
+  config: ResolvedConfig<TBundlerCfg>;
+  hooks: PluginHooks<TBundlerCfg>[];
+  pluginCtx: PluginSetupContext<TBundlerCfg>;
+  output: BuildOutput;
+  plan: BuildPlan;
+  isRebuild: boolean;
+}): Promise<Map<string, CanonicalClientPageDocument>> {
+  const { cwd, config, hooks, pluginCtx, output, plan, isRebuild } = options;
+  const serverPageIds = new Set(
+    plan.server.documents?.map((document) => document.pageId) ?? [],
+  );
+  const documents = new Map<string, CanonicalClientPageDocument>();
+  const clientRuntime = createClientRuntime(output);
+
+  for (const html of plan.html) {
+    const htmlInfo = createHtmlDocumentInfo(html, output);
+    if (
+      htmlInfo?.owner.kind !== "page" ||
+      !serverPageIds.has(htmlInfo.owner.pageId)
+    ) {
+      continue;
+    }
+    const finalHtml = await compileFrameworkHtmlDocument({
+      cwd,
+      config,
+      hooks,
+      pluginCtx,
+      output,
+      plan,
+      html: htmlInfo,
+      clientRuntime,
+      isRebuild,
+    });
+    documents.set(htmlInfo.owner.pageId, {
+      html: finalHtml,
+      fileName: htmlInfo.fileName,
+    });
+  }
+
+  return documents;
+}
+
 async function emitFrameworkHtml<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
@@ -601,6 +701,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
   plan: BuildPlan,
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
+  canonicalClientDocuments: ReadonlyMap<string, CanonicalClientPageDocument>,
   previousHtmlOutput?: PreviousFrameworkHtmlOutput,
   bundlerClientFiles?: readonly string[],
   loadServerModule?: (asset: string) => Promise<unknown>,
@@ -624,32 +725,26 @@ async function emitFrameworkHtml<TBundlerCfg>(
     const htmlInfo = createHtmlDocumentInfo(html, output);
     if (!htmlInfo) continue;
 
-    const doc = createFrameworkHtmlDocument({
+    const canonicalClientDocument =
+      htmlInfo.owner.kind === "page"
+        ? canonicalClientDocuments.get(htmlInfo.owner.pageId)
+        : undefined;
+    let finalHtml = canonicalClientDocument?.html;
+    finalHtml ??= await compileFrameworkHtmlDocument({
       cwd,
       config,
+      hooks,
+      pluginCtx,
       output,
       plan,
       html: htmlInfo,
       clientRuntime,
-    });
-    if (shouldPrerenderStaticPage(output, htmlInfo)) {
-      await prerenderStaticPageHtml({
-        doc,
-        output,
-        html: htmlInfo,
+      isRebuild,
+      staticPage: {
         frameworkRuntime,
         serverDir,
-        loadServerModule,
-      });
-    }
-
-    const finalHtml = await buildHtml({
-      doc,
-      hooks,
-      pluginContext: pluginCtx,
-      html: htmlInfo,
-      output,
-      isRebuild,
+        ...(loadServerModule ? { loadServerModule } : {}),
+      },
     });
 
     for (const fileName of [html.fileName, ...(html.aliases ?? [])]) {
@@ -943,6 +1038,15 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     assertBuildOutputHookResult,
   );
   assertBuildOutputHookResult();
+  const canonicalClientDocuments = await compileCanonicalClientPageDocuments({
+    cwd: options.cwd,
+    config: options.config,
+    hooks: options.hooks,
+    pluginCtx: options.pluginCtx,
+    output,
+    plan: options.plan,
+    isRebuild: options.isRebuild,
+  });
   const documentShells = await compileServerDocumentShells({
     cwd: options.cwd,
     config: options.config,
@@ -951,6 +1055,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     output,
     plan: options.plan,
     isRebuild: options.isRebuild,
+    canonicalClientDocuments,
   });
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.bundlerFacts.rscManifests,
@@ -980,6 +1085,7 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.plan,
     buildFrameworkRuntime,
     options.isRebuild,
+    canonicalClientDocuments,
     previousHtmlOutput,
     options.bundlerFacts.emittedFiles?.client,
     options.bundlerFacts.loadServerModule,
