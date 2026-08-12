@@ -125,11 +125,19 @@ export function validateHtmlTemplate(
   return parseHtmlTemplate(options).doc;
 }
 
-function parseHtmlTemplate({
-  template,
-  displayName = template,
-}: ValidateHtmlTemplateOptions): ParsedHtmlTemplate {
-  const templateContent = fs.readFileSync(template, "utf-8");
+/** Parse an already generated HTML Document without reading another template. */
+export function parseHtmlDocument(
+  source: string,
+  displayName = "HTML Document",
+): HtmlDocument {
+  return parseHtmlTemplate({ template: displayName, displayName }, source).doc;
+}
+
+function parseHtmlTemplate(
+  { template, displayName = template }: ValidateHtmlTemplateOptions,
+  source?: string,
+): ParsedHtmlTemplate {
+  const templateContent = source ?? fs.readFileSync(template, "utf-8");
   const doc = parser.parseFromString(
     templateContent,
     "text/html",

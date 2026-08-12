@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   type CoreGraph,
+  createDeploymentMetadata,
   linkBuildOutput,
   PAGE_ANCHOR_PROVIDER_ID,
 } from "@evjs/shared/manifest";
@@ -65,6 +66,87 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(second.buildId).not.toBe(first.buildId);
     expect(development.buildId).toBe("development");
     expect(explicit.buildId).toBe("release-42");
+  });
+
+  it.each([
+    { mode: "spa", render: "csr", pageDocument: false },
+    { mode: "spa", render: "ssr", pageDocument: false },
+    { mode: "spa", render: "ssg", pageDocument: true },
+    { mode: "mpa", render: "csr", pageDocument: true },
+    { mode: "mpa", render: "ssr", pageDocument: true },
+    { mode: "mpa", render: "ssg", pageDocument: true },
+  ] as const)("plans $mode $render Page Document materialization", async ({
+    mode,
+    render,
+    pageDocument,
+  }) => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/pages/page.config.ts": `export default { render: ${JSON.stringify(render)} };`,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, mode);
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+
+    expect(
+      plan.html.some((document) => document.owner.pageId === "index"),
+    ).toBe(pageDocument);
+    expect(
+      plan.server.documents?.some((document) => document.pageId === "index") ??
+        false,
+    ).toBe(render === "ssr");
+  });
+
+  it("links an MPA SSR fallback Document without changing its deployment route", async () => {
+    const cwd = await createFixture({
+      "src/pages/about/page.tsx":
+        "export default function About() { return null; }",
+      "src/pages/about/page.config.ts":
+        'export default { render: "ssr", hydrate: "load" };',
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const clientEntry = createPageClientBuildEntryName("about");
+    const output = linkBuildOutput({
+      graph: analysis.graph,
+      plan,
+      clientEntryAssets: {
+        [clientEntry]: { js: [`${clientEntry}.js`], css: [] },
+      },
+      serverEntryAssets: Object.fromEntries(
+        plan.entries
+          .filter((entry) => entry.environment === "server")
+          .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+      ),
+    });
+
+    expect(output.pages.about.document).toEqual({ fileName: "about.html" });
+    expect(createDeploymentMetadata(output)).toMatchObject({
+      documents: [
+        {
+          kind: "page",
+          id: "about",
+          fileName: "about.html",
+          assets: { js: [`${clientEntry}.js`], css: [] },
+        },
+      ],
+      routes: [
+        {
+          kind: "server-page",
+          path: "/about",
+          pageId: "about",
+          render: "ssr",
+          methods: ["GET", "HEAD"],
+        },
+      ],
+    });
   });
 
   it("projects server-only build settings", async () => {
@@ -1125,6 +1207,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         .filter((entry) => entry.kind === "page-client")
         .map((entry) => entry.owner?.pageId),
     ).toEqual(["ssr"]);
+    expect(
+      new Set(plan.html.flatMap((document) => document.owner.pageId ?? [])),
+    ).toEqual(new Set(["ssg", "ssr"]));
     expect(plan.server.renderers?.map((renderer) => renderer.kind)).toEqual(
       expect.arrayContaining([
         "page-server",
@@ -2616,7 +2701,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(configUpdate.deliveryChanged).toBe(true);
   });
 
-  it("separates server Document refreshes from server compilation changes", async () => {
+  it("refreshes MPA SSR fallback and server Documents without recompiling", async () => {
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",
       "src/pages/page.config.ts": 'export default { render: "ssr" };',
@@ -2637,7 +2722,22 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     const update = diffBuildPlan(previous, next, "route-declaration");
 
     expect(update.entries).toEqual({ added: [], removed: [], changed: [] });
-    expect(update.html).toEqual({ added: [], removed: [], changed: [] });
+    expect(update.html).toEqual({
+      added: [],
+      removed: [],
+      changed: [
+        {
+          id: "index",
+          template: "./index.html",
+          fileName: "index.html",
+          owner: { appId: "default", pageId: "index" },
+          metadata: {
+            title: "Updated home",
+            meta: { description: "Updated description" },
+          },
+        },
+      ],
+    });
     expect(update.serverCompilationChanged).toBe(false);
     expect(update.serverDocumentsChanged).toBe(true);
     expect(update.devRoutingChanged).toBe(false);

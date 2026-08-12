@@ -1028,9 +1028,14 @@ function shouldEmitDocumentForPage(page: BuildPageFacts): boolean {
     return true;
   }
 
-  // Static SSG Pages emit Page-owned Documents in either mode. CSR Page
-  // Documents are emitted only by canonical MPA materialization.
-  return page.routingMode === "mpa" && page.render === "csr";
+  // Static SSG Pages emit Page-owned Documents in either mode. Canonical MPA
+  // Pages with a browser entry also emit a Page-owned client Document. For
+  // SSR this is an empty CSR fallback alongside the request-time server shell.
+  return (
+    page.routingMode === "mpa" &&
+    (page.render === "csr" ||
+      (page.render === "ssr" && getPageClientEntry(page) !== undefined))
+  );
 }
 
 function isStaticPagePath(pathname: string): boolean {

@@ -69,6 +69,7 @@ interface MountedReactRoot {
   root: Root;
 }
 
+const PAGE_HYDRATION_ATTRIBUTE = "data-evjs-hydrate";
 const rootByMountPoint = new WeakMap<Element, MountedReactRoot>();
 
 export function createReactPageModule(
@@ -197,7 +198,7 @@ export function mountReactPage(options: ReactPageRuntimeOptions): void {
 
   const mountPoint = resolveMountPoint(options.mount);
   const mod = createReactPageModule(options);
-  if (shouldHydrate(options)) {
+  if (mountPoint.getAttribute(PAGE_HYDRATION_ATTRIBUTE) === "load") {
     void mod.hydrate?.(mountPoint, {} as AppContext);
     return;
   }

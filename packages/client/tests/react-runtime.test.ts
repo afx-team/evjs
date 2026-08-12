@@ -336,6 +336,42 @@ describe("createReactPageModule", () => {
     );
   });
 
+  it("mounts an unmarked SSR fallback with createRoot", () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    const mountPoint = {
+      getAttribute: vi.fn(() => null),
+    } as unknown as Element;
+
+    mountReactPage({
+      component: Component,
+      mount: mountPoint,
+      render: "ssr",
+      hydrate: "load",
+    });
+
+    expect(calls).toEqual(["createRoot", "render"]);
+  });
+
+  it("hydrates SSR content only when the mount has a server marker", () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    const mountPoint = {
+      getAttribute: vi.fn((name: string) =>
+        name === "data-evjs-hydrate" ? "load" : null,
+      ),
+    } as unknown as Element;
+
+    mountReactPage({
+      component: Component,
+      mount: mountPoint,
+      render: "ssr",
+      hydrate: "load",
+    });
+
+    expect(calls).toEqual(["hydrateRoot"]);
+  });
+
   it("reports mount selector resolution failures with evjs errors", () => {
     expect(() =>
       mountReactPage({ component: Component, mount: "#app" }),

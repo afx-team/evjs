@@ -4763,7 +4763,12 @@ describe("build", () => {
             }
             transformedFiles.push(ctx.fileName);
             doc.documentElement?.setAttribute("data-plugin", mode);
+            doc.documentElement?.setAttribute("data-capr-version", "2026.08");
             doc.body?.setAttribute("data-transformed", "yes");
+            doc.body?.insertAdjacentHTML(
+              "beforeend",
+              '<script id="capr-runtime" src="/capr.js"></script><script id="ppr-snapshot">globalThis.__PPR__ = true;</script>',
+            );
             const title = doc.querySelector("title");
             if (title) title.textContent = "Plugin title";
           },
@@ -4835,6 +4840,7 @@ describe("build", () => {
     expect(html).toContain('<html lang="zh-CN"');
     expect(html).toContain('data-template="configured"');
     expect(html).toContain(`data-plugin="${mode}"`);
+    expect(html).toContain('data-capr-version="2026.08"');
     expect(html).toContain(
       '<body class="template-body" data-transformed="yes">',
     );
@@ -4852,7 +4858,62 @@ describe("build", () => {
     expect(html).toContain("<footer>Template footer</footer>__REQUEST_DATA__");
     expect(html).toContain('id="__EVJS_CLIENT_RUNTIME__"');
     expect(html).toContain(`src="/${clientEntryName}.js"`);
+    expect(html).toContain(
+      '<script id="capr-runtime" src="/capr.js"></script>',
+    );
+    expect(html).toContain('<script id="ppr-snapshot">');
     expect(html).not.toContain("Template fallback");
+
+    if (mode === "mpa") {
+      const fallbackHtml = await fs.promises.readFile(
+        path.join(cwd, "dist/client/dashboard.html"),
+        "utf-8",
+      );
+      const deployment = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, "dist/deployment-metadata.json"),
+          "utf-8",
+        ),
+      );
+
+      expect(fallbackHtml).toContain('data-plugin="mpa"');
+      expect(fallbackHtml).toContain('data-capr-version="2026.08"');
+      expect(fallbackHtml).toContain('data-transformed="yes"');
+      expect(fallbackHtml).toContain(
+        '<meta name="from-contribution" content="mpa">',
+      );
+      expect(fallbackHtml).toContain('<main id="app"></main>');
+      expect(fallbackHtml).not.toContain("data-evjs-hydrate");
+      expect(fallbackHtml).not.toContain("Template fallback");
+      expect(fallbackHtml).toContain('id="__EVJS_CLIENT_RUNTIME__"');
+      expect(fallbackHtml).toContain(`src="/${clientEntryName}.js"`);
+      expect(fallbackHtml).toContain(
+        '<script id="capr-runtime" src="/capr.js"></script>',
+      );
+      expect(fallbackHtml).toContain('<script id="ppr-snapshot">');
+      expect(
+        html
+          .replace(' data-evjs-hydrate="load"', "")
+          .replace("__PAGE_CONTENT__", "")
+          .replace("__REQUEST_DATA__", ""),
+      ).toBe(fallbackHtml);
+      expect(deployment.documents).toContainEqual({
+        kind: "page",
+        id: "dashboard",
+        fileName: "dashboard.html",
+        assets: {
+          js: clientAssets.js,
+          css: [...clientAssets.css, `${pageServerEntryName}.css`],
+        },
+      });
+      expect(deployment.routes).toContainEqual({
+        kind: "server-page",
+        path: "/dashboard",
+        pageId: "dashboard",
+        render: "ssr",
+        methods: ["GET", "HEAD"],
+      });
+    }
   });
 
   it("rejects transformHtml hooks that remove server document markers", async () => {
