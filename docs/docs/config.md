@@ -289,11 +289,10 @@ whose project-relative replacements resolve from the application root.
 without leading or trailing whitespace. Config resolution normalizes these
 entries into `plan.server.externals` as a server-build-specific string map.
 
-The Webpack adapter supports both settings in mixed client/server builds.
-Utoopack 1.5.3 supports independent `server.externals`; its current resolver
-does not expose a server-scoped resolve object, so `server.resolve` is supported
-only for server-only Utoopack plans and fails fast for mixed plans instead of
-leaking the override into client resolution.
+The Webpack and Utoopack adapters support both settings in mixed client/server
+builds. Utoopack maps `server.resolve.alias` to its server-scoped resolver so a
+matching specifier can resolve differently for client and server entries;
+other top-level aliases remain shared.
 
 `server.basePath` owns server-function, PPR, and RSC runtime paths. It must be
 an absolute pathname using non-empty ASCII URL-safe segments containing only

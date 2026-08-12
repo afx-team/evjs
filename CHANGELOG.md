@@ -6,6 +6,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Utoopack server alias isolation** — Mixed client/server builds now map
+  `server.resolve.alias` to Utoopack's server-scoped resolver instead of
+  rejecting the configuration, allowing matching client and server aliases to
+  resolve to different targets while preserving project-relative alias
+  replacements for Utoopack 1.5.4.
+
 ---
 
 ## [0.3.9] — 2026-08-11
