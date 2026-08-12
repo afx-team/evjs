@@ -269,10 +269,10 @@ replacement 从应用根目录解析。`server.externals` 把 module specifier �
 空白的非空字符串。配置解析会将它们作为 server build 专用的字符串映射放入
 `plan.server.externals`。
 
-Webpack adapter 在 client/server 混合构建中完整支持这两个配置。Utoopack 1.5.3
-支持独立的 `server.externals`；当前 resolver 尚未暴露 server-scoped resolve
-对象，因此 `server.resolve` 只支持 server-only Utoopack plan。混合 plan 会快速
-失败，避免把 server override 泄漏到 client resolution。
+Webpack 和 Utoopack adapter 在 client/server 混合构建中都支持这两个配置。
+Utoopack 会将 `server.resolve.alias` 映射到 server-scoped resolver，因此同名的
+specifier 可以在 client 和 server entry 中解析到不同目标；其他顶层 alias 仍然
+由两类 entry 共享。
 
 `server.basePath` 统一控制 server function、PPR 和 RSC runtime 路径。它必须是
 absolute pathname，由非空 ASCII URL-safe segment 组成；每个 segment 只能包含

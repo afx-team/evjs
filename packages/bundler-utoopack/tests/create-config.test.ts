@@ -343,7 +343,7 @@ describe("createUtoopackConfig", () => {
     });
   });
 
-  it("rejects server.resolve for mixed Utoopack plans", async () => {
+  it("maps server.resolve to the Utoopack server build", async () => {
     const config = createResolvedConfig();
     config.server.resolve = {
       alias: { "server-sdk": "./src/server/sdk.ts" },
@@ -358,32 +358,13 @@ describe("createUtoopackConfig", () => {
         },
       ],
     });
-
-    await expect(
-      createUtoopackConfig(config, plan, process.cwd(), []),
-    ).rejects.toThrow(
-      "cannot apply server.resolve independently while client entries are present",
-    );
-  });
-
-  it("maps server.resolve for server-only Utoopack plans", async () => {
-    const config = createResolvedConfig();
-    config.server.resolve = {
-      alias: { "server-sdk": "./src/server/sdk.ts" },
+    plan.resolve = {
+      ...plan.resolve,
+      alias: {
+        ...plan.resolve?.alias,
+        "server-sdk": "./src/client/sdk.ts",
+      },
     };
-    const plan = await createPlan(config, {
-      serverRoutes: [
-        {
-          id: "src/apis/health/api.ts:/health:GET",
-          module: "src/apis/health/api.ts",
-          path: "/health",
-          methods: ["GET"],
-        },
-      ],
-    });
-    plan.entries = plan.entries.filter(
-      (entry) => entry.environment === "server",
-    );
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -392,9 +373,20 @@ describe("createUtoopackConfig", () => {
       [],
     );
 
-    expect(utoopackConfig.resolve?.alias?.["server-sdk"]).toBe(
-      path.resolve(process.cwd(), "src/server/sdk.ts"),
-    );
+    expect(utoopackConfig).toMatchObject({
+      resolve: {
+        alias: {
+          "server-sdk": path.resolve(process.cwd(), "src/client/sdk.ts"),
+        },
+      },
+      server: {
+        resolve: {
+          alias: {
+            "server-sdk": path.resolve(process.cwd(), "src/server/sdk.ts"),
+          },
+        },
+      },
+    });
   });
 
   it("uses configured client and server output directories", async () => {

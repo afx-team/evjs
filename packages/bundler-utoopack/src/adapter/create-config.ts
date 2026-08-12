@@ -110,10 +110,7 @@ export async function createUtoopackConfig(
 
   const finalServerEntry = resolveServerEntries(plan);
   const expectedServerEntry = snapshotUtoopackServerEntry(finalServerEntry);
-  const resolveEnvironment: ResolveEnvironment =
-    finalServerEntry !== undefined && !hasClientEntries(plan)
-      ? "server"
-      : "client";
+  const serverResolve = createServerResolve(cwd, plan);
 
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
@@ -139,7 +136,7 @@ export async function createUtoopackConfig(
       clean: true,
     },
     resolve: {
-      alias: createResolveAlias(cwd, plan, resolveEnvironment),
+      alias: createResolveAlias(cwd, plan.resolve?.alias),
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
     externals: createResolveExternals(plan, "client"),
@@ -178,6 +175,7 @@ export async function createUtoopackConfig(
           // Server functions config — utoopack handles "use server" natively.
           server: {
             entry: finalServerEntry,
+            ...(serverResolve ? { resolve: serverResolve } : {}),
             externals: createResolveExternals(plan, "server") ?? {},
             output: {
               path: outputPaths.serverDir,
@@ -196,7 +194,7 @@ export async function createUtoopackConfig(
               clientProxy: SERVER_FUNCTION_TRANSFORM_RUNTIME.clientModule,
               serverRegister: SERVER_FUNCTION_TRANSFORM_RUNTIME.serverModule,
             },
-          },
+          } satisfies UtoopackServerConfig,
         }
       : {}),
 
@@ -530,15 +528,31 @@ function missingFrameworkWatchCollector(file: string): never {
 
 function createResolveAlias(
   cwd: string,
-  plan: BuildPlan,
-  environment: ResolveEnvironment,
+  alias: Record<string, string> | undefined,
 ): NonNullable<ConfigComplete["resolve"]>["alias"] {
   return Object.fromEntries(
-    Object.entries({
-      ...(plan.resolve?.alias ?? {}),
-      ...(environment === "server" ? plan.server.resolve?.alias : undefined),
-    }).map(([name, target]) => [name, resolveAliasTarget(cwd, target)]),
+    Object.entries(alias ?? {}).map(([name, target]) => [
+      name,
+      resolveAliasTarget(cwd, target),
+    ]),
   );
+}
+
+type UtoopackServerConfig = NonNullable<ConfigComplete["server"]> & {
+  // Available in Utoopack after https://github.com/utooland/utoo/pull/3296.
+  resolve?: NonNullable<ConfigComplete["resolve"]>;
+};
+
+function createServerResolve(
+  cwd: string,
+  plan: BuildPlan,
+): NonNullable<UtoopackServerConfig["resolve"]> | undefined {
+  const alias = plan.server.resolve?.alias;
+  if (alias === undefined) return undefined;
+
+  return {
+    alias: createResolveAlias(cwd, alias),
+  };
 }
 
 function resolveAliasTarget(cwd: string, target: string): string {
@@ -564,30 +578,11 @@ function createResolveExternals(
   return Object.keys(external).length > 0 ? external : undefined;
 }
 
-function assertSupportedServerResolve(plan: BuildPlan): void {
-  if (!hasClientEntries(plan) || !hasServerEntries(plan)) return;
-  if (Object.keys(plan.server.resolve?.alias ?? {}).length === 0) {
-    return;
-  }
-  throw new Error(
-    "[evjs] The Utoopack adapter cannot apply server.resolve independently while client entries are present. Use the Webpack adapter or remove the server-only resolve override.",
-  );
-}
-
 function hasAppClientEntry(plan: BuildPlan): boolean {
   return plan.entries.some((entry) => entry.kind === "app-client");
 }
 
-function hasClientEntries(plan: BuildPlan): boolean {
-  return plan.entries.some((entry) => entry.environment === "client");
-}
-
-function hasServerEntries(plan: BuildPlan): boolean {
-  return plan.entries.some((entry) => entry.environment === "server");
-}
-
 function validateUtoopackPlanSupport(plan: BuildPlan): void {
-  assertSupportedServerResolve(plan);
   const serverRuntimeEntries = plan.entries.filter(
     (entry) =>
       entry.environment === "server" && entry.kind === "server-runtime",
