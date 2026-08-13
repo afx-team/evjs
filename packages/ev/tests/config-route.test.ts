@@ -768,6 +768,7 @@ describe("explicit SPA route graph", () => {
         assets: output.pages.report.assets,
       },
       clientRuntime: createClientRuntime(output),
+      purpose: "client-document",
     });
 
     expect(doc.querySelector("title")?.textContent).toBe("Report");

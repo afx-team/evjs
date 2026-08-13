@@ -135,9 +135,12 @@ keeps the Application shell separately at `__evjs/<application-id>.html`.
 
 MPA keeps those semantic routes internally but exposes Page Documents as HTML
 URLs: `/` writes and serves `index.html`, `/report` uses `report.html`, and
-`/foo/bar` uses `foo/bar.html`. CSR emits those files; SSR and PPR use the same
-URLs for request-time rendering. Outputs are derived from route segments, not
-Page ids.
+`/foo/bar` uses `foo/bar.html`. CSR emits those files directly. An ordinary MPA
+SSR Page with a Page client entry also emits the same canonical HTML as an
+empty, independently bootable CSR fallback, while its route remains
+server-rendered. PPR and RSC Pages remain request-time-only because they do not
+have an ordinary Page client entry. Outputs are derived from route segments,
+not Page ids.
 
 MPA materializes only static Page routes. `$param` and terminal
 `$...splat` remain valid SPA route identities, but selecting MPA for either
@@ -188,8 +191,12 @@ generated runtime artifact. Plugin `transformHtml` hooks run after
 framework metadata, assets, and structured HTML contributions materialize and
 may explicitly override the result.
 
-For every server-rendered Page, evjs compiles its configured HTML template into
-a request-time document shell during the build. This preserves authored
+Every server-rendered Page receives a request-time document shell during the
+build. For an MPA SSR Page with a CSR fallback, evjs first applies assets,
+structured HTML contributions, and `transformHtml` to the canonical fallback,
+then derives the server shell from that final Document without running the hook
+again. Other server-rendered Pages compile their configured template directly
+into the shell. This preserves authored
 `<html>`, `<head>`, and `<body>` attributes and content while applying the same
 assets, Page metadata, `html.tag` contributions, and `transformHtml` hooks as a
 static Document. The default React renderer inserts the Page HTML and

@@ -123,8 +123,10 @@ shell 单独保留在 `__evjs/<application-id>.html`。
 
 MPA 在内部保留这些语义 route，但通过 HTML URL 暴露 Page Document：`/` 写入并
 访问 `index.html`，`/report` 使用 `report.html`，`/foo/bar` 使用
-`foo/bar.html`。CSR 会发射这些文件；SSR 与 PPR 的请求时渲染也使用相同 URL。
-输出由 route segment 推导，不使用 Page id。
+`foo/bar.html`。CSR 会直接发射这些文件。具有 Page client entry 的普通 MPA SSR
+Page 也会把同一 canonical HTML 发射为空 mount、可独立启动的 CSR fallback，同时
+保持其 route 由服务端渲染。PPR 与 RSC Page 没有普通 Page client entry，因此仍只在
+请求时渲染。输出由 route segment 推导，不使用 Page id。
 
 MPA 只物化静态 Page route。`$param` 与终止 `$...splat` 仍是有效的 SPA
 route 身份，但为它们选择 MPA 会在 graph 校验失败，因为一个动态 pattern
@@ -170,8 +172,11 @@ static graph data，除非能力所属插件把它显式投影到 generated runt
 Plugin `transformHtml` hook 在框架元信息、assets 与结构化 HTML contribution
 物化后运行，可以显式覆盖最终结果。
 
-每个 server-rendered Page 都会在构建期把它配置的 HTML 模板编译成
-request-time document shell。模板中手写的 `<html>`、`<head>`、`<body>` 属性和
+每个 server-rendered Page 都会在构建期获得 request-time document shell。对于具有
+CSR fallback 的 MPA SSR Page，evjs 会先在 canonical fallback 上应用 assets、结构化
+HTML contribution 与 `transformHtml`，再从最终 Document 派生 server shell，不会
+再次执行 hook。其他 server-rendered Page 则直接把配置的模板编译成 shell。模板中
+手写的 `<html>`、`<head>`、`<body>` 属性和
 内容会被保留，同时应用与 static Document 相同的 assets、Page metadata、
 `html.tag` contribution 和 `transformHtml` hook。默认 React renderer 在请求时把
 Page HTML 与请求相关的 bootstrap data 插入该 shell。

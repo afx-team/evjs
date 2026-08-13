@@ -12,15 +12,21 @@ import type {
 import {
   CLIENT_RUNTIME_SCRIPT_ID,
   createFrameworkHtmlDocument,
+  markServerPageHydrationTarget,
 } from "./framework-html-document.js";
 import { createClientRuntime } from "./framework-runtime.js";
-import type { generateHtml } from "./html.js";
+import { type generateHtml, parseHtmlDocument } from "./html.js";
 import { buildHtml } from "./html-transform.js";
 
 const PAGE_CONTENT_MARKER = "__EVJS_SERVER_PAGE_CONTENT__";
 const REQUEST_DATA_MARKER = "__EVJS_SERVER_PAGE_DATA__";
 const PAGE_CONTENT_COMMENT = `<!--${PAGE_CONTENT_MARKER}-->`;
 const REQUEST_DATA_COMMENT = `<!--${REQUEST_DATA_MARKER}-->`;
+
+export interface CanonicalClientPageDocument {
+  html: string;
+  fileName: string;
+}
 
 export async function compileServerDocumentShells<TBundlerCfg>(options: {
   cwd: string;
@@ -30,8 +36,18 @@ export async function compileServerDocumentShells<TBundlerCfg>(options: {
   output: BuildOutput;
   plan: BuildPlan;
   isRebuild: boolean;
+  canonicalClientDocuments?: ReadonlyMap<string, CanonicalClientPageDocument>;
 }): Promise<Record<string, ServerDocumentShell>> {
-  const { cwd, config, hooks, pluginCtx, output, plan, isRebuild } = options;
+  const {
+    cwd,
+    config,
+    hooks,
+    pluginCtx,
+    output,
+    plan,
+    isRebuild,
+    canonicalClientDocuments,
+  } = options;
   const shells = Object.create(null) as Record<string, ServerDocumentShell>;
   const clientRuntime = createClientRuntime(output);
 
@@ -55,6 +71,27 @@ export async function compileServerDocumentShells<TBundlerCfg>(options: {
       fileName: serverDocument.fileName,
       assets: page.assets,
     };
+    const canonicalClientDocument = canonicalClientDocuments?.get(
+      serverDocument.pageId,
+    );
+    if (canonicalClientDocument) {
+      const doc = parseHtmlDocument(
+        canonicalClientDocument.html,
+        canonicalClientDocument.fileName,
+      );
+      markServerPageHydrationTarget(doc, page);
+      insertDocumentMarkers(
+        doc,
+        page.mount ?? serverDocument.mount,
+        serverDocument.pageId,
+      );
+      shells[serverDocument.pageId] = splitDocumentShell(
+        doc.toString(),
+        serverDocument.pageId,
+      );
+      continue;
+    }
+
     const doc = createFrameworkHtmlDocument({
       cwd,
       config,
@@ -62,6 +99,7 @@ export async function compileServerDocumentShells<TBundlerCfg>(options: {
       plan,
       html: htmlInfo,
       clientRuntime,
+      purpose: "server-shell",
     });
     insertDocumentMarkers(
       doc,
