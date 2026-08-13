@@ -44,7 +44,12 @@ export function createFrameworkHtmlDocument<TBundlerCfg>(options: {
   if (html.assets.js.length > 0) {
     embedClientRuntime(doc, clientRuntime);
     const coreJs = config.polyfill?.coreJs;
-    if (config.target && coreJs && coreJs !== "bundled") {
+    if (
+      plan.mode === "production" &&
+      config.target &&
+      coreJs &&
+      coreJs !== "bundled"
+    ) {
       injectCoreJsUmd(doc, coreJs.url);
     }
   }

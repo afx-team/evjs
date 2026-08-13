@@ -120,7 +120,7 @@ export async function createUtoopackConfig(
 
   const utoopackConfig: ConfigComplete = {
     mode,
-    ...(config.target !== undefined && clientEntries.length > 0
+    ...(isProduction && config.target !== undefined && clientEntries.length > 0
       ? { target: createClientBrowserslistTarget(config.target) }
       : {}),
     entry: clientEntries.map((entry) => ({

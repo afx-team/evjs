@@ -9,10 +9,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ✨ Features
 
 - **Low-end browser compatibility** — Applications can opt into Android 5 and
-  iOS 8 or newer targets with ES5 syntax by configuring numeric Android/iOS
-  versions, which bundle `core-js/stable` by default. An absolute
-  `polyfill.coreJs` UMD URL overrides the bundled source. Server targets are
-  unchanged.
+  iOS 8 or newer production targets with ES5 syntax by configuring numeric
+  Android/iOS versions, which bundle `core-js/stable` by default. An absolute
+  `polyfill.coreJs` UMD URL overrides the bundled source. Development and server
+  targets are unchanged.
 
 ---
 

@@ -10,6 +10,3 @@ export const CLIENT_TARGET_MINIMUM = {
 export function createClientBrowserslistTarget(target: ClientTarget): string {
   return `android >= ${target.android}, ios >= ${target.ios}`;
 }
-
-/** Syntax baseline required by Android 5 WebView and iOS 8 Safari. */
-export const CLIENT_ECMASCRIPT_TARGET = "es5";

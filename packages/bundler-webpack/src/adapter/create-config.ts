@@ -7,7 +7,6 @@ import {
   assertSafeBuildOutputPaths,
   assertSafeBuildOwnedOutputPath,
   assertSafeBundlerCleanOutputPath,
-  CLIENT_ECMASCRIPT_TARGET,
   canonicalPortableArtifactPathKey,
   createClientBrowserslistTarget,
   createPluginConfigView,
@@ -112,7 +111,7 @@ export async function createWebpackConfigs(
             entry.name === "evjs-rsc-client",
         ),
         reactServerConditions: false,
-        browserTarget: config.target,
+        browserTarget: plan.mode === "production" ? config.target : undefined,
         clean: options.clean ?? true,
         target: "web",
       }),
@@ -923,7 +922,7 @@ function createWebpackConfig(options: {
     target: options.browserTarget
       ? [
           `browserslist:${createClientBrowserslistTarget(options.browserTarget)}`,
-          CLIENT_ECMASCRIPT_TARGET,
+          "es5",
         ]
       : options.target,
     entry: createEntryObject(options.entries),
@@ -1010,7 +1009,7 @@ function createWebpackConfig(options: {
               options: {
                 jsc: {
                   ...(isClient && options.browserTarget
-                    ? { target: CLIENT_ECMASCRIPT_TARGET }
+                    ? { target: "es5" }
                     : {}),
                   parser: {
                     syntax: "typescript",

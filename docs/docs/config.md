@@ -263,14 +263,16 @@ configuration.
 
 ### Polyfills
 
-Browser compatibility is opt-in and controlled by `target`. When `target` is
-omitted, evjs does not inject core-js or replace the adapters' existing client
-targets.
+Production browser compatibility is opt-in and controlled by `target`. In
+development, evjs keeps the adapters' existing client targets and transpilation
+scope and does not inject core-js. When `target` is omitted, production also
+keeps that existing behavior.
 
-Use a target object to select supported Android and iOS versions, emit ES5 syntax, and
-bundle the framework-owned `core-js/stable` bridge. Every generated client facade
-imports the bridge before plugin `polyfill` entry contributions and the application
-entry. This covers ECMAScript built-in features and increases the client bundle size.
+Use a target object to select supported Android and iOS versions for production,
+emit ES5 syntax, and bundle the framework-owned `core-js/stable` bridge. Every
+production generated client facade imports the bridge before plugin `polyfill`
+entry contributions and the application entry. This covers ECMAScript built-in
+features and increases the production client bundle size.
 
 ```ts
 export default defineConfig({
@@ -294,8 +296,8 @@ export default defineConfig({
 });
 ```
 
-External mode removes the bundled core-js import. Every SPA, MPA, SSR, and SSG
-Document that contains client JavaScript receives a normal blocking
+External mode removes the bundled core-js import. Every production SPA, MPA,
+SSR, and SSG Document that contains client JavaScript receives a normal blocking
 `<script src="...">` before the embedded EVJS client runtime data and deferred
 application scripts. The configured URL is preserved exactly and is not joined
 with `publicPath`. Documents without client JavaScript do not receive the tag.

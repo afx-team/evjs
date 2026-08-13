@@ -818,6 +818,28 @@ describe("explicit SPA route graph", () => {
     expect(
       documentWithoutClientJs.getElementById("__EVJS_CLIENT_RUNTIME__"),
     ).toBeNull();
+
+    const developmentDocument = createFrameworkHtmlDocument({
+      cwd,
+      config,
+      output,
+      plan: { ...plan, mode: "development" },
+      html: {
+        documentId: htmlPlan.id,
+        applicationId: "default",
+        owner: { kind: "page", pageId: "report" },
+        template: htmlPlan.template,
+        fileName: htmlPlan.fileName,
+        assets: output.pages.report.assets,
+      },
+      clientRuntime: createClientRuntime(output),
+      purpose: "client-document",
+    });
+    expect(
+      developmentDocument.querySelector(
+        'script[src="https://cdn.example.com/core-js-bundle.min.js"]',
+      ),
+    ).toBeNull();
   });
 
   it("materializes the generated SPA facade without canonical route types", async () => {

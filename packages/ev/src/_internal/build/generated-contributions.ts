@@ -237,6 +237,7 @@ export async function prepareFrameworkIR<TBundlerCfg>(
   assertUniqueBuildEntryNames(plan.entries);
   plan.generated = generated;
   const bundleCoreJs =
+    options.mode === "production" &&
     options.config.target !== undefined &&
     options.config.polyfill?.coreJs === "bundled";
   const entries = createGeneratedEntryPlans(plan, generated, bundleCoreJs);
@@ -572,6 +573,7 @@ class ContributionCollector<TBundlerCfg> {
               createOriginalClientEntryFacadeSource(entry, importFile, {
                 autoStart: input.autoStart,
                 bundleCoreJs:
+                  this.options.mode === "production" &&
                   this.options.config.target !== undefined &&
                   this.options.config.polyfill?.coreJs === "bundled",
               }),

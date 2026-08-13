@@ -244,13 +244,14 @@ projection。插件根据 normalized Page 派生 Route 或 Document 行为，不
 
 ### Polyfill
 
-低端浏览器兼容由 `target` 显式控制。省略 `target` 时，evjs 不会注入 core-js，
-也不会替换适配器现有的客户端 target。
+生产环境的低端浏览器兼容由 `target` 显式控制。开发模式保留适配器现有的客户端
+target 和依赖转译范围，也不注入 core-js；省略 `target` 时，生产构建也保留该
+默认行为。
 
-配置 target 对象会选择支持的 Android 与 iOS 版本、输出 ES5 语法，并打包
-framework-owned `core-js/stable` 桥接模块。每个生成的客户端 facade 都会先 import
-该模块，再执行插件的 `polyfill` entry contribution 和应用入口。这会补齐
-ECMAScript 内建能力，同时增大客户端 bundle 体积。
+配置 target 对象会为生产构建选择支持的 Android 与 iOS 版本、输出 ES5 语法，
+并打包 framework-owned `core-js/stable` 桥接模块。每个生产客户端 facade 都会先
+import 该模块，再执行插件的 `polyfill` entry contribution 和应用入口。这会补齐
+ECMAScript 内建能力，同时增大生产客户端 bundle 体积。
 
 ```ts
 export default defineConfig({
@@ -272,10 +273,11 @@ export default defineConfig({
 });
 ```
 
-外部模式会移除 bundled core-js import。所有包含客户端 JavaScript 的 SPA、MPA、
-SSR 与 SSG Document 都会在 EVJS client runtime 内嵌数据和带 `defer` 的应用脚本
-之前插入普通阻塞式 `<script src="...">`。配置 URL 会原样保留，不与
-`publicPath` 拼接；不包含客户端 JavaScript 的 Document 不会插入该标签。
+外部模式会移除 bundled core-js import。所有包含客户端 JavaScript 的生产 SPA、
+MPA、SSR 与 SSG Document 都会在 EVJS client runtime 内嵌数据和带 `defer` 的
+应用脚本之前插入普通阻塞式 `<script src="...">`。配置 URL 会原样保留，不与
+`publicPath` 拼接；开发 Document 和不包含客户端 JavaScript 的 Document 不会插入
+该标签。
 
 `polyfill` 只能与 `target` 一起配置，避免只加载 core-js、却没有降级
 JavaScript 语法。`polyfill.coreJs` 只接受绝对 `http:` 或 `https:` URL。相对路径、其他 URL

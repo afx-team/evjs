@@ -235,7 +235,6 @@ const forbiddenPluginAuthoringFields = [
 ] as const;
 
 const expectedBuildToolsRuntimeExports = [
-  "CLIENT_ECMASCRIPT_TARGET",
   "CLIENT_TARGET_MINIMUM",
   "GENERATED_IR_DIR",
   "GENERATED_IR_MANIFEST",

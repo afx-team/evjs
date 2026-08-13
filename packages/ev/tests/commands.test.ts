@@ -1325,6 +1325,24 @@ describe("prepareFrameworkBuild", () => {
     await prepared.dispose();
   });
 
+  it("does not inject bundled core-js in development", async () => {
+    const cwd = await createSpaProject();
+    const prepared = await prepareFrameworkBuild(
+      {
+        target: { android: 5, ios: 8 },
+        routing: { mode: "spa" },
+      },
+      { cwd, mode: "development" },
+    );
+    const source = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/main.ts"),
+      "utf-8",
+    );
+
+    expect(source).not.toContain("@evjs/ev/_internal/client/polyfill");
+    await prepared.dispose();
+  });
+
   it("does not inject core-js when browser compatibility is omitted", async () => {
     const cwd = await createSpaProject();
     const prepared = await prepareFrameworkBuild(

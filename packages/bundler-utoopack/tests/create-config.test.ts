@@ -167,7 +167,7 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.target).toBeUndefined();
   });
 
-  it("targets Android 5 and iOS 8 only when compatibility is enabled", async () => {
+  it("targets configured browsers only in production", async () => {
     for (const coreJs of [
       "bundled",
       {
@@ -189,7 +189,9 @@ describe("createUtoopackConfig", () => {
           [],
         );
 
-        expect(utoopackConfig.target).toBe("android >= 6, ios >= 10");
+        expect(utoopackConfig.target).toBe(
+          mode === "production" ? "android >= 6, ios >= 10" : undefined,
+        );
       }
     }
   });
@@ -277,7 +279,7 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       plugins: [plugin],
     });
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { mode: "production" });
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -1194,7 +1196,7 @@ describe("createUtoopackConfig", () => {
       target: { android: 5, ios: 8 },
       polyfill: { coreJs: "bundled" },
     });
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { mode: "production" });
 
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [

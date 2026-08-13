@@ -169,7 +169,7 @@ export interface Config<TBundlerCfg = unknown> {
    */
   conventions?: boolean;
 
-  /** Enable a framework-owned browser compilation target. */
+  /** Enable a framework-owned production browser compilation target. */
   target?: ClientTarget;
 
   /** Override the polyfill source used by an enabled client target. */
@@ -317,7 +317,8 @@ export interface ClientTarget {
 export interface PolyfillConfig {
   /**
    * Absolute HTTP(S) URL for an external core-js UMD bundle. Omit this field
-   * to bundle the framework-owned core-js runtime into every client entry.
+   * to bundle the framework-owned core-js runtime into every production client
+   * entry.
    */
   coreJs?: string;
 }

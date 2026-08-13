@@ -148,6 +148,26 @@ describe("createWebpackConfigs", () => {
     expect(syntaxRule.use?.[0]?.options?.jsc?.target).toBe("es5");
   });
 
+  it("keeps the existing client target and transpilation scope in development", async () => {
+    const config = createResolvedConfig({
+      target: { android: 5, ios: 8 },
+      polyfill: { coreJs: "bundled" },
+    });
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "development");
+
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
+    const clientConfig = configs.find((item) => item.name === "client");
+    const syntaxRule = clientConfig?.module?.rules?.[1] as {
+      exclude?: RegExp;
+      use?: Array<{ options?: { jsc?: { target?: string } } }>;
+    };
+
+    expect(clientConfig?.target).toBe("web");
+    expect(syntaxRule.exclude).toEqual(/node_modules/);
+    expect(syntaxRule.use?.[0]?.options?.jsc?.target).toBeUndefined();
+  });
+
   it("forwards configureBundler watch files to the framework collector", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
@@ -427,7 +447,7 @@ describe("createWebpackConfigs", () => {
       polyfill: { coreJs: "bundled" },
     });
     const graph = createGraph(config);
-    const plan = await createGeneratedPlan(config, graph, "development");
+    const plan = await createGeneratedPlan(config, graph, "production");
 
     await expect(
       createWebpackConfigs(config, plan, process.cwd(), [
