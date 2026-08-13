@@ -304,6 +304,16 @@ export interface ClientTarget {
   ios: number;
 }
 
+/**
+ * Framework-managed polyfills coupled to the configured client target.
+ *
+ * This is a compatibility capability namespace, not a registry of arbitrary
+ * npm packages. core-js is modeled explicitly because the framework owns its
+ * default implementation, entry ordering, and relationship with syntax
+ * lowering. If applications need arbitrary polyfills in the future, expose a
+ * separate ordered module/script list instead of adding capability fields such
+ * as `fetch` or `abortController` here.
+ */
 export interface PolyfillConfig {
   /**
    * Absolute HTTP(S) URL for an external core-js UMD bundle. Omit this field
