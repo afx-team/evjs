@@ -706,6 +706,10 @@ describe("explicit SPA route graph", () => {
       `,
     });
     const config = resolveConfig({
+      target: { android: 5, ios: 8 },
+      polyfill: {
+        coreJs: "https://cdn.example.com/core-js-bundle.min.js",
+      },
       application: {
         document: { template: "./app.html" },
         routes: [{ path: "/report", page: "report" }],
@@ -779,6 +783,39 @@ describe("explicit SPA route graph", () => {
     expect(viewport?.getAttribute("data-evjs-page-metadata-baseline")).toBe(
       "width=device-width",
     );
+    const scripts = [...doc.querySelectorAll("body script")];
+    expect(scripts.map((script) => script.getAttribute("src"))).toEqual([
+      "https://cdn.example.com/core-js-bundle.min.js",
+      null,
+      "/main.js",
+    ]);
+    expect(scripts[0]?.hasAttribute("async")).toBe(false);
+    expect(scripts[0]?.hasAttribute("defer")).toBe(false);
+    expect(scripts[2]?.hasAttribute("defer")).toBe(true);
+
+    const documentWithoutClientJs = createFrameworkHtmlDocument({
+      cwd,
+      config,
+      output,
+      plan,
+      html: {
+        documentId: htmlPlan.id,
+        applicationId: "default",
+        owner: { kind: "page", pageId: "report" },
+        template: htmlPlan.template,
+        fileName: htmlPlan.fileName,
+        assets: { ...output.pages.report.assets, js: [] },
+      },
+      clientRuntime: createClientRuntime(output),
+    });
+    expect(
+      documentWithoutClientJs.querySelector(
+        'script[src="https://cdn.example.com/core-js-bundle.min.js"]',
+      ),
+    ).toBeNull();
+    expect(
+      documentWithoutClientJs.getElementById("__EVJS_CLIENT_RUNTIME__"),
+    ).toBeNull();
   });
 
   it("materializes the generated SPA facade without canonical route types", async () => {

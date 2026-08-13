@@ -86,6 +86,24 @@ Bundler server fact 使用 `serverEntryAssets`，并以每个 server BuildPlan e
 完整 `BuildOutput` 只存在于内存中。应用代码不得 import 或编辑 deployment
 metadata。
 
+## 浏览器兼容性
+
+配置如 `target: { android: 5, ios: 8 }` 的浏览器目标时会启用低端浏览器兼容。
+配置的 Android/iOS 版本会成为 client 与 mixed build 的 Browserslist target，
+并在开发和生产模式下都输出 ES5
+JavaScript 语法。Webpack 会把应用代码、客户端 framework 代码和第三方依赖一起
+降级到该语法基线；server-function 与 RSC 语义 loader 仍只处理项目源码。
+Utoopack 接收相同的 Android/iOS target。省略 `target` 时，适配器保留现有的
+客户端 target 和依赖转译范围，也不注入 core-js。
+
+该兼容 target 由框架持有，plugin `configureBundler()` hook 不能覆盖。Node、
+构建期、server-function 与 server-renderer 编译继续使用现有 Node target。
+
+配置 target 的客户端 entry 默认打包 `core-js/stable`。配置外部
+`polyfill.coreJs` UMD URL 后会移除该 import，并在每个包含客户端 JavaScript 的
+Document 中，把阻塞式脚本放到 EVJS runtime 数据和带 `defer` 的 client bundle
+之前。配置、加载顺序、能力范围与体积影响详见 [Polyfill](./config#polyfill)。
+
 ## SPA 与 MPA 输出
 
 `routing.mode` 控制 Route/Document materialization：

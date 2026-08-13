@@ -73,6 +73,11 @@
       "import": "./esm/_internal/generated/client/page-context.js",
       "default": "./esm/_internal/generated/client/page-context.js"
     },
+    "./_internal/client/polyfill": {
+      "types": "./esm/_internal/generated/client/polyfill.d.ts",
+      "import": "./esm/_internal/generated/client/polyfill.js",
+      "default": "./esm/_internal/generated/client/polyfill.js"
+    },
     "./_internal/client/react-page": {
       "types": "./esm/_internal/generated/client/react-page.d.ts",
       "import": "./esm/_internal/generated/client/react-page.js",
@@ -150,6 +155,7 @@
     "@standard-schema/spec": "^1.1.0",
     "@swc/core": "^1.15.21",
     "@tanstack/react-router": "^1.168.3",
+    "core-js": "^3.50.0",
     "domparser-rs": "^0.1.0",
     "execa": "^9.6.1",
     "jiti": "^2.6.1"

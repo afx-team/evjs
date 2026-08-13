@@ -7,7 +7,9 @@ import {
   assertSafeBuildOutputPaths,
   assertSafeBuildOwnedOutputPath,
   assertSafeBundlerCleanOutputPath,
+  CLIENT_ECMASCRIPT_TARGET,
   canonicalPortableArtifactPathKey,
+  createClientBrowserslistTarget,
   createPluginConfigView,
   type ResolvedBuildOutputPaths,
   resolveBuildOutputPaths,
@@ -110,6 +112,7 @@ export async function createWebpackConfigs(
             entry.name === "evjs-rsc-client",
         ),
         reactServerConditions: false,
+        browserTarget: config.target,
         clean: options.clean ?? true,
         target: "web",
       }),
@@ -138,6 +141,7 @@ export async function createWebpackConfigs(
         enableRscClientRuntime: false,
         clean: (options.clean ?? true) && rscServerEntries.length === 0,
         reactServerConditions: false,
+        browserTarget: undefined,
         target: "node",
       }),
     );
@@ -165,6 +169,7 @@ export async function createWebpackConfigs(
         enableRscClientRuntime: false,
         clean: false,
         reactServerConditions: false,
+        browserTarget: undefined,
         target: "node",
       }),
     );
@@ -192,6 +197,7 @@ export async function createWebpackConfigs(
         enableRscClientRuntime: false,
         clean: false,
         reactServerConditions: true,
+        browserTarget: undefined,
         target: "node",
       }),
     );
@@ -372,7 +378,7 @@ interface FrameworkWebpackOutputExpectation {
   field: "output.client" | "output.server" | "build-only output";
   path: string;
   mode: unknown;
-  target: unknown;
+  target: Configuration["target"];
   clean: unknown;
   publicPath: unknown;
   crossOriginLoading: unknown;
@@ -415,7 +421,7 @@ function getFrameworkWebpackOutputExpectation(
   );
   const outputExpectation = {
     mode: config.mode,
-    target: config.target,
+    target: cloneWebpackTarget(config.target),
     clean: config.output?.clean,
     publicPath: config.output?.publicPath,
     crossOriginLoading: config.output?.crossOriginLoading,
@@ -491,7 +497,6 @@ function assertFrameworkWebpackIdentity(
 ): void {
   for (const [field, actual, expected] of [
     ["mode", config.mode, expectation.mode],
-    ["target", config.target, expectation.target],
     ["output.clean", config.output?.clean, expectation.clean],
     ["output.publicPath", config.output?.publicPath, expectation.publicPath],
     [
@@ -505,6 +510,30 @@ function assertFrameworkWebpackIdentity(
       `[evjs] Webpack config "${expectation.configName}" ${field} ${formatOutputTemplate(actual)} must remain the framework-owned value ${formatOutputTemplate(expected)}. configureBundler hooks cannot override framework runtime identity.`,
     );
   }
+  if (!sameWebpackTarget(config.target, expectation.target)) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" target ${formatOutputTemplate(config.target)} must remain the framework-owned value ${formatOutputTemplate(expectation.target)}. configureBundler hooks cannot override framework runtime identity.`,
+    );
+  }
+}
+
+function cloneWebpackTarget(
+  target: Configuration["target"],
+): Configuration["target"] {
+  return Array.isArray(target) ? [...target] : target;
+}
+
+function sameWebpackTarget(
+  actual: Configuration["target"],
+  expected: Configuration["target"],
+): boolean {
+  if (!Array.isArray(actual) || !Array.isArray(expected)) {
+    return Object.is(actual, expected);
+  }
+  return (
+    actual.length === expected.length &&
+    actual.every((target, index) => target === expected[index])
+  );
 }
 
 function assertSelfContainedServerEntrypoints(
@@ -877,10 +906,12 @@ function createWebpackConfig(options: {
   rscClientReferences: RscClientReferenceConfig[];
   enableRscClientRuntime: boolean;
   reactServerConditions: boolean;
+  browserTarget: ResolvedConfig["target"];
   clean: boolean;
   target: "web" | "node";
 }): Configuration {
   const isProduction = options.mode === "production";
+  const isClient = options.target === "web";
   const outputExtension = options.target === "node" ? ".cjs" : ".js";
   const chunkDirectory =
     options.target === "node" ? `chunks/${options.name}` : undefined;
@@ -889,7 +920,12 @@ function createWebpackConfig(options: {
     name: options.name,
     mode: options.mode,
     context: options.cwd,
-    target: options.target,
+    target: options.browserTarget
+      ? [
+          `browserslist:${createClientBrowserslistTarget(options.browserTarget)}`,
+          CLIENT_ECMASCRIPT_TARGET,
+        ]
+      : options.target,
     entry: createEntryObject(options.entries),
     output: {
       path: options.outputPath,
@@ -946,23 +982,8 @@ function createWebpackConfig(options: {
         {
           test: /\.[cm]?[jt]sx?$/,
           exclude: /node_modules/,
+          enforce: "pre",
           use: [
-            {
-              loader: swcLoader,
-              options: {
-                jsc: {
-                  parser: {
-                    syntax: "typescript",
-                    tsx: true,
-                  },
-                  transform: {
-                    react: {
-                      runtime: "automatic",
-                    },
-                  },
-                },
-              },
-            },
             {
               loader: serverFunctionLoader,
               options: {
@@ -977,6 +998,32 @@ function createWebpackConfig(options: {
                   },
                 ]
               : []),
+          ],
+        },
+        {
+          test: /\.[cm]?[jt]sx?$/,
+          exclude:
+            isClient && options.browserTarget ? undefined : /node_modules/,
+          use: [
+            {
+              loader: swcLoader,
+              options: {
+                jsc: {
+                  ...(isClient && options.browserTarget
+                    ? { target: CLIENT_ECMASCRIPT_TARGET }
+                    : {}),
+                  parser: {
+                    syntax: "typescript",
+                    tsx: true,
+                  },
+                  transform: {
+                    react: {
+                      runtime: "automatic",
+                    },
+                  },
+                },
+              },
+            },
           ],
         },
         {

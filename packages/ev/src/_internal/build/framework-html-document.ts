@@ -42,6 +42,10 @@ export function createFrameworkHtmlDocument<TBundlerCfg>(options: {
   }
   if (html.assets.js.length > 0) {
     embedClientRuntime(doc, clientRuntime);
+    const coreJs = config.polyfill?.coreJs;
+    if (config.target && coreJs && coreJs !== "bundled") {
+      injectCoreJsUmd(doc, coreJs.url);
+    }
   }
   if (html.owner.kind === "page") {
     const page = output.pages[html.owner.pageId];
@@ -52,6 +56,27 @@ export function createFrameworkHtmlDocument<TBundlerCfg>(options: {
   }
   applyHtmlTagContributions(doc, html, plan);
   return doc;
+}
+
+function injectCoreJsUmd(
+  doc: ReturnType<typeof generateHtml>,
+  url: string,
+): void {
+  const body = doc.body ?? doc.querySelector("body");
+  if (!body) return;
+  const script = doc.createElement("script");
+  script.setAttribute("src", url);
+  const runtimeScript = body.querySelector(`#${CLIENT_RUNTIME_SCRIPT_ID}`);
+  if (runtimeScript) {
+    body.insertBefore(script, runtimeScript);
+    return;
+  }
+  const firstScript = body.querySelector("script[src]");
+  if (firstScript) {
+    body.insertBefore(script, firstScript);
+    return;
+  }
+  body.appendChild(script);
 }
 
 function hasSpaApplicationEntry(

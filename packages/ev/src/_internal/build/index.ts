@@ -20,6 +20,11 @@ export {
 } from "./bundler.js";
 export { assertBundlerEmittedFiles } from "./bundler-output-files.js";
 export {
+  CLIENT_ECMASCRIPT_TARGET,
+  CLIENT_TARGET_MINIMUM,
+  createClientBrowserslistTarget,
+} from "./client-compatibility.js";
+export {
   type BuildOptions,
   build,
   type DevOptions,
