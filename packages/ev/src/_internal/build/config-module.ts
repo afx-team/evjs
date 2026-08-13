@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createJiti } from "jiti";
+import { createJiti, type ModuleCache } from "jiti";
 import type { Config } from "../../config/index.js";
 import { extractRuntimeModuleReferences } from "./static-imports.js";
 
@@ -41,6 +41,7 @@ const STATIC_CONFIG_CONDITION_SETS = [
 interface ObservedStaticConfigDependencies {
   aliases: Map<string, string>;
   dependencies: string[];
+  nativeModules: string[];
 }
 
 interface FreshPackageSpecifierResolution {
@@ -128,8 +129,15 @@ export async function loadConfigFile<TBundlerCfg = unknown>(
       resolvedConfigPath,
       options.cache === true,
       observed.aliases,
+      observed.nativeModules,
     );
-    const mod = loader(resolvedConfigPath);
+    const source = await fs.promises.readFile(resolvedConfigPath, "utf-8");
+    const mod = loader.evalModule(source, {
+      cache: Object.create(null) as ModuleCache,
+      ext: path.extname(resolvedConfigPath),
+      filename: resolvedConfigPath,
+      forceTranspile: true,
+    });
     return resolveConfigExport<TBundlerCfg>(mod);
   } catch (error) {
     throw new Error(`Failed to load evjs config from ${absoluteConfigPath}`, {
@@ -174,6 +182,7 @@ export async function loadStaticConfigModule(
       resolvedConfigPath,
       true,
       observed.aliases,
+      observed.nativeModules,
     );
     let loaded: unknown;
     try {
@@ -276,6 +285,7 @@ async function observeStaticConfigDependencyCandidates(
   const aliases = new Map<string, string>();
   const aliasScopes = new Map<string, string>();
   const dependencies = new Set<string>();
+  const nativeModules = new Set<string>();
   const visited = new Set<string>();
   const pending = [root];
   const packageManifests = new Map<
@@ -311,6 +321,8 @@ async function observeStaticConfigDependencyCandidates(
       includeRequire: true,
     })) {
       const { specifier } = reference;
+      const packageName = packageNameFromSpecifier(specifier);
+      if (packageName) nativeModules.add(packageName);
       const authoredPath = assertProjectLocalStaticConfigSpecifier(
         file,
         specifier,
@@ -413,7 +425,27 @@ async function observeStaticConfigDependencyCandidates(
     }
   }
 
-  return { aliases, dependencies: [...dependencies].sort() };
+  return {
+    aliases,
+    dependencies: [...dependencies].sort(),
+    nativeModules: [...nativeModules].sort(),
+  };
+}
+
+function packageNameFromSpecifier(specifier: string): string | undefined {
+  if (
+    specifier.startsWith(".") ||
+    specifier.startsWith("/") ||
+    specifier.startsWith("#") ||
+    specifier.startsWith("node:") ||
+    URL.canParse(specifier)
+  ) {
+    return undefined;
+  }
+  const segments = specifier.split("/");
+  return specifier.startsWith("@")
+    ? segments.slice(0, 2).join("/")
+    : segments[0];
 }
 
 function assertProjectLocalStaticConfigSpecifier(
@@ -1090,6 +1122,7 @@ function createConfigLoader(
   configPath: string,
   moduleCache: boolean,
   freshPackageAliases: ReadonlyMap<string, string> = new Map(),
+  nativeModules: string[] = [],
 ) {
   return createJiti(configPath, {
     alias: {
@@ -1099,7 +1132,9 @@ function createConfigLoader(
     fsCache: false,
     interopDefault: true,
     moduleCache,
-    tryNative: false,
+    nativeModules,
+    transformOptions: {},
+    tryNative: true,
   });
 }
 
