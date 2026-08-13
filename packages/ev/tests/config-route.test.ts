@@ -808,6 +808,7 @@ describe("explicit SPA route graph", () => {
         assets: { ...output.pages.report.assets, js: [] },
       },
       clientRuntime: createClientRuntime(output),
+      purpose: "client-document",
     });
     expect(
       documentWithoutClientJs.querySelector(
