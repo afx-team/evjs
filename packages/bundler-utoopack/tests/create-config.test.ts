@@ -81,6 +81,7 @@ describe("createUtoopackConfig", () => {
       { import: "./.ev/entries/main.ts", name: "main" },
     ]);
     expect(utoopackConfig.output?.publicPath).toBe("auto");
+    expect(utoopackConfig.target).toBeUndefined();
     expect(utoopackConfig.output?.crossOriginLoading).toBe("anonymous");
     expect(utoopackConfig.resolve?.alias?.["@"]).toBe("./src");
     expect(utoopackConfig.define).toMatchObject({
@@ -163,6 +164,36 @@ describe("createUtoopackConfig", () => {
       removeUnusedExports: true,
       removeUnusedImports: true,
     });
+    expect(utoopackConfig.target).toBeUndefined();
+  });
+
+  it("targets configured browsers only in production", async () => {
+    for (const coreJs of [
+      "bundled",
+      {
+        source: "umd",
+        url: "https://cdn.example.com/core-js-bundle.min.js",
+      },
+    ] as const) {
+      for (const mode of ["development", "production"] as const) {
+        const config = createResolvedConfig({
+          target: { android: 6, ios: 10 },
+          polyfill: { coreJs },
+        });
+        const plan = await createPlan(config, { mode });
+
+        const utoopackConfig = await createUtoopackConfig(
+          config,
+          plan,
+          process.cwd(),
+          [],
+        );
+
+        expect(utoopackConfig.target).toBe(
+          mode === "production" ? "android >= 6, ios >= 10" : undefined,
+        );
+      }
+    }
   });
 
   it("disables module concatenation for mixed production builds", async () => {
@@ -248,7 +279,7 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       plugins: [plugin],
     });
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { mode: "production" });
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -1158,6 +1189,26 @@ describe("createUtoopackConfig", () => {
         ]),
       ).rejects.toThrow(testCase.expected);
     }
+  });
+
+  it("protects the enabled client compatibility target", async () => {
+    const config = createResolvedConfig({
+      target: { android: 5, ios: 8 },
+      polyfill: { coreJs: "bundled" },
+    });
+    const plan = await createPlan(config, { mode: "production" });
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          configureBundler(utoopackConfig) {
+            utoopackConfig.target = "node";
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Utoopack target "node" must remain the framework-owned value "android >= 5, ios >= 8"',
+    );
   });
 
   it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {

@@ -9,22 +9,26 @@ type ImportFile = (file: string) => string;
 export function createOriginalClientEntryFacadeSource(
   entry: BuildEntry,
   importFile: ImportFile,
-  options: { autoStart?: boolean } = {},
+  options: { autoStart?: boolean; bundleCoreJs?: boolean } = {},
 ): string {
+  let source: string;
   if (entry.metadata?.type === "pages-app") {
-    return createPagesAppEntryMainSource(
+    source = createPagesAppEntryMainSource(
       entry.metadata,
       importFile,
       options.autoStart,
     ).join("\n");
-  }
-  if (entry.metadata?.type === "react-component-page") {
-    return createReactComponentPageEntryMainSource(
+  } else if (entry.metadata?.type === "react-component-page") {
+    source = createReactComponentPageEntryMainSource(
       entry.metadata,
       importFile,
     ).join("\n");
+  } else {
+    source = `import ${JSON.stringify(importFile(entry.import))};`;
   }
-  return `import ${JSON.stringify(importFile(entry.import))};`;
+  return options.bundleCoreJs
+    ? `import "@evjs/ev/_internal/client/polyfill";\n${source}`
+    : source;
 }
 
 export function createPagesAppEntryMainSource(

@@ -21,6 +21,7 @@ import {
   type ServerRouteNode,
 } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "../_internal/build/bundler.js";
+import { CLIENT_TARGET_MINIMUM } from "../_internal/build/client-compatibility.js";
 import {
   assertFrameworkOutputDirectory,
   assertSeparateFrameworkOutputDirectories,
@@ -122,6 +123,10 @@ export interface ResolvedServerRuntimeConfig {
 export interface ResolvedConfig<TBundlerCfg = unknown> {
   /** Whether framework file conventions are enabled. */
   conventions: boolean;
+  /** Framework-owned browser compilation target, when explicitly enabled. */
+  target?: ClientTarget;
+  /** Browser polyfill mode derived from the enabled client target. */
+  polyfill?: ResolvedPolyfillConfig;
   /** Emitted HTML and asset-tag output options. */
   output: ResolvedOutputConfig;
   /** Framework-managed page routing declaration, when enabled. */
@@ -163,6 +168,12 @@ export interface Config<TBundlerCfg = unknown> {
    * disabled independently.
    */
   conventions?: boolean;
+
+  /** Enable a framework-owned production browser compilation target. */
+  target?: ClientTarget;
+
+  /** Override the polyfill source used by an enabled client target. */
+  polyfill?: PolyfillConfig;
 
   /** Emitted HTML and asset-tag output options. */
   output?: OutputConfig;
@@ -285,6 +296,35 @@ export interface TransportConfig {
 
 export interface ResolvedTransportConfig {
   baseUrl?: string;
+}
+
+/** Browser versions supported by framework-owned client compilation. */
+export interface ClientTarget {
+  android: number;
+  ios: number;
+}
+
+/**
+ * Framework-managed polyfills coupled to the configured client target.
+ *
+ * This is a compatibility capability namespace, not a registry of arbitrary
+ * npm packages. core-js is modeled explicitly because the framework owns its
+ * default implementation, entry ordering, and relationship with syntax
+ * lowering. If applications need arbitrary polyfills in the future, expose a
+ * separate ordered module/script list instead of adding capability fields such
+ * as `fetch` or `abortController` here.
+ */
+export interface PolyfillConfig {
+  /**
+   * Absolute HTTP(S) URL for an external core-js UMD bundle. Omit this field
+   * to bundle the framework-owned core-js runtime into every production client
+   * entry.
+   */
+  coreJs?: string;
+}
+
+export interface ResolvedPolyfillConfig {
+  coreJs: "bundled" | { source: "umd"; url: string };
 }
 
 export type CrossOriginLoadingPolicy = false | "anonymous" | "use-credentials";
@@ -512,6 +552,8 @@ export const CONFIG_DEFAULTS = {
 } as const;
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "conventions",
+  "target",
+  "polyfill",
   "output",
   "dev",
   "server",
@@ -521,6 +563,7 @@ const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "bundler",
   "plugins",
 ]);
+const PUBLIC_CLIENT_TARGET_KEYS = new Set(["android", "ios"]);
 const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set(["mode", "html", "mount"]);
 const PUBLIC_CONFIG_ROUTE_APPLICATION_KEYS = new Set([
   "pageRoot",
@@ -559,6 +602,7 @@ const PUBLIC_SERVER_RESOLVE_CONFIG_KEYS = new Set(["alias"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
+const PUBLIC_POLYFILL_CONFIG_KEYS = new Set(["coreJs"]);
 const PUBLIC_OUTPUT_CONFIG_KEYS = new Set([
   "client",
   "server",
@@ -649,6 +693,17 @@ export function resolveConfig<TBundlerCfg = unknown>(
     "transport",
   );
   validateTransportConfigKeys(transportConfig);
+  const clientTarget = resolveClientTarget(config.target);
+  const polyfillConfig = resolveOptionalConfigRecord<PolyfillConfig>(
+    config.polyfill,
+    "polyfill",
+  );
+  validatePolyfillConfigKeys(polyfillConfig);
+  if (config.polyfill !== undefined && clientTarget === undefined) {
+    throw new Error(
+      "[evjs] polyfill requires target because core-js alone does not lower JavaScript syntax.",
+    );
+  }
   const outputConfig = resolveOptionalConfigRecord<OutputConfig>(
     config.output,
     "output",
@@ -693,6 +748,12 @@ export function resolveConfig<TBundlerCfg = unknown>(
 
   return {
     conventions,
+    ...(clientTarget !== undefined
+      ? {
+          target: clientTarget,
+          polyfill: resolvePolyfillConfig(polyfillConfig),
+        }
+      : {}),
     routing: resolvedPageRouting,
     ...(resolvedApplication
       ? {
@@ -1649,6 +1710,68 @@ function validateTransportConfigKeys(transport: TransportConfig): void {
     "transport",
     "baseUrl",
   );
+}
+
+function validatePolyfillConfigKeys(polyfill: PolyfillConfig): void {
+  assertKnownConfigKeys(
+    polyfill,
+    PUBLIC_POLYFILL_CONFIG_KEYS,
+    "polyfill",
+    "coreJs",
+  );
+}
+
+function resolveClientTarget(target: unknown): ClientTarget | undefined {
+  if (target === undefined) return undefined;
+  const targetConfig = assertPlainConfigRecord(
+    target,
+    "target",
+    "a browser target object",
+  );
+  assertKnownConfigKeys(
+    targetConfig,
+    PUBLIC_CLIENT_TARGET_KEYS,
+    "target",
+    "android and ios",
+  );
+  return {
+    android: assertMinimumBrowserVersion(
+      targetConfig.android,
+      "target.android",
+      CLIENT_TARGET_MINIMUM.android,
+    ),
+    ios: assertMinimumBrowserVersion(
+      targetConfig.ios,
+      "target.ios",
+      CLIENT_TARGET_MINIMUM.ios,
+    ),
+  };
+}
+
+function assertMinimumBrowserVersion(
+  value: unknown,
+  path: string,
+  minimum: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`[evjs] ${path} must be a finite number.`);
+  }
+  if (value < minimum) {
+    throw new Error(`[evjs] ${path} must be at least ${minimum}.`);
+  }
+  return value;
+}
+
+function resolvePolyfillConfig(
+  polyfill: PolyfillConfig,
+): ResolvedPolyfillConfig {
+  if (polyfill.coreJs === undefined) return { coreJs: "bundled" };
+  return {
+    coreJs: {
+      source: "umd",
+      url: assertHttpUrl(polyfill.coreJs, "polyfill.coreJs"),
+    },
+  };
 }
 
 function validateOutputConfigKeys(output: OutputConfig): void {

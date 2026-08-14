@@ -261,6 +261,55 @@ configuration.
 
 ## Other Configuration
 
+### Polyfills
+
+Production browser compatibility is opt-in and controlled by `target`. In
+development, evjs keeps the adapters' existing client targets and transpilation
+scope and does not inject core-js. When `target` is omitted, production also
+keeps that existing behavior.
+
+Use a target object to select supported Android and iOS versions for production,
+emit ES5 syntax, and bundle the framework-owned `core-js/stable` bridge. Every
+production generated client facade imports the bridge before plugin `polyfill`
+entry contributions and the application entry. This covers ECMAScript built-in
+features and increases the production client bundle size.
+
+```ts
+export default defineConfig({
+  target: { android: 5, ios: 8 },
+});
+```
+
+Applications can raise either baseline, for example to
+`target: { android: 6, ios: 10 }`. Android 5 and iOS 8 are the minimum accepted
+values. Both fields are required and must be finite numbers.
+
+To load a separately hosted core-js UMD bundle instead, configure one absolute
+HTTP(S) URL alongside the target:
+
+```ts
+export default defineConfig({
+  target: { android: 6, ios: 10 },
+  polyfill: {
+    coreJs: "https://cdn.example.com/core-js-bundle.min.js",
+  },
+});
+```
+
+External mode removes the bundled core-js import. Every production SPA, MPA,
+SSR, and SSG Document that contains client JavaScript receives a normal blocking
+`<script src="...">` before the embedded EVJS client runtime data and deferred
+application scripts. The configured URL is preserved exactly and is not joined
+with `publicPath`. Documents without client JavaScript do not receive the tag.
+
+`polyfill` is valid only with `target`; this prevents core-js from being
+loaded while JavaScript syntax remains untransformed. `polyfill.coreJs` accepts
+only an absolute `http:` or `https:` URL. Relative
+paths, other URL schemes, non-string values, and unknown `polyfill` fields are
+rejected during configuration resolution. This setting does not add Web API
+polyfills such as `fetch`, `AbortController`, or Streams, and does not change
+Node, build-time, or server compilation targets.
+
 ### Server
 
 When file conventions are enabled, positive `api.*` server request-route

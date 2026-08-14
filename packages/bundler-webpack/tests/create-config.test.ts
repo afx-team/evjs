@@ -31,6 +31,7 @@ describe("createWebpackConfigs", () => {
     expect(entry.main?.import).toBe("./.ev/entries/main.ts");
     expect(configs[0]?.output?.publicPath).toBe("auto");
     expect(configs[0]?.output?.crossOriginLoading).toBe("anonymous");
+    expect(configs[0]?.target).toBe("web");
     expect(configs[0]?.infrastructureLogging).toEqual({ level: "warn" });
     expect(configs[0]?.stats).toEqual({
       assets: true,
@@ -39,6 +40,19 @@ describe("createWebpackConfigs", () => {
     expect(configs[0]?.resolve?.alias).toMatchObject({
       "@": path.resolve(process.cwd(), "src"),
     });
+    const clientRules = configs[0]?.module?.rules ?? [];
+    const semanticRule = clientRules[0] as {
+      exclude?: RegExp;
+      enforce?: string;
+    };
+    const syntaxRule = clientRules[1] as {
+      exclude?: RegExp;
+      use?: Array<{ options?: { jsc?: { target?: string } } }>;
+    };
+    expect(semanticRule.enforce).toBe("pre");
+    expect(semanticRule.exclude).toEqual(/node_modules/);
+    expect(syntaxRule.exclude).toEqual(/node_modules/);
+    expect(syntaxRule.use?.[0]?.options?.jsc?.target).toBeUndefined();
     const definePlugin = configs[0]?.plugins?.find(
       (plugin) =>
         plugin &&
@@ -104,6 +118,54 @@ describe("createWebpackConfigs", () => {
       "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify("plan-runtime/fn"),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify("plan-runtime/fn"),
     });
+  });
+
+  it("keeps the client compatibility target in production builds", async () => {
+    const config = createResolvedConfig({
+      target: { android: 6, ios: 10 },
+      polyfill: {
+        coreJs: {
+          source: "umd",
+          url: "https://cdn.example.com/core-js-bundle.min.js",
+        },
+      },
+    });
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "production");
+
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
+    const clientConfig = configs.find((item) => item.name === "client");
+    const syntaxRule = clientConfig?.module?.rules?.[1] as {
+      exclude?: RegExp;
+      use?: Array<{ options?: { jsc?: { target?: string } } }>;
+    };
+
+    expect(clientConfig?.target).toEqual([
+      "browserslist:android >= 6, ios >= 10",
+      "es5",
+    ]);
+    expect(syntaxRule.exclude).toBeUndefined();
+    expect(syntaxRule.use?.[0]?.options?.jsc?.target).toBe("es5");
+  });
+
+  it("keeps the existing client target and transpilation scope in development", async () => {
+    const config = createResolvedConfig({
+      target: { android: 5, ios: 8 },
+      polyfill: { coreJs: "bundled" },
+    });
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "development");
+
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
+    const clientConfig = configs.find((item) => item.name === "client");
+    const syntaxRule = clientConfig?.module?.rules?.[1] as {
+      exclude?: RegExp;
+      use?: Array<{ options?: { jsc?: { target?: string } } }>;
+    };
+
+    expect(clientConfig?.target).toBe("web");
+    expect(syntaxRule.exclude).toEqual(/node_modules/);
+    expect(syntaxRule.use?.[0]?.options?.jsc?.target).toBeUndefined();
   });
 
   it("forwards configureBundler watch files to the framework collector", async () => {
@@ -377,6 +439,28 @@ describe("createWebpackConfigs", () => {
         ]),
       ).rejects.toThrow(testCase.expected);
     }
+  });
+
+  it("protects the enabled client compatibility target", async () => {
+    const config = createResolvedConfig({
+      target: { android: 5, ios: 8 },
+      polyfill: { coreJs: "bundled" },
+    });
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "production");
+
+    await expect(
+      createWebpackConfigs(config, plan, process.cwd(), [
+        {
+          configureBundler(configs) {
+            const client = configs.find((item) => item.name === "client");
+            if (Array.isArray(client?.target)) client.target[0] = "node";
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Webpack config "client" target ["node","es5"] must remain the framework-owned value ["browserslist:android >= 5, ios >= 8","es5"]',
+    );
   });
 
   it("rejects portable artifact escapes in added entry names after each configureBundler hook", async () => {
@@ -970,6 +1054,13 @@ describe("createWebpackConfigs", () => {
     expect(serverConfig?.resolve?.alias).toMatchObject({
       "server-sdk": path.resolve(process.cwd(), "src/server/sdk.ts"),
     });
+    expect(serverConfig?.target).toBe("node");
+    const serverSyntaxRule = serverConfig?.module?.rules?.[1] as {
+      exclude?: RegExp;
+      use?: Array<{ options?: { jsc?: { target?: string } } }>;
+    };
+    expect(serverSyntaxRule.exclude).toEqual(/node_modules/);
+    expect(serverSyntaxRule.use?.[0]?.options?.jsc?.target).toBeUndefined();
   });
 
   it("uses a generated server entry for framework-managed server routes", async () => {
@@ -1105,7 +1196,9 @@ describe("createWebpackConfigs", () => {
   });
 });
 
-function createResolvedConfig(): ResolvedConfig<WebpackConfigs> {
+function createResolvedConfig(
+  overrides: Partial<ResolvedConfig<WebpackConfigs>> = {},
+): ResolvedConfig<WebpackConfigs> {
   return {
     conventions: true,
     routing: {
@@ -1148,6 +1241,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfigs> {
     },
     transport: {},
     plugins: [],
+    ...overrides,
   };
 }
 

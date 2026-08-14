@@ -960,6 +960,89 @@ describe("resolveConfig", () => {
     expect(() => resolveConfig({ server: { unknown: true } } as never)).toThrow(
       "server.unknown is not supported",
     );
+    expect(() =>
+      resolveConfig({
+        target: { android: 5, ios: 8 },
+        polyfill: { unknown: true },
+      } as never),
+    ).toThrow("polyfill.unknown is not supported");
+  });
+
+  it("uses target as the compatibility switch and resolves core-js", () => {
+    expect(resolveConfig()).not.toHaveProperty("polyfill");
+    expect(resolveConfig()).not.toHaveProperty("target");
+    expect(resolveConfig({ target: { android: 6, ios: 10 } })).toMatchObject({
+      target: { android: 6, ios: 10 },
+      polyfill: { coreJs: "bundled" },
+    });
+    expect(
+      resolveConfig({ target: { android: 5, ios: 8 }, polyfill: {} }).polyfill,
+    ).toEqual({ coreJs: "bundled" });
+    expect(
+      resolveConfig({
+        target: { android: 6, ios: 10 },
+        polyfill: {
+          coreJs: "https://cdn.example.com/core-js-bundle.min.js",
+        },
+      }).polyfill,
+    ).toEqual({
+      coreJs: {
+        source: "umd",
+        url: "https://cdn.example.com/core-js-bundle.min.js",
+      },
+    });
+
+    for (const coreJs of [
+      "./core-js.js",
+      "/core-js.js",
+      "javascript:alert(1)",
+      " ",
+      42,
+    ]) {
+      expect(() =>
+        resolveConfig({
+          target: { android: 5, ios: 8 },
+          polyfill: { coreJs },
+        } as never),
+      ).toThrow("polyfill.coreJs");
+    }
+
+    for (const polyfill of [null, true, "core-js", []]) {
+      expect(() =>
+        resolveConfig({
+          target: { android: 5, ios: 8 },
+          polyfill,
+        } as never),
+      ).toThrow("polyfill must be a config object");
+    }
+
+    expect(() => resolveConfig({ polyfill: {} })).toThrow(
+      "polyfill requires target",
+    );
+    for (const target of ["legacy", true, [], null]) {
+      expect(() => resolveConfig({ target } as never)).toThrow(
+        "target must be a browser target object",
+      );
+    }
+    expect(() => resolveConfig({ target: { android: 4.4, ios: 8 } })).toThrow(
+      "target.android must be at least 5",
+    );
+    expect(() => resolveConfig({ target: { android: 5, ios: 7 } })).toThrow(
+      "target.ios must be at least 8",
+    );
+    for (const target of [
+      {},
+      { android: 5 },
+      { android: 5, ios: Number.NaN },
+      { android: "6", ios: 10 },
+    ]) {
+      expect(() => resolveConfig({ target } as never)).toThrow(
+        /target\.(android|ios) must be a finite number/,
+      );
+    }
+    expect(() =>
+      resolveConfig({ target: { android: 5, ios: 8, chrome: 37 } } as never),
+    ).toThrow("target.chrome is not supported");
   });
 
   it("rejects unsupported routing shapes", () => {

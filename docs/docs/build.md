@@ -94,6 +94,28 @@ Generated HTML embeds the `ClientRuntime` required by browser bootstrap.
 the complete `BuildOutput` remains in memory. Application code must not import
 or edit deployment metadata.
 
+## Browser Compatibility
+
+Browser compatibility is enabled with a browser target such as
+`target: { android: 5, ios: 8 }`. The configured Android/iOS versions become
+the production Browserslist target, and production JavaScript syntax output is
+ES5. Webpack transpiles both application code and client-side framework/third-party
+dependencies to that syntax baseline in production; semantic server-function
+and RSC loaders remain scoped to project source. Utoopack receives the same
+Android/iOS production target. Development retains each adapter's existing
+client target and dependency transpilation scope and does not inject core-js.
+When `target` is omitted, production also retains that existing behavior.
+
+The compatibility target is framework-owned: a plugin `configureBundler()`
+hook cannot replace it. Node, build-time, server-function, and server-renderer
+compilations retain their existing Node target.
+
+Targeted production client entries bundle `core-js/stable` by default. Setting
+an external `polyfill.coreJs` UMD URL removes that import and adds a blocking
+script before EVJS runtime data and deferred client bundles in every production
+Document with client JavaScript. See [Polyfills](./config#polyfills) for
+configuration, loading order, scope, and bundle-size details.
+
 ## SPA And MPA Output
 
 `routing.mode` controls route and Document materialization:

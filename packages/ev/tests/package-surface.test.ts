@@ -235,6 +235,7 @@ const forbiddenPluginAuthoringFields = [
 ] as const;
 
 const expectedBuildToolsRuntimeExports = [
+  "CLIENT_TARGET_MINIMUM",
   "GENERATED_IR_DIR",
   "GENERATED_IR_MANIFEST",
   "SERVER_FUNCTION_TRANSFORM_RUNTIME",
@@ -253,6 +254,7 @@ const expectedBuildToolsRuntimeExports = [
   "canonicalPortableArtifactPathKey",
   "collectPluginSettingsRegistry",
   "createBuildPlan",
+  "createClientBrowserslistTarget",
   "createCoreGraph",
   "createPluginConfigView",
   "createPluginSettingsResolutionSession",
@@ -320,6 +322,7 @@ const expectedPackageExportSubpaths = {
     "./_internal/build",
     "./_internal/client",
     "./_internal/client/page-context",
+    "./_internal/client/polyfill",
     "./_internal/client/react-page",
     "./_internal/client/route-types",
     "./_internal/client/rsc-page-context",

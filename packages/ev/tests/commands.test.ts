@@ -1170,6 +1170,8 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkBuild(
       {
         output: { client: "dist/client", server: "dist/server" },
+        target: { android: 5, ios: 8 },
+        polyfill: {},
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -1278,12 +1280,81 @@ describe("prepareFrameworkBuild", () => {
         runtimeModule?.file ?? "",
       )}";`,
     );
-    await expect(
-      fs.promises.readFile(path.join(cwd, entry?.file ?? ""), "utf-8"),
-    ).resolves.toContain(
+    const mainEntrySource = await fs.promises.readFile(
+      path.join(cwd, entry?.file ?? ""),
+      "utf-8",
+    );
+    expect(mainEntrySource).toContain(
       'import * as routeModule0 from "../../src/pages/page";',
     );
+    expect(mainEntrySource.indexOf("@evjs/ev/_internal/client/polyfill")).toBe(
+      mainEntrySource.lastIndexOf("@evjs/ev/_internal/client/polyfill"),
+    );
+    expect(
+      mainEntrySource.indexOf("@evjs/ev/_internal/client/polyfill"),
+    ).toBeLessThan(mainEntrySource.indexOf("generated-fixture/runtime"));
 
+    await prepared.dispose();
+  });
+
+  it("uses an external core-js UMD without a bundled entry import", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        target: { android: 5, ios: 8 },
+        polyfill: {
+          coreJs: "https://cdn.example.com/core-js-bundle.min.js",
+        },
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+    const source = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/main.ts"),
+      "utf-8",
+    );
+
+    expect(source).not.toContain("@evjs/ev/_internal/client/polyfill");
+    await prepared.dispose();
+  });
+
+  it("does not inject bundled core-js in development", async () => {
+    const cwd = await createSpaProject();
+    const prepared = await prepareFrameworkBuild(
+      {
+        target: { android: 5, ios: 8 },
+        routing: { mode: "spa" },
+      },
+      { cwd, mode: "development" },
+    );
+    const source = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/main.ts"),
+      "utf-8",
+    );
+
+    expect(source).not.toContain("@evjs/ev/_internal/client/polyfill");
+    await prepared.dispose();
+  });
+
+  it("does not inject core-js when browser compatibility is omitted", async () => {
+    const cwd = await createSpaProject();
+    const prepared = await prepareFrameworkBuild(
+      { routing: { mode: "spa" } },
+      { cwd },
+    );
+    const source = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/main.ts"),
+      "utf-8",
+    );
+
+    expect(source).not.toContain("@evjs/ev/_internal/client/polyfill");
     await prepared.dispose();
   });
 
@@ -1388,7 +1459,10 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkIR({
       cwd,
       mode: "production",
-      config: {} as never,
+      config: {
+        target: { android: 5, ios: 8 },
+        polyfill: { coreJs: "bundled" },
+      } as never,
       graph: {} as CoreGraph,
       plan,
       plugins: [],
@@ -1402,6 +1476,16 @@ describe("prepareFrameworkBuild", () => {
         "./.ev/entries/runtime-01a49654-2.ts",
       ],
     );
+    for (const generatedEntry of prepared.plan.generated?.entries ?? []) {
+      const entryFile = generatedEntry.file.replace(/^\.\/\.ev\//, "");
+      const source = prepared.image.files.find(
+        (file) => file.file === entryFile,
+      )?.source;
+      expect(source).toContain('import "@evjs/ev/_internal/client/polyfill";');
+      expect(
+        source?.match(/@evjs\/ev\/_internal\/client\/polyfill/g),
+      ).toHaveLength(1);
+    }
     await expect(
       fs.promises.access(path.join(cwd, ".ev")),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -2391,6 +2475,8 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkBuild(
       {
         output: { client: "dist/client", server: "dist/server" },
+        target: { android: 5, ios: 8 },
+        polyfill: {},
         routing: { mode: "mpa" },
         plugins: [plugin],
       },
@@ -2406,20 +2492,24 @@ describe("prepareFrameworkBuild", () => {
       const installer = manifest.generated?.modules.find(
         (module) => module.id === "installer",
       );
-      await expect(
-        fs.promises.readFile(
-          path.join(
-            cwd,
-            `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
-          ),
-          "utf-8",
+      const pageEntrySource = await fs.promises.readFile(
+        path.join(
+          cwd,
+          `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
         ),
-      ).resolves.toContain(
+        "utf-8",
+      );
+      expect(pageEntrySource).toContain(
         generatedImport(
           cwd,
           `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
           installer?.file ?? "",
         ),
+      );
+      expect(
+        pageEntrySource.indexOf("@evjs/ev/_internal/client/polyfill"),
+      ).toBeLessThan(
+        pageEntrySource.indexOf("mpa-application-target/installer"),
       );
     } finally {
       await prepared.dispose();
@@ -2635,6 +2725,8 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
+        target: { android: 5, ios: 8 },
+        polyfill: {},
         routing: { mode: "spa" },
         output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
@@ -2663,14 +2755,26 @@ describe("prepareFrameworkBuild", () => {
     expect(originalEntry).toContain("export const pagesApp = createPagesApp");
     expect(originalEntry).toContain("startPagesApp");
     expect(originalEntry).toContain("../../src/pages/page");
+    expect(
+      originalEntry.indexOf("@evjs/ev/_internal/client/polyfill"),
+    ).toBeLessThan(originalEntry.indexOf("createPagesApp"));
     expect(deferredEntry).toContain("createPagesApp");
     expect(deferredEntry).toContain("export const pagesApp = createPagesApp");
     expect(deferredEntry).toContain("export const start =");
     expect(deferredEntry).not.toContain('startPagesApp(app, "#app");');
+    expect(
+      deferredEntry.indexOf("@evjs/ev/_internal/client/polyfill"),
+    ).toBeLessThan(deferredEntry.indexOf("createPagesApp"));
     expect(wrapper).toContain('import("./original-entry")');
     expect(mainEntry).toContain(
       'export * from "../plugins/entry-wrapper/wrapper";',
     );
+    expect(
+      mainEntry.indexOf("@evjs/ev/_internal/client/polyfill"),
+    ).toBeLessThan(mainEntry.indexOf("entry-wrapper/wrapper"));
+    expect(
+      mainEntry.match(/@evjs\/ev\/_internal\/client\/polyfill/g),
+    ).toHaveLength(1);
     expect(mainEntry).not.toContain("createPagesApp");
 
     await prepared.dispose();

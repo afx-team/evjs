@@ -242,6 +242,49 @@ projection。插件根据 normalized Page 派生 Route 或 Document 行为，不
 
 ## 其他配置
 
+### Polyfill
+
+生产环境的低端浏览器兼容由 `target` 显式控制。开发模式保留适配器现有的客户端
+target 和依赖转译范围，也不注入 core-js；省略 `target` 时，生产构建也保留该
+默认行为。
+
+配置 target 对象会为生产构建选择支持的 Android 与 iOS 版本、输出 ES5 语法，
+并打包 framework-owned `core-js/stable` 桥接模块。每个生产客户端 facade 都会先
+import 该模块，再执行插件的 `polyfill` entry contribution 和应用入口。这会补齐
+ECMAScript 内建能力，同时增大生产客户端 bundle 体积。
+
+```ts
+export default defineConfig({
+  target: { android: 5, ios: 8 },
+});
+```
+
+业务可以提高任一版本基线，例如 `target: { android: 6, ios: 10 }`。Android 5 与
+iOS 8 是允许配置的最低版本；两个字段都必须提供有限数字。
+
+如需改用单独托管的 core-js UMD bundle，可以在 target 旁配置一个绝对 HTTP(S) URL：
+
+```ts
+export default defineConfig({
+  target: { android: 6, ios: 10 },
+  polyfill: {
+    coreJs: "https://cdn.example.com/core-js-bundle.min.js",
+  },
+});
+```
+
+外部模式会移除 bundled core-js import。所有包含客户端 JavaScript 的生产 SPA、
+MPA、SSR 与 SSG Document 都会在 EVJS client runtime 内嵌数据和带 `defer` 的
+应用脚本之前插入普通阻塞式 `<script src="...">`。配置 URL 会原样保留，不与
+`publicPath` 拼接；开发 Document 和不包含客户端 JavaScript 的 Document 不会插入
+该标签。
+
+`polyfill` 只能与 `target` 一起配置，避免只加载 core-js、却没有降级
+JavaScript 语法。`polyfill.coreJs` 只接受绝对 `http:` 或 `https:` URL。相对路径、其他 URL
+scheme、非字符串值和未知 `polyfill` 字段都会在配置解析阶段报错。该设置不会
+注入 `fetch`、`AbortController`、Streams 等 Web API polyfill，也不会改变 Node、
+构建期或 server 编译 target。
+
 ### Server
 
 文件约定启用时，positive `api.*` server request-route 锚点固定从 `src/apis`

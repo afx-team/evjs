@@ -15,6 +15,7 @@ import {
   assertPortableRelativeArtifactPath,
   assertSafeBuildOutputPaths,
   canonicalPortableArtifactPathKey,
+  createClientBrowserslistTarget,
   createPluginConfigView,
   resolveBuildOutputPaths,
   SERVER_FUNCTION_TRANSFORM_RUNTIME,
@@ -110,18 +111,22 @@ export async function createUtoopackConfig(
 
   const finalServerEntry = resolveServerEntries(plan);
   const expectedServerEntry = snapshotUtoopackServerEntry(finalServerEntry);
+  const clientEntries = plan.entries.filter(
+    (entry) => entry.environment === "client",
+  );
 
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
 
   const utoopackConfig: ConfigComplete = {
     mode,
-    entry: plan.entries
-      .filter((entry) => entry.environment === "client")
-      .map((entry) => ({
-        import: entry.import,
-        name: entry.name,
-      })),
+    ...(isProduction && config.target !== undefined && clientEntries.length > 0
+      ? { target: createClientBrowserslistTarget(config.target) }
+      : {}),
+    entry: clientEntries.map((entry) => ({
+      import: entry.import,
+      name: entry.name,
+    })),
     output: {
       path: outputPaths.clientDir,
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
@@ -322,6 +327,7 @@ type UtoopackServerOutputTemplateField =
 
 interface UtoopackFrameworkExpectation {
   mode: unknown;
+  target: unknown;
   clean: unknown;
   publicPath: unknown;
   crossOriginLoading: unknown;
@@ -340,6 +346,7 @@ function snapshotUtoopackFrameworkExpectation(
 ): UtoopackFrameworkExpectation {
   return {
     mode: config.mode,
+    target: config.target,
     clean: config.output?.clean,
     publicPath: config.output?.publicPath,
     crossOriginLoading: config.output?.crossOriginLoading,
@@ -373,6 +380,7 @@ function assertUtoopackFrameworkExpectation(
   expectation: UtoopackFrameworkExpectation,
 ): void {
   assertUtoopackFrameworkField("mode", config.mode, expectation.mode);
+  assertUtoopackFrameworkField("target", config.target, expectation.target);
   assertUtoopackFrameworkField(
     "output.clean",
     config.output?.clean,

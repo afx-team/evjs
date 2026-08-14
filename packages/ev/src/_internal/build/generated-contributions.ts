@@ -236,7 +236,11 @@ export async function prepareFrameworkIR<TBundlerCfg>(
   ensureServerEntryForMiddlewareContributions(plan, generated);
   assertUniqueBuildEntryNames(plan.entries);
   plan.generated = generated;
-  const entries = createGeneratedEntryPlans(plan, generated);
+  const bundleCoreJs =
+    options.mode === "production" &&
+    options.config.target !== undefined &&
+    options.config.polyfill?.coreJs === "bundled";
+  const entries = createGeneratedEntryPlans(plan, generated, bundleCoreJs);
   generated.entries = entries;
   rewritePlanEntriesToGeneratedFiles(plan, entries);
 
@@ -246,6 +250,7 @@ export async function prepareFrameworkIR<TBundlerCfg>(
     plan,
     collector.modules,
     generated,
+    bundleCoreJs,
   );
   return { plan, image };
 }
@@ -567,6 +572,10 @@ class ContributionCollector<TBundlerCfg> {
             source: ({ importFile }) =>
               createOriginalClientEntryFacadeSource(entry, importFile, {
                 autoStart: input.autoStart,
+                bundleCoreJs:
+                  this.options.mode === "production" &&
+                  this.options.config.target !== undefined &&
+                  this.options.config.polyfill?.coreJs === "bundled",
               }),
             extension: ".ts",
             keyKind: "entry facade",
@@ -952,6 +961,7 @@ function renderGeneratedIRImage(
   plan: BuildPlan,
   modules: InternalGeneratedModule[],
   generated: GeneratedFrameworkPlan,
+  injectBundledCoreJs: boolean,
 ): GeneratedIRImage {
   const rootDir = path.resolve(cwd, GENERATED_IR_DIR);
   const files = new Map<string, GeneratedIRImageFile>();
@@ -1004,7 +1014,7 @@ function renderGeneratedIRImage(
     addFile(
       absoluteFile,
       withGeneratedHeader(
-        createEntrySource(cwd, buildEntry, entry, plan),
+        createEntrySource(cwd, buildEntry, entry, plan, injectBundledCoreJs),
         ".ts",
         { fromFile: absoluteFile, rootDir },
       ),
@@ -1488,10 +1498,13 @@ function assertUniqueBuildEntryNames(entries: BuildEntry[]): void {
 function createGeneratedEntryPlans(
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
+  injectBundledCoreJs: boolean,
 ): GeneratedEntryPlan[] {
   const used = new Set<string>();
   return plan.entries
-    .filter((entry) => shouldGenerateEntry(entry, plan, generated))
+    .filter((entry) =>
+      shouldGenerateEntry(entry, plan, generated, injectBundledCoreJs),
+    )
     .map((entry) => {
       const fileName = uniqueEntryFileName(entry.name, used);
       return {
@@ -1508,6 +1521,7 @@ function shouldGenerateEntry(
   entry: BuildEntry,
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
+  injectBundledCoreJs: boolean,
 ): boolean {
   if (entry.metadata) return true;
   if (
@@ -1520,6 +1534,7 @@ function shouldGenerateEntry(
   }
   if (entry.environment === "client") {
     return (
+      injectBundledCoreJs ||
       getMatchingClientEntrySlots(plan, entry).length > 0 ||
       getSlotItemsFromGenerated<ClientEntrySlotPlanItem>(
         generated,
@@ -1568,6 +1583,7 @@ function createEntrySource(
   entry: BuildEntry,
   generatedEntry: GeneratedEntryPlan,
   plan: BuildPlan,
+  injectBundledCoreJs: boolean,
 ): string {
   const fromFile = path.resolve(cwd, generatedEntry.file);
   function importFile(file: string): string {
@@ -1591,6 +1607,7 @@ function createEntrySource(
       entry,
       fromFile,
       plan,
+      injectBundledCoreJs,
       mainSource: createPagesAppEntryMainSource(entry.metadata, importFile),
     });
   }
@@ -1600,6 +1617,7 @@ function createEntrySource(
       entry,
       fromFile,
       plan,
+      injectBundledCoreJs,
       mainSource: createReactComponentPageEntryMainSource(
         entry.metadata,
         importFile,
@@ -1623,6 +1641,7 @@ function createEntrySource(
       entry,
       fromFile,
       plan,
+      injectBundledCoreJs,
       mainSource: [`import ${JSON.stringify(original)};`],
     });
   }
@@ -1663,6 +1682,7 @@ function createClientEntrySource(options: {
   entry: BuildEntry;
   fromFile: string;
   plan: BuildPlan;
+  injectBundledCoreJs: boolean;
   mainSource: string[];
 }): string {
   const entrySlots = getMatchingClientEntrySlots(options.plan, options.entry);
@@ -1695,6 +1715,9 @@ function createClientEntrySource(options: {
     : options.mainSource;
 
   return [
+    ...(options.injectBundledCoreJs
+      ? ['import "@evjs/ev/_internal/client/polyfill";']
+      : []),
     ...importsFor("polyfill"),
     ...importsFor("before-main-imports"),
     ...importsFor("before-main"),
