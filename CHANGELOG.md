@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.12] — 2026-08-14
+
 ### ✨ Features
 
 - **Low-end browser compatibility** — Applications can opt into Android 5 and
@@ -13,6 +17,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   Android/iOS versions, which bundle `core-js/stable` by default. An absolute
   `polyfill.coreJs` UMD URL overrides the bundled source. Development and server
   targets are unchanged.
+
+### ✨ Improvements
+
+- **Faster configuration loading** — Installed packages imported by EVJS
+  configuration are loaded natively, reducing startup overhead while
+  project-local TypeScript configuration and helper modules remain fresh for
+  development reloads.
 
 ---
 
