@@ -201,7 +201,7 @@ The supported slots are:
 | Slot | Covers |
 |------|--------|
 | `client.entry` | Entry imports and entry wrapper modules, including replacement wrappers |
-| `server.entry` | Replacement modules for existing Page server entries |
+| `server.entry` | Entry imports and replacement modules for existing Page server entries |
 | `page.wrapper` | Semantic Page component wrapping across client and server projections |
 | `server.request.middleware` | Framework request middleware in the server pipeline |
 | `html.tag` | Structured `meta`, `link`, `script`, and `style` tags |
@@ -211,12 +211,26 @@ The supported slots are:
 Use `client.entry` to import a side-effect module or call an explicit
 installer. The IR does not carry an inert runtime-plugin registry.
 
-`server.entry` is replacement-only. It requires `mode: "replace"` and an exact
-Page target, and that Page must already own a `page-server` entry. The
-contribution replaces only that entry's generated facade module; its framework
-name, kind, owner, environment, renderer identity, and output asset binding
-remain unchanged. It cannot create an entry or target another server renderer
-kind.
+`server.entry` requires an exact Page target, and that Page must already own a
+`page-server` entry. Import contributions preserve the generated Page server
+facade and use the same positions as `client.entry`:
+
+```ts
+emitIR(ctx) {
+  ctx.slot("server.entry").add({
+    id: "monitoring",
+    target: { kind: "page", pageId: "dashboard" },
+    module: "./src/monitoring/server-entry.ts",
+    position: "before-main",
+  });
+}
+```
+
+Use `mode: "replace"` when a plugin must replace the Page server facade. The
+replacement preserves the framework entry's name, kind, owner, environment,
+renderer identity, and output asset binding. It cannot create an entry or
+target another server renderer kind. Other import contributions around that
+entry remain active.
 
 ```ts
 emitIR(ctx) {
