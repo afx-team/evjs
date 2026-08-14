@@ -838,7 +838,8 @@ export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
 export interface ServerEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   slot: "server.entry";
   module: string;
-  mode: "replace";
+  position: EntryContributionPosition;
+  mode: "import" | "replace";
   target: { kind: "page"; pageId: string };
 }
 

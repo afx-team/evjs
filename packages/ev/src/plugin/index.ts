@@ -650,13 +650,25 @@ export interface ClientEntryContribution {
   mode?: "import" | "replace";
 }
 
-/** Replaces one existing framework-owned Page server entry facade. */
-export interface ServerEntryContribution {
+interface ServerEntryContributionBase {
   id: string;
   module: GeneratedModuleRef | string;
   target: { kind: "page"; pageId: string };
-  mode: "replace";
 }
+
+/** Imports into or replaces one existing framework-owned Page server entry. */
+export type ServerEntryContribution = ServerEntryContributionBase &
+  (
+    | {
+        position: EntryContributionPosition;
+        mode?: "import";
+      }
+    | {
+        /** Replacement positions are normalized but do not affect output. */
+        position?: EntryContributionPosition;
+        mode: "replace";
+      }
+  );
 
 /**
  * Wraps semantic Pages with one React component module.

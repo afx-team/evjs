@@ -190,7 +190,7 @@ slots 如下：
 | Slot | 覆盖能力 |
 |------|----------|
 | `client.entry` | Entry imports、entry wrapper modules 和 replacement wrappers |
-| `server.entry` | 替换已有 Page server entry 的模块 |
+| `server.entry` | 已有 Page server entry 的 imports 与 replacement modules |
 | `page.wrapper` | 跨 client/server projection 的语义 Page component 包装 |
 | `server.request.middleware` | Server pipeline 中的 framework request middleware |
 | `html.tag` | 结构化 `meta`、`link`、`script`、`style` tags |
@@ -200,11 +200,25 @@ slots 如下：
 需要 import side-effect module 或执行安装逻辑时，使用 `client.entry` 显式调用
 installer。IR 不携带 inert runtime-plugin registry。
 
-`server.entry` 只支持 replacement。它要求显式提供 `mode: "replace"` 和精确的 Page
-target，且该 Page 必须已经拥有 `page-server` entry。Contribution 只替换该 entry 的
-generated facade module；框架持有的 name、kind、owner、environment、renderer identity
-与 output asset binding 均保持不变。它不能新增 entry，也不能命中其他 server renderer
-kind。
+`server.entry` 要求精确的 Page target，且该 Page 必须已经拥有 `page-server` entry。
+Import contribution 会保留 generated Page server facade，并使用与 `client.entry` 相同的
+positions：
+
+```ts
+emitIR(ctx) {
+  ctx.slot("server.entry").add({
+    id: "monitoring",
+    target: { kind: "page", pageId: "dashboard" },
+    module: "./src/monitoring/server-entry.ts",
+    position: "before-main",
+  });
+}
+```
+
+插件必须替换 Page server facade 时使用 `mode: "replace"`。Replacement 会保留框架
+entry 的 name、kind、owner、environment、renderer identity 与 output asset binding。
+它不能新增 entry，也不能命中其他 server renderer kind。该 entry 周围的其他 import
+contributions 仍然生效。
 
 ```ts
 emitIR(ctx) {

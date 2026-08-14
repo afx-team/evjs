@@ -6,6 +6,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ✨ Features
+
+- **Page server entry imports** — Plugins can import generated or authored
+  modules at ordered positions around an exact Page-owned `page-server` entry.
+  Import contributions compose with the existing replacement mode without
+  changing other server renderer kinds.
+
 ---
 
 ## [0.3.12] — 2026-08-14

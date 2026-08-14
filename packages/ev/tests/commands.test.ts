@@ -2780,6 +2780,170 @@ describe("prepareFrameworkBuild", () => {
     await prepared.dispose();
   });
 
+  it("composes Page server entry imports around a replacement", async () => {
+    const cwd = await createProject();
+    for (const pageId of ["home", "admin"]) {
+      await writeFile(
+        path.join(cwd, `src/pages/${pageId}/page.tsx`),
+        `export default function ${pageId}Page() { return null; }`,
+        "utf-8",
+      );
+      await writeFile(
+        path.join(cwd, `src/pages/${pageId}/page.config.ts`),
+        'export default { render: "ssr" };',
+        "utf-8",
+      );
+    }
+
+    const importsPlugin: Plugin<Record<string, never>> = {
+      id: "server-entry-imports",
+      emitIR(ctx) {
+        for (const [id, position] of [
+          ["before", "before-main"],
+          ["after", "after-main"],
+        ] as const) {
+          const module = ctx.emit.module({
+            id,
+            scope: { kind: "page", pageId: "home" },
+            source: `globalThis.__${id}ServerEntry = true;`,
+          });
+          ctx.slot("server.entry").add({
+            id: `${id}-slot`,
+            target: { kind: "page", pageId: "home" },
+            module,
+            position,
+          });
+        }
+        const admin = ctx.emit.module({
+          id: "admin",
+          scope: { kind: "page", pageId: "admin" },
+          source: "globalThis.__adminServerEntry = true;",
+        });
+        ctx.slot("server.entry").add({
+          id: "admin-slot",
+          target: { kind: "page", pageId: "admin" },
+          module: admin,
+          position: "before-main",
+        });
+      },
+    };
+    const replacementPlugin: Plugin<Record<string, never>> = {
+      id: "server-entry-replacement",
+      emitIR(ctx) {
+        const module = ctx.emit.module({
+          id: "home",
+          scope: { kind: "page", pageId: "home" },
+          source: [
+            "export default function Home() { return null; }",
+            "export const replaced = true;",
+          ].join("\n"),
+        });
+        ctx.slot("server.entry").add({
+          id: "home-slot",
+          target: { kind: "page", pageId: "home" },
+          module,
+          mode: "replace",
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        plugins: [importsPlugin, replacementPlugin],
+      },
+      { cwd },
+    );
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+    ) as BuildPlan;
+    const homeEntryFile = `.ev/entries/${createPageServerBuildEntryName("home")}.ts`;
+    const adminEntryFile = `.ev/entries/${createPageServerBuildEntryName("admin")}.ts`;
+    const homeEntry = await fs.promises.readFile(
+      path.join(cwd, homeEntryFile),
+      "utf-8",
+    );
+    const adminEntry = await fs.promises.readFile(
+      path.join(cwd, adminEntryFile),
+      "utf-8",
+    );
+    const before = manifest.generated?.modules.find(
+      (module) =>
+        module.pluginId === "server-entry-imports" && module.id === "before",
+    );
+    const after = manifest.generated?.modules.find(
+      (module) =>
+        module.pluginId === "server-entry-imports" && module.id === "after",
+    );
+    const replacement = manifest.generated?.modules.find(
+      (module) =>
+        module.pluginId === "server-entry-replacement" && module.id === "home",
+    );
+    const admin = manifest.generated?.modules.find(
+      (module) =>
+        module.pluginId === "server-entry-imports" && module.id === "admin",
+    );
+    const beforeImport = generatedImport(
+      cwd,
+      homeEntryFile,
+      before?.file ?? "",
+    );
+    const afterImport = generatedImport(cwd, homeEntryFile, after?.file ?? "");
+    const replacementImport = generatedImport(
+      cwd,
+      homeEntryFile,
+      replacement?.file ?? "",
+    );
+    const adminImport = generatedImport(cwd, adminEntryFile, admin?.file ?? "");
+
+    expect(homeEntry).toContain(`import ${JSON.stringify(beforeImport)};`);
+    expect(homeEntry).toContain(
+      `export { default } from ${JSON.stringify(replacementImport)};`,
+    );
+    expect(homeEntry).toContain(`void import(${JSON.stringify(afterImport)});`);
+    expect(homeEntry.indexOf(beforeImport)).toBeLessThan(
+      homeEntry.indexOf(replacementImport),
+    );
+    expect(homeEntry.indexOf(replacementImport)).toBeLessThan(
+      homeEntry.indexOf(afterImport),
+    );
+    expect(homeEntry).not.toContain("src/pages/home/page");
+    expect(adminEntry).toContain(`import ${JSON.stringify(adminImport)};`);
+    expect(adminEntry).toContain("src/pages/admin/page");
+    expect(adminEntry).not.toContain(beforeImport);
+    expect(adminEntry).not.toContain(afterImport);
+    expect(manifest.generated?.slots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slot: "server.entry",
+          id: "before-slot",
+          position: "before-main",
+          mode: "import",
+        }),
+        expect.objectContaining({
+          slot: "server.entry",
+          id: "after-slot",
+          position: "after-main",
+          mode: "import",
+        }),
+        expect.objectContaining({
+          slot: "server.entry",
+          id: "home-slot",
+          position: "before-main",
+          mode: "replace",
+        }),
+        expect.objectContaining({
+          slot: "server.entry",
+          id: "admin-slot",
+          position: "before-main",
+          mode: "import",
+        }),
+      ]),
+    );
+
+    await prepared.dispose();
+  });
+
   it("replaces exact Page server entry facades without changing framework entry identity", async () => {
     const cwd = await createProject();
     for (const pageId of ["home", "admin", "profile"]) {
@@ -3072,6 +3236,44 @@ describe("prepareFrameworkBuild", () => {
         { cwd },
       ),
     ).rejects.toThrow('server.entry target.kind must be "page".');
+  });
+
+  it("requires a position for Page server entry imports", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { render: "ssr" };',
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      id: "invalid-server-entry-import",
+      emitIR(ctx) {
+        const module = ctx.emit.module({
+          id: "entry",
+          scope: { kind: "page", pageId: "index" },
+          source: "export {};",
+        });
+        ctx.slot("server.entry").add({
+          id: "entry-slot",
+          target: { kind: "page", pageId: "index" },
+          module,
+        } as never);
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        { routing: { mode: "spa" }, plugins: [plugin] },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'invalid-server-entry-import:entry-slot.position must be one of: "polyfill", "before-main-imports", "after-main-imports", "before-main", "after-main"',
+    );
   });
 
   it("adds server.request.middleware contributions to the generated server entry", async () => {

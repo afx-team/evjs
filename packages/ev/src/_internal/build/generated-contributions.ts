@@ -92,7 +92,7 @@ const CONTRIBUTION_RUNTIMES = [
 ] as const satisfies readonly ContributionRuntime[];
 const CLIENT_ENTRY_RUNTIMES = ["client"] as const;
 const CLIENT_ENTRY_MODES = ["import", "replace"] as const;
-const SERVER_ENTRY_MODES = ["replace"] as const;
+const SERVER_ENTRY_MODES = ["import", "replace"] as const;
 const HTML_TAG_NAMES = [
   "meta",
   "link",
@@ -392,13 +392,15 @@ class ContributionCollector<TBundlerCfg> {
           );
         }
         const entry = matches[0];
-        const previous = serverEntryReplacements.get(entry.name);
-        if (previous) {
-          throw new Error(
-            `[evjs] Server page entry "${entry.name}" has multiple replacement server.entry contributions: ${previous.key}, ${slot.key}.`,
-          );
+        if (slot.mode === "replace") {
+          const previous = serverEntryReplacements.get(entry.name);
+          if (previous) {
+            throw new Error(
+              `[evjs] Server page entry "${entry.name}" has multiple replacement server.entry contributions: ${previous.key}, ${slot.key}.`,
+            );
+          }
+          serverEntryReplacements.set(entry.name, slot);
         }
-        serverEntryReplacements.set(entry.name, slot);
       }
 
       if (
@@ -692,6 +694,11 @@ class ContributionCollector<TBundlerCfg> {
       case "server.entry": {
         const item = input as FrameworkSlotInput<"server.entry">;
         assertGeneratedModuleOrString(pluginId, item.id, item.module);
+        const mode = validateEnum(
+          item.mode ?? "import",
+          SERVER_ENTRY_MODES,
+          `${base.key}.mode`,
+        );
         return {
           ...base,
           slot: name,
@@ -703,8 +710,16 @@ class ContributionCollector<TBundlerCfg> {
             },
             "file",
           ),
+          position:
+            mode === "replace" && item.position === undefined
+              ? "before-main"
+              : validateEnum(
+                  item.position,
+                  ENTRY_POSITIONS,
+                  `${base.key}.position`,
+                ),
           target: validateServerEntryTarget(item.target),
-          mode: validateEnum(item.mode, SERVER_ENTRY_MODES, `${base.key}.mode`),
+          mode,
         };
       }
       case "page.wrapper": {
@@ -1590,17 +1605,6 @@ function createEntrySource(
     return toGeneratedImportSpecifier(cwd, fromFile, file);
   }
 
-  if (entry.kind === "page-server") {
-    const replacement = getMatchingServerEntryReplacement(plan, entry);
-    if (replacement) {
-      const mod = toGeneratedImportSpecifier(cwd, fromFile, replacement.module);
-      return [
-        `export { default } from ${JSON.stringify(mod)};`,
-        `export * from ${JSON.stringify(mod)};`,
-      ].join("\n");
-    }
-  }
-
   if (entry.metadata?.type === "pages-app") {
     return createClientEntrySource({
       cwd,
@@ -1625,11 +1629,14 @@ function createEntrySource(
     });
   }
   if (entry.metadata?.type === "react-server-page") {
-    return createReactServerPageEntrySource(
+    const mainSource = createReactServerPageEntrySource(
       entry.metadata,
       entry.kind,
       importFile,
     );
+    return entry.kind === "page-server"
+      ? composePageServerEntrySource({ cwd, entry, fromFile, plan, mainSource })
+      : mainSource;
   }
   if (entry.metadata?.type === "server-app") {
     return createServerAppEntrySource(cwd, fromFile, entry.metadata, plan);
@@ -1664,11 +1671,14 @@ function createEntrySource(
     fromFile,
     generatedEntry.originalImport,
   );
-  return [
+  const mainSource = [
     `export { PageProvider } from "@evjs/ev/_internal/client/page-context";`,
     `export { default } from ${JSON.stringify(mod)};`,
     `export * from ${JSON.stringify(mod)};`,
   ].join("\n");
+  return entry.kind === "page-server"
+    ? composePageServerEntrySource({ cwd, entry, fromFile, plan, mainSource })
+    : mainSource;
 }
 
 /**
@@ -1718,6 +1728,57 @@ function createClientEntrySource(options: {
     ...(options.injectBundledCoreJs
       ? ['import "@evjs/ev/_internal/client/polyfill";']
       : []),
+    ...importsFor("polyfill"),
+    ...importsFor("before-main-imports"),
+    ...importsFor("before-main"),
+    ...mainSource,
+    ...importsFor("after-main-imports"),
+    ...importsFor("after-main"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Compose imports around one Page server entry or its replacement facade. */
+function composePageServerEntrySource(options: {
+  cwd: string;
+  entry: BuildEntry;
+  fromFile: string;
+  plan: BuildPlan;
+  mainSource: string;
+}): string {
+  const entrySlots = getMatchingServerEntrySlots(options.plan, options.entry);
+  const replacements = entrySlots.filter((slot) => slot.mode === "replace");
+  if (replacements.length > 1) {
+    throw new Error(
+      `[evjs] Server page entry "${options.entry.name}" has multiple replacement server.entry contributions: ${replacements
+        .map((slot) => slot.key)
+        .join(", ")}.`,
+    );
+  }
+
+  const importsFor = (position: ServerEntrySlotPlanItem["position"]) =>
+    entrySlots
+      .filter((slot) => slot.position === position && slot.mode !== "replace")
+      .map((slot) =>
+        importSlotModule(options.cwd, options.fromFile, slot.module, position),
+      );
+  const replacement = replacements[0];
+  const mainSource = replacement
+    ? (() => {
+        const mod = toGeneratedImportSpecifier(
+          options.cwd,
+          options.fromFile,
+          replacement.module,
+        );
+        return [
+          `export { default } from ${JSON.stringify(mod)};`,
+          `export * from ${JSON.stringify(mod)};`,
+        ];
+      })()
+    : [options.mainSource];
+
+  return [
     ...importsFor("polyfill"),
     ...importsFor("before-main-imports"),
     ...importsFor("before-main"),
@@ -1876,11 +1937,11 @@ function getMatchingClientEntrySlots(
   );
 }
 
-function getMatchingServerEntryReplacement(
+function getMatchingServerEntrySlots(
   plan: BuildPlan,
   entry: BuildEntry,
-): ServerEntrySlotPlanItem | undefined {
-  return getSlotItems<ServerEntrySlotPlanItem>(plan, "server.entry").find(
+): ServerEntrySlotPlanItem[] {
+  return getSlotItems<ServerEntrySlotPlanItem>(plan, "server.entry").filter(
     (slot) => targetMatchesEntry(slot.target, entry),
   );
 }
@@ -1948,7 +2009,7 @@ function importSlotModule(
   cwd: string,
   fromFile: string,
   specifier: string,
-  position: ClientEntrySlotPlanItem["position"],
+  position: EntryContributionPosition,
 ): string {
   const mod = toGeneratedImportSpecifier(cwd, fromFile, specifier);
   if (position === "after-main") {
