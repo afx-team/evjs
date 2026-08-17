@@ -312,14 +312,11 @@ export async function runDevSupervisor<TBundlerCfg>(
     target: Set<string>,
     file: string,
     switchingDependencies: Iterable<string>,
-    refresh: boolean,
   ) => {
     const absolute = path.resolve(options.cwd, file);
     if (isIgnoredDependency(absolute) || target.has(absolute)) return;
     target.add(absolute);
-    if (refresh) {
-      refreshWatcher(preparedDependencySet(switchingDependencies, target));
-    }
+    refreshWatcher(preparedDependencySet(switchingDependencies, target));
   };
 
   const applyReservedPorts = async (
@@ -394,7 +391,6 @@ export async function runDevSupervisor<TBundlerCfg>(
     if (stopping) return;
 
     const sessionWatchFiles = new Set<string>();
-    let sessionStarting = true;
     const session = await startDevSession({
       bundler: prepared.bundler,
       config: prepared.config,
@@ -408,11 +404,9 @@ export async function runDevSupervisor<TBundlerCfg>(
           sessionWatchFiles,
           file,
           prepared.dependencies,
-          !sessionStarting,
         );
       },
     });
-    sessionStarting = false;
     if (stopping) {
       await session.close();
       return;
@@ -426,11 +420,9 @@ export async function runDevSupervisor<TBundlerCfg>(
     active = nextState;
     shortcutOwnerSession = session;
     retainedFailedDependencies.clear();
-    if (sessionWatchFiles.size > 0) {
-      refreshWatcher(
-        preparedDependencySet(prepared.dependencies, sessionWatchFiles),
-      );
-    }
+    refreshWatcher(
+      preparedDependencySet(prepared.dependencies, sessionWatchFiles),
+    );
     monitorSession(nextState);
     void activateSession(nextState);
     void refreshCLIShortcutsSafely();
