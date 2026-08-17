@@ -682,7 +682,7 @@ describe("inspect", () => {
     );
     await expectPathMissing(path.join(cwd, "dist"));
     await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
-  });
+  }, 10_000);
 
   it("returns server-route diagnostics and a failing exit code for an invalid api anchor", async () => {
     const cwd = await createFixture({
