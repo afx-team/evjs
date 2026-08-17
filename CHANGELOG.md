@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.13] — 2026-08-17
+
 ### ⚠️ Breaking Changes
 
 - **Explicit global middleware composition** — The global server middleware
@@ -25,6 +29,21 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   modules at ordered positions around an exact Page-owned `page-server` entry.
   Import contributions compose with the existing replacement mode without
   changing other server renderer kinds.
+
+### ✨ Improvements
+
+- **Faster framework development startup** — Development dependency collection
+  collapses ordered source-resolution probes into directory topology watches,
+  reuses prepared watcher plans, and shares Page-config loading sessions while
+  preserving higher-priority candidate invalidation and package-scoped module
+  resolution.
+
+### 🐛 Bug Fixes
+
+- **Complete Session watch coverage during startup** — Plugin and bundler watch
+  files become observable as soon as they are registered, preventing edits
+  during adapter startup from leaving the active immutable Session on stale
+  input. Replacement Sessions also reconcile final watcher ownership.
 
 ---
 
