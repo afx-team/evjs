@@ -527,6 +527,7 @@ describe("utoopackAdapter dev", () => {
         () => onBuildOutput.mock.calls.length > 0,
         "Utoopack did not publish its initial build facts",
       );
+      await new Promise((resolve) => setTimeout(resolve, 150));
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
     } finally {
       await controller.close();
@@ -568,8 +569,70 @@ describe("utoopackAdapter dev", () => {
         () => rebuildFlags.length > 0,
         "Utoopack did not recover after stats became readable",
       );
+      await new Promise((resolve) => setTimeout(resolve, 150));
       expect(rebuildFlags).toEqual([false]);
       expect(utoopackMock.workerClose).not.toHaveBeenCalled();
+    } finally {
+      await controller.close();
+    }
+  });
+
+  it("regenerates development artifacts after client stats change", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const outputs: BuildOutput[] = [];
+    const rebuildFlags: boolean[] = [];
+    const callbacks = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput(output) {
+        outputs.push(output);
+      },
+    });
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      signal: new AbortController().signal,
+      plan: buildContext.plan,
+      callbacks: {
+        ...callbacks,
+        async onBuildFacts(facts, options) {
+          rebuildFlags.push(options.isRebuild);
+          return callbacks.onBuildFacts(facts, options);
+        },
+      },
+      hooks: [],
+    });
+
+    try {
+      await waitForCondition(
+        () => outputs.length === 1,
+        "Utoopack did not publish initial artifacts",
+      );
+      const clientDir = path.join(cwd, "dist/client");
+      await fs.promises.writeFile(path.join(clientDir, "main-v2.js"), "");
+      await fs.promises.writeFile(
+        path.join(clientDir, "stats.json"),
+        JSON.stringify({
+          entrypoints: {
+            main: { assets: [{ name: "main-v2.js" }] },
+          },
+        }),
+        "utf-8",
+      );
+
+      await waitForCondition(
+        () => outputs.length === 2,
+        "Utoopack did not publish rebuilt client facts",
+      );
+      expect(rebuildFlags).toEqual([false, true]);
+      await expect(
+        fs.promises.readFile(path.join(clientDir, "index.html"), "utf-8"),
+      ).resolves.toContain('src="/main-v2.js"');
     } finally {
       await controller.close();
     }
@@ -607,7 +670,7 @@ describe("utoopackAdapter dev", () => {
       const initialHtml = await fs.promises.readFile(htmlPath, "utf-8");
       const statsPath = path.join(cwd, "dist/client/stats.json");
       await fs.promises.writeFile(statsPath, "null", "utf-8");
-      const pending = controller.processServerStatsChange("malformed");
+      const pending = controller.processStatsChange("malformed");
       await new Promise((resolve) => setTimeout(resolve, 75));
 
       expect(outputs).toHaveLength(1);
