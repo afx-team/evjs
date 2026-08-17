@@ -151,6 +151,104 @@ describe("page.config modules", () => {
     expect(second.dependencies).toEqual(first.dependencies);
   });
 
+  it("reuses one loading session across Page configs without retaining stale helpers", async () => {
+    const cwd = await createFixture({
+      "src/config/page-title.ts": 'export const title = "initial";',
+      "src/pages/first/page.tsx":
+        "export default function First() { return null; }",
+      "src/pages/first/page.config.ts": `
+        import { title } from "../../config/page-title.js";
+        export default { title: \`first:\${title}\` };
+      `,
+      "src/pages/second/page.tsx":
+        "export default function Second() { return null; }",
+      "src/pages/second/page.config.ts": `
+        import { title } from "../../config/page-title.js";
+        export default { title: \`second:\${title}\` };
+      `,
+    });
+    const metadata = createPagesMetadata([
+      {
+        pageId: "first",
+        configModule: "./src/pages/first/page.config.ts",
+      },
+      {
+        pageId: "second",
+        configModule: "./src/pages/second/page.config.ts",
+      },
+    ]);
+
+    const first = await resolvePageConfigModules(cwd, metadata);
+    expect(first.pages.first.metadata?.title).toBe("first:initial");
+    expect(first.pages.second.metadata?.title).toBe("second:initial");
+    await expectRealDependencies(first.dependencies, [
+      path.join(cwd, "src/config/page-title.ts"),
+      path.join(cwd, "src/pages/first/page.config.ts"),
+      path.join(cwd, "src/pages/second/page.config.ts"),
+    ]);
+
+    await fs.writeFile(
+      path.join(cwd, "src/config/page-title.ts"),
+      'export const title = "updated";',
+      "utf-8",
+    );
+
+    const second = await resolvePageConfigModules(cwd, metadata);
+    expect(second.pages.first.metadata?.title).toBe("first:updated");
+    expect(second.pages.second.metadata?.title).toBe("second:updated");
+    expect(second.dependencies).toEqual(first.dependencies);
+  });
+
+  it("keeps package-scoped aliases isolated within a shared loading session", async () => {
+    const cwd = await createFixture({
+      "src/pages/first/package.json": JSON.stringify({
+        imports: { "#settings": "./settings.ts" },
+      }),
+      "src/pages/first/settings.ts": 'export const title = "first";',
+      "src/pages/first/page.tsx":
+        "export default function First() { return null; }",
+      "src/pages/first/page.config.ts": `
+        import { title } from "#settings";
+        export default { title };
+      `,
+      "src/pages/second/package.json": JSON.stringify({
+        imports: { "#settings": "./settings.ts" },
+      }),
+      "src/pages/second/settings.ts": 'export const title = "second";',
+      "src/pages/second/page.tsx":
+        "export default function Second() { return null; }",
+      "src/pages/second/page.config.ts": `
+        import { title } from "#settings";
+        export default { title };
+      `,
+    });
+
+    const resolved = await resolvePageConfigModules(
+      cwd,
+      createPagesMetadata([
+        {
+          pageId: "first",
+          configModule: "./src/pages/first/page.config.ts",
+        },
+        {
+          pageId: "second",
+          configModule: "./src/pages/second/page.config.ts",
+        },
+      ]),
+    );
+
+    expect(resolved.pages.first.metadata?.title).toBe("first");
+    expect(resolved.pages.second.metadata?.title).toBe("second");
+    await expectRealDependencies(resolved.dependencies, [
+      path.join(cwd, "src/pages/first/package.json"),
+      path.join(cwd, "src/pages/first/settings.ts"),
+      path.join(cwd, "src/pages/first/page.config.ts"),
+      path.join(cwd, "src/pages/second/package.json"),
+      path.join(cwd, "src/pages/second/settings.ts"),
+      path.join(cwd, "src/pages/second/page.config.ts"),
+    ]);
+  });
+
   it("resolves false, true, and static object Page plugin settings", async () => {
     const cwd = await createFixture({
       "src/pages/checkout/page.tsx":
@@ -1254,16 +1352,25 @@ function createPageMetadata(
   pageId: string,
   configModule?: string,
 ): PageRouteDiscoveryMetadata {
-  const directory =
-    pageId === "index" ? "./src/pages" : `./src/pages/${pageId}`;
-  const page: PageAnchorMetadata = {
-    pageId,
-    directory,
-    entry: `${directory}/page.tsx`,
-    exportName: "default",
-    ...(configModule ? { configModule } : {}),
+  return createPagesMetadata([{ pageId, configModule }]);
+}
+
+function createPagesMetadata(
+  entries: Array<{ pageId: string; configModule?: string }>,
+): PageRouteDiscoveryMetadata {
+  return {
+    pages: entries.map(({ pageId, configModule }): PageAnchorMetadata => {
+      const directory =
+        pageId === "index" ? "./src/pages" : `./src/pages/${pageId}`;
+      return {
+        pageId,
+        directory,
+        entry: `${directory}/page.tsx`,
+        exportName: "default",
+        ...(configModule ? { configModule } : {}),
+      };
+    }),
   };
-  return { pages: [page] };
 }
 
 function createCanonicalGraphConfig(
