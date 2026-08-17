@@ -44,6 +44,13 @@ interface ObservedStaticConfigDependencies {
   nativeModules: string[];
 }
 
+type ConfigLoader = ReturnType<typeof createJiti>;
+
+interface StaticConfigModuleSessionState {
+  evaluationLoaders: Map<string, ConfigLoader>;
+  resolutionLoader?: ConfigLoader;
+}
+
 interface FreshPackageSpecifierResolution {
   candidates: string[];
   matched: boolean;
@@ -88,6 +95,14 @@ export interface LoadStaticConfigModuleOptions {
   onDependency?: (file: string) => void;
 }
 
+export interface StaticConfigModuleSession {
+  /** Load one config through the resolution and module state for this revision. */
+  load(
+    configPath: string,
+    options?: Pick<LoadStaticConfigModuleOptions, "onDependency">,
+  ): Promise<LoadedStaticConfigModule>;
+}
+
 export interface ClearStaticConfigModuleCacheOptions {
   /**
    * Also clear dependency closures recorded for previous config roots in this
@@ -98,6 +113,28 @@ export interface ClearStaticConfigModuleCacheOptions {
 }
 
 const staticConfigDependencies = new Map<string, string[]>();
+
+export function createStaticConfigModuleSession(
+  projectRoot: string,
+): StaticConfigModuleSession {
+  const absoluteProjectRoot = path.resolve(projectRoot);
+  const state: StaticConfigModuleSessionState = {
+    evaluationLoaders: new Map(),
+  };
+  return Object.freeze({
+    load(
+      configPath: string,
+      options: Pick<LoadStaticConfigModuleOptions, "onDependency"> = {},
+    ) {
+      return loadStaticConfigModuleWithState(
+        configPath,
+        absoluteProjectRoot,
+        { ...options, cache: true },
+        state,
+      );
+    },
+  });
+}
 
 export async function loadConfigFile<TBundlerCfg = unknown>(
   configPath: string,
@@ -156,6 +193,15 @@ export async function loadStaticConfigModule(
   projectRoot: string,
   options: LoadStaticConfigModuleOptions = {},
 ): Promise<LoadedStaticConfigModule> {
+  return loadStaticConfigModuleWithState(configPath, projectRoot, options);
+}
+
+async function loadStaticConfigModuleWithState(
+  configPath: string,
+  projectRoot: string,
+  options: LoadStaticConfigModuleOptions,
+  sessionState?: StaticConfigModuleSessionState,
+): Promise<LoadedStaticConfigModule> {
   const absoluteConfigPath = path.resolve(configPath);
   const absoluteProjectRoot = path.resolve(projectRoot);
 
@@ -170,7 +216,16 @@ export async function loadStaticConfigModule(
     if (resolvedConfigPath !== absoluteConfigPath) {
       options.onDependency?.(absoluteConfigPath);
     }
-    const resolutionLoader = createConfigLoader(resolvedConfigPath, true);
+    let resolutionLoader: ConfigLoader;
+    if (sessionState) {
+      sessionState.resolutionLoader ??= createConfigLoader(
+        resolvedConfigPath,
+        true,
+      );
+      resolutionLoader = sessionState.resolutionLoader;
+    } else {
+      resolutionLoader = createConfigLoader(resolvedConfigPath, true);
+    }
     const observed = await observeStaticConfigDependencyCandidates(
       resolvedConfigPath,
       absoluteProjectRoot,
@@ -178,12 +233,18 @@ export async function loadStaticConfigModule(
       (fromFile, specifier) =>
         resolveStaticConfigImport(resolutionLoader, fromFile, specifier),
     );
-    const loader = createConfigLoader(
-      resolvedConfigPath,
-      true,
-      observed.aliases,
-      observed.nativeModules,
-    );
+    const loader = sessionState
+      ? getStaticConfigModuleSessionLoader(
+          sessionState,
+          resolvedConfigPath,
+          observed,
+        )
+      : createConfigLoader(
+          resolvedConfigPath,
+          true,
+          observed.aliases,
+          observed.nativeModules,
+        );
     let loaded: unknown;
     try {
       loaded = loader(resolvedConfigPath);
@@ -1138,6 +1199,28 @@ function createConfigLoader(
   });
 }
 
+function getStaticConfigModuleSessionLoader(
+  state: StaticConfigModuleSessionState,
+  configPath: string,
+  observed: ObservedStaticConfigDependencies,
+): ConfigLoader {
+  const key = JSON.stringify([
+    [...observed.aliases].sort(([left], [right]) => left.localeCompare(right)),
+    observed.nativeModules,
+  ]);
+  const cached = state.evaluationLoaders.get(key);
+  if (cached) return cached;
+
+  const loader = createConfigLoader(
+    configPath,
+    true,
+    observed.aliases,
+    observed.nativeModules,
+  );
+  state.evaluationLoaders.set(key, loader);
+  return loader;
+}
+
 function collectProjectModuleDependencies(
   root: NodeJS.Module,
   configPath: string,
@@ -1171,7 +1254,14 @@ function findCachedModule(
   cache: NodeJS.Require["cache"],
   filename: string,
 ): NodeJS.Module | undefined {
-  const realFilename = safeRealpath(filename);
+  const absoluteFilename = path.resolve(filename);
+  const direct = cache[absoluteFilename];
+  if (direct) return direct;
+
+  const realFilename = safeRealpath(absoluteFilename);
+  const realDirect = cache[realFilename];
+  if (realDirect) return realDirect;
+
   return Object.values(cache).find(
     (candidate) =>
       candidate?.filename && safeRealpath(candidate.filename) === realFilename,

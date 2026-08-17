@@ -24,7 +24,7 @@ import {
 } from "../../config/plugins.js";
 import {
   clearStaticConfigModuleCache,
-  loadStaticConfigModule,
+  createStaticConfigModuleSession,
 } from "./config-module.js";
 import { validatePageRenderingContract } from "./page-rendering-contract.js";
 
@@ -113,9 +113,10 @@ async function resolveKnownPageConfigModules(
     configuredPages.map((page) => path.resolve(cwd, page.configModule)),
     { projectRoot: cwd },
   );
+  const session = createStaticConfigModuleSession(cwd);
 
   for (const page of configuredPages) {
-    const resolved = await resolvePageConfigModule(cwd, page, options);
+    const resolved = await resolvePageConfigModule(cwd, page, options, session);
     defineRecordValue(pages, page.pageId, resolved.config);
     for (const dependency of resolved.dependencies) {
       dependencies.add(dependency);
@@ -132,6 +133,7 @@ async function resolvePageConfigModule(
   cwd: string,
   page: PageConfigMetadata,
   options: ResolvePageConfigModulesOptions,
+  session: ReturnType<typeof createStaticConfigModuleSession>,
 ): Promise<{
   config: ResolvedPageFileConfig;
   dependencies: string[];
@@ -139,8 +141,7 @@ async function resolvePageConfigModule(
   const source = page.configModule;
   const absoluteSource = path.resolve(cwd, source);
   options.beforeSourceRead?.(absoluteSource);
-  const loaded = await loadStaticConfigModule(absoluteSource, cwd, {
-    cache: true,
+  const loaded = await session.load(absoluteSource, {
     onDependency: options.onSourceDependency,
   });
   if (!loaded.hasDefaultExport) {
