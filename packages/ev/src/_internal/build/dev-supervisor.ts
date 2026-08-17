@@ -24,8 +24,10 @@ import {
 import type { DevSession } from "./dev-session.js";
 import { startDevSession } from "./dev-session.js";
 import {
-  collectWatchFilesChangedSince,
+  type CapturedWatchInputSnapshot,
+  captureWatchInputSnapshot,
   createWatchFilesPlan,
+  didWatchInputChange,
   listConfigDependencyFiles,
   type PreparedWatchFilesPlan,
   prepareWatchFilesPlan,
@@ -239,6 +241,12 @@ export async function runDevSupervisor<TBundlerCfg>(
       ...extra,
     ]);
 
+  const preparedDependencySet = (
+    dependencies: Iterable<string>,
+    sessionWatchFiles: Iterable<string> = active?.sessionWatchFiles ?? [],
+  ): Set<string> =>
+    new Set([...fixedDependencies, ...dependencies, ...sessionWatchFiles]);
+
   const fail = (error: unknown) => {
     if (stopping || fatalError !== undefined) return;
     fatalError = error;
@@ -255,9 +263,8 @@ export async function runDevSupervisor<TBundlerCfg>(
     );
   };
 
-  const refreshWatcher = (dependencies: Iterable<string>) => {
+  const activateWatcherPlan = (nextPlan: PreparedWatchFilesPlan) => {
     if (stopping) return;
-    const nextPlan = createPreparedWatchPlan(dependencies);
     if (watcher?.key === nextPlan.key) return;
     const nextStop = watchFiles(nextPlan, scheduleFileChange, {
       ignorePath: isIgnoredDependency,
@@ -277,6 +284,10 @@ export async function runDevSupervisor<TBundlerCfg>(
       stop: nextStop,
     };
     previous?.stop();
+  };
+
+  const refreshWatcher = (dependencies: Iterable<string>) => {
+    activateWatcherPlan(createPreparedWatchPlan(dependencies));
   };
 
   function scheduleFileChange(file: string): void {
@@ -301,11 +312,14 @@ export async function runDevSupervisor<TBundlerCfg>(
     target: Set<string>,
     file: string,
     switchingDependencies: Iterable<string>,
+    refresh: boolean,
   ) => {
     const absolute = path.resolve(options.cwd, file);
     if (isIgnoredDependency(absolute) || target.has(absolute)) return;
     target.add(absolute);
-    refreshWatcher(currentDependencySet([...switchingDependencies, ...target]));
+    if (refresh) {
+      refreshWatcher(preparedDependencySet(switchingDependencies, target));
+    }
   };
 
   const applyReservedPorts = async (
@@ -380,6 +394,7 @@ export async function runDevSupervisor<TBundlerCfg>(
     if (stopping) return;
 
     const sessionWatchFiles = new Set<string>();
+    let sessionStarting = true;
     const session = await startDevSession({
       bundler: prepared.bundler,
       config: prepared.config,
@@ -393,9 +408,11 @@ export async function runDevSupervisor<TBundlerCfg>(
           sessionWatchFiles,
           file,
           prepared.dependencies,
+          !sessionStarting,
         );
       },
     });
+    sessionStarting = false;
     if (stopping) {
       await session.close();
       return;
@@ -409,24 +426,24 @@ export async function runDevSupervisor<TBundlerCfg>(
     active = nextState;
     shortcutOwnerSession = session;
     retainedFailedDependencies.clear();
-    refreshWatcher(currentDependencySet());
+    if (sessionWatchFiles.size > 0) {
+      refreshWatcher(
+        preparedDependencySet(prepared.dependencies, sessionWatchFiles),
+      );
+    }
     monitorSession(nextState);
     void activateSession(nextState);
     void refreshCLIShortcutsSafely();
   };
 
   const reconcileAttemptChanged = (
-    baselines: ReadonlyMap<string, PreparedWatchFilesPlan>,
+    baselines: ReadonlyMap<string, CapturedWatchInputSnapshot>,
+    current: PreparedWatchFilesPlan,
   ): boolean => {
-    let changed = false;
     for (const [file, baseline] of baselines) {
-      const current = createPreparedWatchPlan([file]);
-      if (collectWatchFilesChangedSince(baseline, current).length === 0) {
-        continue;
-      }
-      changed = true;
+      if (didWatchInputChange(baseline, current, file)) return true;
     }
-    return changed;
+    return false;
   };
 
   async function runReconcileLoop(): Promise<void> {
@@ -437,14 +454,19 @@ export async function runDevSupervisor<TBundlerCfg>(
         if (attemptedRevision === targetRevision) continue;
         attemptedRevision = targetRevision;
         const attemptDependencies = new Set<string>();
-        const baselines = new Map<string, PreparedWatchFilesPlan>();
+        const baselines = new Map<string, CapturedWatchInputSnapshot>();
         const collector: DevDependencyCollector = {
           add(file: string, _kind: DevDependencyKind) {
             const absolute = path.resolve(file);
             if (isIgnoredDependency(absolute)) return;
             attemptDependencies.add(absolute);
             if (!baselines.has(absolute)) {
-              baselines.set(absolute, createPreparedWatchPlan([absolute]));
+              baselines.set(
+                absolute,
+                captureWatchInputSnapshot(absolute, {
+                  ignorePath: isIgnoredDependency,
+                }),
+              );
             }
           },
         };
@@ -484,15 +506,18 @@ export async function runDevSupervisor<TBundlerCfg>(
           continue;
         }
 
+        const nextWatchPlan = createPreparedWatchPlan(
+          preparedDependencySet(prepared.dependencies),
+        );
         if (
           targetRevision !== desiredRevision ||
-          reconcileAttemptChanged(baselines)
+          reconcileAttemptChanged(baselines, nextWatchPlan)
         ) {
           if (targetRevision === desiredRevision) desiredRevision += 1;
           reconcileRequested = true;
           continue;
         }
-        refreshWatcher(currentDependencySet(prepared.dependencies));
+        activateWatcherPlan(nextWatchPlan);
         if (active?.fingerprint === prepared.semanticFingerprint) {
           retainedFailedDependencies.clear();
           const current = active;
@@ -507,7 +532,6 @@ export async function runDevSupervisor<TBundlerCfg>(
               plan: current.revision.plan,
             },
           };
-          refreshWatcher(currentDependencySet());
           continue;
         }
         await switchSession(prepared);

@@ -886,6 +886,35 @@ describe("immutable dev supervisor", { timeout: 15_000 }, () => {
     await stopDev(run);
   });
 
+  it("reconciles when a higher-priority source candidate appears", async () => {
+    const cwd = await createProject({ page: true });
+    const sourceDirectory = path.join(cwd, "src/lib");
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      'import { action } from "@/lib/helper";\nvoid action;\nexport default function Page() { return null; }\n',
+    );
+    await fs.writeFile(
+      path.join(sourceDirectory, "helper.js"),
+      '"use server";\nexport async function action() {}\n',
+    );
+    const controlled = createControlledBundler();
+    const config = { routing: { mode: "spa" } } as Config<
+      Record<string, never>
+    >;
+    const run = dev(config, { cwd, bundler: controlled.adapter });
+    await vi.waitFor(() => expect(controlled.starts).toHaveLength(1));
+
+    await fs.writeFile(
+      path.join(sourceDirectory, "helper.ts"),
+      "export async function action() {}\n",
+    );
+
+    await vi.waitFor(() => expect(controlled.starts).toHaveLength(2));
+    expect(controlled.maxActive).toBe(1);
+    await stopDev(run);
+  });
+
   it("keeps the active session when a reloaded config requests new ports", async () => {
     const cwd = await createProject();
     const configFile = path.join(cwd, "dev-config.json");

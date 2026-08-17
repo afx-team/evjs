@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  captureWatchInputSnapshot,
   collectServerRouteWatchState,
   collectWatchFilesChangedSince,
   createWatchFilesPlan,
+  didWatchInputChange,
   listConfigDependencyFiles,
   prepareWatchFilesPlan,
   readWatchInputSnapshot,
@@ -126,6 +128,20 @@ describe("watchFiles", () => {
 
     expect(collectWatchFilesChangedSince(baseline, current)).toEqual([first]);
     expect(collectWatchFilesChangedSince(current, current)).toEqual([]);
+  });
+
+  it("compares a lightweight input capture with a prepared plan", async () => {
+    const root = await createTemporaryDirectory();
+    const file = path.join(root, "dependency.ts");
+    await writeFile(file);
+
+    const baseline = captureWatchInputSnapshot(file);
+    const unchanged = prepareWatchFilesPlan(createWatchFilesPlan([file]));
+    expect(didWatchInputChange(baseline, unchanged, file)).toBe(false);
+
+    await fs.promises.writeFile(file, "changed", "utf-8");
+    const changed = prepareWatchFilesPlan(createWatchFilesPlan([file]));
+    expect(didWatchInputChange(baseline, changed, file)).toBe(true);
   });
 
   it("canonicalizes dependency order without erasing recovery semantics", async () => {

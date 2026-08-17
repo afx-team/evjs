@@ -73,6 +73,11 @@ export interface PreparedWatchFilesPlan extends WatchFilesPlan {
   readonly unknownBaselineTargets: ReadonlySet<string>;
 }
 
+export interface CapturedWatchInputSnapshot {
+  readonly snapshot?: string;
+  readonly unknown: boolean;
+}
+
 interface PollingReadCache {
   readonly directories: Map<string, Promise<string[] | undefined>>;
   readonly files: Map<string, Promise<Buffer | undefined>>;
@@ -242,21 +247,45 @@ export function prepareWatchFilesPlan(
   const baselineSnapshots = new Map<string, string>();
   const unknownBaselineTargets = new Set<string>();
   for (const file of plan.logicalTargets) {
-    try {
-      baselineSnapshots.set(file, readWatchInputSnapshot(file, options));
-    } catch (error) {
-      if (isWatchResourceError(error)) {
-        unknownBaselineTargets.add(file);
-        continue;
-      }
-      throw createWatchError(file, error);
-    }
+    const captured = captureWatchInputSnapshot(file, options);
+    if (captured.unknown) unknownBaselineTargets.add(file);
+    else if (captured.snapshot !== undefined)
+      baselineSnapshots.set(file, captured.snapshot);
   }
   return {
     ...plan,
     baselineSnapshots,
     unknownBaselineTargets,
   };
+}
+
+/** Capture one input without constructing its physical watcher topology. */
+export function captureWatchInputSnapshot(
+  file: string,
+  options: WatchInputSnapshotOptions = {},
+): CapturedWatchInputSnapshot {
+  try {
+    return {
+      snapshot: readWatchInputSnapshot(file, options),
+      unknown: false,
+    };
+  } catch (error) {
+    if (isWatchResourceError(error)) return { unknown: true };
+    throw createWatchError(file, error);
+  }
+}
+
+export function didWatchInputChange(
+  baseline: CapturedWatchInputSnapshot,
+  current: PreparedWatchFilesPlan,
+  file: string,
+): boolean {
+  const absolute = path.resolve(file);
+  const currentUnknown = current.unknownBaselineTargets.has(absolute);
+  if (baseline.unknown || currentUnknown) {
+    return baseline.unknown !== currentUnknown;
+  }
+  return baseline.snapshot !== current.baselineSnapshots.get(absolute);
 }
 
 /** Returns an opaque semantic identity for a file or directory watch input. */
