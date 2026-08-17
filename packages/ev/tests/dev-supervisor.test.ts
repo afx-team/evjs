@@ -886,6 +886,62 @@ describe("immutable dev supervisor", { timeout: 15_000 }, () => {
     await stopDev(run);
   });
 
+  it("observes Session watch files while the bundler is starting", async () => {
+    const cwd = await createProject();
+    const watchFile = path.join(cwd, "plugin-state.txt");
+    await fs.writeFile(watchFile, "old");
+
+    let notifyFirstStartEntered!: () => void;
+    const firstStartEntered = new Promise<void>((resolve) => {
+      notifyFirstStartEntered = resolve;
+    });
+    let releaseFirstStart!: () => void;
+    const firstStartGate = new Promise<void>((resolve) => {
+      releaseFirstStart = resolve;
+    });
+    const controlled = createControlledBundler({
+      async beforeStart(_context, index) {
+        if (index !== 1) return;
+        notifyFirstStartEntered();
+        await firstStartGate;
+      },
+    });
+    const observedValues: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      id: "startup-watch",
+      async setup(context) {
+        observedValues.push(await fs.readFile(watchFile, "utf-8"));
+        context.addWatchFile(watchFile);
+        return {};
+      },
+    };
+    const run = dev(
+      { plugins: [plugin] },
+      { cwd, bundler: controlled.adapter },
+    );
+    let stopped = false;
+
+    try {
+      await firstStartEntered;
+      await fs.writeFile(watchFile, "new");
+      releaseFirstStart();
+
+      await vi.waitFor(() => expect(controlled.starts).toHaveLength(2));
+      expect(observedValues).toEqual(["old", "new"]);
+      expect(controlled.events.slice(0, 3)).toEqual([
+        "start:1",
+        "close:1",
+        "start:2",
+      ]);
+      expect(controlled.maxActive).toBe(1);
+      await stopDev(run);
+      stopped = true;
+    } finally {
+      releaseFirstStart();
+      if (!stopped) await stopDev(run).catch(() => {});
+    }
+  });
+
   it("reconciles when a higher-priority source candidate appears", async () => {
     const cwd = await createProject({ page: true });
     const sourceDirectory = path.join(cwd, "src/lib");
