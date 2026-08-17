@@ -29,6 +29,10 @@ import {
 import { validateHtmlTemplates } from "./framework-output.js";
 import type { GeneratedIRImage } from "./generated-contributions.js";
 import type { GraphAnalysisResult } from "./graph/index.js";
+import {
+  collectProjectSourceResolutionWatchDirectories,
+  type SourceDependencyReporter,
+} from "./graph/source-resolution.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "./page-route-conventions.js";
 import {
   orderPluginsByDependencies,
@@ -209,6 +213,23 @@ export async function prepareDevRevision<TBundlerCfg>(
     },
   };
 
+  const reportSourceDependency = ((file: string) => {
+    addDependency(file, "semantic");
+  }) as SourceDependencyReporter;
+  reportSourceDependency.resolutionCandidates = (candidates) => {
+    const firstCandidate = candidates[0];
+    const directParent = firstCandidate
+      ? path.dirname(firstCandidate)
+      : undefined;
+    if (directParent) addDependency(directParent, "semantic");
+    for (const directory of collectProjectSourceResolutionWatchDirectories(
+      candidates,
+    )) {
+      if (directory === directParent) continue;
+      addDependency(directory, "semantic");
+    }
+  };
+
   validateHtmlTemplates(options.cwd, config);
   const materialized = await analyzeAndMaterializeFrameworkIR({
     cwd: options.cwd,
@@ -222,9 +243,7 @@ export async function prepareDevRevision<TBundlerCfg>(
     beforeSourceRead(file) {
       addDependency(file, "semantic");
     },
-    onSourceDependency(file) {
-      addDependency(file, "semantic");
-    },
+    onSourceDependency: reportSourceDependency,
     onAnalysis(analysis) {
       reportGraphDiagnostics(analysis);
       for (const dependency of analysis.fileDependencies) {
