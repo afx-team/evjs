@@ -40,6 +40,7 @@ export {
   handlePprRegionRequest,
   handleRscFlightRequest,
 } from "./framework-rendering/framework.js";
+export type { MiddlewareChain } from "./middleware/middleware-chain.js";
 export type {
   RequestLogEntry,
   RequestLoggerOptions,

@@ -92,23 +92,42 @@ export const GET = async (_req, ctx) => {
 
 ## Middleware
 
-evjs 有两个 server middleware 作用域。Middleware 文件 default-export 一个
-Hono-compatible middleware 函数，不包含 matcher 配置。
+evjs 有两个 server middleware 作用域，且都不包含 matcher 配置。
 
-全局服务端中间件位于 `src/middleware.ts`，会在所有
-服务端运行时请求之前运行：server file routes、server functions、
-SSR、PPR 和 RSC framework handling：
+固定锚点 `src/middlewares/middleware.*` 为所有 server runtime 请求组合全局
+middleware，包括 server file routes、server functions、SSR、PPR 与 RSC
+framework handling。它默认导出一个 Hono-compatible middleware 函数，或按明确
+顺序排列的非空列表。在 TypeScript 中，使用 `satisfies MiddlewareChain` 为列表
+提供类型，同时保留各项的具体类型：
 
 ```ts
-// src/middleware.ts
+// src/middlewares/middleware.ts
+import type { MiddlewareChain } from "@evjs/ev/server-context";
+import authentication from "./authentication";
+import tracing from "./tracing";
+
+export default [tracing, authentication] satisfies MiddlewareChain;
+```
+
+JavaScript 模块可直接默认导出同样的数组，无需 TypeScript 标注。evjs 会在
+convention discovery 阶段校验字面量列表，并在创建 server application 时再次
+校验所有求值后的列表项。
+
+`src/middlewares` 中的其他文件都是由组合锚点导入的普通模块。文件名不决定执行
+顺序，因此既能在一个组合锚点中清晰表达顺序，也允许拆分任意数量的实现模块。
+
+默认导出单个全局 middleware 仍然合法：
+
+```ts
+// src/middlewares/middleware.ts
 import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
-const middleware: MiddlewareHandler = async (ctx, next) => {
+const tracing: MiddlewareHandler = async (ctx, next) => {
   await next();
   ctx.header("x-server", "evjs");
 };
 
-export default middleware;
+export default tracing;
 ```
 
 API route middleware 位于 server file-route tree 内，只作用于同目录及 descendant
@@ -121,8 +140,9 @@ src/apis/api/admin/middleware.ts  -> /api/admin 与后代 Route
 src/apis/(admin)/middleware.ts    -> group 及其后代 Route
 ```
 
-执行顺序是全局服务端中间件、从父目录到子目录的 API route middleware、
-最后是 HTTP method handler。Route group 不增加 URL segment，但参与文件系统作用域划分。
+执行顺序是从左到右的全局列表、从父目录到子目录的 API route middleware，
+最后是 HTTP method handler；`await next()` 之后的代码按相反顺序回退执行。
+Route group 不增加 URL segment，但参与文件系统作用域划分。
 `src/apis/api/middleware.ts` 会覆盖 `src/apis/api/api.ts` 的 `/api` 锚点，以及
 `src/apis/api/users/api.ts` 等所有后代锚点。
 

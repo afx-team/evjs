@@ -13,7 +13,7 @@ For the complete matrix, see [Project Structure](./project-structure).
 | --- | --- |
 | `src/pages` | Canonical Page-and-Route tree. |
 | `src/apis` | Fixed server request `api.*` anchor tree. |
-| `src/middleware.ts` | Global framework server middleware. |
+| `src/middlewares/middleware.*` | Explicitly ordered global framework middleware composition anchor. |
 | `src/apis/**/middleware.ts` | Middleware scoped to same-directory and descendant server file routes. |
 | Reachable source modules | Server functions that begin with `"use server";`. |
 
@@ -289,7 +289,10 @@ Two middleware conventions exist:
 
 ```text
 src/
-├── middleware.ts
+├── middlewares/
+│   ├── middleware.ts
+│   ├── tracing.ts
+│   └── authentication.ts
 └── apis/
     ├── middleware.ts
     └── admin/
@@ -299,9 +302,13 @@ src/
             └── api.ts
 ```
 
-- `src/middleware.ts` wraps framework-owned server requests globally.
+- `src/middlewares/middleware.*` default-exports one global middleware or an
+  explicitly ordered non-empty list; TypeScript lists should use
+  `satisfies MiddlewareChain`.
+- Other files in `src/middlewares` are ordinary modules imported by the
+  composition anchor and are not ordered by filename.
 - `src/apis/**/middleware.ts` wraps same-directory and descendant server file
-  routes by filesystem scope.
+  routes by filesystem scope and default-exports one middleware.
 
 Middleware files are not routes and cannot be replaced by exporting middleware
 from a route module.

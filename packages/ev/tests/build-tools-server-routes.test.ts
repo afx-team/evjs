@@ -669,7 +669,7 @@ describe("discoverServerRoutes", () => {
 describe("discoverServerConventions", () => {
   it("does not read global middleware through a source-root symlink", async () => {
     const outside = await createFixture({
-      "middleware.ts":
+      "middlewares/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
     });
     const cwd = await createFixture({});
@@ -681,7 +681,7 @@ describe("discoverServerConventions", () => {
 
     await expect(
       discoverServerConventions(cwd, {
-        globalFile: "./src/middleware.ts",
+        globalFile: "./src/middlewares/middleware.ts",
       }),
     ).resolves.toEqual({
       globalMiddlewares: [],
@@ -690,7 +690,7 @@ describe("discoverServerConventions", () => {
       diagnostics: [
         {
           level: "error",
-          file: "src/middleware.ts",
+          file: "src/middlewares/middleware.ts",
           message:
             "Server middleware file must resolve inside the project root.",
         },
@@ -702,7 +702,7 @@ describe("discoverServerConventions", () => {
     const missingRoot = await createFixture({});
     await expect(
       discoverServerConventions(missingRoot, {
-        globalFile: "./src/middleware.ts",
+        globalFile: "./src/middlewares/middleware.ts",
         routingDir: "./src/apis",
       }),
     ).resolves.toMatchObject({ routeMiddlewares: [], diagnostics: [] });
@@ -710,7 +710,7 @@ describe("discoverServerConventions", () => {
     const fileRoot = await createFixture({ "src/apis": "not a directory" });
     await expect(
       discoverServerConventions(fileRoot, {
-        globalFile: "./src/middleware.ts",
+        globalFile: "./src/middlewares/middleware.ts",
         routingDir: "./src/apis",
       }),
     ).resolves.toMatchObject({ routeMiddlewares: [], diagnostics: [] });
@@ -733,20 +733,19 @@ describe("discoverServerConventions", () => {
     );
     await expect(
       discoverServerConventions(symlinkRoot, {
-        globalFile: "./src/middleware.ts",
+        globalFile: "./src/middlewares/middleware.ts",
         routingDir: "./src/apis",
       }),
     ).resolves.toMatchObject({ routeMiddlewares: [], diagnostics: [] });
   });
 
-  it("discovers global and route-scoped middleware in filesystem order", async () => {
+  it("discovers ordered global composition and route-scoped middleware", async () => {
     const cwd = await createFixture({
-      "src/middleware.ts": `
-        import type { MiddlewareHandler } from "@evjs/ev/server-context";
-        const middleware: MiddlewareHandler = async (_ctx, next) => {
-          await next();
-        };
-        export default middleware;
+      "src/middlewares/middleware.ts": `
+        import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/server-context";
+        const first: MiddlewareHandler = async (_ctx, next) => next();
+        const second: MiddlewareHandler = async (_ctx, next) => next();
+        export default [first, second] satisfies MiddlewareChain;
       `,
       "src/apis/middleware.ts": `
         export default async function middleware(_ctx, next) {
@@ -780,15 +779,15 @@ describe("discoverServerConventions", () => {
       dir: "./src/apis",
     });
     const conventionDiscovery = await discoverServerConventions(cwd, {
-      globalFile: "./src/middleware.ts",
+      globalFile: "./src/middlewares/middleware.ts",
       routingDir: "./src/apis",
     });
 
     expect(conventionDiscovery.diagnostics).toEqual([]);
     expect(conventionDiscovery.globalMiddlewares).toEqual([
       {
-        id: "src/middleware.ts:global-middleware",
-        module: "src/middleware.ts",
+        id: "src/middlewares/middleware.ts:global-middleware",
+        module: "src/middlewares/middleware.ts",
         scope: "global",
         scopeSegments: [],
       },
@@ -855,9 +854,10 @@ describe("discoverServerConventions", () => {
 
   it("reports invalid middleware convention modules", async () => {
     const cwd = await createFixture({
-      "src/middleware.ts": `
+      "src/middlewares/middleware.ts": `
+        const middleware = async (_ctx, next) => next();
         export const helper = true;
-        export default {};
+        export default [middleware, false];
       `,
       "src/apis/api/middleware.ts": `
         export const GET = async () => Response.json({ ok: true });
@@ -865,21 +865,22 @@ describe("discoverServerConventions", () => {
     });
 
     const discovery = await discoverServerConventions(cwd, {
-      globalFile: "./src/middleware.ts",
+      globalFile: "./src/middlewares/middleware.ts",
       routingDir: "./src/apis",
     });
 
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
-        file: "src/middleware.ts",
+        file: "src/middlewares/middleware.ts",
         message:
           'Server middleware module export "helper" is not supported. Move helpers to a private module and default-export only the middleware.',
       },
       {
         level: "error",
-        file: "src/middleware.ts",
-        message: "Server middleware default export must be a function.",
+        file: "src/middlewares/middleware.ts",
+        message:
+          "Global server middleware default export item 2 must resolve to a function.",
       },
       {
         level: "error",
@@ -896,6 +897,35 @@ describe("discoverServerConventions", () => {
     ]);
   });
 
+  it("accepts one global handler but rejects route-scoped middleware lists", async () => {
+    const cwd = await createFixture({
+      "src/middlewares/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
+      "src/apis/admin/middleware.ts": `
+        const authentication = async (_ctx, next) => next();
+        export default [authentication];
+      `,
+    });
+
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/middlewares/middleware.ts",
+      routingDir: "./src/apis",
+    });
+
+    expect(discovery.globalMiddlewares).toHaveLength(1);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/admin/middleware.ts",
+        message:
+          "Route-scoped server middleware default export must resolve to a function.",
+      },
+    ]);
+  });
+
   it("diagnoses underscore-prefixed middleware scopes instead of hiding them", async () => {
     const cwd = await createFixture({
       "src/apis/_private/middleware.ts": `
@@ -906,7 +936,7 @@ describe("discoverServerConventions", () => {
     });
 
     const discovery = await discoverServerConventions(cwd, {
-      globalFile: "./src/middleware.ts",
+      globalFile: "./src/middlewares/middleware.ts",
       routingDir: "./src/apis",
     });
 
@@ -917,6 +947,39 @@ describe("discoverServerConventions", () => {
         file: "src/apis/_private/middleware.ts",
         message:
           'Static server middleware scope segment "_private" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".',
+      },
+    ]);
+  });
+
+  it("diagnoses duplicate global middleware composition anchors", async () => {
+    const cwd = await createFixture({
+      "src/middlewares/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
+      "src/middlewares/middleware.js": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
+    });
+
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/middlewares/middleware.ts",
+    });
+
+    expect(discovery.globalMiddlewares).toEqual([]);
+    expect(discovery.files).toEqual([
+      path.join(cwd, "src/middlewares/middleware.js"),
+      path.join(cwd, "src/middlewares/middleware.ts"),
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/middlewares/middleware.js",
+        message:
+          "Duplicate global server middleware composition anchors found. Keep one src/middlewares/middleware.* source module.",
       },
     ]);
   });

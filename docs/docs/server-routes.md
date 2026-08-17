@@ -103,23 +103,44 @@ export const GET = async (_req, ctx) => {
 
 ## Middleware
 
-evjs has two server middleware scopes. Middleware files default-export a
-Hono-compatible middleware function and do not contain matcher configuration.
+evjs has two server middleware scopes. They do not contain matcher
+configuration.
 
-Global server middleware lives at `src/middleware.ts` and runs before every
-server runtime request: server file routes, server functions, SSR,
-PPR, and RSC framework handling:
+The fixed `src/middlewares/middleware.*` anchor composes global middleware for
+every server runtime request: server file routes, server functions, SSR, PPR,
+and RSC framework handling. It default-exports either one Hono-compatible
+middleware function or a non-empty explicitly ordered list. In TypeScript, use
+`satisfies MiddlewareChain` to type the list while preserving its entries:
 
 ```ts
-// src/middleware.ts
+// src/middlewares/middleware.ts
+import type { MiddlewareChain } from "@evjs/ev/server-context";
+import authentication from "./authentication";
+import tracing from "./tracing";
+
+export default [tracing, authentication] satisfies MiddlewareChain;
+```
+
+JavaScript modules can default-export the same array without the TypeScript
+annotation. evjs validates literal lists during convention discovery and all
+resolved entries again when creating the server application.
+
+Other files in `src/middlewares` are ordinary modules imported by the
+composition anchor. Filenames do not determine execution order, so the anchor
+keeps order visible while allowing any number of implementation modules.
+
+A single global middleware remains valid:
+
+```ts
+// src/middlewares/middleware.ts
 import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
-const middleware: MiddlewareHandler = async (ctx, next) => {
+const tracing: MiddlewareHandler = async (ctx, next) => {
   await next();
   ctx.header("x-server", "evjs");
 };
 
-export default middleware;
+export default tracing;
 ```
 
 API route middleware lives inside the server file-route tree and runs only for
@@ -132,8 +153,9 @@ src/apis/api/admin/middleware.ts  -> /api/admin and descendants
 src/apis/(admin)/middleware.ts    -> the group and its descendants
 ```
 
-Execution order is global server middleware, then API route middleware from
-parent directory to child directory, then the HTTP method handler. Route groups
+Execution order is the global list from left to right, then API route
+middleware from parent directory to child directory, then the HTTP method
+handler. Code after `await next()` unwinds in the reverse order. Route groups
 do not add URL segments, but they do participate in filesystem scoping.
 `src/apis/api/middleware.ts` covers the `/api` anchor at
 `src/apis/api/api.ts`, plus anchors such as `src/apis/api/users/api.ts` and all

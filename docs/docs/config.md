@@ -352,7 +352,8 @@ valid runtime endpoint configuration.
 
 Server middleware conventions are:
 
-- `src/middleware.ts` for global server middleware;
+- `src/middlewares/middleware.*` for explicitly ordered global server
+  middleware composition;
 - `src/apis/**/middleware.ts` for middleware scoped to same-directory and
   descendant server file routes.
 

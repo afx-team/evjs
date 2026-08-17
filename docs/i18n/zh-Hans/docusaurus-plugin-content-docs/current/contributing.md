@@ -76,8 +76,8 @@ npx biome check --write
 1. 在 `src/apis` 下创建 URL 目录并添加 `api.ts` 锚点。
 2. 从锚点导出 `GET`、`POST` 等大写 HTTP handler。
 3. Helper 保持为普通 colocated 非 `api.*` module。
-4. Middleware 使用 `src/middleware.ts` 或
-   `src/apis/**/middleware.ts`。
+4. 在 `src/middlewares/middleware.ts` 中组合有序的全局 middleware，或使用
+   `src/apis/**/middleware.ts` 声明 route-scoped middleware。
 
 ### 添加示例
 

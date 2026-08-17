@@ -20,7 +20,9 @@ my-evjs-app/
 ├── tsconfig.json
 ├── public/
 └── src/
-    ├── middleware.ts
+    ├── middlewares/
+    │   ├── middleware.ts           # 有序的全局组合锚点
+    │   └── authentication.ts       # 普通 middleware 模块
     ├── pages/
     │   ├── page.tsx                 # /
     │   ├── page.config.ts          # / 的可选构建期配置
@@ -80,7 +82,8 @@ export default defineConfig({
 ## 约定发现边界
 
 顶层 `conventions: false` 会把框架持有的文件系统约定作为一个整体关闭：
-`page.*` 锚点、`src/apis` 下的 `api.*` 锚点、全局 `src/middleware.ts`，以及
+`page.*` 锚点、`src/apis` 下的 `api.*` 锚点、全局
+`src/middlewares/middleware.*`，以及
 route-scoped `src/apis/**/middleware.ts`。它不能和显式客户端 `routing` 声明一起
 配置。evjs 不提供只关闭其中某个 root 或 facet 的开关。
 
@@ -120,10 +123,25 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | 带 `"use server";` 的 reachable 源码 module | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录或文件后缀；推荐用 `.server.*` 提高可读性。 |
 | `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | Server route root 固定；每个 route 目录只允许一个源码扩展名变体；只导出 callable 的大写 HTTP method handler。注册顺序按 segment 逐段比较 specificity，在首个不同位置优先 static segment。 |
 | Server route 目录下其他文件 | Route 私有源码 | 最近的 server Route | Helper、schema、store、测试与 `index.*` 都不会创建 route。 |
-| `src/middleware.ts` | 全局 server middleware | Server runtime | 包裹框架持有的 server 请求。 |
-| `src/apis/**/middleware.ts` | API route middleware | 同目录及后代 server file routes | 自身不是 route。 |
+| `src/middlewares/middleware.{ts,tsx,js,jsx}` | 全局 server middleware 组合锚点 | Server runtime | 默认导出一个 middleware 函数，或按明确执行顺序排列的非空列表。TypeScript 列表使用 `satisfies MiddlewareChain` 提供类型。只允许一个源码扩展名变体。 |
+| `src/middlewares` 下的其他文件 | 全局 middleware 实现源码 | Application-private | 由组合锚点导入的普通模块。文件名不决定顺序。 |
+| `src/apis/**/middleware.{ts,tsx,js,jsx}` | API route middleware | 同目录及后代 server file routes | 默认导出一个 middleware 函数；自身不是 route。 |
 | `public/**` | 静态文件 | 客户端输出 | 按 output 配置复制。 |
 | `components/`、`features/`、`hooks/`、`lib/` | 共享应用源码 | Application/shared | 普通项目组织，不是框架约定。 |
+
+全局 middleware 顺序由源码控制，而不是由文件名控制：
+
+```ts
+// src/middlewares/middleware.ts
+import type { MiddlewareChain } from "@evjs/ev/server-context";
+import authentication from "./authentication";
+import tracing from "./tracing";
+
+export default [tracing, authentication] satisfies MiddlewareChain;
+```
+
+请求从左到右进入 middleware；`await next()` 之后的代码从右到左回退执行。
+默认导出单个 middleware 函数也合法。
 
 ### canonical Page 与 Route 解析
 

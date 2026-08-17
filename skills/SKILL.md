@@ -30,8 +30,9 @@ description: Develop, migrate, review, or debug evjs applications and framework 
   catch-all, and pathless client segments.
 - Publish server request Routes only with
   `src/apis/**/api.{ts,tsx,js,jsx}` and uppercase HTTP method
-  exports. Use `src/middleware.ts` globally and route-tree `middleware.ts` for
-  scoped request-route middleware.
+  exports. Compose global middleware explicitly in
+  `src/middlewares/middleware.{ts,tsx,js,jsx}` and use route-tree
+  `middleware.ts` for scoped request-route middleware.
 - Define server functions in reachable modules beginning with
   `"use server";` and export named callable values. `.server.*` is a naming
   convention, not the discovery mechanism.

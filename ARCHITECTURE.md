@@ -36,8 +36,10 @@ The semantic inputs are:
 - `application.routes` is an explicit SPA-only route tree. It normalizes into
   the same graph and cannot be combined with canonical `routing` discovery.
 - `src/apis/**/api.*` defines framework-managed request Routes.
-- `src/middleware.ts` is global framework middleware;
-  `src/apis/**/middleware.ts` is scoped request-route middleware.
+- `src/middlewares/middleware.*` is the explicitly ordered global framework
+  middleware composition anchor; other files in `src/middlewares` are ordinary
+  modules.
+- `src/apis/**/middleware.ts` is scoped request-route middleware.
 - reachable modules beginning with `"use server";` define server functions.
 
 `routing.mode` changes materialization, not Page identity. SPA normally owns

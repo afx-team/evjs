@@ -63,7 +63,8 @@ src/apis/**/api.{ts,tsx,js,jsx}
 ```
 
 目录决定请求路径和 middleware scope，anchor 只导出大写 HTTP method handler。
-`src/middleware.ts` 包裹所有框架服务端请求；
+`src/middlewares/middleware.*` 显式组合有序的全局 middleware，包裹所有框架
+服务端请求；
 `src/apis/**/middleware.ts` 包裹同目录及后代 request Route。
 
 以 `"use server";` 开头且可从应用 graph 到达的模块会贡献具名 server

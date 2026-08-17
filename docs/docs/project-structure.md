@@ -22,7 +22,9 @@ my-evjs-app/
 ├── tsconfig.json
 ├── public/
 └── src/
-    ├── middleware.ts
+    ├── middlewares/
+    │   ├── middleware.ts           # ordered global composition anchor
+    │   └── authentication.ts       # ordinary middleware module
     ├── pages/
     │   ├── page.tsx                 # /
     │   ├── page.config.ts          # optional build-time config for /
@@ -84,7 +86,7 @@ static output and request-time rendering.
 
 The top-level `conventions: false` switch disables the framework-owned
 filesystem convention as one unit: `page.*` anchors, `api.*` anchors under
-`src/apis`, global `src/middleware.ts`, and route-scoped
+`src/apis`, global `src/middlewares/middleware.*`, and route-scoped
 `src/apis/**/middleware.ts`. It cannot be combined with an explicit client
 `routing` declaration. evjs does not expose switches for disabling only one of
 these roots or facets.
@@ -128,10 +130,26 @@ project root unless stated otherwise.
 | Reachable source module with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory or filename suffix; `.server.*` is recommended for clarity. |
 | `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route anchor | Entire containing directory | The server route root is fixed. Exactly one source-extension variant is allowed per route directory. Export callable uppercase HTTP method handlers only. Registration uses segment-wise specificity: static segments precede dynamic segments at the first differing position. |
 | Other files below a server route directory | Route-private source | Nearest server Route | Helpers, schemas, stores, tests, and `index.*` do not create routes. |
-| `src/middleware.ts` | Global server middleware | Server runtime | Wraps framework-owned server requests. |
-| `src/apis/**/middleware.ts` | API route middleware | Same-directory and descendant server file routes | Not itself a route. |
+| `src/middlewares/middleware.{ts,tsx,js,jsx}` | Global server middleware composition anchor | Server runtime | Default-export one middleware function or a non-empty list in explicit execution order. Use `satisfies MiddlewareChain` to type a list in TypeScript. Exactly one source-extension variant is allowed. |
+| Other files in `src/middlewares` | Global middleware implementation source | Application-private | Ordinary modules imported by the composition anchor. Filenames do not determine order. |
+| `src/apis/**/middleware.{ts,tsx,js,jsx}` | API route middleware | Same-directory and descendant server file routes | Default-export one middleware function. Not itself a route. |
 | `public/**` | Static files | Client output | Copied according to output configuration. |
 | `components/`, `features/`, `hooks/`, `lib/` | Shared application source | Application/shared | Ordinary project organization, not framework conventions. |
+
+Global middleware order is source-controlled rather than filename-controlled:
+
+```ts
+// src/middlewares/middleware.ts
+import type { MiddlewareChain } from "@evjs/ev/server-context";
+import authentication from "./authentication";
+import tracing from "./tracing";
+
+export default [tracing, authentication] satisfies MiddlewareChain;
+```
+
+The request enters middleware from left to right. Code after `await next()`
+unwinds from right to left. A single default-exported middleware function is
+also valid.
 
 ### Canonical Page and Route resolution
 

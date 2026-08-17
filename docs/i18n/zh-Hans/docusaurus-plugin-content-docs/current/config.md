@@ -325,7 +325,7 @@ percent escape 与原始非 ASCII 字符都无效。
 
 服务端中间件约定：
 
-- `src/middleware.ts`：全局 server middleware；
+- `src/middlewares/middleware.*`：显式排序的全局 server middleware 组合；
 - `src/apis/**/middleware.ts`：作用于同目录及后代 server file routes。
 
 在 Page 的 `page.config.ts` 中用 `rsc: true` 启用 React Server Components。
