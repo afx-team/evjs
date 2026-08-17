@@ -5656,7 +5656,7 @@ describe("build", () => {
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "src/middleware.ts"),
+      path.join(cwd, "src/middlewares/middleware.ts"),
       "export default async function middleware(_ctx, next) { await next(); }",
       "utf-8",
     );
@@ -7754,11 +7754,12 @@ describe("build", () => {
       recursive: true,
     });
     await writeFile(
-      path.join(cwd, "src/middleware.ts"),
+      path.join(cwd, "src/middlewares/middleware.ts"),
       [
-        "export default async function middleware(_ctx, next) {",
-        "  await next();",
-        "}",
+        'import type { MiddlewareChain } from "@evjs/ev/server-context";',
+        "const tracing = async (_ctx, next) => next();",
+        "const authentication = async (_ctx, next) => next();",
+        "export default [tracing, authentication] satisfies MiddlewareChain;",
       ].join("\n"),
       "utf-8",
     );
@@ -7796,8 +7797,8 @@ describe("build", () => {
           type: "server-app",
           middlewares: [
             {
-              id: "src/middleware.ts:global-middleware",
-              module: "src/middleware.ts",
+              id: "src/middlewares/middleware.ts:global-middleware",
+              module: "src/middlewares/middleware.ts",
               scope: "global",
               scopeSegments: [],
             },
@@ -7821,6 +7822,11 @@ describe("build", () => {
           ],
         },
       }),
+    );
+    await expect(
+      fs.promises.readFile(path.join(cwd, ".ev/entries/server.ts"), "utf-8"),
+    ).resolves.toContain(
+      "const middlewares = [...(Array.isArray(middleware0) ? middleware0 : [middleware0])];",
     );
   });
 
@@ -7871,52 +7877,6 @@ describe("build", () => {
     expect(observedPlan?.entries).not.toContainEqual(
       expect.objectContaining({ name: "server" }),
     );
-  });
-
-  it("does not fall back to src/server/middleware for global server middleware", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/apis"), {
-      recursive: true,
-    });
-    await fs.promises.mkdir(path.join(cwd, "src/server"), {
-      recursive: true,
-    });
-    await writeFile(
-      path.join(cwd, "src/server/middleware.ts"),
-      [
-        "export default async function middleware(_ctx, next) {",
-        "  await next();",
-        "}",
-      ].join("\n"),
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/apis/health/api.ts"),
-      "export const GET = async () => Response.json({ ok: true });",
-      "utf-8",
-    );
-
-    let observedPlan: BuildPlan | undefined;
-    const events: string[] = [];
-    const bundler = createMockBundler(events, {
-      onBuildPlan(plan) {
-        observedPlan = plan;
-      },
-    });
-
-    await build({}, { cwd, bundler });
-
-    expect(events).toContain("bundler.build");
-    const serverEntry = observedPlan?.entries.find(
-      (entry) => entry.name === "server",
-    );
-    expect(serverEntry?.metadata).toEqual(
-      expect.objectContaining({
-        type: "server-app",
-        routes: [expect.objectContaining({ module: "src/apis/health/api.ts" })],
-      }),
-    );
-    expect(serverEntry?.metadata).not.toHaveProperty("middlewares");
   });
 
   it("fails on an unknown server config field before running the bundler", async () => {

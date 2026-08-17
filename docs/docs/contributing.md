@@ -78,7 +78,8 @@ npx biome check --write
 1. Create the URL directory under `src/apis` and add its `api.ts` anchor.
 2. Export uppercase HTTP handlers such as `GET` or `POST` from the anchor.
 3. Keep helpers in ordinary colocated non-`api.*` modules.
-4. Use `src/middleware.ts` or `src/apis/**/middleware.ts` for middleware.
+4. Compose ordered global middleware in `src/middlewares/middleware.ts`, or
+   use `src/apis/**/middleware.ts` for route-scoped middleware.
 
 ### Add An Example
 

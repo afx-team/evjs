@@ -1885,7 +1885,7 @@ function createServerAppEntrySource(
   );
   const middlewareReferences = [
     ...contributionMiddlewares.map((middleware) => middleware.importName),
-    ...toMiddlewareReferences(middlewares, middlewareImportNames),
+    ...toApplicationMiddlewareReferences(middlewares, middlewareImportNames),
   ];
   const serverFunctionRegistrations = (metadata.serverFunctions ?? []).flatMap(
     (serverFunction, index) => {
@@ -2329,6 +2329,16 @@ function toMiddlewareReferences(
   return toMiddlewares(value)
     .map((middleware) => importNames.get(middleware.module))
     .filter((value): value is string => Boolean(value));
+}
+
+function toApplicationMiddlewareReferences(
+  value: ServerMiddlewareNode[] | undefined,
+  importNames: Map<string, string>,
+): string[] {
+  return toMiddlewareReferences(value, importNames).map(
+    (importName) =>
+      `...(Array.isArray(${importName}) ? ${importName} : [${importName}])`,
+  );
 }
 
 function cloneJson<T>(value: T): T {

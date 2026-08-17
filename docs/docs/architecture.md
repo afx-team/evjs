@@ -66,8 +66,9 @@ src/apis/**/api.{ts,tsx,js,jsx}
 ```
 
 The directory determines the request path and middleware scope. The anchor
-exports uppercase HTTP method handlers. `src/middleware.ts` wraps all
-framework-owned server requests, while
+exports uppercase HTTP method handlers. `src/middlewares/middleware.*`
+explicitly composes ordered global middleware around all framework-owned
+server requests, while
 `src/apis/**/middleware.ts` wraps same-directory and descendant
 request Routes.
 

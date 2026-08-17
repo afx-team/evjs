@@ -16,8 +16,9 @@ import { findServerRouteSegmentConventionViolation } from "./server-route-conven
 import type { DiscoveredServerRouteNode } from "./server-routes.js";
 import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "./utils.js";
 
-/** Fixed global middleware anchor for framework server conventions. */
-export const CANONICAL_SERVER_MIDDLEWARE_FILE = "./src/middleware.ts";
+/** Fixed global middleware composition anchor for framework conventions. */
+export const CANONICAL_SERVER_MIDDLEWARE_FILE =
+  "./src/middlewares/middleware.ts";
 
 export interface DiscoverServerConventionsOptions {
   globalFile: string;
@@ -136,7 +137,7 @@ async function discoverGlobalMiddlewares(
       level: "error",
       file: toDiagnosticPath(toPosixPath(path.relative(cwd, files[0]))),
       message:
-        "Duplicate global server middleware files found. Keep one src/middleware source module.",
+        "Duplicate global server middleware composition anchors found. Keep one src/middlewares/middleware.* source module.",
     });
     return { middlewares: [], files };
   }
@@ -144,7 +145,11 @@ async function discoverGlobalMiddlewares(
   const [file] = files;
   if (!file) return { middlewares: [], files: [] };
   const sourceRel = toDiagnosticPath(toPosixPath(path.relative(cwd, file)));
-  diagnostics.push(...(await analyzeMiddlewareModule(file, sourceRel)));
+  diagnostics.push(
+    ...(await analyzeMiddlewareModule(file, sourceRel, {
+      allowOrderedList: true,
+    })),
+  );
   return {
     files,
     middlewares: [
@@ -322,6 +327,7 @@ function parseRouteMiddlewareFile(
 async function analyzeMiddlewareModule(
   absolute: string,
   diagnosticFile: string,
+  options: { allowOrderedList?: boolean } = {},
 ): Promise<ServerConventionDiagnostic[]> {
   const source = await fs.readFile(absolute, "utf-8");
   const { ast, error } = parseRouteModuleWithError(source);
@@ -344,8 +350,9 @@ async function analyzeMiddlewareModule(
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message:
-        "Server middleware modules must default-export a Hono-compatible middleware function.",
+      message: options.allowOrderedList
+        ? "Global server middleware must default-export a Hono-compatible middleware function or an ordered middleware list."
+        : "Server middleware modules must default-export a Hono-compatible middleware function.",
     });
   }
 
@@ -358,7 +365,10 @@ async function analyzeMiddlewareModule(
     });
   }
 
-  const defaultExportError = validateDefaultMiddlewareExport(ast.body);
+  const defaultExportError = validateDefaultMiddlewareExport(
+    ast.body,
+    options.allowOrderedList === true,
+  );
   if (defaultExportError) {
     diagnostics.push({
       level: "error",
@@ -372,11 +382,17 @@ async function analyzeMiddlewareModule(
 
 function validateDefaultMiddlewareExport(
   body: ModuleItem[],
+  allowOrderedList: boolean,
 ): string | undefined {
   const localValues = collectLocalVariableValues(body);
   const value = getDefaultExportValue(body);
   if (!value) return undefined;
-  return validateDefaultMiddlewareExpression(value, localValues, new Set());
+  return validateDefaultMiddlewareExpression(
+    value,
+    localValues,
+    new Set(),
+    allowOrderedList,
+  );
 }
 
 function collectLocalVariableValues(
@@ -413,6 +429,7 @@ function validateDefaultMiddlewareExpression(
   value: Expression,
   localValues: Map<string, Expression | undefined>,
   seen: Set<string>,
+  allowOrderedList: boolean,
 ): string | undefined {
   const expression = unwrapExpression(value);
   if (expression.type === "Identifier") {
@@ -420,13 +437,38 @@ function validateDefaultMiddlewareExpression(
     if (!localValues.has(expression.value)) return undefined;
     const localValue = localValues.get(expression.value);
     if (!localValue) {
-      return "Server middleware default export must resolve to a function.";
+      return allowOrderedList
+        ? "Global server middleware default export must resolve to a function or an ordered middleware list."
+        : "Server middleware default export must resolve to a function.";
     }
     return validateDefaultMiddlewareExpression(
       localValue,
       localValues,
       new Set([...seen, expression.value]),
+      allowOrderedList,
     );
+  }
+
+  if (expression.type === "ArrayExpression") {
+    if (!allowOrderedList) {
+      return "Route-scoped server middleware default export must resolve to a function.";
+    }
+    if (expression.elements.length === 0) {
+      return "Global server middleware default export must contain at least one middleware function.";
+    }
+    for (const [index, element] of expression.elements.entries()) {
+      if (!element || element.spread) continue;
+      const elementError = validateDefaultMiddlewareExpression(
+        element.expression,
+        localValues,
+        new Set(seen),
+        false,
+      );
+      if (elementError) {
+        return `Global server middleware default export item ${index + 1} must resolve to a function.`;
+      }
+    }
+    return undefined;
   }
 
   if (
@@ -442,11 +484,12 @@ function validateDefaultMiddlewareExpression(
     expression.type === "NumericLiteral" ||
     expression.type === "BooleanLiteral" ||
     expression.type === "NullLiteral" ||
-    expression.type === "ArrayExpression" ||
     expression.type === "ObjectExpression" ||
     expression.type === "ClassExpression"
   ) {
-    return "Server middleware default export must be a function.";
+    return allowOrderedList
+      ? "Global server middleware default export must resolve to a function or an ordered middleware list."
+      : "Server middleware default export must resolve to a function.";
   }
 
   return undefined;

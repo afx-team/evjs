@@ -106,6 +106,15 @@ Release automation replaces them with the release version before publishing.
 4. Put helpers in other colocated modules and scoped middleware in
    `middleware.ts`.
 
+### Add global server middleware
+
+1. Put individual middleware modules in `src/middlewares`.
+2. Default-export one handler or an ordered non-empty list from
+   `src/middlewares/middleware.ts`; use `satisfies MiddlewareChain` to type a
+   list in TypeScript.
+3. Keep ordering explicit in that anchor; `index.*` and other sibling modules
+   are ordinary source and are not auto-discovered.
+
 ### Add plugin-owned configuration
 
 1. Declare independent Application and optional Page contracts with

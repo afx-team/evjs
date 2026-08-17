@@ -3,7 +3,7 @@
 Canonical client Pages and Routes use positive `src/pages/**/page.*` anchors;
 server request Routes use positive `src/apis/**/api.*` anchors. In both trees,
 the containing directory determines the URL. Middleware comes from
-`src/middleware.ts` plus `src/apis/**/middleware.ts`.
+`src/middlewares/middleware.*` plus `src/apis/**/middleware.ts`.
 
 Use the control on this page only when the application intentionally owns its
 runtime composition or uses an explicit SPA route tree.
@@ -25,7 +25,7 @@ export default defineConfig({
 
 - Page and client-route anchors under `src/pages`;
 - server request-route `api.*` anchors under `src/apis`;
-- global `src/middleware.ts` and route-scoped
+- global `src/middlewares/middleware.*` and route-scoped
   `src/apis/**/middleware.ts`.
 
 There are no client-, server-, route-, middleware-, or facet-level disable

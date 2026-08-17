@@ -6,6 +6,19 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Explicit global middleware composition** — The global server middleware
+  anchor moves from `src/middleware.*` to
+  `src/middlewares/middleware.*`. It may default-export one middleware or an
+  ordered non-empty list. TypeScript authors use `MiddlewareHandler` for one
+  handler and `MiddlewareChain` for a directly exported list; no wrapper helper
+  is required. Sibling modules are ordinary source imported by the composition
+  anchor and are never auto-ordered by filename; route-scoped
+  `src/apis/**/middleware.*` still exports one handler. Because EVJS remains
+  pre-1.0, this convention change is intentionally eligible for a `0.3.x`
+  release and does not require moving the release line to `0.4`.
+
 ### ✨ Features
 
 - **Page server entry imports** — Plugins can import generated or authored

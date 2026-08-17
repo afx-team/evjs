@@ -12,7 +12,7 @@ file route，positive `api.*` 锚点定义 server request Route。两棵树都�
 | --- | --- |
 | `src/pages` | canonical Page-and-Route 文件树。 |
 | `src/apis` | 固定的 Server request `api.*` 锚点树。 |
-| `src/middleware.ts` | 全局框架 server middleware。 |
+| `src/middlewares/middleware.*` | 显式排序的全局框架 server middleware 组合锚点。 |
 | `src/apis/**/middleware.ts` | 作用于同目录及后代 server file route 的 middleware。 |
 | reachable 源码模块 | 以 `"use server";` 开头的 server function。 |
 
@@ -270,7 +270,10 @@ route-module middleware export 都无效。其他任何 basename 都是普通 ro
 
 ```text
 src/
-├── middleware.ts
+├── middlewares/
+│   ├── middleware.ts
+│   ├── tracing.ts
+│   └── authentication.ts
 └── apis/
     ├── middleware.ts
     └── admin/
@@ -280,9 +283,12 @@ src/
             └── api.ts
 ```
 
-- `src/middleware.ts` 全局包裹框架持有的 server 请求；
+- `src/middlewares/middleware.*` 默认导出一个全局 middleware，或显式排序的
+  非空列表；TypeScript 列表应使用 `satisfies MiddlewareChain`；
+- `src/middlewares` 下的其他文件都是由组合锚点导入的普通模块，不会按文件名
+  排序；
 - `src/apis/**/middleware.ts` 按文件 scope 包裹同目录及后代 server file
-  route。
+  route，并默认导出一个 middleware。
 
 Middleware file 不是 route，不能由 route module export middleware 代替。
 

@@ -30,7 +30,8 @@
   is derived from normalized Pages rather than configured on separate owners.
 - `application.routes` is an explicit SPA-only input into the same CoreGraph.
 - `src/apis/**/api.*` supplies framework-managed request Routes;
-  `src/middleware.ts` and route-tree `middleware.ts` supply middleware.
+  `src/middlewares/middleware.*` composes global middleware in export order,
+  and route-tree `middleware.ts` supplies scoped middleware.
 - reachable `"use server"` modules supply named server functions.
 - `.ev` contains the generated graph/plan snapshots, entry facades, plugin
   modules, slots, import edges, and IR manifest compiled by bundler adapters.

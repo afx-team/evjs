@@ -20,6 +20,7 @@ server routes, examples, or scaffolds change.
 | --- | --- | --- |
 | Page markers and URL segments | `packages/ev/src/_internal/build/page-route-conventions.ts` | `page-routes.ts`, `packages/ev/tests/build-tools-page-routes.test.ts` |
 | Server request-route markers and URL segments | `packages/ev/src/_internal/build/server-route-conventions.ts` | `server-routes.ts`, `packages/ev/tests/build-tools-server-routes.test.ts` |
+| Global and route-scoped middleware anchors | `packages/ev/src/_internal/build/server-conventions.ts` | `packages/ev/tests/build-tools-server-routes.test.ts`, `packages/ev/tests/commands.test.ts` |
 | Public config and SPA/MPA selection | `packages/ev/src/config/index.ts` | `packages/ev/tests/config.test.ts` |
 | Semantic graph and build plan | `packages/ev/src/_internal/build/graph/*`, `plan/*` | `packages/ev/tests/build-tools-graph-plan.test.ts` |
 | Typed plugin settings and generated Page types | `packages/ev/src/config/plugins.ts`, `_internal/build/plugin-settings.ts`, `plugin-types.ts` | `packages/ev/tests/plugin-settings.test.ts`, `plugin-types.test.ts` |
@@ -65,9 +66,9 @@ server routes, examples, or scaffolds change.
    canonical `routing`, cannot select MPA, and use `routes` rather than
    `children` for nesting.
 5. Keep exactly one supported `api.*` variant per server Route directory and
-   export uppercase HTTP method handlers. Framework middleware lives in
-   `src/middleware.ts`; scoped request-route middleware lives in
-   `src/apis/**/middleware.ts`.
+   export uppercase HTTP method handlers. Global framework middleware is
+   explicitly ordered by `src/middlewares/middleware.*`; scoped request-route
+   middleware lives in `src/apis/**/middleware.ts`.
 6. Server functions start with `"use server";` and export named callable
    functions or supported named async values. They do not default-export or
    runtime re-export functions.

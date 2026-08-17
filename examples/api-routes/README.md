@@ -15,7 +15,8 @@ npm run dev
 | `ev.config.ts` | Selects SPA routing mode |
 | `src/pages/page.tsx` | Root Page that exercises the REST endpoints |
 | `src/pages/layout.tsx` | File-convention root layout |
-| `src/middleware.ts` | Framework request middleware for all server requests |
+| `src/middlewares/middleware.ts` | Ordered global middleware composition anchor |
+| `src/middlewares/response-metadata.ts` | Ordinary middleware module composed by the anchor |
 | `src/apis/api/middleware.ts` | API route middleware for `/api/**` file routes |
 | `src/apis/api/posts/api.ts` | List/create handlers for `/api/posts` |
 | `src/apis/api/posts/$id/api.ts` | Dynamic handlers for `/api/posts/:id` |
@@ -29,7 +30,8 @@ npm run dev
 - Query string parsing (`?limit=N`)
 - Custom status codes (201, 204, 404)
 - Auto `OPTIONS` and `405 Method Not Allowed`
-- Framework request and API route `middleware.ts` conventions
+- Explicitly ordered global middleware composition with `MiddlewareChain`
+- Route-scoped API `middleware.ts` conventions
 - Colocated private helpers that are not named `api.ts`
 - A root `page.tsx` anchor mapped to `/` by file convention
 

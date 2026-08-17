@@ -129,7 +129,7 @@ describe("inspect", () => {
         "export default function Home() { return null; }",
       "src/pages/users/detail/page.tsx":
         "export default function UserDetail() { return null; }",
-      "src/middleware.ts":
+      "src/middlewares/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
       "src/apis/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",

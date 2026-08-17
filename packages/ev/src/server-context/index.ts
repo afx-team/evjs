@@ -3,6 +3,7 @@
  */
 
 export type {
+  MiddlewareChain,
   MiddlewareHandler,
   RequestLogEntry,
   RequestLoggerOptions,

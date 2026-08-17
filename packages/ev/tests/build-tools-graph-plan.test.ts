@@ -1910,8 +1910,8 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
 
   it("publishes only configured server file routes and middleware", async () => {
     const globalMiddleware = {
-      id: "src/middleware.ts:global-middleware",
-      module: "src/middleware.ts",
+      id: "src/middlewares/middleware.ts:global-middleware",
+      module: "src/middlewares/middleware.ts",
       scope: "global" as const,
       scopeSegments: [],
     };
@@ -1927,7 +1927,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         "export const GET = async () => Response.json({ ok: true });",
       "src/apis/users/$userId/api.ts":
         "export const POST = async () => Response.json({ ok: true });",
-      "src/middleware.ts":
+      "src/middlewares/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
       "src/apis/users/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
