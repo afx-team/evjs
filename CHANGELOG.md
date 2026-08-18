@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.14] — 2026-08-18
+
 ### 🐛 Bug Fixes
 
 - **Aligned plugin planning lifecycle** — Development, inspect, prepare, and
