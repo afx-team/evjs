@@ -120,8 +120,8 @@ capabilities are needed.
 ## Contributing
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before making a change. Framework
-contributors should also use [AGENTS.md](./AGENTS.md), [AGENT.md](./AGENT.md),
-and [ARCHITECTURE.md](./ARCHITECTURE.md) for repository ownership and internal
+contributors should also use [AGENTS.md](./AGENTS.md) and
+[ARCHITECTURE.md](./ARCHITECTURE.md) for repository instructions and internal
 design details.
 
 ```bash

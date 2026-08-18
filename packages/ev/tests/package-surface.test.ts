@@ -749,86 +749,72 @@ describe("workspace package surface", () => {
     expect(readme).not.toContain('from "@evjs/shared";');
   });
 
-  it("documents every distributed package role for users and agents", async () => {
-    const architectureDoc = await fs.readFile(
-      path.join(repoRoot, "docs/docs/architecture.md"),
-      "utf-8",
-    );
-
-    for (const packageName of expectedPackageNames) {
-      expect(architectureDoc).toContain(packageName);
-    }
-    expect(architectureDoc).toContain("## Package Ownership");
-    expect(architectureDoc).toContain("Minimal config authoring");
-    expect(architectureDoc).toContain(
-      "`@evjs/ev/route`, `/navigation`, `/query`",
-    );
-    expect(architectureDoc).toContain("`@evjs/ev/_internal/*`");
-    expect(architectureDoc).toContain("CoreGraph");
-    expect(architectureDoc).toContain("BuildPlan");
-    expect(architectureDoc).toContain("BuildOutput");
-    expect(architectureDoc).toContain("DeploymentMetadata");
-    expect(architectureDoc).toContain(
-      "are not scanned by framework conventions",
-    );
-  });
-
-  it("keeps the root agent guide discoverable and package-boundary aware", async () => {
+  it("keeps root agent instructions discoverable and focused", async () => {
     const readme = await fs.readFile(path.join(repoRoot, "README.md"), "utf-8");
-    const agentGuide = await fs.readFile(
+    const agentInstructions = await fs.readFile(
       path.join(repoRoot, "AGENTS.md"),
       "utf-8",
     );
-    expect(readme).toContain("[AGENTS.md](./AGENTS.md)");
-    expect(agentGuide).toContain("[AGENT.md](./AGENT.md)");
-    expect(agentGuide).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
-    expect(agentGuide).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
-    expect(agentGuide).toContain("Keep simple config imports on `@evjs/ev`");
-    expect(agentGuide).toContain(
-      "subpaths (`route`, `navigation`, `query`, `server-context`, `transport`)",
+    const contributing = await fs.readFile(
+      path.join(repoRoot, "CONTRIBUTING.md"),
+      "utf-8",
     );
-    expect(agentGuide).toContain("packages/ev/src/config/index.ts");
-    expect(agentGuide).toContain("packages/ev/src/_internal/build/graph/*");
-    expect(agentGuide).toContain("page-routes.ts");
-    expect(agentGuide).toContain(
+
+    expect(readme).toContain("[AGENTS.md](./AGENTS.md)");
+    expect(readme).not.toContain("[AGENT.md](./AGENT.md)");
+    await expect(fs.access(path.join(repoRoot, "AGENT.md"))).rejects.toThrow();
+    expect(agentInstructions).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
+    expect(agentInstructions).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
+    expect(agentInstructions).toContain("packages/ev/src/config/index.ts");
+    expect(agentInstructions).toContain(
+      "packages/ev/src/_internal/build/graph/*",
+    );
+    expect(agentInstructions).toContain("page-routes.ts");
+    expect(agentInstructions).toContain(
       "packages/ev/tests/build-tools-graph-plan.test.ts",
     );
-    expect(agentGuide).toContain(
+    expect(agentInstructions).toContain(
       "packages/ev/tests/build-tools-page-routes.test.ts",
     );
-    expect(agentGuide).toContain("src/pages/**/page.*");
-    expect(agentGuide).toContain("src/apis/**/api.{ts,tsx,js,jsx}");
-    expect(agentGuide).toContain("same CoreGraph");
-    expect(agentGuide).toContain("`.ev` is generated framework IR");
-    expect(agentGuide).toContain(
-      "Prefer a subpath export on the package that owns a capability",
-    );
-    expect(agentGuide).toContain(
-      "declarative current behavior over migration history",
-    );
+    expect(agentInstructions).toContain("`@evjs/ev/_internal/*`");
+    expect(agentInstructions).toContain("`src/pages/**/page.*`");
+    expect(agentInstructions).toContain("`src/apis/**/api.*`");
+    expect(agentInstructions).toContain("`src/apis/**/middleware.ts`");
+    expect(agentInstructions).toContain("English and Chinese documentation");
+    expect(agentInstructions).not.toContain("## Package Map");
+    expect(agentInstructions).not.toContain("## Common Mistakes");
+    expect(contributing).toContain("## Focused Validation");
+    expect(contributing).toContain("npx turbo run test --filter=@evjs/ev");
+    expect(contributing).toContain("npm --workspace evjs-docs run build");
   });
 
-  it("keeps public package guidance on default app and standalone runtime packages", async () => {
-    const packageTableDocs = [
-      "README.md",
+  it("keeps quick starts on app APIs and direct runtimes in the README", async () => {
+    const quickStartDocs = [
       "docs/docs/quick-start.md",
       "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/quick-start.md",
     ];
     const docsWithoutLegacyFacadeGuidance = [
-      ...packageTableDocs,
+      "README.md",
+      ...quickStartDocs,
       "docs/docs/roadmap.md",
       "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/roadmap.md",
     ];
 
-    for (const doc of packageTableDocs) {
+    const readme = await fs.readFile(path.join(repoRoot, "README.md"), "utf-8");
+    expect(readme).toContain("@evjs/ev");
+    expect(readme).toContain("@evjs/client");
+    expect(readme).toContain("@evjs/server");
+    expect(readme).toContain("@evjs/ev/server-context");
+    expect(readme).toContain("@evjs/ev/transport");
+
+    for (const doc of quickStartDocs) {
       const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
       expect(source).toContain("@evjs/ev");
-      expect(source).toContain("@evjs/client");
-      expect(source).toContain("@evjs/server");
       expect(source).toContain("@evjs/ev/route");
       expect(source).toContain("@evjs/ev/navigation");
       expect(source).toContain("@evjs/ev/query");
-      expect(source).toContain("@evjs/ev/server-context");
+      expect(source).not.toContain("@evjs/client");
+      expect(source).not.toContain("@evjs/server");
       expect(source).not.toContain('"@evjs/client": "<same version>"');
       expect(source).not.toContain('"@evjs/server": "<same version>"');
       expect(source).not.toContain("@evjs/ev/client");

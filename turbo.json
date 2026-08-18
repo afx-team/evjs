@@ -13,7 +13,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/{AGENT.md,AGENTS.md,ARCHITECTURE.md,CONTRIBUTING.md,README.md,package-lock.json}",
+        "$TURBO_ROOT$/{AGENTS.md,ARCHITECTURE.md,CONTRIBUTING.md,README.md,package-lock.json}",
         "$TURBO_ROOT$/docs/{docs,i18n}/**/*.md",
         "$TURBO_ROOT$/examples/**",
         "!$TURBO_ROOT$/examples/**/{dist,.turbo,.turbopack,node_modules}/**",

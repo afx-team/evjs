@@ -171,6 +171,39 @@ closable controller, and leave ordinary module watching and HMR adapter-owned.
 Generated `.ev` state is disposable and must be reconstructible directly from
 authored inputs.
 
+## Focused Validation
+
+Use Turbo filters while editing so workspace dependencies build through the
+repository graph:
+
+```bash
+npx turbo run test --filter=@evjs/ev
+npx turbo run test --filter=@evjs/shared
+npx turbo run test --filter=@evjs/client
+npx turbo run test --filter=@evjs/server
+npx turbo run test --filter=@evjs/bundler-utoopack
+npx turbo run test --filter=@evjs/bundler-webpack
+```
+
+For a single test file, build the package graph first, then invoke that
+workspace directly:
+
+```bash
+npx turbo run build --filter=@evjs/ev
+npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts
+```
+
+| Change area | Primary implementation | Focused validation |
+| --- | --- | --- |
+| Pages, routes, graph, and build plan | `packages/ev/src/_internal/build/page-routes.ts`, `graph/*`, `plan/*` | `npx turbo run test --filter=@evjs/ev` |
+| API routes and middleware | `packages/ev/src/_internal/build/server-route-conventions.ts`, `server-routes.ts`, `server-conventions.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Configuration and package exports | `packages/ev/src/config`, package manifests | `npx turbo run test --filter=@evjs/ev` |
+| Shared output contracts | `packages/shared/src/manifest` | `npx turbo run test --filter=@evjs/shared` |
+| Server functions | `packages/ev/src/_internal/build/server-fns.ts`, client and server runtimes | `npx turbo run test --filter=@evjs/client --filter=@evjs/server` |
+| SSR, SSG, PPR, and RSC | graph and plan code, client RSC, server rendering | `npx turbo run test --filter=@evjs/ev --filter=@evjs/client --filter=@evjs/server` |
+| Bundler mapping | `packages/bundler-*/src/adapter`, manifest generators | Test the affected bundler package. |
+| Documentation | `docs/docs`, Chinese translations, package and example READMEs | `npm run lint`, `npm --workspace evjs-docs run build`, `git diff --check` |
+
 ## Commands
 
 ```bash
