@@ -7,9 +7,9 @@ import type {
   PluginDevSession,
   PluginSetupContext,
 } from "../../plugin/index.js";
+import { publishFrameworkRevision } from "./analyze-and-materialize.js";
 import type { BundlerAdapter } from "./bundler.js";
 import { bindCLIShortcuts, type UnbindCLIShortcuts } from "./cli-shortcuts.js";
-import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
 import type {
   DevDependencyCollector,
   DevDependencyKind,
@@ -34,13 +34,10 @@ import {
   resolveInitialDevWatchMode,
   watchFiles,
 } from "./dev-watch.js";
-import {
-  GENERATED_IR_DIR,
-  publishFrameworkIR,
-} from "./generated-contributions.js";
+import { GENERATED_IR_DIR } from "./generated-contributions.js";
 import { getPageRouteTypesPath } from "./page-route-types.js";
 import { collectPluginCliShortcuts } from "./plugin-lifecycle.js";
-import { getPluginTypesPath, syncPluginTypes } from "./plugin-types.js";
+import { getPluginTypesPath } from "./plugin-types.js";
 
 const logger = getLogger(["evjs", "ev"]);
 const DEV_RECONCILE_DEBOUNCE_MS = 50;
@@ -384,9 +381,12 @@ export async function runDevSupervisor<TBundlerCfg>(
     if (previous) await previous.session.close();
     if (stopping) return;
 
-    await publishFrameworkIR(options.cwd, prepared.generatedIR);
-    await syncPluginTypes({ cwd: options.cwd });
-    await syncPageRouteTypesFromCoreGraph(options.cwd, prepared.graph);
+    await publishFrameworkRevision({
+      cwd: options.cwd,
+      generatedIR: prepared.generatedIR,
+      graph: prepared.graph,
+      syncRouteTypes: true,
+    });
     await assertNoActiveDevDistLock(options.cwd, prepared.plan.distDir);
     if (stopping) return;
 

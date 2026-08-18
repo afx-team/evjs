@@ -99,11 +99,12 @@ sequenceDiagram
 
   CLI->>EV: load config and select bundler
   EV->>Plugin: configure() and resolve typed Application settings
-  EV->>Plugin: setup()
   EV->>EV: create CoreGraph and resolve Page settings
   EV->>Plugin: emitIR(FrameworkView)
   EV->>EV: derive BuildPlan
-  EV->>EV: materialize .ev IR
+  EV->>EV: render complete .ev IR image in memory
+  EV->>EV: publish selected .ev IR and generated types
+  EV->>Plugin: setup()
   EV->>Plugin: configureBundler()
   EV->>Bundler: build(BuildPlan)
   Bundler-->>EV: fresh BundlerBuildFacts
@@ -113,7 +114,15 @@ sequenceDiagram
   EV->>Plugin: transformHtml()
   EV->>EV: publish canonical output
   EV->>Plugin: afterBuild()
+  EV->>Plugin: dispose()
 ```
+
+Build, prepare, and accepted development revisions complete graph and
+generated-IR planning, then publish the selected revision before plugin setup.
+Inspect remains write-free but also runs no setup when planning fails.
+Development may discard a failed or semantically unchanged candidate without
+replacing the active Session; setup runs only while constructing an accepted
+replacement.
 
 `transformOutput()` may change asset-group contents and add plugin deployment
 metadata, but graph identity, runtime paths, routes, output paths, and owner
@@ -207,7 +216,7 @@ Supervisor and still require a manual restart.
 ## Programmatic Preparation
 
 `prepareFrameworkBuild()` is the supported pre-bundler API for tooling. It
-loads and resolves config, runs plugin preflight hooks, analyzes the graph,
-reports diagnostics, and returns resolved config, file dependencies, plugin
-watch files, and `dispose()`. It does not run a bundler or emit deployment
-artifacts.
+loads and resolves config, analyzes the graph and generated contributions,
+publishes the successful framework revision, then runs plugin setup. It reports
+diagnostics and returns resolved config, file dependencies, plugin watch files,
+and `dispose()`. It does not run a bundler or emit deployment artifacts.

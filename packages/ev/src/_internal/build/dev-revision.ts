@@ -239,7 +239,6 @@ export async function prepareDevRevision<TBundlerCfg>(
     pluginSettings,
     applicationPluginSettings,
     plan: { buildId: options.buildId, distDir: DEV_DIST_DIR },
-    write: false,
     beforeSourceRead(file) {
       addDependency(file, "semantic");
     },

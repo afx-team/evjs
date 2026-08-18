@@ -1,8 +1,8 @@
 # Plugin Hooks
 
 Plugin hooks are for build-time side effects, HTML changes, final deployment
-files, and low-level bundler customization. Keep shared state in `setup()` and
-return only the hooks that need it.
+files, and low-level bundler customization. Keep lifecycle-hook state in
+`setup()` and return only the hooks that need it.
 
 Use [Generating Code](./generated-contributions) when a plugin needs to add a
 module or attach code to a page or entry. Generated contributions are easier to
@@ -12,9 +12,9 @@ inspect and compose than writing temporary files from hooks.
 
 ```mermaid
 flowchart LR
-  Configure["configure"] --> Setup["setup"]
-  Setup --> Generate["emitIR / emitPageIR"]
-  Generate --> Bundler["configureBundler"]
+  Configure["configure"] --> Generate["emitIR / emitPageIR"]
+  Generate --> Setup["setup"]
+  Setup --> Bundler["configureBundler"]
   Bundler --> Build["bundle"]
   Build --> Before["beforeBuild"]
   Before --> Output["transformOutput"]
@@ -22,6 +22,15 @@ flowchart LR
   HTML --> After["afterBuild"]
   After --> Dispose["dispose"]
 ```
+
+`emitIR()` and `emitPageIR()` declare generated code and must be deterministic.
+They run after config and plugin settings resolve, and before `setup()`. evjs
+may call them more than once. If either method fails, `setup()` does not run.
+
+Because generation precedes `setup()`, generated contributions cannot read
+state initialized there. Share immutable inputs through plugin options or
+authored files, and keep network, process, watcher, and other disposable state
+inside the hooks returned from `setup()`.
 
 `configure()` and `setup()` are introduced in
 [Plugin Development](./plugin-authoring). Plugins created with

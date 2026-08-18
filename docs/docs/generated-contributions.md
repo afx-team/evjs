@@ -23,7 +23,8 @@ flowchart LR
 ```
 
 Keep generation deterministic and free of network, process, or external file
-side effects. evjs may evaluate it again while application inputs change.
+side effects. Generation runs before plugin setup and cannot read state
+initialized there. evjs may evaluate it again while application inputs change.
 
 ## Emit modules and data
 

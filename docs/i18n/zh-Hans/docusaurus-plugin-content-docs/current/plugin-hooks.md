@@ -1,6 +1,7 @@
 # 插件生命周期钩子
 
-插件生命周期钩子用于执行构建时副作用、修改 HTML、写入最终部署文件或定制底层构建器。共享状态放在 `setup()` 中，只返回真正需要的钩子。
+插件生命周期钩子用于执行构建时副作用、修改 HTML、写入最终部署文件或定制底层构建器。
+生命周期钩子所需的状态放在 `setup()` 中，只返回真正需要这些状态的钩子。
 
 插件需要增加模块，或把代码挂到页面和入口时，请使用[生成代码](./generated-contributions)。声明式生成比通过钩子写临时文件更容易检查与组合。
 
@@ -8,9 +9,9 @@
 
 ```mermaid
 flowchart LR
-  Configure["configure"] --> Setup["setup"]
-  Setup --> Generate["emitIR / emitPageIR"]
-  Generate --> Bundler["configureBundler"]
+  Configure["configure"] --> Generate["emitIR / emitPageIR"]
+  Generate --> Setup["setup"]
+  Setup --> Bundler["configureBundler"]
   Bundler --> Build["bundle"]
   Build --> Before["beforeBuild"]
   Before --> Output["transformOutput"]
@@ -18,6 +19,13 @@ flowchart LR
   HTML --> After["afterBuild"]
   After --> Dispose["dispose"]
 ```
+
+`emitIR()` 与 `emitPageIR()` 用于声明生成代码，并且必须保持确定性。它们在配置和插件
+设置解析完成后、`setup()` 之前执行，evjs 可能多次调用。如果其中任一方法失败，
+`setup()` 不会执行。
+
+由于生成阶段早于 `setup()`，生成式贡献不能读取其中初始化的状态。共享不可变输入应放在
+插件选项或源码文件中；网络、进程、监听器等需要清理的状态应留在 `setup()` 返回的钩子内。
 
 `configure()` 和 `setup()` 见[插件开发](./plugin-authoring)。通过 `definePlugin()` 创建的插件以 `ctx.options` 获得类型化应用选项。
 

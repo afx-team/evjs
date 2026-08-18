@@ -507,6 +507,10 @@ describe("prepareFrameworkBuild", () => {
         events.push(`config:${ctx.mode}`);
         return config;
       },
+      emitIR(ctx) {
+        expect(ctx.config.bundler).toBeUndefined();
+        events.push(`emitIR:${ctx.mode}`);
+      },
       setup(ctx) {
         expect(ctx.config.bundler).toBeUndefined();
         ctx.addWatchFile("./framework-extra.json");
@@ -540,13 +544,18 @@ describe("prepareFrameworkBuild", () => {
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
-    expect(events).toEqual(["config:production", "setup:production"]);
+    expect(events).toEqual([
+      "config:production",
+      "emitIR:production",
+      "setup:production",
+    ]);
 
     await prepared.dispose();
     await prepared.dispose();
 
     expect(events).toEqual([
       "config:production",
+      "emitIR:production",
       "setup:production",
       "dispose",
     ]);
@@ -604,9 +613,14 @@ describe("prepareFrameworkBuild", () => {
     const generatedRoot = path.join(cwd, ".ev");
     const initialSnapshot = await readDirectorySnapshot(generatedRoot);
     const initialRootEntries = await readSortedDirectoryEntries(cwd);
+    const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "render-failure",
+      setup() {
+        events.push("setup");
+      },
       emitIR(ctx) {
+        events.push("emitIR");
         ctx.emit.module({
           id: "throws-while-rendering",
           scope: { kind: "application" },
@@ -624,6 +638,7 @@ describe("prepareFrameworkBuild", () => {
       ),
     ).rejects.toThrow("injected generated IR render failure");
 
+    expect(events).toEqual(["emitIR"]);
     expect(await readDirectorySnapshot(generatedRoot)).toEqual(initialSnapshot);
     expect(await readSortedDirectoryEntries(cwd)).toEqual(initialRootEntries);
   });
@@ -1050,6 +1065,9 @@ describe("prepareFrameworkBuild", () => {
     ).rejects.toThrow("setup blocked");
 
     expect(events).toEqual(["setup:first", "setup:second", "dispose:first"]);
+    await expect(
+      fs.promises.access(path.join(cwd, ".ev", "manifest.json")),
+    ).resolves.toBeUndefined();
   });
 
   it("disposes plugins in reverse order and continues after failures", async () => {
@@ -3626,6 +3644,9 @@ describe("build", () => {
 
     const plugin: Plugin<Record<string, never>> = {
       id: "records-lifecycle",
+      emitIR() {
+        events.push("emitIR:production");
+      },
       setup(ctx) {
         expect(ctx.config.bundler?.name).toBe("mock");
         events.push(`setup:${ctx.mode}`);
@@ -3672,6 +3693,7 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
+      "emitIR:production",
       "setup:production",
       "bundler.build",
       "bundler.entries:main",
