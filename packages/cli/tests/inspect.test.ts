@@ -495,7 +495,44 @@ describe("inspect", () => {
         }),
       ]),
     );
-    expect(events).toEqual(["setup", "emitIR", "dispose"]);
+    expect(events).toEqual(["emitIR", "setup", "dispose"]);
+    await expectPathMissing(path.join(cwd, ".ev"));
+  });
+
+  it("does not set up plugins when contribution planning fails", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/main.tsx": "console.log('app');",
+    });
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      id: "inspect-contribution-failure",
+      setup() {
+        events.push("setup");
+      },
+      emitIR() {
+        events.push("emitIR");
+        throw new Error("inspect contribution failed");
+      },
+    };
+
+    const result = await inspectFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "contributions",
+          message: "inspect contribution failed",
+        }),
+      ]),
+    );
+    expect(events).toEqual(["emitIR"]);
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 

@@ -864,9 +864,37 @@ describe("workspace package surface", () => {
     expect(rootContributing).toContain("Keep the `@evjs/ev` root small");
     expect(rootContributing).toContain("public application-authoring subpaths");
     expect(rootContributing).toContain("`@evjs/ev/_internal/*`");
-    expect(rootContributing).toContain("create CoreGraph");
-    expect(rootContributing).toContain("derive BuildPlan");
-    expect(rootContributing).toContain("materialize .ev");
+    const pipelineStages = [
+      "run configure hooks and resolve Application plugin settings",
+      "create CoreGraph while resolving Page plugin settings",
+      "collect generated contributions with emitIR/emitPageIR",
+      "derive BuildPlan",
+      "render the complete .ev image in memory",
+      "select the successful revision and publish it on publishing paths",
+      "run setup hooks",
+    ];
+    let previousStageIndex = -1;
+    for (const stage of pipelineStages) {
+      const stageIndex = rootContributing.indexOf(stage);
+      expect(stageIndex).toBeGreaterThan(previousStageIndex);
+      previousStageIndex = stageIndex;
+    }
+    expect(rootContributing).toContain(
+      "`ev inspect` is the write-free exception",
+    );
+    expect(rootContributing).toContain(
+      "Failed and semantically unchanged candidates never run setup",
+    );
+    expect(rootContributing).toContain(
+      "candidate is published and set up as a new immutable Session",
+    );
+    expect(rootArchitecture).toContain(
+      "Publishing paths—build, prepare, and accepted development revisions—complete",
+    );
+    expect(rootArchitecture).toContain(
+      "`inspectFrameworkBuild()` is the exception",
+    );
+    expect(rootArchitecture).toContain("never publishes `.ev` or generated");
   });
 
   it("keeps examples and templates on declared public packages", async () => {

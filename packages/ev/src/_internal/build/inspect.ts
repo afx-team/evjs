@@ -11,7 +11,11 @@ import {
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
-import type { CliFlags, PluginSetupContext } from "../../plugin/index.js";
+import type {
+  CliFlags,
+  PluginHooks,
+  PluginSetupContext,
+} from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
 import {
   type BundlerAdapter,
@@ -240,7 +244,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
       pluginWatchFiles.add(path.resolve(cwd, file));
     },
   };
-  const hooks = await collectPluginHooks(config.plugins, pluginContext);
+  let hooks: PluginHooks<TBundlerCfg>[] = [];
   let disposed = false;
   const dispose = async () => {
     if (disposed) return;
@@ -270,7 +274,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
         pluginContext,
         pluginSettings,
         applicationPluginSettings,
-        write: false,
         onAnalysis(currentAnalysis) {
           latestAnalysis = currentAnalysis;
         },
@@ -289,6 +292,9 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
         source: "contributions",
         message: formatInspectError(err),
       });
+    }
+    if (plan) {
+      hooks = await collectPluginHooks(config.plugins, pluginContext);
     }
     diagnostics.push(
       ...analysis.diagnostics.map((diagnostic) =>

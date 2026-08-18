@@ -2,6 +2,7 @@ import path from "node:path";
 import type {
   BuildPlan,
   CoreApplicationPluginSettings,
+  CoreGraph,
 } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type { PluginSetupContext } from "../../plugin/index.js";
@@ -32,12 +33,30 @@ export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   pluginSettings: PluginSettingsRegistry;
   applicationPluginSettings: CoreApplicationPluginSettings;
   plan?: CreateBuildPlanOptions;
-  write?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
   beforeSourceRead?: (file: string) => void;
   onSourceDependency?: (file: string) => void;
 }
 
+export interface PublishFrameworkRevisionOptions {
+  cwd: string;
+  generatedIR: GeneratedIRImage;
+  graph: CoreGraph;
+  syncRouteTypes: boolean;
+}
+
+/** Publish one selected in-memory framework revision and its generated types. */
+export async function publishFrameworkRevision(
+  options: PublishFrameworkRevisionOptions,
+): Promise<void> {
+  await syncPluginTypes({ cwd: options.cwd });
+  await publishFrameworkIR(options.cwd, options.generatedIR);
+  if (options.syncRouteTypes) {
+    await syncPageRouteTypesFromCoreGraph(options.cwd, options.graph);
+  }
+}
+
+/** Analyze and render one complete framework IR candidate without writing it. */
 export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
   options: AnalyzeAndMaterializeOptions<TBundlerCfg>,
 ): Promise<{
@@ -78,11 +97,6 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
           },
         )
       : undefined;
-  if (options.write !== false) {
-    await syncPluginTypes({
-      cwd: options.cwd,
-    });
-  }
   const pluginSettingsSession = createPluginSettingsResolutionSession(
     options.pluginSettings,
   );
@@ -101,12 +115,6 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
     const { image, plan } = await prepare(analysis);
     const nextAliases = getFrameworkSourceAliases(options.cwd, plan);
     if (haveSameAliases(aliases, nextAliases)) {
-      if (options.write !== false) {
-        await publishFrameworkIR(options.cwd, image);
-        if (options.config.routing) {
-          await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
-        }
-      }
       return { analysis, generatedIR: image, plan };
     }
     aliases = nextAliases;

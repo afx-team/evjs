@@ -137,17 +137,23 @@ Release automation replaces them with the release version before publishing.
 
 ## Build Pipeline
 
-`ev prepare`, `ev build`, and `ev dev` share the same semantic preparation:
+`ev prepare`, `ev build`, and `ev dev` complete semantic planning before
+plugin setup:
 
 ```txt
 load config
 run configure hooks and resolve Application plugin settings
-run setup hooks
 create CoreGraph while resolving Page plugin settings
 collect generated contributions with emitIR/emitPageIR
 derive BuildPlan
-materialize .ev
+render the complete .ev image in memory
+select the successful revision and publish it on publishing paths
+run setup hooks
 ```
+
+`ev inspect` is the write-free exception: it completes the same planning in
+memory, then runs setup and dispose without publishing `.ev` or generated
+types. A planning failure therefore never reaches setup on any path.
 
 `ev build` then asks the selected bundler for fresh build facts, runs
 `beforeBuild`, links and transforms `BuildOutput`, writes
@@ -158,9 +164,9 @@ output is published. `prepare` and `inspect` do not run the before/after pair.
 Supervisor watches framework-owned inputs and prepares candidate revisions
 without writing `.ev`. It compares a stable semantic fingerprint of config,
 graph, plan, generated IR, plugin settings, and opaque dependency content.
-Semantic no-ops keep the active immutable Session; semantic changes close it
-and start a new Session with fixed config, graph, plan, hooks, and adapter
-inputs.
+Failed and semantically unchanged candidates never run setup. Only an accepted
+candidate is published and set up as a new immutable Session with fixed config,
+graph, plan, hooks, and adapter inputs; semantic no-ops keep the active Session.
 
 Preparation errors keep the active Session and wait for another real input
 change instead of retrying automatically. After replacement starts, errors are

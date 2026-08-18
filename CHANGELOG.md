@@ -6,6 +6,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Aligned plugin planning lifecycle** — Development, inspect, prepare, and
+  production builds now finish deterministic `emitIR()` / `emitPageIR()`
+  planning before plugin `setup()`. Development and production publish a
+  selected generated revision before setup, failed planning no longer allocates
+  imperative plugin state, and accepted Sessions retain reverse-order cleanup.
+
 ---
 
 ## [0.3.13] — 2026-08-17

@@ -5,20 +5,17 @@ typed configuration contracts, and the framework stages the plugin extends.
 Applications consume the returned factory through `config.plugins`.
 
 The authoring model has three layers: `pluginOptions()` declares plugin-owned
-Application or Page data, descriptor methods declare framework-planning or dev
-CLI contributions, and `setup()` returns imperative lifecycle hooks. A behavior
-should live in only one layer. These are responsibility layers rather than
-adjacent time blocks: `configure()` runs before `setup()`, `emitIR()` runs
-during graph planning, and `cliShortcuts()` is collected once for each immutable
-development Session when the shortcuts engine is enabled. Descriptor methods
-never belong in the object returned by `setup()`, and lifecycle hooks never
-belong on the descriptor.
+Application or Page data, descriptor methods declare configuration, generated
+code, or dev CLI behavior, and `setup()` returns imperative lifecycle hooks. A
+behavior should live in only one layer. `configure()` runs first; evjs then
+resolves `emitIR()` and `emitPageIR()` contributions; `setup()` runs only after
+those contributions succeed. Descriptor methods never belong in the object
+returned by `setup()`, and lifecycle hooks never belong on the descriptor.
 
 `cliShortcuts()` declares terminal keys and actions independently from setup
-state. Session replacement reruns plugin setup; when the engine is enabled, it
-also collects a fresh shortcut set. An ordinary bundler/HMR cycle does neither.
-Shortcut actions receive only the current client origin and a way to shut down
-the entire dev Supervisor. See
+state. Starting or restarting development reruns plugin setup and collects a
+fresh shortcut set; an ordinary bundler/HMR update does neither. Shortcut
+actions receive the current client origin and a way to stop development. See
 [Plugin CLI Shortcuts](./dev#interactive-shortcuts) for the descriptor and action
 contracts.
 

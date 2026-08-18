@@ -284,8 +284,9 @@ export interface Plugin<TBundlerCfg = unknown> {
   /**
    * Initialize the plugin and return lifecycle hooks.
    *
-   * Receives the fully resolved config and build context. All returned
-   * hooks share state through closure.
+   * Runs only after graph and generated-IR planning succeeds. Receives the
+   * fully resolved config and build context. All returned hooks share state
+   * through closure.
    */
   setup?: PluginSetupHook<TBundlerCfg>;
 
@@ -306,9 +307,9 @@ export interface Plugin<TBundlerCfg = unknown> {
   /**
    * Emit generated framework modules and slots into the `.ev` IR.
    *
-   * This hook is separate from setup() lifecycle hooks. It declares generated
-   * modules, structured framework slots, and resolution changes before bundler
-   * configuration is created.
+   * This deterministic planning hook runs before setup() and is separate from
+   * setup lifecycle state. It declares generated modules, structured framework
+   * slots, and resolution changes before bundler configuration is created.
    */
   emitIR?: PluginEmitIRHook<TBundlerCfg>;
 

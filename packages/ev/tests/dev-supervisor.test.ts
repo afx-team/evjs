@@ -161,6 +161,46 @@ afterEach(async () => {
 });
 
 describe("immutable dev supervisor", { timeout: 15_000 }, () => {
+  it("plans plugin IR before setting up the accepted Session", async () => {
+    const cwd = await createProject();
+    const controlled = createControlledBundler();
+    const events = controlled.events;
+    const plugin: Plugin<Record<string, never>> = {
+      id: "session-planning-order",
+      configure(config) {
+        events.push("configure");
+        return config;
+      },
+      emitIR() {
+        events.push("emitIR");
+      },
+      setup() {
+        events.push("setup");
+        return {
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+
+    const run = dev(
+      { plugins: [plugin] },
+      { cwd, bundler: controlled.adapter },
+    );
+    await vi.waitFor(() => expect(controlled.starts).toHaveLength(1));
+    await stopDev(run);
+
+    expect(events).toEqual([
+      "configure",
+      "emitIR",
+      "setup",
+      "start:1",
+      "close:1",
+      "dispose",
+    ]);
+  });
+
   it("binds plugin shortcuts to the controller origin and closes the supervisor", async () => {
     const cwd = await createProject();
     const controlled = createControlledBundler();

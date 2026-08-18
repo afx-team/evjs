@@ -12,7 +12,10 @@ import type {
   PluginHooks,
   PluginSetupContext,
 } from "../../plugin/index.js";
-import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
+import {
+  analyzeAndMaterializeFrameworkIR,
+  publishFrameworkRevision,
+} from "./analyze-and-materialize.js";
 import { createBuildResult } from "./build-result.js";
 import type { BundlerAdapter, BundlerBuildFacts } from "./bundler.js";
 import { preflightBundlerBuild } from "./bundler.js";
@@ -292,7 +295,7 @@ async function prepareInternalFrameworkBuild<TBundlerCfg = unknown>(
       pluginWatchFiles.add(path.resolve(cwd, file));
     },
   };
-  const hooks = await collectPluginHooks(config.plugins, pluginContext);
+  let hooks: PluginHooks<TBundlerCfg>[] = [];
   let disposed = false;
   const dispose = async () => {
     if (disposed) return;
@@ -302,16 +305,24 @@ async function prepareInternalFrameworkBuild<TBundlerCfg = unknown>(
 
   try {
     validateHtmlTemplates(cwd, config);
-    const { analysis, plan } = await analyzeAndMaterializeFrameworkIR({
+    const { analysis, generatedIR, plan } =
+      await analyzeAndMaterializeFrameworkIR({
+        cwd,
+        mode,
+        config,
+        pluginContext,
+        pluginSettings,
+        applicationPluginSettings,
+        plan: options.plan,
+        onAnalysis: reportGraphDiagnostics,
+      });
+    await publishFrameworkRevision({
       cwd,
-      mode,
-      config,
-      pluginContext,
-      pluginSettings,
-      applicationPluginSettings,
-      plan: options.plan,
-      onAnalysis: reportGraphDiagnostics,
+      generatedIR,
+      graph: analysis.graph,
+      syncRouteTypes: config.routing !== undefined,
     });
+    hooks = await collectPluginHooks(config.plugins, pluginContext);
     return {
       cwd,
       mode,
