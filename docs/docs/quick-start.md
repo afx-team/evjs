@@ -61,7 +61,7 @@ export default function AboutPage() {
 }
 ```
 
-`page.*` is the public page anchor. Its directory determines the URL, so there
+`page.*` creates the page and route. Its directory determines the URL, so there
 is no separate route table to update.
 
 ## Configure one page
@@ -84,10 +84,10 @@ export default definePageConfig({
 The file is optional. CSR is the default. See [Rendering](./rendering) before
 selecting SSR, SSG, PPR, or RSC.
 
-## Keep page code together
+## Colocate page code
 
-Files beside a page remain ordinary source unless they use another recognized
-anchor:
+Files beside a page remain ordinary source unless they match another framework
+file convention:
 
 ```text
 src/pages/about/
@@ -123,8 +123,8 @@ without adding a URL segment. MPA projects accept static page paths only.
 
 ## Call server code
 
-Create a reachable module that begins with `"use server";` and exports a named
-function:
+Create a module that begins with `"use server";`, export a named function, and
+import it from the application:
 
 ```ts title="src/pages/get-message.server.ts"
 "use server";
@@ -148,7 +148,7 @@ export default function HomePage() {
 
 ## Add an HTTP endpoint
 
-Create an `api.*` anchor under `src/apis` and export uppercase HTTP methods:
+Create an `api.*` file under `src/apis` and export uppercase HTTP methods:
 
 ```ts title="src/apis/health/api.ts"
 export function GET() {
@@ -178,8 +178,8 @@ generated output. Do not edit or copy them into application templates.
 
 ## Next steps
 
-- [Project Structure](./project-structure) for ownership and every recognized
-  file.
+- [Project Structure](./project-structure) for directory responsibilities and
+  every recognized file.
 - [Pages and Routing](./client-routes) for layouts, nested routes, and
   navigation.
 - [Local Development](./dev) for ports, proxies, and HTTPS.

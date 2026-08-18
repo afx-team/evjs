@@ -5,7 +5,7 @@ it through a typed asynchronous boundary. evjs handles the endpoint and client
 call wiring. Use a `.server.ts` suffix so the boundary remains obvious to
 people and tooling.
 
-## Basic Usage
+## Basic usage
 
 ```ts
 // src/apis/users.server.ts
@@ -59,11 +59,11 @@ export const deleteUser = async (id: string) => {
   files. Server functions have no convention directory.
 - No default exports, runtime re-exports from other modules, or exported
   non-function runtime values such as constants
-- Reachable `"use server"` modules are made callable from the browser.
-  "Reachable" means imported by app code, page modules, server file routes, or
-  server middleware; unrelated files are ignored.
+- A `"use server"` module becomes callable from the browser when it is imported
+  by application code, a page, an API route, or server middleware. Unused files
+  are ignored.
 
-## Request Context Helpers
+## Request context helpers
 
 Server functions run inside the framework request lifecycle, so they can use the
 request helpers exported by `@evjs/ev/server-context`:
@@ -93,13 +93,13 @@ at module scope, during build, or from client code throws this diagnostic:
 [evjs] Server context helpers (request(), headers(), cookie helpers, waitUntil()) must be called during a request lifecycle. Call them inside a server function, route handler, middleware, or framework render.
 ```
 
-## Query Patterns
+## Query patterns
 
 evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server
 functions directly. Use the cache helpers when a loader, prefetch, or mutation
 needs the same query key.
 
-### Direct Usage (Recommended)
+### Direct usage (recommended)
 
 ```tsx
 import {
@@ -137,7 +137,7 @@ plain async function to `useQuery(fn)`,
 function. Use the TanStack object form for non-server functions, for example
 `useQuery({ queryKey, queryFn })`.
 
-### Cache Helpers
+### Cache helpers
 
 Use `getFnQueryKey()` and `getFnQueryOptions()` instead of reading server
 function internals:
@@ -151,7 +151,7 @@ getFnQueryOptions(getUsers);
 - **`getFnQueryKey(fn, ...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
 - **`getFnQueryOptions(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
 
-### Mutation Arguments
+### Mutation arguments
 
 ```tsx
 // No arguments: call mutate() with no variables
@@ -192,7 +192,7 @@ metadata. The standard TanStack `useMutation({ mutationFn })` object form is a
 generic pass-through and may also receive a callable server-function stub, but
 it does not apply the direct overload's multi-argument variable handling.
 
-### Raw fetch / Non-Server Functions
+### Use `fetch` or regular functions
 
 For non-server functions, use the standard TanStack Query API directly:
 
@@ -204,9 +204,9 @@ const { data } = useQuery({
 });
 ```
 
-## Transport Configuration
+## Transport configuration
 
-### HTTP (Default)
+### HTTP (default)
 
 ```tsx
 import { initTransport } from "@evjs/ev/transport";
@@ -246,7 +246,7 @@ default CORS behavior; cross-origin cookies should be controlled with
 The built-in adapter owns the JSON request/response details. Network failures
 and server-side structured errors are surfaced as `ServerFunctionError`.
 
-### Custom Adapter (e.g., WebSocket)
+### Custom adapter (for example, WebSocket)
 
 Implement a `TransportAdapter` for custom protocols:
 
@@ -266,7 +266,7 @@ initTransport({ adapter: wsAdapter });
 Custom adapters own their protocol configuration. The optional `context` passed
 to `send(fnId, args, context)` contains only the per-call `signal` value.
 
-### Server Config
+### Server configuration
 
 ```ts
 // ev.config.ts
@@ -279,9 +279,9 @@ export default defineConfig({
 });
 ```
 
-## Error Handling
+## Error handling
 
-### Server Side
+### Server side
 
 Throw structured errors with status codes and data:
 
@@ -300,7 +300,7 @@ export async function getUser(id: string) {
 }
 ```
 
-### Client Side
+### Client side
 
 Catch typed errors:
 
@@ -318,11 +318,11 @@ try {
 }
 ```
 
-## What gets included
+## Which exports become server functions
 
-During `ev dev` and `ev build`, evjs validates reachable `"use server"`
-modules and makes their named functions callable. You do not need to author an
-endpoint or client proxy.
+During `ev dev` and `ev build`, evjs validates imported `"use server"` modules
+and makes their named functions callable. You do not need to write an endpoint
+or client proxy.
 
 Unsupported exports are reported before the bundler runs.
 For example, `export default`, `export const VERSION = "1"`, and
@@ -330,10 +330,10 @@ For example, `export default`, `export const VERSION = "1"`, and
 Runtime re-exports such as `export { getUser } from "./other"` are also
 unsupported.
 
-Only modules reachable from application code are included. Remove an import
-when a server function should stay outside the application.
+Only modules imported by application code are included. Remove the import when
+a server function should stay outside the application.
 
-## Key Points
+## Summary
 
 | Pattern | Usage |
 |---------|-------|

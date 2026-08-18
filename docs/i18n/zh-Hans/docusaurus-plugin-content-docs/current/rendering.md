@@ -1,17 +1,17 @@
 # 渲染
 
-通过相邻 `page.config.ts` 选择每个页面到达浏览器的方式。没有渲染配置的页面使用客户端渲染（CSR）。
+通过相邻的 `page.config.ts` 为每个页面选择渲染方式。没有渲染配置的页面默认使用客户端渲染（CSR）。
 
-## 选择模式
+## 选择渲染方式
 
 从满足页面需求的最简单模式开始：
 
 | 模式 | 适用情况 | 请求时需要服务端？ | 浏览器 JavaScript |
 | --- | --- | --- | --- |
 | CSR | 内容偏应用型、与用户相关，或在导航后加载 | 否 | 渲染页面 |
-| SSR | 首次响应需要页面 HTML 或请求数据 | 是 | 可选 Hydration |
-| SSG | 相同 HTML 可以在构建时创建 | 否 | 可选 Hydration |
-| PPR | 稳定外壳可提前构建，局部区域稍后解析 | 是 | 无页面级 Hydration |
+| SSR | 首次响应需要页面 HTML 或请求数据 | 是 | 可选客户端水合 |
+| SSG | 相同 HTML 可以在构建时创建 | 否 | 可选客户端水合 |
+| PPR | 稳定外壳可提前构建，动态区域在请求时渲染 | 是 | 无页面级水合 |
 | RSC | 页面通过 React Server Components 渲染 | 是 | 仅客户端组件 |
 
 渲染方式与路由发现相互独立：页面仍在同一个目录，并保持相同 URL。
@@ -62,7 +62,7 @@ export default definePageConfig({
 });
 ```
 
-生成页面需要在浏览器变为可交互时，使用 `hydrate: "load"`。SSG 省略 `hydrate` 时默认不 Hydrate。
+生成页面需要在浏览器变为可交互时，使用 `hydrate: "load"`。SSG 省略 `hydrate` 时默认不进行客户端水合。
 
 静态产物无需请求时渲染器即可托管。SPA 模式下，静态页面按语义路径输出：`/report` 生成 `report/index.html`。
 
@@ -96,17 +96,17 @@ export default definePageConfig({
 });
 ```
 
-RSC 页面使用请求时服务端渲染，需要兼容的构建器和服务端部署目标。页面级 Hydration 保持关闭；交互式客户端组件管理自己的浏览器行为。
+RSC 页面使用请求时服务端渲染，需要兼容的构建器和服务端部署目标。页面级水合保持关闭；交互式客户端组件管理自己的浏览器行为。
 
 ## 支持的组合
 
 | `render` | `hydrate` | 额外字段 | 结果 |
 | --- | --- | --- | --- |
 | 省略或 `"csr"` | 省略 | — | 浏览器渲染页面 |
-| `"ssr"` | `"load"` 或省略 | — | 请求时 HTML，随后 Hydration |
-| `"ssr"` | `"none"` | — | 请求时 HTML，无页面 Hydration |
-| `"ssg"` | `"load"` | — | 构建时 HTML，随后 Hydration |
-| `"ssg"` | `"none"` 或省略 | — | 构建时 HTML，无页面 Hydration |
+| `"ssr"` | `"load"` 或省略 | — | 请求时 HTML，随后进行客户端水合 |
+| `"ssr"` | `"none"` | — | 请求时 HTML，无页面级水合 |
+| `"ssg"` | `"load"` | — | 构建时 HTML，随后进行客户端水合 |
+| `"ssg"` | `"none"` 或省略 | — | 构建时 HTML，无页面级水合 |
 | `"ssr"` | `"none"` 或省略 | `prerender: { partial: true }` | PPR |
 | `"ssr"` | `"none"` 或省略 | `rsc: true` | RSC |
 
@@ -134,7 +134,7 @@ export default definePageConfig({
 
 ## SPA 与 MPA 行为
 
-SPA 和 MPA 使用相同的页面渲染字段，但文档所有权不同：
+SPA 和 MPA 使用相同的页面渲染字段，但生成 HTML 文档的方式不同：
 
 - SPA 通常共享一个应用文档。静态 SSG 页面还会在其路由路径输出 HTML。
 - MPA 为每个静态页面路由创建一份文档。相邻 `index.html` 可以定制该页面模板。

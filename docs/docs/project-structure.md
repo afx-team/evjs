@@ -41,9 +41,9 @@ my-evjs-app/
 The directories outside the recognized conventions are recommendations, not
 framework requirements. Use the organization that matches your product.
 
-## Ownership rule
+## Where code belongs
 
-A positive anchor makes a directory public:
+A `page.*` or `api.*` file makes a directory public:
 
 - `page.*` publishes a page and client route;
 - `api.*` publishes a server request route.
@@ -54,7 +54,7 @@ assets, and server functions in the same directory.
 
 ```text
 src/pages/orders/$orderId/
-├── page.tsx                         # public page anchor
+├── page.tsx                         # page and route
 ├── page.config.ts                  # static page choices
 ├── index.ts                        # ordinary private module
 ├── model.ts
@@ -76,10 +76,10 @@ Paths are relative to the project root unless stated otherwise.
 | Path or declaration | Meaning | Important rules |
 | --- | --- | --- |
 | `ev.config.ts` | Application configuration | Import `defineConfig` from `@evjs/ev`. |
-| `conventions: false` | Disables page, API route, and middleware discovery together | Advanced standalone applications only; cannot be combined with `routing`. |
-| `routing.mode` | Enables canonical page discovery and chooses `"spa"` or `"mpa"` | The canonical page root is always `src/pages`. |
-| `src/pages/**/page.{ts,tsx,js,jsx}` | Page and client-route anchor | Exactly one variant per route directory. Default-export the React component. |
-| `<page>/page.config.{ts,js}` | Optional static page configuration | Exactly one variant beside an anchored page. Prefer `definePageConfig()` and TypeScript. |
+| `conventions: false` | Disables page, API route, and middleware discovery together | Only for applications that manage routing and runtimes themselves; cannot be combined with `routing`. |
+| `routing.mode` | Enables file-based page discovery and chooses `"spa"` or `"mpa"` | The page root is always `src/pages`. |
+| `src/pages/**/page.{ts,tsx,js,jsx}` | Page and client route | Exactly one variant per route directory. Default-export the React component. |
+| `<page>/page.config.{ts,js}` | Optional static page configuration | Exactly one variant beside a `page.*` file. Prefer `definePageConfig()` and TypeScript. |
 | `src/pages/**/$param/` | Dynamic route segment | Produces `:param`; SPA only. |
 | `src/pages/**/$...splat/` | Catch-all route segment | Must be terminal; SPA only. |
 | `src/pages/**/(group)/` | Pathless group | Organizes source without changing the URL. |
@@ -88,8 +88,8 @@ Paths are relative to the project root unless stated otherwise.
 | Other files inside a page directory | Page-owned source | Do not create routes, including `index.*`. |
 | `<page>/index.html` | HTML template for one MPA page | Does not create a page or client entry. |
 | `index.html` or `routing.html` | Shared application HTML template | `index.html` is the default. |
-| Reachable module starting with `"use server";` | Server-function module | Named callable exports only; no required directory. |
-| `src/apis/**/api.{ts,tsx,js,jsx}` | Public HTTP route anchor | Exactly one variant per directory. Export uppercase HTTP method handlers. |
+| Imported module starting with `"use server";` | Server-function module | Named callable exports only; no required directory. |
+| `src/apis/**/api.{ts,tsx,js,jsx}` | Public HTTP route | Exactly one variant per directory. Export uppercase HTTP method handlers. |
 | Other files inside an API route directory | Route-owned source | Helpers and `index.*` do not create endpoints. |
 | `src/middlewares/middleware.*` | Global middleware composition | Default-export one middleware or an explicitly ordered non-empty list. |
 | Other files in `src/middlewares` | Middleware implementation modules | Imported explicitly; filenames do not define order. |
@@ -177,7 +177,7 @@ share the request pathname space, so conflicting patterns fail validation.
 
 ### Middleware order
 
-Make global order explicit in the composition anchor:
+Make global order explicit in `src/middlewares/middleware.ts`:
 
 ```ts title="src/middlewares/middleware.ts"
 import type { MiddlewareChain } from "@evjs/ev/server-context";
@@ -188,8 +188,8 @@ export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
 Requests enter from left to right; work after `await next()` unwinds from right
-to left. Route-scoped `src/apis/**/middleware.*` wraps routes in the same
-directory and its descendants.
+to left. `src/apis/**/middleware.*` wraps API routes in the same directory and
+its descendants.
 
 ## SPA and MPA structure
 
@@ -213,7 +213,7 @@ See [Pages and Routing](./client-routes) for authoring and
 
 ## Shared versus colocated code
 
-Use ownership, not file type, to decide where code belongs:
+Decide where code belongs by where it is used, not by file type:
 
 | Code | Suggested location |
 | --- | --- |
@@ -226,12 +226,12 @@ Use ownership, not file type, to decide where code belongs:
 This convention keeps page directories understandable without turning
 `src/pages` into a collection of thin entry files.
 
-## Advanced route ownership
+## Use an explicit route tree
 
-Canonical applications should use `routing.mode` and the file conventions
-above. `application.routes` is an advanced SPA-only input for projects that
-must own an explicit route tree. It cannot be combined with `routing` and does
-not support MPA.
+Most applications should use `routing.mode` and the file conventions above.
+Projects that need to maintain a programmatic SPA route tree can use
+`application.routes`. It cannot be combined with `routing` and does not support
+MPA.
 
-Read [Advanced Convention Control](./advanced-conventions) before choosing
+Read [Custom Routing and Runtimes](./advanced-conventions) before choosing
 that model.

@@ -18,9 +18,9 @@ ev build
 
 同一项目一次只能有一个 `dev`、`prepare` 或 `build` 操作修改输出。
 
-## 先 Inspect
+## 先检查应用
 
-`ev inspect` 使用公共应用概念报告：
+`ev inspect` 会报告用户可见的应用结构：
 
 - SPA 或 MPA 模式；
 - 已发现页面及其 URL 形态；
@@ -30,7 +30,7 @@ ev build
 - 所选构建器及缺失能力；
 - 带源码位置的诊断。
 
-非零退出表示配置或应用结构错误。在 CI 中可以把 Inspect 放在生产构建前，以获得更快、更聚焦的反馈。
+非零退出表示配置或应用结构错误。在 CI 中可以先运行 `ev inspect`，再进行生产构建，以更快发现配置和结构问题。
 
 ## 生产产物
 
@@ -70,7 +70,7 @@ export default defineConfig({
 
 两个路径必须保持为 `dist` 下分离且不嵌套的后代，并使用可移植 `/` 分隔符，不能包含空、`.` 或 `..` 段。
 
-`output.crossOriginLoading` 接受 `false`、`"anonymous"` 或 `"use-credentials"`，用于控制生成资源标签与动态 Chunk 加载的 `crossorigin`。
+`output.crossOriginLoading` 接受 `false`、`"anonymous"` 或 `"use-credentials"`，用于控制生成资源标签与动态代码块加载的 `crossorigin`。
 
 ## SPA 产物
 
@@ -138,12 +138,12 @@ export default defineConfig({
 - MPA 页面只使用静态路径，不使用路由器专属边界；
 - 每个 `page.config.*` 导出受支持的静态数据；
 - 服务端函数模块以 `"use server";` 开头并命名导出可调用值；
-- 每个公共 API 路由只有一个 `api.*` 锚点并导出大写 HTTP 方法；
+- 每个公共 API 路由只有一个 `api.*` 文件并导出大写 HTTP 方法；
 - 页面路由、重定向、API 路由与框架端点没有冲突；
 - HTML 模板包含配置的挂载元素；
 - 部署目标支持全部服务端与渲染能力。
 
-然后运行项目自身的类型、Lint 与测试检查，再执行：
+然后运行项目自身的类型检查、lint 和测试，再执行：
 
 ```bash
 ev inspect
@@ -152,4 +152,4 @@ ev build
 
 ## 下一步
 
-在[部署](./deploy)中选择目标与适配器。如果产物不符合预期，请先对比 `ev inspect` 的应用结果与源码树，再检查生成文件。
+在[部署](./deploy)中选择部署方式与适配器。如果产物不符合预期，请先对照 `ev inspect` 的结果检查源码树，再检查生成文件。

@@ -14,7 +14,7 @@ It does not provide an MPA integration.
 npm install @evjs/plugin-qiankun qiankun
 ```
 
-## Master Applications
+## Master applications
 
 Configure the master with `evPluginQiankunMaster()` and a resolver module:
 
@@ -33,8 +33,7 @@ export default defineConfig({
 });
 ```
 
-The resolver returns one authoritative, application-level `apps/routes`
-snapshot:
+The resolver returns the application's `apps/routes` configuration:
 
 ```ts
 // src/qiankun.master.ts
@@ -81,9 +80,9 @@ export default defineQiankunMasterResolver(async () => ({
 ```
 
 The master does not declare a fixed qiankun container or `activeRule`. Before
-the framework starts rendering, the plugin resolves the snapshot and installs
-an evjs runtime route overlay. Each micro-app route renders a generated React
-component that owns its container and calls qiankun `loadMicroApp()`.
+the framework starts rendering, the plugin resolves the configuration and
+registers the dynamic routes. Each micro-app route renders a React component
+that creates its own container and calls qiankun `loadMicroApp()`.
 
 The route forms are:
 
@@ -103,7 +102,7 @@ Resolver route paths accept ordinary `:param` and `*` syntax. The bridge
 normalizes them for the evjs runtime router and rejects duplicate, malformed,
 or unresolved routes before rendering the master.
 
-The master source tree only needs its own canonical shell Pages:
+The master source tree only needs its own shell pages:
 
 ```text
 src/
@@ -113,9 +112,9 @@ src/
 └── qiankun.master.ts
 ```
 
-There is intentionally no `src/pages/catalog/page.tsx` and no static
-`#slave-container`. The runtime component supplied by the `/catalog` overlay
-owns both concerns:
+There is no need for `src/pages/catalog/page.tsx` or a static
+`#slave-container`. The component registered for `/catalog` renders the page
+content and creates the mounting container:
 
 ```tsx
 // src/pages/layout.tsx
@@ -135,25 +134,23 @@ export default function RootLayout({ children }: { children?: ReactNode }) {
 }
 ```
 
-### Runtime overlay boundary
+### Runtime route boundaries
 
-Resolver routes are runtime state, not authoring input for the canonical
-CoreGraph:
+Resolver routes are runtime state, not part of the file-based page tree:
 
-- they do not create canonical Pages, Routes, or Documents;
-- they do not modify `application.routes`, the BuildPlan, or deployment route
+- they do not create file-based pages, build-time routes, or HTML documents;
+- they do not modify `application.routes`, the build plan, or deployment route
   metadata;
-- they are not included in generated `src/route-types.d.ts` Page names,
+- they are not included in generated `src/route-types.d.ts` page names,
   `RoutePath`, or typed navigation targets;
-- they are installed through the generated application's runtime update API
-  before its first render.
+- they are registered before the application's first render.
 
-Keep canonical navigation type usage for canonical Pages. When a URL exists
-only in a runtime site snapshot, its availability and validation belong to the
-platform/runtime layer; the example above therefore uses an ordinary link for
+Typed navigation covers file-based pages. When a URL exists only in runtime
+configuration, the platform is responsible for making it available and
+validating it; the example above therefore uses an ordinary link for
 `/catalog`.
 
-## Slave Applications
+## Slave applications
 
 A slave exports qiankun lifecycles while remaining independently renderable.
 Configure it with `evPluginQiankunSlave()`:
@@ -195,8 +192,8 @@ The slave lifecycle loads the original generated entry, projects the received
 entry's first `start()`. The generated Pages app defers router construction
 until that runtime projection is available, so the first router is created
 with the mounted base and history instead of being patched after creation.
-When run outside qiankun, the same Pages remain available under their
-standalone base.
+When run outside qiankun, the same pages remain available under their configured
+base path.
 
 If a mounted slave later receives a different base, history, or runtime route
 overlay, the Pages app creates and loads a candidate router with the existing
@@ -212,7 +209,7 @@ the slave does not replace the host's global `history.pushState` or
 `history.replaceState` methods. The adapter is released on unmount. Memory
 history remains isolated and does not write the browser URL.
 
-Application layouts must not add their own `popstate` listener that compares
+Application layouts should not add their own `popstate` listener that compares
 `window.location` with `useLocation()` and renders a corrective `Navigate`.
 The scoped adapter is the single synchronization point, so native traversal
 continues to respect Router blockers and qiankun mount/unmount ownership.
@@ -252,15 +249,15 @@ export default defineQiankunSlaveRuntime({
 ```
 
 In qiankun mode the plugin mounts into `props.container`. Outside qiankun it
-automatically starts the same canonical SPA entry. It does not infer a magic
-`src/main.tsx` or expose a second application entry model. Slave code must use
-the supplied container; the plugin never rewrites global `document` lookup
-methods to redirect selectors.
+starts the same SPA entry directly. It does not discover `src/main.tsx`
+automatically or provide a second application entry. Slave code must use the
+supplied container; the plugin does not rewrite global `document` lookup
+methods.
 
-## Module References
+## Module references
 
-`resolver` and `runtime` accept a string module specifier, a generated module
-ref, or an object selecting a named export:
+`resolver` and `runtime` accept a module path, a generated module reference, or
+an object that selects a named export:
 
 ```ts
 import type { GeneratedModuleRef } from "@evjs/ev/plugin";
@@ -293,13 +290,13 @@ evPluginQiankunSlave({
 });
 ```
 
-Path-like references are resolved from the project root before bundling.
-Package specifiers are resolved from project dependencies. From another
-plugin's `emitIR()` hook, pass the opaque `GeneratedModuleRef` returned
-by `ctx.emit.module()` directly to `emitQiankunMasterIR()` or
+File paths are resolved from the project root before bundling. Package names
+are resolved from project dependencies. From another plugin's `emitIR()` hook,
+pass the `GeneratedModuleRef` returned by `ctx.emit.module()` directly to
+`emitQiankunMasterIR()` or
 `emitQiankunSlaveIR()`.
 
-## Runtime Shape
+## Runtime contracts
 
 The public master shape is:
 
@@ -358,8 +355,8 @@ mounted app and then prefetches up to `prefetchThreshold` other apps; the
 threshold defaults to `5`.
 
 `route.microApp` strictly matches `app.name`. Higher-level integrations must
-normalize external records into the canonical `{ name, entry }` shape before
-returning the snapshot. Unknown fields on the master, app, or route structure
+normalize external records into the supported `{ name, entry }` shape before
+returning the configuration. Unknown fields on the master, app, or route structure
 are rejected rather than ignored; extensible integration data belongs in
 `props` or `microAppProps`.
 
@@ -409,7 +406,7 @@ unmount waits for the preceding post lifecycle to settle. An `afterMount()`
 failure participates in mount rollback; an `afterUpdate()` failure rejects that
 update without rolling back the already committed projection.
 
-## Bundling Qiankun
+## Bundle qiankun
 
 By default, qiankun is bundled with the application:
 
@@ -430,7 +427,7 @@ evPluginQiankunSlave({
 });
 ```
 
-## Local Development
+## Local development
 
 The plugin does not create a development proxy. Configure `dev.proxy` when a
 master needs to load a slave dev server through the same origin:
@@ -490,7 +487,7 @@ root-relative JS/CSS URLs to relative URLs, so the same slave HTML can be
 consumed below a proxy prefix. Keep asset proxies in `dev.proxy`, not in
 `src/apis`; application request Routes should not proxy micro-frontend assets.
 
-## Platform Composition
+## Platform integration
 
 A higher-level integration plugin can reuse `emitQiankunMasterIR()` or
 `emitQiankunSlaveIR()` from its `emitIR()` method and the matching
@@ -500,11 +497,11 @@ returned hooks with any additional lifecycle behavior it owns.
 
 Applications install either the public master/slave factory or the higher-level
 integration factory, not both. Platform-specific configuration does not belong
-in Page config.
+in page config.
 
-## Boundaries
+## Capability boundaries
 
-`@evjs/plugin-qiankun` includes:
+`@evjs/plugin-qiankun` provides:
 
 - master and slave framework-entry wrapping;
 - resolver/runtime module loading;
@@ -512,7 +509,7 @@ in Page config.
 - runtime prepend, match, redirect, and micro-app route components;
 - generated micro-app containers and qiankun loading;
 - slave base/history projection before first render;
-- slave lifecycle exports and standalone rendering;
+- slave lifecycle exports and direct rendering outside qiankun;
 - `externalQiankun` support;
 - contribution and hook helpers for platform composition.
 
@@ -521,6 +518,7 @@ It does not include:
 - external platform data protocols or identity mapping;
 - platform-specific runtime, deployment, or development policy;
 - automatic local development proxies;
-- Page-level qiankun settings;
-- canonical CoreGraph Pages, Routes, or Documents derived from resolver data;
+- page-level qiankun settings;
+- file-based pages, build-time routes, or HTML documents derived from resolver
+  data;
 - generated `RoutePath` entries for runtime resolver routes.

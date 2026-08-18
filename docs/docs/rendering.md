@@ -3,7 +3,7 @@
 Choose how each page reaches the browser with adjacent `page.config.ts`.
 Pages without rendering configuration use client-side rendering (CSR).
 
-## Choose a mode
+## Choose a rendering mode
 
 Start with the simplest mode that meets the page's needs:
 

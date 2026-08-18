@@ -3,7 +3,7 @@
 Release history lives in the repository `CHANGELOG.md`. This page records the
 architecture boundaries enforced by the current implementation.
 
-## Framework Core
+## Framework core
 
 - `routing.mode`, `src/pages/**/page.*`, and adjacent `page.config.ts`
   normalize into one Application/Page/Route/Document CoreGraph for SPA and
@@ -14,7 +14,7 @@ architecture boundaries enforced by the current implementation.
 - `BuildPlan` drives generated `.ev` entries, bundler adapters, dev routing,
   output ownership, and deployment linking.
 - `BuildOutput` remains in memory; `dist/deployment-metadata.json` is the
-  canonical serialized deployment projection.
+  serialized deployment metadata shared with deployment tools.
 - Plugins can own namespaced Application, Page, Route, and Document data and
   attach generated entry, wrapper, middleware, HTML, alias, and external
   contributions.
@@ -24,7 +24,7 @@ architecture boundaries enforced by the current implementation.
 - Built-in Node, static, and edge deployment adapters consume the linked
   output model.
 
-## Bundler Build Capabilities
+## Bundler capabilities
 
 | Capability | Utoopack | Webpack |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ Framework preflight reads these declarations from the selected adapter and
 fails before bundling when a BuildPlan requires an unsupported build
 capability.
 
-## Open Adapter Gaps
+## Open adapter gaps
 
 - Utoopack build facts and entry APIs for PPR and RSC.
 

@@ -56,7 +56,7 @@ src/pages/
 A directory without `page.*` can group descendants. `$...splat` must be the
 last segment. Dynamic parameters and splats are SPA-only.
 
-## Read parameters and search
+## Read path and search parameters
 
 Use route hooks from `@evjs/ev/route`:
 
@@ -197,7 +197,7 @@ MPA creates `/index.html`, `/report.html`, and `/foo/bar.html` for the static
 routes `/`, `/report`, and `/foo/bar`. Add `index.html` beside a page to give
 that MPA page a custom document template.
 
-## Configure metadata and rendering
+## Configure page metadata and rendering
 
 Put static page choices next to the component:
 
@@ -220,11 +220,11 @@ value.
 See [Rendering](./rendering) for CSR, SSR, SSG, PPR, and RSC, and
 [Using Plugins](./plugins) for page-level integration options.
 
-## Advanced explicit routes
+## Use an explicit route tree
 
 `application.routes` is available for intentional programmatic SPA route
-trees. It cannot be combined with canonical `routing`, cannot select MPA, and
+trees. It cannot be combined with file-based `routing`, cannot select MPA, and
 uses `routes` for nesting. Most applications should prefer the file convention
 because it keeps URL ownership beside the page.
 
-See [Advanced Convention Control](./advanced-conventions) for that API.
+See [Custom Routing and Runtimes](./advanced-conventions) for that API.

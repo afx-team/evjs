@@ -1,27 +1,27 @@
 # 生成代码
 
-插件可以生成模块或数据，并挂载到有文档说明的框架 Slot。需要让代码进入应用入口、页面 Wrapper、服务端中间件、HTML 或模块解析时，使用这套 API。
+插件可以生成模块或数据，并挂载到框架提供的扩展槽位。需要让代码进入应用入口、页面包装组件、服务端中间件、HTML 或模块解析时，使用这套 API。
 
-外部副作用和最终平台文件请使用生命周期 Hook，决策说明见[插件 Hooks](./plugin-hooks)。
+需要执行外部副作用或写入最终平台文件时，请使用生命周期钩子，详见[插件生命周期钩子](./plugin-hooks)。
 
-## 基本模式
+## 生成流程
 
 生成分为两步：
 
 1. 使用 `ctx.emit` 声明产物。
-2. 使用 `ctx.slot(name).add()` 挂到框架 Slot。
+2. 使用 `ctx.slot(name).add()` 挂到框架扩展槽位。
 
 ```mermaid
 flowchart LR
   Plugin["emitIR 或 emitPageIR"] --> Emit["生成模块或数据"]
   Emit --> Ref["不透明模块引用"]
-  Ref --> Slot["挂载到 Slot"]
+  Ref --> Slot["挂载到扩展槽位"]
   Slot --> App["生成的应用代码"]
 ```
 
 生成逻辑应保持确定性，不产生网络、进程或外部文件副作用。应用输入变化时，evjs 可能再次执行它。
 
-## 生成产物
+## 生成模块与数据
 
 `ctx.emit` 支持：
 
@@ -29,8 +29,8 @@ flowchart LR
 | --- | --- |
 | `module({ id, scope, source, extension? })` | JavaScript、TypeScript、JSX、CSS、Less 或 JSON 源码 |
 | `data({ id, scope, value })` | 从静态数据生成的 JSON 模块 |
-| `entryFacade({ id, entry, autoStart? })` | 为替换 Wrapper 保留的框架入口 |
-| `importOf(ref)` | 导入另一个生成产物的 Specifier |
+| `entryFacade({ id, entry, autoStart? })` | 为替换包装组件保留框架入口 |
+| `importOf(ref)` | 获取另一个生成产物的模块说明符 |
 
 这些方法返回不透明引用，不暴露文件路径。`importOf(ref)` 只能在生成源码中使用，应用代码绝不能导入 `.ev` 路径。
 
@@ -41,7 +41,7 @@ scope: { kind: "application" }
 scope: { kind: "page", pageId: "checkout" }
 ```
 
-Contribution id 在插件内局部有效。`emitPageIR()` 中还会局部到当前页面，因此每个启用页面都可以安全复用相同 id。`@evjs/` 前缀由框架保留。
+生成项的 id 只需在插件内部唯一。`emitPageIR()` 中的 id 还限定在当前页面，因此每个启用页面都可以安全复用相同 id。`@evjs/` 前缀由框架保留。
 
 ## 向客户端入口添加代码
 
@@ -75,7 +75,7 @@ export const analytics = definePlugin({
 });
 ```
 
-`client.entry` 可以在主入口之前或之后导入。`mode: "replace"` 只用于必须拥有入口导出的集成，例如微前端 Slave Wrapper。
+`client.entry` 可以在主入口之前或之后导入。`mode: "replace"` 只用于必须接管入口导出的集成，例如微前端子应用包装器。
 
 替换入口时，使用 `entryFacade()` 保留原入口，不要重建框架启动逻辑：
 
@@ -107,7 +107,7 @@ emitIR(ctx) {
 
 对生成的 SPA 应用入口，`autoStart: false` 会导出 App 与 `start(container)` 而不自动挂载。替换入口负责第一次启动。
 
-## 包裹页面
+## 为页面添加包装组件
 
 需要 React 行为包围客户端、服务端或两侧页面时，使用 `page.wrapper`。模块必须默认导出接收 `children` 的组件：
 
@@ -130,7 +130,7 @@ emitIR(ctx) {
 }
 ```
 
-`runtime` 接受 `"client"`、`"server"` 或 `"all"`。省略 `target` 会包裹所有页面，也可以指定一个应用或页面。后加入的 Wrapper 包在先加入的外层；路由源码中的 Layout 仍在插件 Wrapper 外。
+`runtime` 接受 `"client"`、`"server"` 或 `"all"`。省略 `target` 会包裹所有页面，也可以指定一个应用或页面。后加入的包装组件位于先加入组件的外层；路由源码中的布局仍位于插件包装组件之外。
 
 ## 添加服务端请求中间件
 
@@ -192,9 +192,9 @@ ctx.slot("resolve.external").add({
 });
 ```
 
-Slot 支持时，运行时过滤接受 `"client"`、`"server"` 或 `"all"`。
+扩展槽位支持运行时过滤时，可以使用 `"client"`、`"server"` 或 `"all"`。
 
-## 使用服务端页面入口
+## 扩展服务端页面入口
 
 `server.entry` 向已有页面服务端入口导入或替换。必须精确指定一个已经具有请求时或构建时服务端渲染的页面：
 
@@ -207,11 +207,11 @@ ctx.slot("server.entry").add({
 });
 ```
 
-只有集成拥有完整页面服务端入口时才使用 `mode: "replace"`。页面不存在、页面没有服务端入口或出现多个替换都会让生成失败，而不是变成无操作。
+只有集成需要接管完整页面服务端入口时才使用 `mode: "replace"`。页面不存在、页面没有服务端入口或出现多个替换都会让生成失败，不会被静默忽略。
 
-## Slot 参考
+## 扩展槽位参考
 
-| Slot | 用途 |
+| 扩展槽位 | 用途 |
 | --- | --- |
 | `client.entry` | 导入或替换客户端入口 |
 | `server.entry` | 导入或替换已有页面服务端入口 |
@@ -226,10 +226,10 @@ ctx.slot("server.entry").add({
 `.ev` 是生成产物，不能编辑，但排查插件时很有用：
 
 1. 运行 `ev prepare`。
-2. 查看 `.ev/manifest.json`，找到插件模块与 Slot 挂载。
+2. 查看 `.ev/manifest.json`，找到插件模块与扩展槽位挂载关系。
 3. 打开 `.ev/plugins/<plugin-id>` 与 `.ev/entries` 下对应文件。
-4. 修改插件源码并重新生成，不要 Patch `.ev`。
+4. 修改插件源码并重新生成，不要直接修改 `.ev`。
 
-生成代码在需要时可以使用文档说明的 generated-only Helper。插件源码本身应从 `@evjs/ev/plugin` 导入公共创作类型，不应导入 `@evjs/ev/_internal/*`。
+生成代码可以按需使用文档列出的仅供生成代码调用的辅助函数。插件源码本身应从 `@evjs/ev/plugin` 导入公共开发类型，不应导入 `@evjs/ev/_internal/*`。
 
-完整插件流程和小型示例见[插件配方](./plugin-recipes)。
+完整插件流程和小型示例见[插件实践](./plugin-recipes)。

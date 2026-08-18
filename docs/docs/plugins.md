@@ -50,7 +50,7 @@ Do not import the plugin package into page configuration. With
 installed plugin ids and page values. Keep `src/plugin-types.d.ts` ignored and
 let the framework update it.
 
-## Understand the two scopes
+## Configure application and page scope
 
 Application and page options are intentionally separate:
 
@@ -109,7 +109,7 @@ not guaranteed to exist, so its id cannot be offered safely to
 `page.config.ts`. For a page-aware plugin, install it deterministically and use
 `forPages()` or a page value of `false`.
 
-## Keep page typing reliable
+## Keep page configuration type-safe
 
 Page completion works best when page-aware plugin factories remain directly in
 the tuple passed to `defineConfig()`:

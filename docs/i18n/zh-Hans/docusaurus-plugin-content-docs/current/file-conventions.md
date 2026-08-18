@@ -1,8 +1,7 @@
 # 文件约定
 
-evjs 的文件约定保持少而明确。Positive `page.*` 锚点定义客户端 Page 及其
-file route，positive `api.*` 锚点定义 server request Route。两棵树都由锚点的
-完整所在目录持有 scope 并决定 URL。
+evjs 只使用少量明确的文件标记。`page.*` 文件创建页面和客户端路由，`api.*` 文件
+创建 API 路由。两类文件都由所在目录决定 URL，并在同一目录组织相关源码。
 
 完整矩阵参见[项目结构](./project-structure)。
 
@@ -10,41 +9,40 @@ file route，positive `api.*` 锚点定义 server request Route。两棵树都�
 
 | 根 | 用途 |
 | --- | --- |
-| `src/pages` | canonical Page-and-Route 文件树。 |
-| `src/apis` | 固定的 Server request `api.*` 锚点树。 |
-| `src/middlewares/middleware.*` | 显式排序的全局框架 server middleware 组合锚点。 |
-| `src/apis/**/middleware.ts` | 作用于同目录及后代 server file route 的 middleware。 |
-| reachable 源码模块 | 以 `"use server";` 开头的 server function。 |
+| `src/pages` | 文件页面与客户端路由。 |
+| `src/apis` | 文件式 API 路由。 |
+| `src/middlewares/middleware.*` | 显式排列全局中间件的入口。 |
+| `src/apis/**/middleware.ts` | 作用于同目录及其后代 API 路由的中间件。 |
+| 被应用引用的源码模块 | 以 `"use server";` 开头的服务端函数模块。 |
 
-Page 锚点、server request-route 锚点与两类 middleware root 共同组成一个框架持有的
-发现单元。顶层 `conventions: false` 会整体关闭这个单元，框架不提供逐 root
-开关；该配置不能与显式客户端 `routing` 声明一起使用。文件约定保持启用时，
-客户端 Page 根目录固定为 `src/pages`，server Route 根目录固定为 `src/apis`。
+页面文件、API 路由文件和两类中间件位置会一起启用或关闭。顶层
+`conventions: false` 会关闭全部文件发现，不能分别控制，也不能与 `routing` 同时
+配置。启用约定时，页面固定放在 `src/pages`，API 路由固定放在 `src/apis`。
 
-reachable 的 `"use server";` 模块、仅支持 SPA 的 `application.routes` 显式
-route-tree 配置，以及插件 contribution 是 graph/config 输入，不属于文件约定。
+被应用引用的 `"use server";` 模块、仅支持 SPA 的 `application.routes`，以及插件
+生成的模块不受这个开关控制。
 
-每个 `page.*` 锚点的相对目录是客户端 URL 的事实来源。`routing.mode` 为同一
-文件树选择 SPA 或 MPA 物化。
+每个 `page.*` 文件的相对目录决定客户端 URL。`routing.mode` 会把同一棵页面树
+构建为 SPA 或 MPA。
 
 ## 全局样式
 
-全局样式是普通源码 module，没有特殊的文件名或目录约定。请在根 layout、
-Application layout、Page 或共享组件中显式导入：
+全局样式是普通源码模块，没有特殊的文件名或目录约定。请在根布局、页面或共享组件中
+显式导入：
 
 ```ts
 import "./global.css";
 ```
 
-Less 变量与 mixin 也遵循同样规则。每个使用它们的 Less module 都需要显式导入：
+Less 变量与 mixin 也遵循同样规则。每个使用它们的 Less 模块都需要显式导入：
 
 ```less
 @import "./tokens.less";
 ```
 
-## canonical Page 与 Route
+## 页面与客户端路由
 
-Page 与客户端 Route 共用一个 positive anchor：
+页面和客户端路由共用一个文件标记：
 
 ```text
 src/pages/**/page.{ts,tsx,js,jsx}
@@ -66,7 +64,7 @@ src/pages/
 │   ├── page.tsx                   # /home
 │   └── components/
 │       ├── Hero.tsx
-│       └── index.tsx          # 私有源码，不是另一个 Page
+│       └── index.tsx          # 私有源码，不是另一个页面
 └── users/
     └── $userId/
         ├── page.tsx               # /users/:userId
@@ -77,28 +75,28 @@ src/pages/
 
 规则：
 
-- 一个 route 目录只能有一个受支持扩展名的 `page.*`；
+- 一个路由目录只能有一个受支持扩展名的 `page.*`；
 - 相对 `src/pages` 的目录段决定 URL；
-- 完整所在目录是 Page 私有 scope；
-- 其他文件（包括 `index.*`）都是普通 Page 源码；
-- 后代 `page.*` 会有意创建 nested Page 和 Route；
-- 同一个 normalized URL shape 不能有两个 Page 锚点；
-- Page entry 默认导出组件。
+- 所在目录集中组织该页面使用的源码；
+- 其他文件（包括 `index.*`）都是普通页面源码；
+- 后代目录中的 `page.*` 会创建嵌套页面与路由；
+- 同一种 URL 形态不能由两个页面文件重复声明；
+- 页面入口默认导出组件。
 
-Page 私有代码不需要 `_`。Private 表示 ownership/discovery scope，不是安全边界。
+页面专属代码不需要 `_` 前缀。这里的“私有”只表示不会被发现为另一个路由，不代表安全边界。
 
-发现由 positive anchor 驱动。`src/pages/home/components/index.tsx` 因为不叫
-`page.*` 而保持私有；`src/pages/home/components/page.tsx` 则会有意创建
+框架根据明确的文件名发现页面。`src/pages/home/components/index.tsx` 因为不叫
+`page.*` 而保持为普通源码；`src/pages/home/components/page.tsx` 则会创建
 `/home/components`。
 
-下划线不会创建私有 route segment。`_components/Card.tsx` 因为没有 Page
-锚点而属于普通源码；`_private/page.tsx` 不会被静默忽略，而会产生 invalid
-static segment diagnostic。Static URL segment 必须以字母或数字开头。
+下划线不会创建私有路径段。`_components/Card.tsx` 因为不是页面文件而属于普通源码；
+`_private/page.tsx` 不会被静默忽略，而会报告无效静态路径段。静态 URL 段必须以字母
+或数字开头。
 
-### Page 配置
+### 页面配置
 
-canonical discovery 识别 anchored Page 同目录唯一可选的 `page.config.ts` 或
-`page.config.js`，推荐 TypeScript 形式：
+页面目录可以包含一个可选的 `page.config.ts` 或 `page.config.js`，推荐使用
+TypeScript：
 
 ```ts
 import { definePageConfig } from "@evjs/ev";
@@ -120,33 +118,32 @@ export default definePageConfig({
 });
 ```
 
-该 module 在构建期同步求值，default-export 只包含 static JSON data 的 plain
-object。Core 持有 `title`、named `meta`、`render`、`hydrate`、`prerender`
-与 `rsc`；已安装且支持 Page 配置的插件使用 `plugins` 下各自的 canonical id。省略
-`render` 始终表示 CSR，且必须省略 `hydrate`；显式 SSR/SSG Page 可以选择
+该模块在构建时同步求值，默认导出只包含静态 JSON 数据的普通对象。框架字段包括
+`title`、命名 `meta`、`render`、`hydrate`、`prerender` 与 `rsc`；支持页面配置的
+插件使用 `plugins` 下各自的 id。省略 `render` 始终表示 CSR，且必须省略
+`hydrate`；显式 SSR/SSG 页面可以选择
 `"load"` 或 `"none"`。`meta` 只把
-字符串 key/value 映射为 `<meta name="key" content="value">`，不提供
-`property`、`charset`、link、script、动态元信息或通用 head DSL。Core
-title/meta 会为 Page 物化；Page 插件值在 runtime 使用前仍需插件显式投影。
+字符串键值映射为 `<meta name="key" content="value">`，不提供 `property`、
+`charset`、`link`、`script`、动态元信息或通用 Head API。框架会把 `title` 和 `meta` 应用到
+页面；插件则自行决定页面配置如何影响运行时代码。
 
-### Page HTML
+### 页面 HTML
 
-应用默认使用顶层 `index.html`；`routing.html` 可选择另一份共享模板。在 MPA
-mode 下，同一 Page 目录的 `index.html` 会覆盖该 Page 的 Document 模板。它
-不会成为客户端 Page entry，SPA mode 也不会把它当作路由锚点。Page `title`
-和 `meta` 会物化缺失 tag，并覆盖模板中匹配的 title 与 `meta[name]`；未声明值
-保留模板 baseline。
+应用默认使用顶层 `index.html`；`routing.html` 可选择另一份共享模板。在 MPA 模式
+下，页面目录中的 `index.html` 会覆盖该页面的 HTML 模板。它不会成为客户端页面入口，
+SPA 也不会把它当作路由文件。页面的 `title` 和 `meta` 会补充缺失标签，并覆盖模板中
+匹配的标题与 `meta[name]`；未声明的值继续使用模板默认值。
 
-## canonical 客户端路径
+## 客户端路径段
 
-客户端路径来自 route 目录：
+客户端路径来自页面目录：
 
-| 目录 segment | 含义 |
+| 目录段 | 含义 |
 | --- | --- |
-| `users` | 静态 segment。 |
-| `$userId` | 动态 `:userId` segment。 |
-| `$...splat` | 终止 catch-all。 |
-| `(account)` | Pathless 组织分组。 |
+| `users` | 静态路径段。 |
+| `$userId` | 动态 `:userId` 路径段。 |
+| `$...splat` | 末尾通配路径。 |
+| `(account)` | 不影响 URL 的组织分组。 |
 
 ```text
 src/pages/
@@ -163,21 +160,19 @@ src/pages/
         └── page.tsx                 # /settings
 ```
 
-SPA 物化 Client Route；MPA 从相同 semantic Page/Route 出发物化 Page-owned
-Document。MPA 只接受静态 Page path；`$param`、终止 `$...splat` 与 router-only
-boundary facet 会显式失败，layout 在两种 mode 中都会组合。
+SPA 会构建浏览器路由树；MPA 则从相同页面创建各个静态路径的 HTML 文档。MPA 会拒绝
+`$param`、末尾 `$...splat` 和仅适用于浏览器路由器的边界；布局在两种模式中都有效。
 
 ## 服务端函数
 
-Server function 没有约定根目录。构建从 Page、layout、wrapper 和 server code
-沿 reachable import 发现。
+服务端函数没有固定目录。构建会沿页面、布局、包装组件和服务端代码的导入关系发现它们。
 
-一个 server-function module：
+服务端函数模块需要：
 
 - 以 `"use server";` 开头；
-- 导出命名 function declaration 或命名 `const` function expression；
-- 不使用 default export；
-- 不从其他模块 runtime re-export function。
+- 导出命名函数声明，或赋值为函数的命名 `const`；
+- 不使用默认导出；
+- 不从其他模块重新导出运行时函数。
 
 ```ts
 "use server";
@@ -187,13 +182,13 @@ export async function getUser(userId: string) {
 }
 ```
 
-在 Page 目录同位放置时，推荐 `.server.ts` 或 `.server.tsx`，便于人和工具识别
-ownership。
+在页面目录中就近放置时，推荐使用 `.server.ts` 或 `.server.tsx`，便于开发者和工具
+识别服务端边界。
 
-## 服务端文件路由
+## API 路由
 
-Server request Route 从固定 `src/apis` 根目录下的 positive `api.*` 锚点发现。
-该文件系统约定与客户端 `page.*` 树彼此独立，但采用相同的目录持有模型。
+框架从固定的 `src/apis` 根目录中发现 `api.*` 文件并创建 API 路由。该约定与客户端
+`page.*` 文件树彼此独立，但同样由目录决定 URL。
 
 ```text
 src/apis/
@@ -213,20 +208,20 @@ src/apis/
 
 ### 服务端路径段
 
-| 目录 segment | URL 含义 |
+| 目录段 | URL 含义 |
 | --- | --- |
 | `$userId` | 动态参数。 |
-| `(internal)` | Pathless 组织分组。 |
-| 普通安全名称 | 静态 URL segment。 |
+| `(internal)` | 不影响 URL 的组织分组。 |
+| 普通安全名称 | 静态 URL 段。 |
 
-`api.*` basename 不增加 URL segment。不支持 catch-all、optional 或 bracket
-目录方言。Static 目录 segment 必须以小写字母或数字开头；只有无效目录树中存在
-`api.*` 锚点或 route middleware 时才会产生诊断。
+`api.*` 文件名不增加 URL 段。不支持通配、可选或方括号形式的目录语法。静态目录段
+必须以小写字母或数字开头；只有目录树中存在 `api.*` 或路由中间件时，框架才会检查并
+报告无效路径段。
 
-### Route export
+### 路由处理器导出
 
-只有 `src/apis/**/api.{ts,tsx,js,jsx}` 才是 route candidate，每个
-route 目录只允许一个源码扩展名变体。锚点至少导出一个大写 HTTP method：
+只有 `src/apis/**/api.{ts,tsx,js,jsx}` 才会创建路由，每个路由目录只允许一种源码
+扩展名。文件至少导出一个大写 HTTP 方法：
 
 ```ts
 export function GET() {
@@ -239,34 +234,31 @@ export async function POST(request: Request) {
 }
 ```
 
-只支持框架文档定义的大写 HTTP handler。Handler 可以在本地声明，也可以从 route
-私有 module import、re-export 或由 factory 创建。Discovery 会拒绝静态已知为
-non-callable 的值；生成的 `createRoute()` definition 会在 server 启动前校验每个
-求值后的 handler。Generator、default export、小写 method name、helper export 与
-route-module middleware export 都无效。其他任何 basename 都是普通 route 私有源码，
-无论导出什么都不会发布 Route。
+只支持文档列出的大写 HTTP 方法处理器。处理器可以在本地声明，也可以从同一路由目录的
+模块导入、重新导出或由工厂函数创建。框架会拒绝明确不可调用的值，并在服务端启动前校验
+处理器。生成器、默认导出、小写方法名、辅助函数导出和路由模块中的中间件导出都无效。
+其他文件名都属于普通路由源码，无论导出什么都不会创建端点。
 
 ### 服务端路由冲突
 
 构建会拒绝：
 
-- 两个锚点对应同一 normalized URL；
-- 同一 route 目录存在多个 `api.*` 源码扩展名变体；
-- 同一动态 shape 使用两个参数名，如 `$id` 与 `$userId`；
-- 不安全或格式错误的 group/dynamic segment；
-- 生成 route id 冲突；
-- route module 混入不支持的 route contract export；
-- server request Route pattern 与占用 URL 的 Page/redirect pattern 或 active
-  framework runtime endpoint 相交。
+- 两个文件对应同一规范化 URL；
+- 同一路由目录存在多个 `api.*` 源码扩展名；
+- 同一种动态路径使用两个参数名，如 `$id` 与 `$userId`；
+- 分组或动态路径段不安全、格式错误；
+- 生成的路由 id 冲突；
+- 路由模块混入不支持的导出；
+- API 路由与页面、重定向或已启用的框架运行时端点发生路径冲突。
 
-冲突检查会按恰好一次 URL decode 后比较 static route alias。例如，`/%75sers` 与
-`/users` 占用同一个 request path，而双重编码文本仍保持不同。
+冲突检查会在进行一次 URL 解码后比较静态路由别名。例如，`/%75sers` 与 `/users`
+占用同一个请求路径，而双重编码文本仍保持不同。
 
-`index.ts`、`route.ts` 与 `foo.get.ts` 都不是备选 route anchor。
+`index.ts`、`route.ts` 与 `foo.get.ts` 都不会创建路由。
 
-## Server Middleware
+## 服务端中间件
 
-存在两种 middleware 约定：
+存在两种中间件约定：
 
 ```text
 src/
@@ -283,51 +275,46 @@ src/
             └── api.ts
 ```
 
-- `src/middlewares/middleware.*` 默认导出一个全局 middleware，或显式排序的
+- `src/middlewares/middleware.*` 默认导出一个全局中间件，或显式排序的
   非空列表；TypeScript 列表应使用 `satisfies MiddlewareChain`；
-- `src/middlewares` 下的其他文件都是由组合锚点导入的普通模块，不会按文件名
+- `src/middlewares` 下的其他文件都是由 `middleware.*` 显式导入的普通模块，不会按文件名
   排序；
-- `src/apis/**/middleware.ts` 按文件 scope 包裹同目录及后代 server file
-  route，并默认导出一个 middleware。
+- `src/apis/**/middleware.ts` 作用于同目录及后代 API 路由，并默认导出一个中间件。
 
-Middleware file 不是 route，不能由 route module export middleware 代替。
+中间件文件不是路由，不能用路由模块中的中间件导出来代替。
 
 ## 生成文件
 
 框架可能生成：
 
-- `.ev/**` framework IR 和 entry facade；
-- canonical SPA 文件路由在支持时生成的 `src/route-types.d.ts`；
+- `.ev/**` 框架中间产物和生成入口；
+- SPA 文件路由在支持时生成的 `src/route-types.d.ts`；
 - `src/plugin-types.d.ts`，用于稳定桥接项目的 `ev.config.ts` 类型；
 - `dist/**` 构建产物。
 
-不要编辑或 scaffold 任何生成文件，并保持 ignore。
+不要编辑这些生成文件，也不要把它们复制进脚手架；请始终保持忽略。
 
-## 路由输入边界
+## 其他路由配置方式
 
-canonical Page discovery 不要求用户选择 route reader 或 provider。应用声明
-`routing.mode` 后，只有 `page.*` positive anchor 会产生客户端路由；仅存在
-`src/pages` 目录不会发布 Page。
+文件式路由不要求用户选择额外的路由读取器或 Provider。应用声明 `routing.mode` 后，
+只有 `page.*` 文件会创建客户端路由；仅存在 `src/pages` 目录不会创建页面。
 
-### 显式 SPA route tree
+### 显式 SPA 路由树
 
-`application` 不能与 `routing` 同时声明。显式 route-tree normalizer 接受
+`application` 不能与 `routing` 同时声明。显式路由配置接受
 `application.routes` 中的 `page` 或 `component`、
 嵌套 `routes`、`layout`、`wrappers` 与 `redirect` 字段。
-`application.pageRoot` 只控制该显式输入的 reference 解析，不会改变固定的
-`src/pages` 文件约定根目录；`children` 会被拒绝。`exact: true` 只作为
-terminal-match 断言；`exact: false` 与 exact Route 下的嵌套路由都会被拒绝。
-插件配置由 Page 持有；显式 Route 与 Document 对象不提供插件配置 bag。共享
-template 和 mount 值放在 `application.document` 下。该配置只能物化 SPA。`page`
-reference
-必须解析到唯一 canonical `page.*` 锚点。显式 component 以 `index.*` 或
-`page.*` 结尾时持有所在目录；其他 basename 只持有模块本身，不消费相邻
+`application.pageRoot` 只控制该配置中的引用解析，不会改变固定的
+`src/pages` 文件约定根目录；`children` 会被拒绝。`exact: true` 只用于断言终止匹配；
+`exact: false` 与精确路由下的嵌套路由都会被拒绝。插件配置仍属于页面；显式路由和文档
+对象不提供插件配置。共享模板与挂载节点放在 `application.document` 下。该配置只支持
+SPA。`page` 引用必须解析到唯一的 `page.*` 文件。显式 `component` 以 `index.*` 或
+`page.*` 结尾时使用所在目录；其他文件名只代表模块本身，不读取相邻
 `page.config.ts`。
 
-### Canonical Page tree
+### 文件页面树
 
-`routing.mode` 只发现 `page.*` 锚点。每个 Page entry 位于其 URL 对应目录，Page
-设置放在相邻 `page.config.ts`。Page-private helper 可以使用包括 `index.*` 在内的
-其他 basename，而不会创建 route。参数、终止 catch-all 与 pathless group 分别
-使用 `$param`、`$...splat` 与 `(group)` 目录。运行 `ev inspect` 可审核 normalized
-Page、Route、Document、Page config 与 diagnostic。
+`routing.mode` 只发现 `page.*` 文件。每个页面入口位于其 URL 对应目录，页面设置放在
+相邻 `page.config.ts`。页面专属辅助模块可以使用包括 `index.*` 在内的其他文件名，而
+不会创建路由。参数、末尾通配与无路径分组分别使用 `$param`、`$...splat` 与 `(group)`
+目录。运行 `ev inspect` 可以查看最终页面、路由、文档、页面配置和诊断结果。

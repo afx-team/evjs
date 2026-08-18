@@ -18,7 +18,7 @@ page-plugin settings.
 
 | Option | Purpose | Default |
 | --- | --- | --- |
-| `routing` | Enable canonical pages and select SPA or MPA | Not enabled until declared |
+| `routing` | Enable file-based pages and select SPA or MPA | Not enabled until declared |
 | `conventions` | Enable all framework file conventions | `true` |
 | `dev` | Browser development server | Port `3000` |
 | `server` | Server runtime, build resolution, and development server | Base path `/__evjs`, dev port `3001` |
@@ -32,7 +32,7 @@ page-plugin settings.
 
 ## Routing
 
-Declaring `routing` enables the canonical `src/pages/**/page.*` tree:
+Declaring `routing` enables the `src/pages/**/page.*` page tree:
 
 ```ts
 export default defineConfig({
@@ -55,7 +55,7 @@ See [Pages and Routing](./client-routes) for their capability differences.
 
 ## Page configuration
 
-An optional `page.config.ts` sits beside one `page.*` anchor:
+An optional `page.config.ts` sits beside a `page.*` file:
 
 ```ts title="src/pages/profile/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
@@ -287,10 +287,10 @@ export default defineConfig({
 Run `ev inspect` after changing the bundler. It reports capabilities required
 by the application's rendering choices.
 
-## Disabling conventions
+## Disable file conventions
 
-Advanced standalone applications can disable page, API route, and middleware
-file discovery together:
+Applications that manage routing and runtimes themselves can disable page, API
+route, and middleware file discovery together:
 
 ```ts
 export default defineConfig({
@@ -299,8 +299,8 @@ export default defineConfig({
 ```
 
 There are no per-directory switches. `conventions: false` cannot be combined
-with canonical `routing`. Reachable `"use server"` modules and explicit
+with `routing`. Imported `"use server"` modules and explicit
 `application.routes` remain available.
 
-For the explicit SPA route-tree API, read
-[Advanced Convention Control](./advanced-conventions).
+For the explicit SPA route API, read
+[Custom Routing and Runtimes](./advanced-conventions).

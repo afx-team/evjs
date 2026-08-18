@@ -6,12 +6,12 @@ development to deployment.
 
 It is designed around a simple idea: **a page directory should contain the
 page, its configuration, and the code that belongs to it**. The filesystem
-describes the public shape of the application; configuration describes only
+describes the public structure of the application; configuration describes only
 the behavior that cannot be inferred safely.
 
 ## The application model
 
-An evjs project usually starts with three authoring surfaces:
+An evjs project usually starts with three main areas:
 
 ```text
 my-app/
@@ -32,14 +32,15 @@ my-app/
   page-level plugin behavior.
 - An `api.*` file publishes an HTTP endpoint using standard `Request` and
   `Response` objects.
-- A reachable module beginning with `"use server";` exposes named operations
-  that application code can call through the framework transport.
+- A module imported by the application and beginning with `"use server";`
+  exposes named operations that application code can call through the
+  framework transport.
 
-Files without one of these public anchors remain ordinary application code.
+Files that do not match one of these conventions remain ordinary application code.
 Components, hooks, models, tests, and server functions can stay beside the
 page that owns them.
 
-## What evjs decides for you
+## What evjs handles for you
 
 evjs provides defaults for the recurring framework work around an application:
 

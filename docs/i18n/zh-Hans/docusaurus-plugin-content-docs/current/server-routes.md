@@ -1,16 +1,16 @@
 # API 路由与中间件
 
-Server routes 让你完全控制 HTTP methods、headers 和标准 Web
-`Request`/`Response` 对象。在 evjs framework 项目中，服务端路由通过文件约定声明。
+API 路由让你直接使用 HTTP 方法、请求头以及标准 Web `Request`/`Response` 对象。在
+evjs 项目中，API 路由通过文件约定声明。
 
-完整的服务端文件路由和 middleware 文件名规则见
+完整的 API 路由和中间件文件名规则见
 [文件约定](./file-conventions)。
 
 ## 文件路由
 
-文件化服务端路由默认启用。evjs 扫描 `./src/apis/**/api.*`，每个锚点的所在
-目录映射为 request URL。该根目录固定，且没有 prefix 配置；如果 URL 需要以
-`/api/users` 开头，把锚点放在 `src/apis/api/users` 这类目录下。
+文件式 API 路由默认启用。evjs 扫描 `./src/apis/**/api.*`，每个文件的所在目录映射为
+请求 URL。根目录固定，不提供额外前缀配置；如果 URL 需要以 `/api/users` 开头，请把
+文件放在 `src/apis/api/users` 这类目录下。
 
 ```text
 src/apis/api.ts                       -> /
@@ -21,8 +21,8 @@ src/apis/(internal)/health/api.ts     -> /health
 src/apis/api/users/api.ts             -> /api/users
 ```
 
-`api.{ts,tsx,js,jsx}` 是唯一 request-route 锚点，每个 route 目录只允许一个
-源码扩展名变体。锚点至少导出一个大写 HTTP method：`GET`、`POST`、`PUT`、
+`api.{ts,tsx,js,jsx}` 是唯一会创建 API 路由的文件名，每个路由目录只允许一种源码
+扩展名。文件至少导出一个大写 HTTP 方法：`GET`、`POST`、`PUT`、
 `PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`：
 
 ```ts
@@ -39,24 +39,23 @@ export const POST = async (req) => {
 };
 ```
 
-支持导入、重新导出或由 Factory 创建的 Handler，只要最终值可调用。Generator Handler
-不受支持，因为它返回 Iterator，而不是一份响应。
+处理器可以导入、重新导出或由工厂函数创建，只要最终值可调用。生成器函数不受支持，
+因为它返回迭代器，而不是一份响应。
 
-其他任何 basename 都是普通路由源码，因此 `schema.ts`、`db.ts`、`types.ts`、
-`index.ts` 与 `route.ts` 可以就近放置。`api.*` 锚点只能导出大写 HTTP 方法，辅助函数
+其他文件名都属于普通路由源码，因此 `schema.ts`、`db.ts`、`types.ts`、`index.ts` 与
+`route.ts` 可以就近放置。`api.*` 文件只能导出大写 HTTP 方法，辅助函数
 应移到其他文件。evjs 会拒绝缺少方法、默认或小写导出、不受支持的运行时导出、重复路径、
 模糊动态路由，以及同一目录中的多个 `api.*` 变体。
 
-发现到的 route 统一按 segment 逐段比较 specificity：父路径排在后代之前，并在
-首个不同位置优先 static segment，再处理 dynamic segment。这样注册顺序稳定，
-dynamic route 也不会遮蔽更具体的 static 分支。
+框架会逐段比较已发现路由的匹配优先级：父路径排在后代之前，遇到不同路径段时先注册
+静态路径，再注册动态路径。这样可以保持顺序稳定，动态路由也不会遮蔽更具体的静态分支。
 
 API 路由形态不能与页面路由、重定向或活动框架运行时端点重叠。运行 `ev inspect` 可以在
 构建前发现冲突。
 
 ## 处理器签名
 
-每个 HTTP method handler 接收 Web `Request` 和 Hono-compatible context：
+每个 HTTP 方法处理器接收 Web `Request` 和兼容 Hono 的上下文：
 
 ```ts
 (request: Request, ctx: HonoContext) => Response | Promise<Response>
@@ -80,13 +79,12 @@ export const GET = async (_req, ctx) => {
 };
 ```
 
-## Middleware
+## 中间件
 
-evjs 有两个 server middleware 作用域，且都不包含 matcher 配置。
+evjs 提供两种服务端中间件作用域，均不需要 matcher 配置。
 
-固定锚点 `src/middlewares/middleware.*` 为所有 server runtime 请求组合全局
-middleware，包括 server file routes、server functions、SSR、PPR 与 RSC
-framework handling。它默认导出一个 Hono-compatible middleware 函数，或按明确
+固定入口 `src/middlewares/middleware.*` 为所有服务端请求组合全局中间件，包括 API
+路由、服务端函数、SSR、PPR 与 RSC 请求。它默认导出一个兼容 Hono 的中间件函数，或按明确
 顺序排列的非空列表。在 TypeScript 中，使用 `satisfies MiddlewareChain` 为列表
 提供类型，同时保留各项的具体类型：
 
@@ -99,14 +97,13 @@ import tracing from "./tracing";
 export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
-JavaScript 模块可直接默认导出同样的数组，无需 TypeScript 标注。evjs 会在
-convention discovery 阶段校验字面量列表，并在创建 server application 时再次
-校验所有求值后的列表项。
+JavaScript 模块可直接默认导出同样的数组，无需 TypeScript 标注。evjs 会在发现文件约定
+时校验字面量列表，并在创建服务端应用时再次校验所有求值后的列表项。
 
-`src/middlewares` 中的其他文件都是由组合锚点导入的普通模块。文件名不决定执行
-顺序，因此既能在一个组合锚点中清晰表达顺序，也允许拆分任意数量的实现模块。
+`src/middlewares` 中的其他文件都是由 `middleware.*` 显式导入的普通模块。文件名不决定
+执行顺序，因此既能在该文件中清晰表达顺序，也允许拆分任意数量的实现模块。
 
-默认导出单个全局 middleware 仍然合法：
+也可以默认导出单个全局中间件：
 
 ```ts
 // src/middlewares/middleware.ts
@@ -120,21 +117,20 @@ const tracing: MiddlewareHandler = async (ctx, next) => {
 export default tracing;
 ```
 
-API route middleware 位于 server file-route tree 内，只作用于同目录及 descendant
-server file routes：
+API 路由中间件位于 `src/apis` 文件树内，只作用于同目录及后代 API 路由：
 
 ```text
-src/apis/middleware.ts            -> 所有锚定 Route
-src/apis/api/middleware.ts        -> /api 与后代 Route
-src/apis/api/admin/middleware.ts  -> /api/admin 与后代 Route
-src/apis/(admin)/middleware.ts    -> group 及其后代 Route
+src/apis/middleware.ts            -> 所有 API 路由
+src/apis/api/middleware.ts        -> /api 及其后代路由
+src/apis/api/admin/middleware.ts  -> /api/admin 及其后代路由
+src/apis/(admin)/middleware.ts    -> 分组及其后代路由
 ```
 
-执行顺序是从左到右的全局列表、从父目录到子目录的 API route middleware，
-最后是 HTTP method handler；`await next()` 之后的代码按相反顺序回退执行。
-Route group 不增加 URL segment，但参与文件系统作用域划分。
-`src/apis/api/middleware.ts` 会覆盖 `src/apis/api/api.ts` 的 `/api` 锚点，以及
-`src/apis/api/users/api.ts` 等所有后代锚点。
+执行顺序依次是从左到右的全局列表、从父目录到子目录的 API 路由中间件，最后是 HTTP
+方法处理器；`await next()` 之后的代码按相反顺序执行。路由分组不增加 URL 段，但会
+参与文件系统作用域划分。
+`src/apis/api/middleware.ts` 会作用于 `src/apis/api/api.ts` 对应的 `/api` 路由，以及
+`src/apis/api/users/api.ts` 等所有后代路由。
 
 函数签名遵循 Hono：
 
@@ -152,10 +148,9 @@ const requireAuth: MiddlewareHandler = async (ctx, next) => {
 export default requireAuth;
 ```
 
-`ctx` 是 Hono `Context`。`next` 会继续后续 middleware/handler chain。返回
-`Response` 可以短路请求。`await next()` 之后，middleware 可以通过 `ctx.header()`
-或 `ctx.res` 修改下游响应。API route middleware 通过 route handler chain 挂载，
-因此可以用 `ctx.req.param()` 读取 route params。
+`ctx` 是 Hono `Context`。`next` 会继续执行后续中间件和处理器；返回 `Response` 可以
+提前结束请求。`await next()` 之后，中间件可以通过 `ctx.header()` 或 `ctx.res` 修改
+下游响应。API 路由中间件可以使用 `ctx.req.param()` 读取路由参数。
 
 ## 内置行为
 

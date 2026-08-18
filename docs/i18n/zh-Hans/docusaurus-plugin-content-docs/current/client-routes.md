@@ -52,9 +52,9 @@ src/pages/
 
 没有 `page.*` 的目录可以组织后代。`$...splat` 必须是最后一个路径段。动态参数与通配路径仅支持 SPA。
 
-## 读取参数与搜索值
+## 读取路径参数与查询参数
 
-使用 `@evjs/ev/route` 中的路由 Hook：
+使用 `@evjs/ev/route` 中的路由 Hook 函数：
 
 ```tsx title="src/pages/users/$userId/page.tsx"
 import { usePageParams, usePageSearch } from "@evjs/ev/route";
@@ -71,7 +71,7 @@ export default function UserPage() {
 }
 ```
 
-搜索值最初都是字符串。CSR SPA 页面可以导出 `validateSearch` 做转换或补默认值：
+查询参数的初始值都是字符串。CSR SPA 页面可以导出 `validateSearch` 进行转换或补充默认值：
 
 ```tsx
 export const validateSearch = (search: Record<string, string>) => ({
@@ -139,7 +139,7 @@ export default function HomePage() {
 
 evjs 可能为文件路由生成 `src/route-types.d.ts`。保持忽略即可，导航 API 会自动使用这些声明。
 
-## 在 CSR 页面加载路由数据
+## 在 CSR 页面中加载路由数据
 
 CSR SPA 页面可以导出浏览器路由生命周期函数和组件：
 
@@ -182,7 +182,7 @@ export default defineConfig({
 
 MPA 会为静态路由 `/`、`/report` 和 `/foo/bar` 创建 `/index.html`、`/report.html` 与 `/foo/bar.html`。在页面旁添加 `index.html` 可以提供专属文档模板。
 
-## 配置元信息与渲染
+## 配置页面元信息与渲染方式
 
 把静态页面选择放在组件旁：
 
@@ -198,12 +198,12 @@ export default definePageConfig({
 });
 ```
 
-最深层的活动 SPA 页面拥有它声明的标题与命名元信息。下一个页面没有声明某个值时，路由切换会恢复模板默认值。
+当前匹配层级最深的 SPA 页面决定标题和命名元信息。切换到未声明某个值的页面时，会恢复模板中的默认值。
 
 CSR、SSR、SSG、PPR 与 RSC 见[渲染](./rendering)，页面级集成选项见[使用插件](./plugins)。
 
-## 高级显式路由
+## 使用显式路由树
 
-`application.routes` 适用于有意维护程序化 SPA 路由树的项目。它不能与规范 `routing` 组合，不能选择 MPA，并使用 `routes` 嵌套。大多数应用应优先使用文件约定，让 URL 所有权留在页面旁。
+`application.routes` 适用于需要自行维护程序化 SPA 路由树的项目。它不能与文件式 `routing` 组合，不能选择 MPA，并使用 `routes` 嵌套。大多数应用应优先使用文件约定，让路由定义与页面代码保持在一起。
 
-该 API 见[高级约定控制](./advanced-conventions)。
+该 API 见[自定义路由与运行时](./advanced-conventions)。

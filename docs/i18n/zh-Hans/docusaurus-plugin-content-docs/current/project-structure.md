@@ -1,6 +1,6 @@
 # 项目结构
 
-本页是 evjs 应用文件约定的事实来源，也给出了框架不会自动发现的源码该如何组织的实用建议。
+本页完整列出 evjs 的应用文件约定，并说明未被框架自动发现的源码应该如何组织。
 
 ## 推荐结构
 
@@ -38,18 +38,19 @@ my-evjs-app/
 
 受识别约定之外的目录只是建议，不是框架要求。请使用符合产品和团队的组织方式。
 
-## 所有权规则
+## 目录职责
 
-正向锚点让一个目录变为公共入口：
+`page.*` 或 `api.*` 文件会让所在目录成为公共入口：
 
 - `page.*` 发布页面和客户端路由；
 - `api.*` 发布服务端请求路由。
 
-除非被另一条文档约定命名，否则其他文件都是普通源码。因此页面可以安全地共置组件、Hook、模型、测试、样式、资源和服务端函数。
+除非匹配其他文件约定，否则目录中的其余文件都是普通源码。因此可以把组件、Hook 函数、
+模型、测试、样式、资源和服务端函数放在使用它们的页面旁边。
 
 ```text
 src/pages/orders/$orderId/
-├── page.tsx                         # 公共页面锚点
+├── page.tsx                         # 页面与路由
 ├── page.config.ts                  # 静态页面选择
 ├── index.ts                        # 普通私有模块
 ├── model.ts
@@ -60,7 +61,7 @@ src/pages/orders/$orderId/
     └── page.test.tsx
 ```
 
-后代目录拥有自己的 `page.*` 时会开始另一个页面。普通代码不需要 `_` 前缀。这里的“私有”描述路由发现和所有权，不是访问控制。
+后代目录包含自己的 `page.*` 时会创建另一个页面。普通代码不需要 `_` 前缀。这里的“私有”只表示不会被发现为路由，不代表访问控制。
 
 ## 约定矩阵
 
@@ -69,10 +70,10 @@ src/pages/orders/$orderId/
 | 路径或声明 | 含义 | 重要规则 |
 | --- | --- | --- |
 | `ev.config.ts` | 应用配置 | 从 `@evjs/ev` 导入 `defineConfig`。 |
-| `conventions: false` | 一起关闭页面、API 路由和中间件发现 | 仅高级独立应用使用；不能与 `routing` 组合。 |
-| `routing.mode` | 启用规范页面发现并选择 `"spa"` 或 `"mpa"` | 规范页面根目录始终为 `src/pages`。 |
-| `src/pages/**/page.{ts,tsx,js,jsx}` | 页面和客户端路由锚点 | 每个路由目录只能有一种扩展名，默认导出 React 组件。 |
-| `<页面>/page.config.{ts,js}` | 可选静态页面配置 | 只放在已锚定页面旁，每页一种变体；推荐 TypeScript 与 `definePageConfig()`。 |
+| `conventions: false` | 一起关闭页面、API 路由和中间件发现 | 仅用于自行管理路由与运行时的应用；不能与 `routing` 组合。 |
+| `routing.mode` | 启用文件页面发现并选择 `"spa"` 或 `"mpa"` | 页面根目录始终为 `src/pages`。 |
+| `src/pages/**/page.{ts,tsx,js,jsx}` | 页面和客户端路由 | 每个路由目录只能有一种扩展名，默认导出 React 组件。 |
+| `<页面>/page.config.{ts,js}` | 可选静态页面配置 | 只放在 `page.*` 文件旁，每页一种变体；推荐 TypeScript 与 `definePageConfig()`。 |
 | `src/pages/**/$param/` | 动态路由段 | 生成 `:param`，仅 SPA。 |
 | `src/pages/**/$...splat/` | 通配路由段 | 必须终止，仅 SPA。 |
 | `src/pages/**/(group)/` | 无路径分组 | 组织源码但不改变 URL。 |
@@ -81,8 +82,8 @@ src/pages/orders/$orderId/
 | 页面目录中的其他文件 | 页面拥有的源码 | 包括 `index.*` 在内都不会创建路由。 |
 | `<页面>/index.html` | 单个 MPA 页面的 HTML 模板 | 不创建页面或客户端入口。 |
 | `index.html` 或 `routing.html` | 共享应用 HTML 模板 | 默认使用 `index.html`。 |
-| 以 `"use server";` 开头且可达的模块 | 服务端函数模块 | 只能命名导出可调用值，不要求固定目录。 |
-| `src/apis/**/api.{ts,tsx,js,jsx}` | 公共 HTTP 路由锚点 | 每个目录一种变体，导出大写 HTTP 方法处理器。 |
+| 以 `"use server";` 开头且被应用导入的模块 | 服务端函数模块 | 只能命名导出可调用值，不要求固定目录。 |
+| `src/apis/**/api.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一种变体，导出大写 HTTP 方法处理器。 |
 | API 路由目录中的其他文件 | 路由拥有的源码 | 辅助文件和 `index.*` 不创建端点。 |
 | `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表。 |
 | `src/middlewares` 中的其他文件 | 中间件实现模块 | 显式导入，文件名不决定顺序。 |
@@ -140,7 +141,7 @@ src/pages/
 
 ### 服务端路由路径
 
-服务端路由在 `src/apis` 下沿用同样的目录所有权模型：
+API 路由也由 `src/apis` 下的目录决定 URL 和相关代码位置：
 
 ```text
 src/apis/
@@ -160,7 +161,7 @@ src/apis/
 
 ### 中间件顺序
 
-在组合锚点中显式声明全局顺序：
+在 `src/middlewares/middleware.ts` 中显式声明全局顺序：
 
 ```ts title="src/middlewares/middleware.ts"
 import type { MiddlewareChain } from "@evjs/ev/server-context";
@@ -170,7 +171,8 @@ import tracing from "./tracing";
 export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
-请求从左到右进入，`await next()` 之后的工作从右到左退出。路由范围 `src/apis/**/middleware.*` 包裹同目录及其后代路由。
+请求从左到右进入，`await next()` 之后的工作从右到左退出。
+`src/apis/**/middleware.*` 包裹同目录及其后代 API 路由。
 
 ## SPA 与 MPA 结构
 
@@ -191,7 +193,7 @@ export default defineConfig({
 
 ## 共享代码与共置代码
 
-根据所有权，而不是文件类型，决定代码位置：
+根据代码的使用范围，而不是文件类型，决定放置位置：
 
 | 代码 | 建议位置 |
 | --- | --- |
@@ -203,8 +205,8 @@ export default defineConfig({
 
 这样既让页面目录保持可理解，也避免 `src/pages` 只剩下一批薄入口文件。
 
-## 高级路由所有权
+## 使用显式路由树
 
-规范应用应使用 `routing.mode` 与上面的文件约定。必须自行维护显式路由树的项目可以使用 SPA-only `application.routes`。它不能与 `routing` 组合，也不支持 MPA。
+大多数应用应使用 `routing.mode` 和上面的文件约定。需要自行维护程序化 SPA 路由树的项目可以使用 `application.routes`。它不能与 `routing` 组合，也不支持 MPA。
 
-选择这种模型前，请阅读[高级约定控制](./advanced-conventions)。
+选择这种模型前，请阅读[自定义路由与运行时](./advanced-conventions)。

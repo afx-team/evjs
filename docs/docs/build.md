@@ -19,7 +19,7 @@ ev build
 Only one `dev`, `prepare`, or `build` operation can change output for the same
 project at a time.
 
-## Inspect first
+## Inspect the application first
 
 `ev inspect` reports the public application shape:
 
@@ -160,7 +160,7 @@ Before shipping, verify:
 - every `page.config.*` exports supported static data;
 - server-function modules begin with `"use server";` and export named
   callables;
-- every public API route uses one `api.*` anchor with uppercase HTTP methods;
+- every public API route uses one `api.*` file with uppercase HTTP methods;
 - page routes, redirects, API routes, and framework endpoints do not conflict;
 - the HTML template contains the configured mount element;
 - the deployment target supports every server and rendering capability.

@@ -22,7 +22,7 @@ the entire dev Supervisor. See
 [Plugin CLI Shortcuts](./dev#interactive-shortcuts) for the descriptor and action
 contracts.
 
-## Define a Minimal Plugin
+## Define a minimal plugin
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -57,7 +57,7 @@ plugins; declared dependencies and `enforce` tiers may reorder hooks. Factory
 arguments hold Application configuration; there is no parallel top-level
 configuration bag.
 
-## Declare Application and Page Contracts
+## Declare application and page contracts
 
 One descriptor can declare two independent contracts:
 
@@ -122,7 +122,7 @@ enabled `ctx.pages`, whose entries expose `{ page, options }`. Use
 `emitPageIR()` as the per-enabled-Page alternative; it exposes
 `ctx.options`, `ctx.page`, and `ctx.pageOptions` directly.
 
-## Contracts, Defaults, and Validation
+## Contracts, defaults, and validation
 
 `pluginOptions<T>()` declares a required object. Passing
 `pluginOptions<T>({ defaults, validate?, schemaVersion? })` makes the contract
@@ -172,11 +172,11 @@ Plugins explicitly project any runtime data and must never expose Application
 secrets. Prefer an explicit module reference when Page configuration needs to
 select executable runtime code.
 
-## Identity and Ordering
+## Identity and ordering
 
 Every plugin declares one stable, short `id` in lower camel case or lowercase
 kebab-case, such as `analytics`, `errorReporting`, or `error-reporting`. The
-same canonical id identifies dependencies and lifecycle state, owns generated
+same id identifies dependencies and lifecycle state, owns generated
 IR, and—when the plugin declares a Page contract—keys its entry in
 `page.config.ts#plugins`. It is not a package name and has no separate Page
 alias: the package may be `@company/analytics`, while its plugin id is
@@ -197,7 +197,7 @@ Plugin configuration exists only at Application and Page scope. Derive Route or
 Document effects from enabled Pages during graph analysis and emit them through
 [generated contributions](./generated-contributions).
 
-## Modify Framework Configuration Early
+## Modify framework configuration early
 
 Use `configure()` for framework configuration that must be visible before
 framework defaults, route discovery, dev proxy setup, or runtime path
@@ -250,7 +250,7 @@ read-only view of the resolved framework config. `configureBundler()` may mutate
 only its explicit bundler-config argument. Plugin authors should keep framework
 configuration changes in this one validated phase.
 
-## Initialize Shared State in `setup()`
+## Initialize shared state in `setup()`
 
 Use `setup()` to allocate shared state and return lifecycle hooks. Return a
 hooks object or `undefined`; `null`, arrays, and non-function hook fields are
@@ -273,7 +273,7 @@ normalized `FrameworkView` from `ctx.framework`. Plugin option helpers expose
 `PluginOptionsDefinition`, and `PluginOptionsContext`; internal factory
 inference types are not part of the public authoring API.
 
-## Installation and Execution Modes
+## Configure plugin and page activation
 
 The factory controls Page omission without changing plugin execution or typed
 Application options:
@@ -288,7 +288,7 @@ Application options:
 
 Required Application options stay required in either available factory form.
 
-## Choose the Right Extension Point
+## Choose the right extension point
 
 | Need | API |
 |---|---|

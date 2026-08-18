@@ -8,7 +8,7 @@
 2. 阅读[项目结构](./project-structure)，确定页面、共享代码、API 路由和配置应该放在哪里。
 3. 需要嵌套或动态路由时，继续阅读[页面与路由](./client-routes)。
 
-## 开始前需要
+## 准备工作
 
 - 仓库当前支持的 Node.js 版本。
 - React 以及 TypeScript 或 JavaScript 基础。

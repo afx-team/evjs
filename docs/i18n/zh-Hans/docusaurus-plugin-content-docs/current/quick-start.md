@@ -59,7 +59,7 @@ export default function AboutPage() {
 }
 ```
 
-`page.*` 是公共页面锚点。所在目录决定 URL，因此不需要同步另一张路由表。
+`page.*` 是创建页面的明确标记。所在目录决定 URL，因此不需要再维护一份路由表。
 
 ## 配置单个页面
 
@@ -79,9 +79,9 @@ export default definePageConfig({
 
 这个文件是可选的，CSR 是默认值。选择 SSR、SSG、PPR 或 RSC 前，请先阅读[渲染](./rendering)。
 
-## 把页面代码放在一起
+## 就近组织页面代码
 
-页面旁边的文件都是普通源码，除非使用另一个框架识别的锚点：
+页面旁边的文件都是普通源码，除非它们匹配另一项框架文件约定：
 
 ```text
 src/pages/about/
@@ -93,7 +93,7 @@ src/pages/about/
     └── Team.tsx
 ```
 
-组件、Hook、模型、测试、样式和资源都不需要 `_` 前缀。
+组件、Hook 函数、模型、测试、样式和资源都不需要 `_` 前缀。
 
 ## 添加动态路由
 
@@ -116,7 +116,7 @@ export default function UserPage() {
 
 ## 调用服务端代码
 
-创建一个以 `"use server";` 开头且可达的模块，并命名导出函数：
+创建一个会被应用引用、且以 `"use server";` 开头的模块，并命名导出函数：
 
 ```ts title="src/pages/get-message.server.ts"
 "use server";
@@ -140,7 +140,7 @@ export default function HomePage() {
 
 ## 添加 HTTP 端点
 
-在 `src/apis` 下创建 `api.*` 锚点并导出大写 HTTP 方法：
+在 `src/apis` 下创建 `api.*` 文件并导出大写 HTTP 方法：
 
 ```ts title="src/apis/health/api.ts"
 export function GET() {
@@ -150,7 +150,7 @@ export function GET() {
 
 端点地址为 `/health`。API 路由使用标准 Web `Request` 和 `Response`。参数和中间件见 [API 路由与中间件](./server-routes)。
 
-## 检查并构建
+## 检查项目并构建
 
 生产构建前，检查路由和渲染选择：
 
@@ -165,7 +165,7 @@ npm run build
 
 ## 接下来
 
-- [项目结构](./project-structure)：所有权规则和所有受识别文件。
+- [项目结构](./project-structure)：各目录的职责和框架识别的文件。
 - [页面与路由](./client-routes)：布局、嵌套路由与导航。
 - [本地开发](./dev)：端口、代理与 HTTPS。
-- [部署](./deploy)：选择生产目标。
+- [部署](./deploy)：了解不同部署方式。

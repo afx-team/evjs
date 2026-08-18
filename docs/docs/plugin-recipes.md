@@ -5,7 +5,7 @@ These focused recipes build on [Plugin Authoring](./plugin-authoring) and
 wrappers, middleware, HTML tags, and resolution changes, use
 [Generated Contributions IR](./generated-contributions).
 
-## Add Deployment Metadata
+## Add deployment metadata
 
 Use `transformOutput()` when a deployment adapter needs plugin-owned metadata:
 
@@ -32,7 +32,7 @@ metadata. See [Transform Build Output](./plugin-hooks#transform-build-output)
 for the framework-owned fields. Deployment metadata must contain only plain,
 losslessly JSON-serializable values; evjs validates it after every output hook.
 
-## Add Per-Page Metadata
+## Add per-page metadata
 
 Use `ctx.owner.kind` to target Page-owned documents:
 
@@ -58,7 +58,7 @@ export const pageMetadata = definePlugin({
 Static HTML files and Page-specific request-time document shells both pass
 through `transformHtml()`. Do not infer ownership from the filename.
 
-## Add a CSP Nonce
+## Add a CSP nonce
 
 `transformHtml()` exposes a parsed, bundler-independent document:
 

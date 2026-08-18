@@ -4,11 +4,11 @@ evjs is designed to keep the way an application is authored stable while its
 rendering, integrations, and deployment needs evolve. This page explains the
 decisions that shape the public framework experience.
 
-## Conventions describe intent
+## Use file conventions to express intent
 
 Many frameworks ask an application to repeat the same information in a file
 tree, route configuration, browser entry, and build configuration. evjs uses a
-small set of positive file anchors instead:
+small set of explicit file markers instead:
 
 ```text
 src/pages/**/page.*       React pages and client routes
@@ -22,7 +22,7 @@ placed. A page is public only when its directory contains `page.*`; an API
 route is public only when its directory contains `api.*`. This makes
 colocation safe and route discovery easy to explain.
 
-## Directories own pages
+## Page directories define ownership
 
 The directory containing `page.*` is both the page's URL position and its
 natural ownership boundary:
@@ -45,7 +45,7 @@ own it together.
 Private here means “not discovered as another page.” It is not a JavaScript
 access-control or security boundary.
 
-## One page model, multiple outcomes
+## One page model, multiple delivery modes
 
 Pages keep the same component and configuration shape across SPA and MPA
 projects. The routing mode chooses how the page tree is presented to the
@@ -68,7 +68,7 @@ flowchart LR
 MPA rejects dynamic routes and router-only boundaries instead of silently
 changing their meaning. See [Pages and Routing](./client-routes).
 
-## Rendering belongs to the page
+## Choose rendering per page
 
 Different pages in one application can have different delivery needs. A
 dashboard may be client-rendered, a landing page statically generated, and an
@@ -104,7 +104,7 @@ These features share the same request context and deployment boundary, while
 remaining separate public APIs. A public API route is not a page, and a server
 function is not an HTTP route that callers construct by hand.
 
-## Configuration is progressive
+## Add configuration only when needed
 
 The filesystem provides page and route structure. `ev.config.ts` holds
 application-wide choices such as SPA versus MPA, development server behavior,
@@ -121,7 +121,7 @@ URL and ownership        -> directory structure
 Runtime UI behavior      -> React source
 ```
 
-## Plugins extend stable surfaces
+## Plugins extend stable APIs
 
 Plugins can provide typed application options and, when appropriate, typed
 page options. Installing a plugin and configuring one page are intentionally
@@ -146,7 +146,7 @@ the framework's page model. Application authors can start with
 [Using Plugins](./plugins); extension authors can continue with
 [Plugin Development](./plugin-authoring).
 
-## Build once, choose a deployment target
+## Build for different deployment targets
 
 The production build separates browser files from server files. Applications
 that use only browser or static capabilities can deploy to static hosting.
@@ -168,8 +168,8 @@ metadata. See [Deployment](./deploy).
 
 ## Design summary
 
-- Public routes require explicit positive anchors.
-- Page directories own URL position, local code, and static page behavior.
+- A route becomes public only through an explicit `page.*` or `api.*` file.
+- Page directories determine URL position and keep related code together.
 - SPA and MPA are two outcomes of the same page tree.
 - Server capabilities are optional and additive.
 - Configuration stays at the narrowest useful scope.

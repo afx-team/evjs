@@ -8,7 +8,7 @@ ev dev
 
 命令会读取 `ev.config.ts`、发现应用，并输出可打开的地址。
 
-## 启动了什么
+## 开发服务组成
 
 evjs 把浏览器开发与服务端能力分开：
 
@@ -52,7 +52,7 @@ export default defineConfig({
 
 启动输出包含 localhost 地址，并在可用时显示网络地址。注意 `localhost` 与 `127.0.0.1` 对 Cookie、Storage 和 Service Worker 来说是不同浏览器来源。
 
-## 代理另一个后端
+## 配置后端代理
 
 应用请求需要到达独立后端时，添加 `dev.proxy`：
 
@@ -119,7 +119,7 @@ export default defineConfig({
 
 请把要打开的所有主机名（例如 `localhost` 与 `127.0.0.1`）加入证书 Subject Alternative Name。
 
-## 哪些变更会自动生效
+## 自动更新与重启
 
 - 组件、样式与资源编辑走构建器正常 HMR 路径。
 - 添加、删除或移动页面与 API 路由会刷新应用结构。
@@ -148,7 +148,7 @@ export default defineConfig({
 ev dev --no-shortcuts
 ```
 
-evjs Core 不保留任何按键，由已安装插件定义。插件作者可以在[插件 Hooks](./plugin-hooks)查看契约。
+evjs 核心不占用任何按键，具体快捷键由已安装插件定义。插件作者可以在[插件生命周期钩子](./plugin-hooks)查看契约。
 
 ## 直接测试服务端路径
 
@@ -163,7 +163,7 @@ src/apis/users/$userId/api.ts        -> /users/:userId
 
 按正常代理测试时使用 `ev dev` 输出的浏览器来源。只有需要刻意检查服务端边界时才直接使用服务端运行时来源。
 
-## 排查表
+## 常见问题
 
 | 现象 | 检查 |
 | --- | --- |

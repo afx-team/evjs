@@ -16,7 +16,7 @@ export default defineConfig({
 
 | 选项 | 用途 | 默认值 |
 | --- | --- | --- |
-| `routing` | 启用规范页面并选择 SPA 或 MPA | 声明后才启用 |
+| `routing` | 启用文件页面并选择 SPA 或 MPA | 声明后才启用 |
 | `conventions` | 启用全部框架文件约定 | `true` |
 | `dev` | 浏览器开发服务器 | 端口 `3000` |
 | `server` | 服务端运行时、构建解析与开发服务器 | 基础路径 `/__evjs`，开发端口 `3001` |
@@ -26,11 +26,11 @@ export default defineConfig({
 | `output` | 浏览器/服务端目录与资源 CORS 策略 | `dist/client`、`dist/server` |
 | `plugins` | 安装并配置集成 | `[]` |
 | `bundler` | 选择非默认构建器适配器 | CLI 使用 Utoopack |
-| `application` | 高级显式 SPA 路由树 | 未设置 |
+| `application` | 程序化 SPA 路由树 | 未设置 |
 
-## Routing
+## 路由
 
-声明 `routing` 会启用规范 `src/pages/**/page.*` 页面树：
+声明 `routing` 会启用 `src/pages/**/page.*` 文件页面树：
 
 ```ts
 export default defineConfig({
@@ -52,7 +52,7 @@ export default defineConfig({
 
 ## 页面配置
 
-可选 `page.config.ts` 放在一个 `page.*` 锚点旁：
+可选的 `page.config.ts` 放在对应 `page.*` 文件旁：
 
 ```ts title="src/pages/profile/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
@@ -130,7 +130,7 @@ export default defineConfig({
 
 服务端 HTTPS 必须提供明确的 key/cert 对。URL、端口回退和重启行为见[本地开发](./dev)。
 
-## Server
+## 服务端
 
 ```ts
 export default defineConfig({
@@ -191,7 +191,7 @@ export default defineConfig({
 
 `polyfill` 只有与 `target` 一起才有效。它覆盖 ECMAScript 内建能力，不包含 `fetch`、`AbortController` 或 Streams 等 Web API。
 
-## Output
+## 输出
 
 ```ts
 export default defineConfig({
@@ -211,7 +211,7 @@ export default defineConfig({
 
 客户端和服务端目录必须是 `dist` 下分离且不嵌套的后代，不能包含空、`.` 或 `..` 路径段。
 
-`crossOriginLoading` 设置生成 JavaScript/CSS 标签的 `crossorigin` 属性，并对动态 Chunk 加载应用相同策略。
+`crossOriginLoading` 设置生成 JavaScript/CSS 标签的 `crossorigin` 属性，并对动态代码块加载应用相同策略。
 
 ## 跨域服务端传输
 
@@ -225,11 +225,11 @@ export default defineConfig({
 });
 ```
 
-它影响服务端函数等框架浏览器到服务端调用，不是通用 API 客户端 Base URL。
+它影响服务端函数等框架发起的浏览器到服务端调用，不是通用 API 客户端的基础 URL。
 
-## Plugins
+## 插件
 
-通过 Factory 调用安装插件：
+通过工厂函数安装插件：
 
 ```ts
 import { analytics } from "@company/evjs-plugin-analytics";
@@ -244,11 +244,11 @@ export default defineConfig({
 });
 ```
 
-Factory 参数是插件的应用级配置。条件项可使用 `false`、`null` 或 `undefined`。支持页面配置的插件会在 `page.config.ts#plugins` 中以自身 id 暴露页面契约。
+工厂函数参数是插件的应用级配置。条件项可使用 `false`、`null` 或 `undefined`。支持页面配置的插件会在 `page.config.ts#plugins` 中以自身 id 提供页面配置契约。
 
 应用选项与页面选项是独立契约，不会相互合并。详见[使用插件](./plugins)。
 
-## Bundler
+## 构建器
 
 CLI 默认选择 Utoopack。只有应用需要另一适配器提供的能力或验证路径时才显式传入：
 
@@ -263,9 +263,9 @@ export default defineConfig({
 
 改变构建器后运行 `ev inspect`，它会报告应用渲染选择需要的能力。
 
-## 关闭约定
+## 关闭文件约定
 
-高级独立应用可以一起关闭页面、API 路由和中间件文件发现：
+自行管理路由与运行时的应用可以一起关闭页面、API 路由和中间件文件发现：
 
 ```ts
 export default defineConfig({
@@ -273,6 +273,6 @@ export default defineConfig({
 });
 ```
 
-没有逐目录开关。`conventions: false` 不能与规范 `routing` 组合；可达 `"use server"` 模块和显式 `application.routes` 仍可用。
+没有逐目录开关。`conventions: false` 不能与 `routing` 组合；被应用引用的 `"use server"` 模块和显式 `application.routes` 仍可用。
 
-显式 SPA 路由树 API 见[高级约定控制](./advanced-conventions)。
+显式 SPA 路由树 API 见[自定义路由与运行时](./advanced-conventions)。

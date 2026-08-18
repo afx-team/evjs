@@ -9,7 +9,7 @@ ev dev
 The command reads `ev.config.ts`, discovers the application, and prints the
 URLs you can open.
 
-## What starts
+## Development services
 
 evjs separates browser development from server capabilities:
 
@@ -60,7 +60,7 @@ Startup output includes a localhost URL and, when available, a network URL.
 Remember that `localhost` and `127.0.0.1` are different browser origins for
 cookies, storage, and service workers.
 
-## Proxy another backend
+## Configure a backend proxy
 
 Add `dev.proxy` when application requests should reach a separate backend:
 
@@ -132,7 +132,7 @@ runtime always requires a key/certificate pair rather than `true`.
 Include every hostname you open, such as `localhost` and `127.0.0.1`, in the
 certificate's subject alternative names.
 
-## What updates automatically
+## Automatic updates
 
 - Component, style, and asset edits use the bundler's normal HMR path.
 - Adding, removing, or moving pages and API routes refreshes the application

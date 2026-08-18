@@ -1,8 +1,8 @@
-# 插件 Hooks
+# 插件生命周期钩子
 
-插件 Hook 用于构建时副作用、HTML 修改、最终部署文件和底层构建器定制。共享状态放在 `setup()` 中，只返回真正需要的 Hook。
+插件生命周期钩子用于执行构建时副作用、修改 HTML、写入最终部署文件或定制底层构建器。共享状态放在 `setup()` 中，只返回真正需要的钩子。
 
-插件需要增加模块，或把代码挂到页面/入口时，使用[生成代码](./generated-contributions)。生成式贡献比 Hook 写临时文件更容易检查与组合。
+插件需要增加模块，或把代码挂到页面和入口时，请使用[生成代码](./generated-contributions)。声明式生成比通过钩子写临时文件更容易检查与组合。
 
 ## 生命周期概览
 
@@ -21,7 +21,7 @@ flowchart LR
 
 `configure()` 和 `setup()` 见[插件开发](./plugin-authoring)。通过 `definePlugin()` 创建的插件以 `ctx.options` 获得类型化应用选项。
 
-| Hook | 用途 |
+| 钩子 | 用途 |
 | --- | --- |
 | `configureBundler(config, ctx)` | 适配器专属 Loader、解析、优化或其他底层设置 |
 | `devServerReady({ origin, signal })` | 客户端监听可用后连接开发工具 |
@@ -29,7 +29,7 @@ flowchart LR
 | `transformOutput(output, ctx)` | 调整资源组或增加部署元信息 |
 | `transformHtml(document, ctx)` | 修改一份生成 HTML 或请求时文档外壳 |
 | `afterBuild(result)` | 输出平台文件或报告已完成构建 |
-| `dispose(ctx)` | 释放 `setup()` 或开发 Hook 创建的资源 |
+| `dispose(ctx)` | 释放 `setup()` 或开发阶段钩子创建的资源 |
 
 ## 在 `setup()` 中保存状态
 
@@ -55,7 +55,7 @@ export const reporter = definePlugin({
 });
 ```
 
-每次成功 Setup 的 `dispose()` 最多执行一次，并按插件逆序执行。即使前置工作只完成了一部分，清理也应保持安全。
+每次成功执行 `setup()` 后，`dispose()` 最多执行一次，并按插件逆序运行。即使初始化只完成了一部分，清理逻辑也应保持安全。
 
 ## 监听插件输入
 
@@ -90,13 +90,13 @@ setup() {
 ```
 
 - `origin` 是活动构建器报告的监听地址。
-- 开发环境开始关闭时，`signal` 会 Abort。
-- 转发或观察 Signal，并让异步工作及时结束。
-- 此 Hook 仅在开发中运行，不代表第一份应用产物或服务端运行时已经就绪。
+- 开发环境开始关闭时，`signal` 会触发中止。
+- 请传递或监听该信号，让异步工作及时结束。
+- 此钩子仅在开发中运行，不代表第一份应用产物或服务端运行时已经就绪。
 
 依赖产物的工作请放在 `afterBuild()`。
 
-## 构建与重构建 Hook
+## 构建与重新构建
 
 只有打包生成有效输出周期时才执行 `beforeBuild()` 与 `afterBuild()`；`prepare` 和 `inspect` 不会调用。
 
@@ -106,13 +106,13 @@ setup() {
 - 后续成功输出周期使用 `isRebuild: true`；
 - 失败周期不调用 `afterBuild()`。
 
-`afterBuild()` 在规范文件发布后运行。该 Hook 抛错仍会让生产构建失败，因此它适合必需产物；可选上报失败应由插件自行处理。
+`afterBuild()` 在框架文件写入完成后运行。该钩子抛错仍会让生产构建失败，因此适合生成必需产物；可选上报失败应由插件自行处理。
 
 ## 转换构建产物
 
 `transformOutput()` 可以调整已连接的资源组内容，并增加插件部署元信息。部署元信息必须是可无损序列化的普通 JSON。
 
-不要用输出 Hook 重命名页面、路由、文档、运行时路径或框架输出目录。这些选择属于应用配置、页面配置或声明式生成贡献。
+不要用输出钩子重命名页面、路由、文档、运行时路径或框架输出目录。这些选择属于应用配置、页面配置或声明式生成内容。
 
 ## 转换 HTML
 
@@ -146,7 +146,7 @@ transformHtml(document, ctx) {
 import type { HtmlDocument } from "@evjs/ev/plugin";
 ```
 
-简单 `meta`、`link`、`script` 或 `style` 增加应优先使用[生成代码](./generated-contributions)中的声明式 `html.tag` Slot。
+添加简单的 `meta`、`link`、`script` 或 `style` 时，应优先使用[生成代码](./generated-contributions)中的声明式 `html.tag` 扩展槽位。
 
 ## 使用最终构建结果
 
@@ -172,7 +172,7 @@ setup() {
 
 ## 配置构建器
 
-`definePlugin()` 默认与构建器无关。底层类型化修改使用适配器 Helper，每个 Helper 只为自己的适配器执行。
+`definePlugin()` 默认与构建器无关。需要修改底层类型化配置时，请使用适配器辅助函数；每个辅助函数只针对自己的适配器执行。
 
 Utoopack 示例：
 
@@ -212,11 +212,11 @@ configureBundler: webpack((configs) => {
 });
 ```
 
-构建器 Hook 可以修改受支持的底层设置，但不能替换框架页面入口或客户端/服务端输出目录。改变启动组合请使用生成式贡献。
+构建器钩子可以修改受支持的底层设置，但不能替换框架页面入口或客户端/服务端输出目录。需要改变启动组合时，请使用声明式生成内容。
 
-## 贡献终端快捷键
+## 添加终端快捷键
 
-交互快捷键是 Descriptor 声明，不是生命周期 Hook：
+交互快捷键由插件描述对象声明，不属于生命周期钩子：
 
 ```ts
 const tools = definePlugin({
@@ -235,6 +235,6 @@ const tools = definePlugin({
 });
 ```
 
-Key 必须是单个非空白字符。Action 获得当前客户端 `origin` 和关闭完整 `ev dev` 运行的 `close()`。应用端控制见[本地开发](./dev#交互式快捷键)。
+`key` 必须是单个非空白字符。`action` 可以读取当前客户端 `origin`，并通过 `close()` 结束完整的 `ev dev` 进程。应用侧控制见[本地开发](./dev#交互式快捷键)。
 
-小型完整示例见[插件配方](./plugin-recipes)。
+小型完整示例见[插件实践](./plugin-recipes)。

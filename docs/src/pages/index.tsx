@@ -30,7 +30,7 @@ function useFeatures(): Array<{
       icon: "routes",
       title: translate({
         id: "homepage.feature.pages.title",
-        message: "Pages own their URLs",
+        message: "Directories define page URLs",
       }),
       description: translate({
         id: "homepage.feature.pages.description",
@@ -54,7 +54,7 @@ function useFeatures(): Array<{
       icon: "function",
       title: translate({
         id: "homepage.feature.serverFunctions.title",
-        message: "Call server operations",
+        message: "Call server functions",
       }),
       description: translate({
         id: "homepage.feature.serverFunctions.description",
@@ -78,7 +78,7 @@ function useFeatures(): Array<{
       icon: "plugin",
       title: translate({
         id: "homepage.feature.plugins.title",
-        message: "Add typed integrations",
+        message: "Extend with typed plugins",
       }),
       description: translate({
         id: "homepage.feature.plugins.description",
@@ -90,12 +90,12 @@ function useFeatures(): Array<{
       icon: "deploy",
       title: translate({
         id: "homepage.feature.deployment.title",
-        message: "Choose where to run",
+        message: "Deploy across runtimes",
       }),
       description: translate({
         id: "homepage.feature.deployment.description",
         message:
-          "Deploy browser-only apps statically or add Node.js, edge, and split-origin server targets.",
+          "Deploy browser-only apps as static sites, or target Node.js, edge, and split-origin architectures.",
       }),
     },
   ];
@@ -107,11 +107,12 @@ function useLearningPaths(): LearningPath[] {
       label: "01",
       title: translate({
         id: "homepage.flow.source.title",
-        message: "Start a project",
+        message: "Create a project",
       }),
       description: translate({
         id: "homepage.flow.source.description",
-        message: "Create an app and render your first two pages.",
+        message:
+          "Create an app, add your first pages, and navigate between them.",
       }),
       href: "/docs/quick-start",
     },
@@ -119,7 +120,7 @@ function useLearningPaths(): LearningPath[] {
       label: "02",
       title: translate({
         id: "homepage.flow.discover.title",
-        message: "Build the experience",
+        message: "Build page experiences",
       }),
       description: translate({
         id: "homepage.flow.discover.description",
@@ -143,7 +144,7 @@ function useLearningPaths(): LearningPath[] {
       label: "04",
       title: translate({
         id: "homepage.flow.output.title",
-        message: "Ship the app",
+        message: "Build and deploy",
       }),
       description: translate({
         id: "homepage.flow.output.description",
@@ -221,11 +222,11 @@ function LearningPaths() {
       <div className={styles.workflowContainer}>
         <div className={styles.workflowIntro}>
           <div className={styles.sectionLabel}>
-            <Translate id="homepage.workflow.label">Choose a path</Translate>
+            <Translate id="homepage.workflow.label">Start here</Translate>
           </div>
           <h2 className={styles.workflowTitle}>
             <Translate id="homepage.workflow.title">
-              Learn by completing the next task
+              Learn one task at a time
             </Translate>
           </h2>
           <p className={styles.workflowDescription}>
@@ -262,7 +263,7 @@ function FeaturesSection() {
           </div>
           <h2 className={styles.featuresTitle}>
             <Translate id="homepage.features.title">
-              A small set of concepts that scale with the app
+              Core concepts that grow with your application
             </Translate>
           </h2>
         </div>

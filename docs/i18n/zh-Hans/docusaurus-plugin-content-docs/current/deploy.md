@@ -7,14 +7,14 @@ npm run build
 # 通常执行：ev build
 ```
 
-## 选择目标
+## 选择部署方式
 
 | 目标 | 适用情况 | 内置适配器 |
 | --- | --- | --- |
 | 静态托管 | 应用使用 CSR、MPA 客户端页面或 SSG，且没有运行时服务端能力 | `staticDeploymentAdapter()` |
 | Node.js | 一个 Node 进程提供资源与所有服务端能力 | `nodeDeploymentAdapter()` |
 | Edge Worker | 平台提供 Fetch 兼容 Worker 与资源绑定 | `edgeDeploymentAdapter()` |
-| CDN + 源站 | 浏览器资源在 CDN，服务端工作在其他位置 | 服务端适配器加平台路由 |
+| CDN + 源站 | 浏览器资源部署在 CDN，服务端能力部署到独立源站 | 服务端适配器加平台路由 |
 
 服务端函数、API 路由、SSR、PPR 与 RSC 都需要服务端目标。任何一项启用时都不要只部署 `dist/client`。
 
@@ -53,7 +53,7 @@ dist/client/
 └── _redirects
 ```
 
-重定向把静态页面映射到对应 HTML，并为 SPA 把浏览器路由映射到应用文档。无浏览器路由器的 MPA 页面使用精确重写，不产生全局 SPA Fallback。
+重定向把静态页面映射到对应 HTML，并为 SPA 把浏览器路由映射到应用文档。没有浏览器路由器的 MPA 页面使用精确重写，不产生全局 SPA 回退规则。
 
 如果构建包含服务端能力，适配器会把静态产物标记为不完整。可以保留静态文件供 CDN 使用，但还必须把服务端产物部署到兼容运行时。
 
@@ -85,7 +85,7 @@ dist/
 PORT=3000 node dist/server.mjs
 ```
 
-它提供浏览器资源，处理服务端函数和 API 路由，渲染请求时页面，并在需要时提供 SPA Fallback。
+它提供浏览器资源，处理服务端函数和 API 路由，渲染请求时页面，并在需要时提供 SPA 回退规则。
 
 ## Docker
 
@@ -110,7 +110,7 @@ CMD ["node", "dist/server.mjs"]
 
 如果运行时依赖被完整打包，项目可能支持更小的最终镜像。在移除安装依赖前，请先确认所选构建器以及全部原生或外部服务端依赖的行为。
 
-## Edge Runtime
+## Edge 运行时
 
 主机提供 Fetch 兼容 Worker 与静态资源绑定时使用 Edge 适配器：
 
@@ -138,9 +138,9 @@ dist/
 
 根据主机部署设置，把配置的资源绑定连接到 `dist/client`。Worker 处理服务端请求，并把公共资源委托给该绑定。
 
-## 拆分浏览器与服务端来源
+## 分别部署浏览器与服务端产物
 
-CDN 提供 `dist/client`、另一个来源运行服务端产物时，在构建期间让框架浏览器调用指向服务端来源：
+当 CDN 提供 `dist/client`、独立源站运行服务端产物时，需要在构建配置中让浏览器调用指向服务端源站：
 
 ```ts title="ev.config.ts"
 export default defineConfig({
@@ -157,7 +157,7 @@ export default defineConfig({
 - SSR、PPR 与 RSC 文档请求；
 - 使用对应模式时活动的 RSC 或 PPR 支持路径。
 
-静态文件与浏览器路由 Fallback 保留在 CDN。请显式配置跨域边界的 CORS、Cookie 与 Credentials。
+静态文件与浏览器路由回退规则保留在 CDN。请显式配置跨域边界的 CORS、Cookie 与凭据策略。
 
 ## 运行时路径
 

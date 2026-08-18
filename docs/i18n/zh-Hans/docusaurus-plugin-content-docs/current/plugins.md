@@ -1,10 +1,11 @@
 # 使用插件
 
-插件可以增加集成、构建或部署行为，而不必扩张 evjs 核心配置。先为应用安装一次插件，再在集成支持页面作用域时配置单个页面。
+插件可以增加集成、构建或部署能力，而不必扩充 evjs 核心配置。先在应用中安装插件；
+如果插件支持页面级选项，再按需配置具体页面。
 
 ## 安装插件
 
-导入 Factory 并在 `ev.config.ts` 中调用：
+导入插件工厂函数并在 `ev.config.ts` 中调用：
 
 ```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
@@ -21,13 +22,13 @@ export default defineConfig({
 });
 ```
 
-Factory 调用同时完成安装并提供应用级选项。没有选项的插件仍需调用，例如 `buildTimer()`。
+调用工厂函数会同时安装插件并传入应用级选项。没有选项的插件仍需调用，例如 `buildTimer()`。
 
 插件执行顺序就是数组顺序。两个插件影响同一产物时，请按各集成推荐顺序安装。
 
 ## 配置单个页面
 
-支持页面配置的插件会在相邻 `page.config.ts` 中暴露 id：
+支持页面配置的插件会在相邻 `page.config.ts` 中提供对应的 id：
 
 ```ts title="src/pages/checkout/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
@@ -43,18 +44,18 @@ export default definePageConfig({
 
 不要在页面配置中导入插件包。使用 `ev.config.ts` 时，生成的 TypeScript 声明会为已安装插件 id 与页面值提供补全。保持忽略 `src/plugin-types.d.ts`，由框架更新。
 
-## 理解两种作用域
+## 配置应用级与页面级选项
 
 应用与页面选项有意保持独立：
 
 | 作用域 | 位置 | 适合内容 |
 | --- | --- | --- |
-| 应用 | `ev.config.ts` 中的插件 Factory | 端点、凭据引用、构建选择、插件允许的回调 |
+| 应用 | `ev.config.ts` 中的插件工厂函数 | 端点、凭据引用、构建选择、插件允许的回调 |
 | 页面 | `page.config.ts#plugins` 中的插件 id | 单个页面拥有的静态元信息或行为 |
 
 页面选项必须是静态 JSON 数据，不继承应用字段，应用字段也不会复制进页面值。不要把秘密放进页面值，或放进插件标记为浏览器可见的任何选项。
 
-## 选择默认或显式启用行为
+## 设置默认启用或按页启用
 
 插件声明的页面默认值决定“省略”意味着什么：
 
@@ -96,9 +97,9 @@ export default defineConfig({
 
 这种方式适合没有页面配置的集成。条件插件并不保证存在，因此其 id 无法安全提供给 `page.config.ts`。支持页面配置的插件应确定性安装，并使用 `forPages()` 或页面值 `false`。
 
-## 保持页面类型可靠
+## 保持页面配置类型安全
 
-需要页面补全时，让支持页面配置的 Factory 直接留在 `defineConfig()` 的元组中：
+需要页面配置补全时，请把支持页面配置的工厂函数直接保留在 `defineConfig()` 的元组中：
 
 ```ts
 export default defineConfig({
@@ -131,7 +132,7 @@ ev inspect
 | 目标 | 阅读 |
 | --- | --- |
 | 定义类型化应用与页面选项 | [插件开发](./plugin-authoring) |
-| 选择生命周期 Hook | [插件 Hooks](./plugin-hooks) |
+| 选择生命周期钩子 | [插件生命周期钩子](./plugin-hooks) |
 | 生成模块或挂载框架代码 | [生成代码](./generated-contributions) |
-| 从小型示例开始 | [插件配方](./plugin-recipes) |
+| 从小型示例开始 | [插件实践](./plugin-recipes) |
 | 配置官方微前端桥接 | [Qiankun](./qiankun) |

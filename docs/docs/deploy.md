@@ -8,7 +8,7 @@ npm run build
 # usually runs: ev build
 ```
 
-## Choose a target
+## Choose a deployment model
 
 | Target | Choose it when | Built-in adapter |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ Connect the configured asset binding to `dist/client` according to the host's
 deployment settings. The worker handles server requests and delegates public
 assets to that binding.
 
-## Split browser and server origins
+## Deploy browser and server output separately
 
 When a CDN serves `dist/client` and another origin runs the server output,
 point framework browser calls at the server origin during the build:

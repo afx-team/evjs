@@ -4,37 +4,34 @@
 
 ## 框架核心
 
-- `routing.mode`、`src/pages/**/page.*` 与相邻 `page.config.ts` 会为 SPA
-  和 MPA 规范化成同一份 Application/Page/Route/Document CoreGraph。
-- `application.routes` 是进入同一 graph 的显式 SPA-only 输入。
-- `src/apis/**/api.*` 提供 request Route 和文件系统作用域的
-  middleware。
-- `BuildPlan` 驱动 generated `.ev` entry、bundler adapter、开发路由、输出
-  ownership 与部署链接。
-- `BuildOutput` 只保留在内存；`dist/deployment-metadata.json` 是规范化的序列化
-  deployment projection。
-- 插件可以拥有 namespaced Application、Page、Route 与 Document 数据，并挂载
-  generated entry、wrapper、middleware、HTML、alias 与 external contribution。
-- 长生命周期 dev Supervisor 负责监听 framework input；config、graph、plan 或
-  generated IR 发生语义变化时，它会替换完整的 immutable Session。Bundler adapter
-  只负责 Session 内的普通 module watch/HMR。
-- 内置 Node、static 与 edge deployment adapter 消费链接后的输出模型。
+- `routing.mode`、`src/pages/**/page.*` 与相邻 `page.config.ts` 会为 SPA 和 MPA
+  生成同一份应用、页面、路由与文档语义图（`CoreGraph`）。
+- `application.routes` 是写入同一语义图的显式 SPA 配置。
+- `src/apis/**/api.*` 提供 API 路由，以及按文件目录划分作用范围的中间件。
+- `BuildPlan` 驱动 `.ev` 生成入口、构建器适配器、开发路由、输出归属与部署连接。
+- `BuildOutput` 只保留在内存中；`dist/deployment-metadata.json` 是供部署工具使用的
+  序列化部署元数据。
+- 插件可以管理带命名空间的应用、页面、路由与文档数据，并添加生成入口、包装组件、
+  中间件、HTML、别名与外部模块扩展。
+- 长期运行的开发环境管理器负责监听框架输入。配置、语义图、构建计划或生成代码发生
+  语义变化时，它会替换完整且不可变的开发会话；构建器适配器只负责会话内的普通模块
+  监听与热更新。
+- 内置 Node.js、静态托管与 Edge 部署适配器使用连接后的输出模型。
 
-## Bundler 构建能力
+## 构建器能力
 
 | 能力 | Utoopack | Webpack |
 | --- | --- | --- |
-| Client build | 支持 | 支持 |
-| Server rendering build | 支持 | 支持 |
-| RSC build | 不支持 | 支持 |
-| PPR build | 不支持 | 支持 |
+| 客户端构建 | 支持 | 支持 |
+| 服务端渲染构建 | 支持 | 支持 |
+| RSC 构建 | 不支持 | 支持 |
+| PPR 构建 | 不支持 | 支持 |
 
-Framework preflight 从选中的 adapter 读取这些声明；当 BuildPlan 需要未支持的构建
-能力时，会在调用 bundler 前失败。
+框架会从选中的适配器读取这些声明；当 `BuildPlan` 需要不受支持的能力时，会在开始打包
+前报错。
 
-## Adapter 待补能力
+## 适配器待补能力
 
-- Utoopack 用于 PPR 与 RSC 的 build fact 和 entry API。
+- Utoopack 用于 PPR 与 RSC 的构建结果和入口 API。
 
-已完成工作记录到 changelog；本页应始终与 adapter capability declaration 和聚焦
-测试保持一致。
+已完成工作记录到 `CHANGELOG.md`；本页应始终与适配器能力声明和相关测试保持一致。

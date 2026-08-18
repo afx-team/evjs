@@ -7,7 +7,7 @@ page wrappers, server middleware, HTML, or module resolution.
 Use lifecycle hooks for external side effects and final platform files. See
 [Plugin Hooks](./plugin-hooks) for that decision.
 
-## The pattern
+## How generation works
 
 Generation has two steps:
 
@@ -25,7 +25,7 @@ flowchart LR
 Keep generation deterministic and free of network, process, or external file
 side effects. evjs may evaluate it again while application inputs change.
 
-## Emit artifacts
+## Emit modules and data
 
 `ctx.emit` supports:
 
@@ -120,7 +120,7 @@ For a generated SPA application entry, `autoStart: false` exports the app and
 `start(container)` without mounting automatically. The replacing entry becomes
 responsible for the first start.
 
-## Wrap pages
+## Wrap page components
 
 Use `page.wrapper` for React behavior that surrounds pages in client, server,
 or both projections. The module must default-export a component that accepts
@@ -216,7 +216,7 @@ ctx.slot("resolve.external").add({
 Runtime filters accept `"client"`, `"server"`, or `"all"` where the slot
 supports them.
 
-## Work with server page entries
+## Extend server page entries
 
 `server.entry` imports into or replaces an existing page server entry. It
 requires an exact page target that already has request-time or build-time
@@ -235,7 +235,7 @@ Use `mode: "replace"` only when the integration owns the complete page server
 entry. A missing page, a page without a server entry, or multiple replacements
 fails generation instead of becoming a no-op.
 
-## Slot reference
+## Extension slot reference
 
 | Slot | Purpose |
 | --- | --- |

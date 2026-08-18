@@ -107,7 +107,7 @@ setup() {
 
 Keep output-dependent work in `afterBuild()`.
 
-## Build and rebuild hooks
+## Build and rebuild
 
 `beforeBuild()` and `afterBuild()` run only when bundling produces a valid
 output cycle. `prepare` and `inspect` do not call them.
@@ -118,7 +118,7 @@ In development:
 - later successful output cycles use `isRebuild: true`;
 - a failed cycle does not call `afterBuild()`.
 
-`afterBuild()` runs after canonical files have been published. A failure from
+`afterBuild()` runs after framework output files have been published. A failure from
 that hook still fails a production build, so use it for required artifacts and
 handle optional reporting failures explicitly.
 
@@ -238,7 +238,7 @@ Bundler hooks can customize supported low-level settings, but cannot replace
 framework page entries or client/server output directories. Use generated
 contributions to change startup composition.
 
-## Contribute terminal shortcuts
+## Add terminal shortcuts
 
 Interactive shortcuts are descriptor declarations rather than lifecycle hooks:
 
