@@ -3,82 +3,136 @@
 [![npm](https://img.shields.io/npm/v/@evjs/cli?style=flat-square&label=npm)](https://www.npmjs.com/package/@evjs/cli)
 [![CI](https://img.shields.io/github/actions/workflow/status/afx-team/evjs/ci.yml?style=flat-square&label=CI)](https://github.com/afx-team/evjs/actions)
 
-React fullstack framework with one Page-and-Route model for SPA and MPA
-applications, server file routes, server functions, rendering, and deployment.
+evjs is a React full-stack framework built around file-based pages, optional
+server capabilities, and a predictable path from local development to
+deployment.
 
-## ⚡ Features
+[Documentation](https://afx-team.github.io/evjs/docs/overview) ·
+[Quick Start](https://afx-team.github.io/evjs/docs/quick-start) ·
+[简体中文](https://afx-team.github.io/evjs/zh-Hans/docs/overview)
 
-- **One Page-and-Route Model** — each `src/pages/**/page.*` anchor owns its directory scope and derives its URL from that directory.
-- **One Page Config Contract** — optional `page.config.ts` supplies static titles, named metadata, build-time rendering settings, and plugin-owned settings keyed by canonical plugin ids in SPA and MPA.
-- **No Accidental Pages** — colocated files such as `components/index.tsx` stay private because only `page.*` creates a Page.
-- **SPA and MPA Modes** — the same semantic Page/Route tree materializes as SPA Client Routes or MPA Documents through `routing.mode`.
-- **Data Fetching** — [TanStack Query](https://tanstack.com/query) integration for server functions.
-- **Server Functions** — reachable `"use server"` modules are transformed into typed client references.
-- **Pluggable Transport** — HTTP, WebSocket, or custom protocols via a `TransportAdapter`.
-- **Plugin System** — identify each plugin with one short canonical `id`, then extend the generated `.ev` framework IR through contributions and lifecycle hooks for config, bundler, HTML, and build output.
-- **Server File Routes** — positive `src/apis/**/api.*` anchors map directory-owned Request/Response handlers to HTTP endpoints.
-- **Typed Errors** — `ServerError` flows structured data server → client.
-- **Runtime Targets** — [Hono](https://hono.dev/)-based server APIs for Node and standard Fetch runtimes.
-- **CLI** — `ev dev` · `ev build` · `ev prepare` · `ev inspect`
+## Why evjs?
 
-## 🚀 Quick Start
+- **Pages follow the filesystem.** A `page.*` file creates a page, and its
+  directory determines the URL. Components, hooks, styles, tests, and other
+  source can stay beside the page that uses them.
+- **One page tree supports SPA and MPA.** Choose the navigation model in
+  `ev.config.ts` without reorganizing the application.
+- **Rendering is selected per page.** Use an adjacent `page.config.ts` for
+  metadata and CSR, SSR, SSG, PPR, or RSC behavior.
+- **Server capabilities are optional.** Add imported `"use server"` functions
+  for application operations or `api.*` files for public HTTP endpoints.
+- **Plugins remain typed and local.** Configure integrations for the
+  application and opt individual pages into plugin behavior when needed.
+- **Build for the target you need.** Produce browser output and, when required,
+  server output for static, Node.js, or edge deployments.
+
+## Quick start
 
 ```bash
 npx @evjs/create-app my-app
-cd my-app && npm install
+cd my-app
+npm install
 npm run dev
 ```
 
-The development command prints the selected browser and framework-server URLs.
-Server-function modules are discovered through the `"use server"` directive
-when they are reachable from the application graph; `.server.ts` is a naming
-recommendation, not a discovery rule.
+Open the browser URL printed by the development server.
 
-## 🧭 Framework IR
+Choose SPA or MPA in `ev.config.ts`:
 
-evjs materializes framework-owned code under `.ev/` before bundling. This
-agent-readable IR records normalized Applications, Pages, Routes, Documents,
-generated entry facades, plugin modules, slot attachments, import edges, and
-the final manifest.
+```ts
+import { defineConfig } from "@evjs/ev";
 
-Use `ev prepare` to generate `.ev/` without writing `dist`, and use
-`ev inspect --json` when you want a preflight report without writing generated
-files. Plugin authors should use `emitIR()` for generated modules and
-entry/runtime/HTML/resolution slots; keep loaders for real bundler transforms.
-
-## 🏗️ Packages
-
-### Public entry points
-
-| Package | Purpose |
-|---------|---------|
-| [`@evjs/ev`](./packages/ev) | Framework API, Page-and-Route config, plugins, build orchestration, deployment helpers, and authoring subpaths |
-| [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev prepare`, `ev inspect`) with the default bundler |
-| [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](./packages/client) | Standalone/manual browser runtime core |
-| [`@evjs/server`](./packages/server) | Standalone/manual server runtime core for Hono and Fetch apps |
-| [`@evjs/plugin-qiankun`](./packages/plugin-qiankun) | Optional qiankun integration |
-| [`examples/`](./examples) | Starter templates |
-
-Application code imports framework composition APIs from `@evjs/ev`
-and file-convention authoring APIs from `@evjs/ev/route`, `@evjs/ev/navigation`,
-`@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`. `@evjs/client` and `@evjs/server` remain independent
-standalone/manual runtime packages for apps that intentionally own those
-surfaces directly.
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENTS.md](./AGENTS.md) · [AGENT.md](./AGENT.md)
-
-## 🛠️ Development
-
-```bash
-npm install          # deps
-npm run build        # all packages + examples
-npm run test         # vitest
-npm run test:e2e     # playwright
-npm run check-types  # TypeScript
-npm run lint         # Biome
+export default defineConfig({
+  routing: {
+    mode: "spa",
+  },
+});
 ```
 
-## 📄 License
+Then add a page:
+
+```tsx
+// src/pages/page.tsx → /
+export default function HomePage() {
+  return <h1>Hello from evjs</h1>;
+}
+```
+
+The directory structure is the route structure:
+
+```text
+src/
+├── pages/
+│   ├── page.tsx                     # /
+│   └── users/
+│       └── $userId/
+│           └── page.tsx             # /users/:userId
+└── apis/
+    └── health/
+        └── api.ts                    # /health
+```
+
+Continue with the [Quick Start](https://afx-team.github.io/evjs/docs/quick-start)
+to add navigation, page configuration, server functions, and API routes.
+
+## Framework model
+
+An evjs application has a small set of public conventions:
+
+| File or directory | Purpose |
+| --- | --- |
+| `ev.config.ts` | Select routing, plugins, build behavior, and deployment options. |
+| `src/pages/**/page.*` | Publish React pages; directories define their URLs. |
+| `src/pages/**/page.config.ts` | Configure metadata, rendering, and page-level plugin behavior. |
+| Imported `"use server"` modules | Expose named server functions to application code. |
+| `src/apis/**/api.*` | Publish HTTP handlers using standard `Request` and `Response`. |
+
+Only these explicit conventions create framework behavior. Other files remain
+ordinary application source and can be organized around the feature that owns
+them.
+
+## Documentation
+
+- [What is evjs?](https://afx-team.github.io/evjs/docs/overview)
+- [Project structure](https://afx-team.github.io/evjs/docs/project-structure)
+- [Framework design](https://afx-team.github.io/evjs/docs/architecture)
+- [Guides](https://afx-team.github.io/evjs/docs/guides)
+- [Reference](https://afx-team.github.io/evjs/docs/reference)
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| [`@evjs/ev`](./packages/ev) | Main framework API for application configuration, pages, plugins, builds, and deployment. |
+| [`@evjs/cli`](./packages/cli) | Commands for development, inspection, preparation, and production builds. |
+| [`@evjs/create-app`](./packages/create-app) | Project scaffolding through `npx @evjs/create-app`. |
+| [`@evjs/client`](./packages/client) | Browser runtime APIs for applications that manage their own route tree. |
+| [`@evjs/server`](./packages/server) | Server runtime APIs for Hono and standard Fetch applications. |
+| [`@evjs/plugin-qiankun`](./packages/plugin-qiankun) | Optional qiankun integration. |
+| [`examples/`](./examples) | Runnable examples for common application patterns and integrations. |
+
+Most applications start with `@evjs/ev`. The focused authoring imports
+`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`,
+`@evjs/ev/server-context`, and `@evjs/ev/transport` are available when those
+capabilities are needed.
+
+## Contributing
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before making a change. Framework
+contributors should also use [AGENTS.md](./AGENTS.md), [AGENT.md](./AGENT.md),
+and [ARCHITECTURE.md](./ARCHITECTURE.md) for repository ownership and internal
+design details.
+
+```bash
+npm install
+npm run build
+npm test
+npm run test:e2e
+npm run check-types
+npm run lint
+```
+
+## License
 
 MIT © [Ant UED](https://xtech.antfin.com/)
