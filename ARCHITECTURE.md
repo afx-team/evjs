@@ -117,12 +117,13 @@ sequenceDiagram
   EV->>Plugin: dispose()
 ```
 
-Build, prepare, and accepted development revisions complete graph and
-generated-IR planning, then publish the selected revision before plugin setup.
-Inspect remains write-free but also runs no setup when planning fails.
-Development may discard a failed or semantically unchanged candidate without
-replacing the active Session; setup runs only while constructing an accepted
-replacement.
+Publishing paths—build, prepare, and accepted development revisions—complete
+graph and generated-IR planning, then publish the selected revision before
+plugin setup. `inspectFrameworkBuild()` is the exception: it completes planning
+in memory, runs setup and dispose, and never publishes `.ev` or generated
+types. A planning failure never reaches setup. Development may discard a failed
+or semantically unchanged candidate without replacing the active Session;
+setup runs only while constructing an accepted replacement.
 
 `transformOutput()` may change asset-group contents and add plugin deployment
 metadata, but graph identity, runtime paths, routes, output paths, and owner
