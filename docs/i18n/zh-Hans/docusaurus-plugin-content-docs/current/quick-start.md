@@ -1,5 +1,7 @@
 # 快速开始
 
+创建一个包含两个页面、一个服务端函数和一个 API 路由的小应用。
+
 ## 创建项目
 
 ```bash
@@ -9,13 +11,13 @@ npm install
 npm run dev
 ```
 
-开发服务器会输出实际使用的浏览器和 server URL。
+打开开发服务器输出的浏览器地址。
 
-## 定义应用
+## 选择 SPA 或 MPA
 
-创建 `ev.config.ts` 并选择输出 mode：
+创建 `ev.config.ts`：
 
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
@@ -25,7 +27,11 @@ export default defineConfig({
 });
 ```
 
-创建两个 Page route：
+需要客户端导航、嵌套路由和动态路径时使用 `"spa"`。每个页面都是静态路径并应作为独立 HTML 文档加载时，使用 `"mpa"`。
+
+## 添加页面
+
+创建下面的目录：
 
 ```text
 src/pages/
@@ -34,116 +40,85 @@ src/pages/
     └── page.tsx                     # /about
 ```
 
-```tsx
-// src/pages/page.tsx
+```tsx title="src/pages/page.tsx"
 import { Link } from "@evjs/ev/navigation";
 
 export default function HomePage() {
   return (
     <main>
       <h1>Home</h1>
-      <Link to="/about">About</Link>
+      <Link to="/about">About this app</Link>
     </main>
   );
 }
 ```
 
-```tsx
-// src/pages/about/page.tsx
+```tsx title="src/pages/about/page.tsx"
 export default function AboutPage() {
   return <h1>About</h1>;
 }
 ```
 
-`page.*` 是 Page 与 Route 锚点。相对目录决定 URL，不需要单独的 route 声明。
+`page.*` 是公共页面锚点。所在目录决定 URL，因此不需要同步另一张路由表。
 
-Page 需要构建期能力时，在旁边添加 `page.config.ts`：
+## 配置单个页面
 
-```ts
+在相邻 `page.config.ts` 中添加静态元信息或选择渲染方式：
+
+```ts title="src/pages/about/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
-  title: "关于",
+  title: "About",
   meta: {
-    description: "应用介绍",
-    keywords: "evjs,关于",
-    viewport: "width=device-width, initial-scale=1",
-    "theme-color": "#ffffff",
+    description: "About this application",
   },
   render: "csr",
 });
 ```
 
-`title` 与 `meta` 是静态 core Page 元信息；`meta` 只生成
-`<meta name="..." content="...">`。已安装的 Page-aware 插件使用 `plugins`
-下各自的 canonical id，这些值不会自动发送到浏览器 runtime。
+这个文件是可选的，CSR 是默认值。选择 SSR、SSG、PPR 或 RSC 前，请先阅读[渲染](./rendering)。
 
-## Page 私有代码
+## 把页面代码放在一起
 
-组件、hook、model、service、测试、样式和 asset 都可以放在 Page 目录：
+页面旁边的文件都是普通源码，除非使用另一个框架识别的锚点：
 
 ```text
 src/pages/about/
 ├── page.tsx
 ├── page.config.ts
-├── index.ts
 ├── model.ts
-├── use-about.ts
+├── about.css
 └── components/
     └── Team.tsx
 ```
 
-只有 `page.*` 创建 Page 与 Route。包括 `index.*` 在内的其他文件都是普通私有
-源码，不需要 `_` 前缀。
+组件、Hook、模型、测试、样式和资源都不需要 `_` 前缀。
 
 ## 添加动态路由
 
-使用 `$param` 目录：
+SPA 项目可以使用 `$param` 目录：
 
 ```text
-src/pages/
-└── users/
-    └── $userId/
-        └── page.tsx                 # /users/:userId
+src/pages/users/$userId/page.tsx     # /users/:userId
 ```
 
-```tsx
-// src/pages/users/$userId/page.tsx
+```tsx title="src/pages/users/$userId/page.tsx"
 import { usePageParams } from "@evjs/ev/route";
 
-export default function UserDetailPage() {
+export default function UserPage() {
   const { userId } = usePageParams();
   return <h1>User {userId}</h1>;
 }
 ```
 
-静态目录创建静态 URL segment；终止 `$...splat` 目录创建 catch-all；
-`(group)` 可以组织路由而不增加 URL segment。
+使用终止 `$...splat` 表示通配路径，使用 `(group)` 组织路由但不增加 URL 段。MPA 项目只接受静态页面路径。
 
-## 切换到 MPA
+## 调用服务端代码
 
-Page 文件树无需移动，只改变物化 mode：
+创建一个以 `"use server";` 开头且可达的模块，并命名导出函数：
 
-```ts
-export default defineConfig({
-  routing: {
-    mode: "mpa",
-  },
-});
-```
-
-SPA 把文件树物化为浏览器 Client Route，通常共享一个 Document。MPA 从相同
-语义 Page 与 Route 出发，物化 Page-owned Document。同一 Page 目录的
-`index.html` 可以提供 MPA Document 模板。MPA 只接受静态 Page path：
-`$param`、终止 `$...splat` 与 router-only boundary 会在 inspect/build 中失败；
-layout 在两种 mode 中都会组合。
-
-## 添加服务端函数
-
-Server function 可以放在调用它的 Page 旁边：
-
-```ts
-// src/pages/get-message.server.ts
+```ts title="src/pages/get-message.server.ts"
 "use server";
 
 export async function getMessage() {
@@ -151,8 +126,9 @@ export async function getMessage() {
 }
 ```
 
-```tsx
-// src/pages/page.tsx
+在页面中使用查询辅助 API 调用：
+
+```tsx title="src/pages/page.tsx"
 import { useQuery } from "@evjs/ev/query";
 import { getMessage } from "./get-message.server";
 
@@ -162,64 +138,34 @@ export default function HomePage() {
 }
 ```
 
-## 添加服务端路由
+## 添加 HTTP 端点
 
-Server request Route 使用 `src/apis` 下独立的 positive `api.*` 锚点：
+在 `src/apis` 下创建 `api.*` 锚点并导出大写 HTTP 方法：
 
-```ts
-// src/apis/api/health/api.ts
+```ts title="src/apis/health/api.ts"
 export function GET() {
   return Response.json({ ok: true });
 }
 ```
 
-完整所在目录 `api/health` 创建 `/api/health`。客户端 `page.*` route 与 server
-request Route 是使用对称 positive anchor 的独立系统。
+端点地址为 `/health`。API 路由使用标准 Web `Request` 和 `Response`。参数和中间件见 [API 路由与中间件](./server-routes)。
 
-## 构建
+## 检查并构建
+
+生产构建前，检查路由和渲染选择：
 
 ```bash
+ev inspect
 npm run build
 ```
 
-默认：
+浏览器产物默认写入 `dist/client`。使用服务端函数、API 路由或请求时渲染的应用还会生成 `dist/server`。
 
-- client output 写入 `dist/client`；
-- server output 写入 `dist/server`；
-- framework IR 位于 `.ev`。
+把 `.ev`、`dist`、`src/route-types.d.ts` 和 `src/plugin-types.d.ts` 当作生成产物，不要编辑或复制进应用模板。
 
-`.ev`、`dist`、`src/route-types.d.ts`、`src/plugin-types.d.ts` 等都应视为生成物，
-不要编辑或复制到模板。
+## 接下来
 
-## 核心包
-
-| 包 | 用途 |
-| --- | --- |
-| `@evjs/cli` | `ev dev`、`ev build`、`ev inspect` 等命令 |
-| `@evjs/ev` | 配置、插件、build graph、部署 helper 与应用 subpath |
-| `@evjs/ev/route` | Page params、search 与 loader-data helper |
-| `@evjs/ev/navigation` | `Link`、导航、重定向和 outlet |
-| `@evjs/ev/query` | Server-function query 与 mutation helper |
-| `@evjs/ev/server-context` | Request-context helper |
-| `@evjs/ev/transport` | 自定义 client/server transport helper |
-| `@evjs/client` | Standalone 浏览器 runtime primitive |
-| `@evjs/server` | Standalone server runtime primitive |
-
-框架持有的 Page 应用从 `@evjs/ev` 及其 curated subpath 导入。只有明确的
-standalone/manual runtime composition 才直接使用 `@evjs/client` 和
-`@evjs/server`。
-
-## 选择一种路由输入
-
-使用文件约定时，每个公开 Page 位于其 URL 对应目录，entry 命名为 `page.*`，Page
-设置放在相邻 `page.config.ts`，并声明 `routing.mode: "spa" | "mpa"`。
-
-显式 `application.routes` 是独立、仅支持 SPA 的配置输入。它支持 `page` 或
-`component`、嵌套 `routes`、layout、wrapper 与 redirect；插件配置仍由 Page
-持有。该输入不能与 `routing` 同时配置，也不会选择 MPA。
-
-无关的 `src/pages` 目录本身不会发布客户端路由。运行 `ev inspect` 可确认
-normalized Page/Route 结构。
-
-接下来阅读[项目结构](./project-structure)、[客户端路由](./client-routes)和
-[配置](./config)。
+- [项目结构](./project-structure)：所有权规则和所有受识别文件。
+- [页面与路由](./client-routes)：布局、嵌套路由与导航。
+- [本地开发](./dev)：端口、代理与 HTTPS。
+- [部署](./deploy)：选择生产目标。

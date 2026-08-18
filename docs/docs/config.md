@@ -1,291 +1,198 @@
 # Configuration
 
-evjs has one application authoring model for SPA and MPA:
+Use `ev.config.ts` for application-wide choices. Page-specific metadata,
+rendering, and plugin options belong in adjacent `page.config.ts` files.
 
-- `src/pages/**/page.*` is the canonical Page and client-route anchor;
-- its containing directory determines Page scope and URL;
-- `routing.mode` chooses SPA or MPA materialization without changing the
-  semantic Page/Route tree.
-
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  routing: {
-    mode: "spa",
-  },
+  routing: { mode: "spa" },
 });
 ```
 
-The file tree supplies the rest:
+TypeScript configuration is recommended for completion and for typed
+page-plugin settings.
 
-```text
-src/pages/
-├── page.tsx                         # /
-├── users/
-│   ├── page.tsx                     # /users
-│   └── $userId/
-│       └── page.tsx                 # /users/:userId
-└── (account)/
-    └── settings/
-        └── page.tsx                 # /settings
-```
+## Top-level options
 
-## File-convention Discovery
-
-File conventions are enabled by default. Applications that own all runtime
-composition can disable filesystem discovery with the single top-level switch:
-
-```ts
-export default defineConfig({
-  conventions: false,
-});
-```
-
-This disables `page.*` discovery under `src/pages`, `api.*` server request-route
-discovery under `src/apis`, and both global and route-scoped middleware file
-discovery.
-It cannot be combined with an explicit client `routing` declaration. There are
-no narrower convention disable switches.
-
-SPA-only `application.routes` configuration does not depend on file
-conventions. Neither do reachable modules marked with `"use server";` nor
-modules emitted through plugin contributions.
+| Option | Purpose | Default |
+| --- | --- | --- |
+| `routing` | Enable canonical pages and select SPA or MPA | Not enabled until declared |
+| `conventions` | Enable all framework file conventions | `true` |
+| `dev` | Browser development server | Port `3000` |
+| `server` | Server runtime, build resolution, and development server | Base path `/__evjs`, dev port `3001` |
+| `transport` | Browser-to-server origin | Same origin |
+| `target` | Production Android and iOS compatibility target | Bundler default |
+| `polyfill` | External core-js source for an enabled target | Bundled core-js |
+| `output` | Browser/server directories and asset CORS policy | `dist/client`, `dist/server` |
+| `plugins` | Install and configure integrations | `[]` |
+| `bundler` | Select a non-default bundler adapter | Utoopack from the CLI |
+| `application` | Advanced explicit SPA route tree | Not set |
 
 ## Routing
 
-`routing` enables the canonical client Page-and-Route convention.
-
-| Field | Meaning |
-| --- | --- |
-| `mode` | `"spa"` or `"mpa"`. This changes materialization only. |
-| `html` | Shared HTML template. Defaults to `./index.html`. |
-| `mount` | Shared mount selector. Defaults to `#app`. |
-
-Canonical Page discovery always reads `src/pages`; `routing` has no client
-root override.
-
-Declare the mode explicitly so an unrelated `src/pages` directory is never
-mistaken for a framework route tree:
+Declaring `routing` enables the canonical `src/pages/**/page.*` tree:
 
 ```ts
 export default defineConfig({
-  routing: { mode: "spa" },
+  routing: {
+    mode: "spa",
+    html: "./index.html",
+    mount: "#app",
+  },
 });
 ```
 
-## Page and path rules
-
-Each route directory may contain exactly one of `page.ts`, `page.tsx`,
-`page.js`, or `page.jsx`. The Page module default-exports its component. The
-directory is also the Page-private ownership scope.
-
-| Directory segment | Semantic route segment |
-| --- | --- |
-| `users` | Static `users`. |
-| `$userId` | Dynamic `:userId`. |
-| `$...splat` | Terminal catch-all. |
-| `(account)` | Pathless group. |
-
-The build rejects malformed segments, multiple Page extension variants,
-duplicate normalized paths, ambiguous dynamic parameter shapes, and generated
-route-id collisions. `index.*` has no canonical client-route meaning and can be
-used as an ordinary private module.
-
-### Page routes with children
-
-Directory nesting creates child routes. In SPA mode, a parent Page can render
-the nested outlet:
-
-```tsx
-import { Outlet } from "@evjs/ev/navigation";
-
-export default function UsersPage() {
-  return (
-    <main>
-      <h1>Users</h1>
-      <Outlet />
-    </main>
-  );
-}
-```
-
-A directory without `page.*` can organize descendants. A `(group)` directory
-also omits its own URL segment.
-
-## SPA And MPA
-
-The same file tree changes materialization according to `routing.mode`.
-
-| Model object | SPA | MPA |
+| Field | Type | Meaning |
 | --- | --- | --- |
-| Page | `page.*` with its containing-directory scope | The same Page and scope |
-| Route | Client Route in one browser route tree | The same semantic Route, used to select an independent Page entry |
-| Document | Application-owned shell plus Page-owned Documents for static SSG Pages | One Page-owned HTML Document per static Page route |
-| Source path | Route directory relative to `src/pages` | The same source path |
+| `mode` | `"spa" \| "mpa"` | Required navigation/document model |
+| `html` | `string` | Shared HTML template; defaults to `./index.html` |
+| `mount` | `string` | React mount selector; defaults to `#app` |
 
-### SPA
+The page root is fixed at `src/pages`. SPA and MPA read the same page files.
+See [Pages and Routing](./client-routes) for their capability differences.
 
-```ts
-export default defineConfig({
-  routing: { mode: "spa" },
-});
-```
+## Page configuration
 
-SPA supports nested routes, dynamic parameters, splats, and file-convention
-layouts/boundaries.
+An optional `page.config.ts` sits beside one `page.*` anchor:
 
-### MPA
-
-```ts
-export default defineConfig({
-  routing: { mode: "mpa" },
-});
-```
-
-MPA discovery accepts the same `page.*` anchors and produces the same semantic
-Page/Route identities. It accepts only static Page paths: `$param`, terminal
-`$...splat`, and router-only boundaries fail during graph validation. Layouts
-compose in both modes. These errors do not activate another authoring model. A
-colocated `index.html` supplies that MPA Page's Document template.
-
-## Application Plugin Configuration
-
-Install and configure an Application plugin with one factory call in the
-top-level `plugins` array:
-
-```ts
-import { defineConfig } from "@evjs/ev";
-import { analytics } from "@company/evjs-plugin-analytics";
-
-export default defineConfig({
-  routing: { mode: "spa" },
-  plugins: [
-    analytics({
-      endpoint: "/events",
-      debug: false,
-    }),
-  ],
-});
-```
-
-The factory both installs the plugin and supplies its Application
-configuration. Its argument is typed directly by the plugin package, so there
-is no second namespace, registration call, or configuration object to keep in
-sync. Conditional entries may use `false`, `null`, or `undefined`; inactive
-entries are omitted at runtime. Because they are not guaranteed to install,
-entries with a possible falsy branch do not expose plugin ids to Page config.
-When the Page contract has defaults, use `plugin.forPages(options)` to keep the
-plugin and its Application options active while every Page opts in explicitly.
-
-Application configuration may contain typed executable options or explicit
-module references when the plugin contract allows them. Do not put secrets in
-values that the plugin projects into generated files or browser runtime.
-
-## Page Scope And Configuration
-
-The complete Page directory is its private ownership scope:
-
-```text
-src/pages/users/$userId/
-├── page.tsx
-├── page.config.ts
-├── index.ts
-├── model.ts
-├── services.ts
-└── components/
-    └── ProfileCard.tsx
-```
-
-Only `page.*` is the Page entry. Other files never create routes, so Page code
-does not need `_` prefixes. “Private” describes framework discovery and plugin
-ownership, not a security boundary or import restriction. A descendant
-directory with its own `page.*` creates a more specific Page scope.
-
-Optional Page-level configuration uses an adjacent `page.config.ts`:
-
-```ts
+```ts title="src/pages/profile/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
-  title: "User profile",
+  title: "Profile",
   meta: {
-    description: "View and manage a user profile.",
-    keywords: "users,profile",
-    viewport: "width=device-width, initial-scale=1",
-    "theme-color": "#ffffff",
+    description: "View and update your profile.",
   },
-  render: "csr",
+  render: "ssr",
+  hydrate: "load",
   plugins: {
-    analytics: {
-      channel: "profile",
+    analytics: { channel: "profile" },
+  },
+});
+```
+
+| Field | Purpose |
+| --- | --- |
+| `title` | Static document title for the page |
+| `meta` | String map emitted as named `<meta>` elements |
+| `render` | `"csr"`, `"ssr"`, or `"ssg"` |
+| `hydrate` | `"load"` or `"none"` for explicit SSR/SSG pages |
+| `prerender` | Static or partial prerendering options |
+| `rsc` | Enable RSC for an SSR page |
+| `document.aliases` | Additional `.html` or `.htm` output paths for a page-owned static document |
+| `plugins` | Static page options keyed by installed plugin id |
+
+The default export must be static JSON data. Read [Rendering](./rendering) for
+valid render/hydration combinations and [Using Plugins](./plugins) for plugin
+scope.
+
+## Development server
+
+```ts
+export default defineConfig({
+  dev: {
+    port: 4000,
+    https: false,
+    cliShortcuts: true,
+    proxy: [
+      {
+        context: ["/backend"],
+        target: "http://localhost:8080",
+        pathRewrite: { "^/backend": "" },
+        changeOrigin: true,
+        secure: true,
+      },
+    ],
+  },
+  server: {
+    dev: {
+      port: 4001,
+      https: false,
     },
   },
 });
 ```
 
-The module is evaluated synchronously while evjs constructs the build graph.
-It must default-export a plain object containing static JSON data. Supported
-core fields are `title`, `meta`, `render`, `hydrate`, `prerender`, and `rsc`.
-Omitting `render` always selects CSR, and CSR must omit `hydrate`. Explicit SSR
-and SSG Pages may use `hydrate: "none" | "load"`; ordinary SSR defaults to
-`"load"`, SSG defaults to `"none"`, and RSC/PPR remain unhydrated at Page level.
-`meta` is a string record for `<meta name="key" content="value">`; it does not
-accept `property`, `charset`, links, scripts, functions, or a generic head
-tree. Installed Page-aware plugins use their canonical ids under `plugins`.
-The Page module does not import the plugin package: `ev prepare`, `ev dev`, and
-`ev build` generate `src/plugin-types.d.ts` as a stable bridge to the static
-type of `ev.config.ts`. TypeScript derives plugin ids and Page values from that
-config type, but only for entries statically guaranteed to install. JavaScript
-config does not widen the Page registry to `any`; use `ev.config.ts` when Page
-plugin completion is required.
+### `dev`
 
-Application and Page configuration are independent plugin contracts. evjs
-does not merge the object passed to the Application factory into a Page value.
-Within either contract, authored fields deep-merge over that contract's
-defaults before validation. Within the Page map, a normal factory call uses
-Page defaults for an omitted plugin entry when defaults exist; otherwise
-omission disables that Page. Defaultable Page contracts expose `forPages()`,
-which always treats omission as disabled; non-defaultable contracts are already
-opt-in-only. `false` disables the plugin for this Page, `true` requires Page
-defaults, and an object enables it after merging over Page defaults and
-validation. Page objects must be strict static JSON.
+| Field | Type | Default |
+| --- | --- | --- |
+| `port` | `number` | `3000` |
+| `https` | `boolean \| { key, cert }` | `false` |
+| `proxy` | `DevProxyRule[]` | `[]` |
+| `cliShortcuts` | `boolean` | `true` |
 
-The plugin API targets the same normalized Page identity in both modes.
-Core title/meta values are materialized for the Page in both modes. Configured
-Page plugin values are build-time graph data and are not automatically
-published to browser runtime; the plugin must explicitly generate and attach
-any runtime projection it needs. Plugins derive Route or Document behavior
-from the normalized Page instead of exposing separate Route or Document plugin
-configuration.
+A proxy rule accepts `context`, `target`, optional `pathRewrite`,
+`changeOrigin`, and `secure`. The default Utoopack adapter supports boolean
+client HTTPS. Select the Webpack adapter when the client dev server requires a
+custom key/certificate pair.
 
-## Other Configuration
+### `server.dev`
 
-### Polyfills
+| Field | Type | Default |
+| --- | --- | --- |
+| `port` | `number` | `3001` |
+| `https` | `false \| { key, cert }` | `false` |
 
-Production browser compatibility is opt-in and controlled by `target`. In
-development, evjs keeps the adapters' existing client targets and transpilation
-scope and does not inject core-js. When `target` is omitted, production also
-keeps that existing behavior.
+The server requires an explicit key/certificate pair for HTTPS. See
+[Local Development](./dev) for URLs, port fallback, and restart behavior.
 
-Use a target object to select supported Android and iOS versions for production,
-emit ES5 syntax, and bundle the framework-owned `core-js/stable` bridge. Every
-production generated client facade imports the bridge before plugin `polyfill`
-entry contributions and the application entry. This covers ECMAScript built-in
-features and increases the production client bundle size.
+## Server
 
 ```ts
 export default defineConfig({
-  target: { android: 5, ios: 8 },
+  server: {
+    basePath: "/__evjs",
+    rsc: {
+      endpoint: "/__evjs/rsc",
+    },
+    resolve: {
+      alias: {
+        "server-sdk": "./src/server/sdk.ts",
+      },
+    },
+    externals: {
+      "native-addon": "commonjs native-addon",
+    },
+  },
 });
 ```
 
-Applications can raise either baseline, for example to
-`target: { android: 6, ios: 10 }`. Android 5 and iOS 8 are the minimum accepted
-values. Both fields are required and must be finite numbers.
+| Field | Purpose |
+| --- | --- |
+| `basePath` | Prefix used for framework server-function, PPR, and RSC endpoints |
+| `rsc.endpoint` | Override the RSC Flight endpoint; does not enable RSC by itself |
+| `resolve.alias` | Module aliases for server build entries only |
+| `externals` | External module requests for server build entries only |
+| `dev` | Server development port and HTTPS |
 
-To load a separately hosted core-js UMD bundle instead, configure one absolute
-HTTP(S) URL alongside the target:
+`basePath` defaults to `/__evjs`. Keep the default unless a host or reverse
+proxy reserves it. Runtime paths must be absolute static URL paths; dynamic
+segments, wildcards, percent escapes, and `.`/`..` segments are invalid.
+
+Enable RSC in a page's `page.config.ts`, not in `server.rsc`.
+
+## Browser compatibility
+
+Set both minimum platforms to enable production syntax lowering and core-js:
+
+```ts
+export default defineConfig({
+  target: {
+    android: 6,
+    ios: 10,
+  },
+});
+```
+
+The minimum accepted values are Android 5 and iOS 8. Both fields are required.
+This changes production browser output; it does not change Node.js or server
+compilation.
+
+By default, targeted client entries bundle `core-js/stable`. To load an
+external UMD build instead, provide an absolute HTTP(S) URL:
 
 ```ts
 export default defineConfig({
@@ -296,176 +203,79 @@ export default defineConfig({
 });
 ```
 
-External mode removes the bundled core-js import. Every production SPA, MPA,
-SSR, and SSG Document that contains client JavaScript receives a normal blocking
-`<script src="...">` before the embedded EVJS client runtime data and deferred
-application scripts. The configured URL is preserved exactly and is not joined
-with `publicPath`. Documents without client JavaScript do not receive the tag.
+`polyfill` is valid only with `target`. It covers ECMAScript built-ins, not Web
+APIs such as `fetch`, `AbortController`, or Streams.
 
-`polyfill` is valid only with `target`; this prevents core-js from being
-loaded while JavaScript syntax remains untransformed. `polyfill.coreJs` accepts
-only an absolute `http:` or `https:` URL. Relative
-paths, other URL schemes, non-string values, and unknown `polyfill` fields are
-rejected during configuration resolution. This setting does not add Web API
-polyfills such as `fetch`, `AbortController`, or Streams, and does not change
-Node, build-time, or server compilation targets.
-
-### Server
-
-When file conventions are enabled, positive `api.*` server request-route
-anchors are discovered under the fixed `src/apis` root:
+## Output
 
 ```ts
 export default defineConfig({
-  routing: { mode: "spa" },
-  server: {
-    basePath: "/__evjs",
-    resolve: {
-      alias: { "server-sdk": "./src/server/sdk.ts" },
-    },
-    externals: {
-      "native-addon": "commonjs native-addon",
-    },
-  },
-});
-```
-
-`server.resolve` and `server.externals` apply only to server build entries;
-they never modify the client compiler. `server.resolve.alias` is a string map
-whose project-relative replacements resolve from the application root.
-`server.externals` maps module specifiers to external requests such as
-`"commonjs native-addon"`. All keys and values must be non-empty strings
-without leading or trailing whitespace. Config resolution normalizes these
-entries into `plan.server.externals` as a server-build-specific string map.
-
-The Webpack and Utoopack adapters support both settings in mixed client/server
-builds. Utoopack maps `server.resolve.alias` to its server-scoped resolver so a
-matching specifier can resolve differently for client and server entries;
-other top-level aliases remain shared.
-
-`server.basePath` owns server-function, PPR, and RSC runtime paths. It must be
-an absolute pathname using non-empty ASCII URL-safe segments containing only
-letters, digits, `.`, `_`, `~`, or `-`. Empty and standalone `.` or `..`
-segments, dynamic `:param` and
-wildcard `*` segments, percent escapes, and raw non-ASCII characters are not
-valid runtime endpoint configuration.
-
-Server middleware conventions are:
-
-- `src/middlewares/middleware.*` for explicitly ordered global server
-  middleware composition;
-- `src/apis/**/middleware.ts` for middleware scoped to same-directory and
-  descendant server file routes.
-
-Enable React Server Components per Page with `rsc: true` in `page.config.ts`.
-The Flight endpoint is derived from `server.basePath`; optionally override it
-with `server.rsc: { endpoint: "/custom/flight" }`. `server.rsc` is not an
-enable switch, and its endpoint override follows the same absolute ASCII static
-pathname rule.
-
-The server-function endpoint is exact. RSC adds another exact endpoint only
-when an RSC Page exists, and PPR reserves a rooted subtree only when PPR is
-active. The BuildPlan rejects collisions among active endpoints and between a
-reserved endpoint and any Page, redirect, or server request Route pattern.
-
-### Dev Server
-
-The browser dev server defaults to port `3000`; the server runtime defaults to
-`3001`. They are preferred ports and may move together when occupied.
-
-```ts
-export default defineConfig({
-  routing: { mode: "spa" },
-  dev: {
-    port: 4000,
-    cliShortcuts: true,
-    proxy: [
-      {
-        context: ["/api"],
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-    ],
-  },
-  server: {
-    dev: { port: 4001 },
-  },
-});
-```
-
-`dev.https` accepts `false`, `true`, or a `{ key, cert }` object. The default
-Utoopack adapter accepts only the boolean forms and rejects an explicit
-certificate instead of discarding it; select the Webpack adapter when custom
-client-dev certificates are required.
-`server.dev.https` accepts `false` or an explicit `{ key, cert }` object; the
-framework server does not synthesize a certificate for `true`.
-
-`dev.cliShortcuts` is a strict boolean that gates the interactive terminal
-shortcuts engine and defaults to `true`. Core does not add any keys; plugins
-declare them through descriptor-level `cliShortcuts()`. The engine remains a
-no-op in CI and non-TTY contexts. `ev dev --no-shortcuts` overrides the setting
-for the full run, including replacement Sessions. A watched config change to
-this setting otherwise takes effect through normal immutable Session
-replacement. See [Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts).
-
-### Output
-
-Browser assets default to `dist/client`; server artifacts default to
-`dist/server`. Both values must be project-relative strict descendants of the
-BuildPlan `distDir` (`dist` for framework commands), must use `/` as the
-portable separator, and must not contain empty, `.` or `..` path segments.
-They must resolve without symbolic links to separate, non-nested directories.
-This keeps adapter writes and cleanup scoped to one framework-owned output
-tree.
-
-```ts
-export default defineConfig({
-  routing: { mode: "spa" },
   output: {
     client: "dist/public",
     server: "dist/runtime",
+    crossOriginLoading: "anonymous",
   },
 });
 ```
 
-After plugin `configure()` and `setup()` finish, the BuildPlan owns the resolved output
-paths. Adapters use those paths for cleanup, emitted assets, stats, and
-manifests; `configureBundler()` hooks cannot override framework-owned client or
-server output paths.
+| Field | Type | Default |
+| --- | --- | --- |
+| `client` | project-relative path | `dist/client` |
+| `server` | project-relative path | `dist/server` |
+| `crossOriginLoading` | `false \| "anonymous" \| "use-credentials"` | `"anonymous"` |
 
-`output.crossOriginLoading` accepts `false`, `"anonymous"`, or
-`"use-credentials"`.
+Client and server directories must be separate, non-nested descendants of
+`dist` and cannot contain empty, `.` or `..` path segments.
 
-### Transport
+`crossOriginLoading` sets the `crossorigin` attribute for generated JavaScript
+and CSS tags and applies the same policy to dynamically loaded chunks.
 
-Set `transport.baseUrl` only when the browser calls the server runtime on a
-different origin:
+## Cross-origin server transport
+
+Same-origin applications need no transport configuration. When browser code
+must call an evjs server on another origin, set an absolute URL:
 
 ```ts
 export default defineConfig({
-  routing: { mode: "spa" },
   transport: {
     baseUrl: "https://api.example.com",
   },
 });
 ```
 
-### Plugins
+This affects framework browser-to-server calls such as server functions. It
+does not act as a general API-client base URL.
 
-Install plugins through `plugins`, normally as
-`pluginFactory(applicationConfig)`. A plugin can declare an independent Page
-contract whose canonical `id` becomes available in adjacent `page.config.ts`
-files.
-The same Plugin descriptor owns `configure()`, `setup()`, `emitIR()`, and
-lifecycle hooks. See [Plugins](./plugins).
+## Plugins
 
-### Bundler
-
-Utoopack is the default. Supply a bundler adapter only when intentionally using
-the validation/fallback backend:
+Install plugins through factory calls:
 
 ```ts
-import { defineConfig } from "@evjs/ev";
+import { analytics } from "@company/evjs-plugin-analytics";
+
+export default defineConfig({
+  plugins: [
+    analytics({
+      endpoint: "/events",
+      debug: false,
+    }),
+  ],
+});
+```
+
+The factory argument is the plugin's application configuration. Conditional
+entries may use `false`, `null`, or `undefined`. Page-aware plugins expose
+their page contract under the plugin id in `page.config.ts#plugins`.
+
+Application options and page options are separate contracts. They are not
+merged with each other. See [Using Plugins](./plugins).
+
+## Bundler
+
+The CLI selects Utoopack by default. Supply another adapter only when the
+application needs a capability or validation path it provides:
+
+```ts
 import { webpackAdapter } from "@evjs/bundler-webpack";
 
 export default defineConfig({
@@ -474,60 +284,23 @@ export default defineConfig({
 });
 ```
 
-Every adapter declares build capabilities for server rendering, RSC, and PPR.
-`ev inspect` reports the selected adapter and any build-capability gaps; build
-and dev fail before adapter execution when a required capability is missing.
-During development, adapters own ordinary module watch/HMR inside one immutable
-Session. A semantic framework-input change makes the Supervisor replace the
-complete Session; adapter inputs remain fixed for that Session's lifetime.
+Run `ev inspect` after changing the bundler. It reports capabilities required
+by the application's rendering choices.
 
-## Route Inputs
+## Disabling conventions
 
-Canonical Page discovery is enabled by `routing.mode`. An unrelated
-`src/pages` directory is not interpreted as a route tree when `routing` is
-absent. Only `page.*` anchors participate in this file convention.
+Advanced standalone applications can disable page, API route, and middleware
+file discovery together:
 
-### Explicit SPA route configuration
+```ts
+export default defineConfig({
+  conventions: false,
+});
+```
 
-`application` and `routing` are mutually exclusive. `application.routes`
-accepts nested `routes`, `page` or `component`, `layout`,
-`wrappers`, redirects, and Application Document configuration through the
-SPA-only explicit route-tree normalizer. `application.pageRoot` is the Page
-source root for both `page` and `component` references in this explicit input;
-it defaults to `./src/pages` and never changes canonical file discovery.
-A `page` value selects a `page.*`-anchored directory relative to that root.
-A `component` selects a module inside the same root: `@/pages/...` is a logical
-alias for the configured `application.pageRoot`, while bare and `./` component
-references are relative to it. Component paths and resolved symbolic links
-cannot escape the configured Page source root. Layout and wrapper references
-keep their project-source resolution semantics. The `children` spelling is
-rejected; nested declarations use `routes`. `exact: true` is accepted only as
-a terminal-match structural assertion; `exact: false` and nested routes below
-an exact Route are rejected, and `exact` is not copied into the graph. Plugin
-configuration is not authored on explicit Route or Document objects;
-Page-aware plugins derive those contributions from normalized Pages. MPA
-materialization, Document alias conflicts, and component references outside
-the Page root are rejected.
-Static segment identity is compared after exactly one URL decode. Raw and
-percent-encoded aliases therefore cannot coexist, and a segment that decodes
-to `.` or `..` is rejected because WHATWG URL parsing removes it before route
-matching.
+There are no per-directory switches. `conventions: false` cannot be combined
+with canonical `routing`. Reachable `"use server"` modules and explicit
+`application.routes` remain available.
 
-An explicit component ending in `index.*` or `page.*` claims its containing
-directory as the Page scope. A flat component such as
-`<application.pageRoot>/403.tsx` remains module-scoped so it cannot
-accidentally claim other flat Pages in the configured root; a module-scoped
-Page does not discover an adjacent `page.config.ts`.
-
-### Canonical Page tree
-
-With `routing.mode`, each published Page lives in the directory for its public
-URL and uses `page.*`. Static title, named metadata, rendering settings, and
-plugin-owned Page values live in the adjacent `page.config.ts`. Dynamic,
-terminal catch-all, and pathless segments use `$param`, `$...splat`, and
-`(group)` directories. Run `ev inspect` to review the normalized
-Page/Route/Document graph.
-
-The public configuration surface is the schema described above. Use
-`ev inspect` to review normalized Page, Route, source, Document, and diagnostic
-information.
+For the explicit SPA route-tree API, read
+[Advanced Convention Control](./advanced-conventions).

@@ -15,7 +15,7 @@ descriptor 上。
 会重新运行 plugin setup；引擎启用时，还会收集新的快捷键集合。同一 Session 内的普通
 bundler/HMR cycle 不会执行这两项操作。Shortcut action 只会收到当前 client origin，
 以及关闭整个 dev Supervisor 的能力。Descriptor 和 action 合同见
-[插件 CLI 快捷键](./dev#插件-cli-快捷键)。
+[插件 CLI 快捷键](./dev#交互式快捷键)。
 
 ## 定义最小插件
 

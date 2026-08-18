@@ -1,102 +1,75 @@
 # 什么是 evjs？
 
-> **ev** = **Ev**aluation（执行）· **Ev**olution（演进）—— 跨运行时执行，借助 AI 工具演进。
+evjs 是一个 React 全栈框架，适合需要文件页面、可选服务端能力，以及从本地开发到部署都有清晰路径的应用。
 
-evjs 是一个使用唯一 Page-and-Route 应用模型的 React 全栈框架，提供服务端函数、
-路由处理器、渲染定制能力与面向部署的输出。
+它围绕一个简单想法设计：**一个页面目录应该同时容纳页面、页面配置以及属于这个页面的代码**。文件系统描述应用对外呈现的结构；配置只描述无法安全推断的行为。
 
-框架会明确区分：
+## 应用模型
 
-- **应用代码**：React 页面、服务端函数、服务端路由；
-- **应用模型**：正向 `src/pages/**/page.*` 锚点，其目录决定 Page scope 与 URL，
-  并可带构建期 `page.config.ts`；
-- **服务端文件约定**：positive `src/apis/**/api.*` 锚点、middleware 与服务端
-  专用模块；
-- **框架 IR**：生成的 `.ev` entries、插件产物、slots 和 manifest 数据；
-- **构建器**：默认 Utoopack，webpack 可作为验证适配器；
-- **部署产物**：浏览器资源、可选服务端 bundle，以及部署元信息。
+一个 evjs 项目通常从三个创作入口开始：
 
-SPA 页面路由把导航、loader、search 和 params 语义保留在框架内部。MPA 页面路由使用
-page runtime，不引入客户端路由器。
-
-## 特性
-
-- **唯一 Page-and-Route 模型** —— `src/pages/**/page.*` 锚定 Page 与 Route，所在目录持有私有代码并决定 URL。
-- **唯一 Page config 模型** —— 可选 `page.config.ts` 在 SPA/MPA 中提供静态标题、named metadata、core rendering setting，以及用 canonical plugin id 标识的类型安全 Page settings。
-- **SPA/MPA 物化** —— `routing.mode` 保留同一语义 Page/Route 树，只选择浏览器 route tree 或独立的 Page-owned Document。
-- **Page rendering setting** —— `page.config.ts` normalize SSR、SSG、PPR、RSC setting，但不改变 canonical Page identity；Page component 不读取这些 rendering export。
-- **服务端函数** —— `"use server"` 模块会变成浏览器可调用的函数。
-- **服务端路由** —— positive `src/apis/**/api.*` 锚点暴露标准 Web
-  `Request`/`Response` handler，所在目录决定 URL 与私有 scope。
-- **统一服务端运行时** —— 服务端函数、服务端路由、SSR、PPR、RSC 共用同一条服务端边界。
-- **Agent-readable framework IR** —— `.ev` 在 bundling 前记录生成 entry、插件模块、slot 挂载、import edges 和 manifest 数据。
-- **插件系统** —— 用 generated contributions 扩展 framework IR，并用 config、bundler、HTML、build output 和 build 生命周期 hooks 处理非 IR 能力。
-- **部署输出** —— 静态资源，加上可选的 Node、静态托管或 edge 部署产物。
-
-## 全栈架构
-
-```mermaid
-flowchart TB
-  subgraph Source["应用源码"]
-    Pages["Page directories\npage.tsx + page.config.ts"]
-    APIs["src/apis/**/api.ts\n服务端路由"]
-    Functions["use server 指令\n服务端函数"]
-    Config["ev.config.ts\nrouting.mode + plugins"]
-  end
-
-  subgraph Framework["框架规划"]
-    Discovery["Resolve + normalize\nCoreGraph"]
-    IR[".ev framework IR\nentries + 插件模块 + slots"]
-    Manifest["Manifest data\nruntime + deployment metadata"]
-  end
-
-  subgraph Output["构建输出"]
-    Assets["浏览器资源"]
-    HTML["HTML documents"]
-    ServerBundle["服务端 bundle"]
-  end
-
-  subgraph Runtime["运行目标"]
-    Browser["Browser app\nSPA / MPA / hydration"]
-    Server["Framework server\nfunctions + routes + SSR/PPR/RSC"]
-    Deploy["Deployment adapters\nNode / static / edge"]
-  end
-
-  Pages --> Discovery
-  APIs --> Discovery
-  Functions --> Discovery
-  Config --> Discovery
-  Discovery --> IR
-  IR --> Manifest
-  Manifest --> Assets
-  Manifest --> HTML
-  Manifest --> ServerBundle
-  Assets --> Browser
-  HTML --> Browser
-  ServerBundle --> Server
-  Browser <-->|"framework requests"| Server
-  Assets --> Deploy
-  HTML --> Deploy
-  ServerBundle --> Deploy
-
-  classDef source fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
-  classDef ir fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
-  classDef output fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  classDef runtime fill:#fff7ed,stroke:#fb923c,color:#7c2d12;
-  class Pages,APIs,Functions,Config source;
-  class Discovery,IR,Manifest ir;
-  class Assets,HTML,ServerBundle output;
-  class Browser,Server,Deploy runtime;
+```text
+my-app/
+├── ev.config.ts
+└── src/
+    ├── pages/                       # React 页面和布局
+    │   ├── page.tsx                 # /
+    │   └── users/
+    │       └── $userId/
+    │           └── page.tsx         # /users/:userId
+    └── apis/                        # 公共 HTTP 端点
+        └── health/
+            └── api.ts               # /health
 ```
 
-## 如何组合
+- `page.*` 文件发布一个 React 页面，所在目录决定 URL。
+- 可选的相邻 `page.config.ts` 选择元信息、渲染方式和页面级插件行为。
+- `api.*` 文件使用标准 `Request` 和 `Response` 发布 HTTP 端点。
+- 以 `"use server";` 开头且可达的模块，暴露可通过框架传输层调用的命名操作。
 
-evjs 从 `src/pages` 发现带 `page.*` positive anchor 的页面路由与可选构建期
-`page.config.ts`，从 `src/apis` 发现带 `api.*` positive anchor 的 server
-request Route，并从可达的
-`"use server"` 模块发现服务端函数。随后它会 materialize `.ev` 作为 framework IR：
-生成的 entry facade、插件 generated modules、结构化 slot 挂载，以及可供 agent 和工具在
-bundler 执行前检查的 manifest。
+没有这些公共锚点的文件就是普通应用源码。组件、Hook、模型、测试和服务端函数都可以留在拥有它们的页面旁边。
 
-`ev build` 会消费这层 IR 输出浏览器文件；当应用使用服务端能力时，还会输出可部署到 Node、
-静态托管、edge worker 或 CDN/origin 拆分架构的服务端 bundle。
+## evjs 替你决定什么
+
+evjs 为应用中重复出现的框架工作提供默认能力：
+
+- 发现页面与 API 路由；
+- 创建浏览器与服务端入口；
+- 导航、参数、布局与路由边界；
+- 逐页选择 CSR、SSR、SSG、PPR 与 RSC；
+- 本地开发与生产构建；
+- 应用级和页面级插件配置；
+- 面向静态、Node.js 与 Edge 环境的可部署产物。
+
+你可以通过配置和插件替换其中某些默认行为，而不必重新定义整个应用。
+
+## 一棵页面树，两种导航模型
+
+同一棵 `src/pages` 目录树既可以构建为 SPA，也可以构建为 MPA：
+
+| 模式 | 适合场景 | 导航方式 |
+| --- | --- | --- |
+| SPA | 具有嵌套和动态路由的应用型体验 | 浏览器路由器在页面间切换，无需完整刷新文档。 |
+| MPA | 相互独立的静态页面入口 | 每个静态页面拥有 HTML 文档，浏览器导航会加载该文档。 |
+
+切换模式不需要移动页面，也不需要学习另一种页面格式。MPA 有意只支持静态路径；动态路径和浏览器路由边界属于 SPA 应用。
+
+## 需要时再加入服务端代码
+
+应用可以保持纯浏览器运行，也可以只加入少量服务端函数、暴露公共 HTTP 路由，或让选定页面在服务端渲染。这些能力共享一条请求边界，可以整体部署，也可以拆分到静态主机与服务端源站。
+
+团队可以从小型客户端应用开始，只为真正受益的页面增加服务端工作。
+
+## 为扩展而设计
+
+插件可以增加集成、类型化应用选项、类型化页面选项、构建行为和部署支持。应用作者通过 `ev.config.ts` 安装插件；某个页面的插件选择仍放在相邻 `page.config.ts` 中。
+
+即使集成发生变化，核心页面与路由模型仍保持稳定。
+
+## 接下来
+
+- 第一次使用 evjs？跟随[快速开始](./quick-start)。
+- 正在设计应用目录？阅读[项目结构](./project-structure)。
+- 想理解约定背后的取舍？阅读[框架设计](./architecture)。
+- 正在完成某个任务？浏览[使用指南](./guides)。
+- 正在查询准确选项？打开[参考](./reference)。

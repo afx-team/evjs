@@ -1,291 +1,202 @@
 # Plugin Hooks
 
-Plugins use lifecycle hooks for build-time side effects and low-level bundler
-customization. Define shared state in `setup()` and return the hooks that need
-it. Use [generated contributions](./generated-contributions) instead when the
-behavior should be represented declaratively in the framework IR.
+Plugin hooks are for build-time side effects, HTML changes, final deployment
+files, and low-level bundler customization. Keep shared state in `setup()` and
+return only the hooks that need it.
 
-## Lifecycle
+Use [Generating Code](./generated-contributions) when a plugin needs to add a
+module or attach code to a page or entry. Generated contributions are easier to
+inspect and compose than writing temporary files from hooks.
+
+## Lifecycle at a glance
 
 ```mermaid
-flowchart TB
-  subgraph Configure["Configuration"]
-    AppOptions["resolve typed Application options"]
-    Config["configure(config, ctx.options)"]
-    Resolve["resolve framework config"]
-    Setup["setup(ctx.options)"]
-  end
-
-  subgraph Plan["Framework planning"]
-    Graph["discover graph\nroutes + server functions"]
-    PageSettings["resolve Page plugin settings"]
-    Contributions["emitIR(ctx) / emitPageIR(ctx)\nmodules + slots"]
-    BuildPlan["create BuildPlan"]
-    IR["materialize .ev"]
-  end
-
-  subgraph Build["Bundling and output"]
-    BundlerConfig["configureBundler()"]
-    Bundler["bundler build"]
-    DevReady["devServerReady()\ndev only"]
-    Facts["fresh bundler facts"]
-    BuildStart["beforeBuild()"]
-    Link["link canonical BuildOutput"]
-    BuildOutput["transformOutput()"]
-    HTML["transformHtml() + emit"]
-    BuildEnd["afterBuild()"]
-    Dispose["dispose()"]
-  end
-
-  AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
-  BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
-  Bundler -. client listener ready .-> DevReady
-  Link --> BuildOutput --> HTML --> BuildEnd
-  DevReady -. Session close / replacement .-> Dispose
-  BuildEnd -. production end / server close / Session replacement .-> Dispose
-
-  classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
-  classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
-  classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class AppOptions,Config,Resolve,Setup config;
-  class Graph,PageSettings,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,DevReady,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
+flowchart LR
+  Configure["configure"] --> Setup["setup"]
+  Setup --> Generate["emitIR / emitPageIR"]
+  Generate --> Bundler["configureBundler"]
+  Bundler --> Build["bundle"]
+  Build --> Before["beforeBuild"]
+  Before --> Output["transformOutput"]
+  Output --> HTML["transformHtml"]
+  HTML --> After["afterBuild"]
+  After --> Dispose["dispose"]
 ```
 
-For plugins created with `definePlugin()`, typed values stay flat across these
-stages: configure and setup use `ctx.options`; `emitIR()` uses
-`ctx.options` and `ctx.pages[].options`; `emitPageIR()` uses `ctx.options`
-and `ctx.pageOptions`.
+`configure()` and `setup()` are introduced in
+[Plugin Development](./plugin-authoring). Plugins created with
+`definePlugin()` receive their typed application options as `ctx.options`.
 
-| Hook | Purpose |
-|------|---------|
-| `configureBundler(config, ctx)` | Mutate the selected bundler config |
-| `devServerReady({ origin, signal })` | Consume the actual client origin after a development Session starts listening, with cooperative cancellation |
-| `beforeBuild(ctx)` | Run after fresh bundler facts arrive and before evjs links or emits canonical output |
-| `transformOutput(output, ctx)` | Adjust linked `AssetGroup` contents or add deployment metadata |
-| `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
-| `afterBuild({ output, isRebuild })` | Emit final artifacts after build |
-| `dispose(ctx)` | Cleanup |
+| Hook | Use it for |
+| --- | --- |
+| `configureBundler(config, ctx)` | Adapter-specific loaders, resolution, optimization, or other low-level settings |
+| `devServerReady({ origin, signal })` | Connect development tools after the client listener is available |
+| `beforeBuild(ctx)` | Start work that needs fresh bundler results before output is finalized |
+| `transformOutput(output, ctx)` | Adjust asset groups or add deployment metadata |
+| `transformHtml(document, ctx)` | Change one generated HTML document or request-time document shell |
+| `afterBuild(result)` | Emit platform files or report the completed build |
+| `dispose(ctx)` | Release resources created by `setup()` or development hooks |
 
-See [Plugin Authoring](./plugin-authoring) for the `configure()` and `setup()`
-contracts that run before these hooks.
+## Keep state in `setup()`
 
-## Rebuild and Watch Behavior
-
-Each `afterBuild()` hook receives an isolated snapshot of the canonical build
-result. Mutating that snapshot is local to the hook and cannot change the input
-seen by later hooks or deployment adapters.
-
-In dev, `beforeBuild()` and `afterBuild()` run as a pair. The first successfully
-published output in each immutable Session uses `isRebuild: false`; later
-bundler/HMR output cycles in that same Session use `isRebuild: true`.
-`beforeBuild()` means fresh bundler facts are available and evjs is about to
-link and publish canonical output; it is not the underlying bundler's
-compile-start callback.
-
-Neither hook runs when bundling fails before producing fresh facts. If
-`beforeBuild()`, linking, an output transform, HTML emission, or publication
-fails, `afterBuild()` does not run. `prepare` and `inspect` stage framework
-state without publishing output, so they trigger neither hook.
-
-`afterBuild()` is deliberately post-publication. If it fails, evjs reports the
-production build failure or fail-stops the owning development Session.
-
-`devServerReady()` runs once after the client bundler listener starts for each
-immutable development Session. Its `origin` is the adapter-reported value, not
-a URL reconstructed from `dev.port`; official adapters return an HTTP(S) URL,
-while custom adapters may return another origin string. Session replacement
-replays the hook with the replacement controller's origin. Ordinary HMR
-rebuilds, production builds, `prepare`, and `inspect` do not run it.
-
-Listener readiness does not imply that the first canonical output or the
-server/API runtime is ready. The first `beforeBuild()` / `afterBuild()` pair may
-finish before, during, or after `devServerReady()`; there is no ordering
-guarantee between them. Keep output-dependent work in `afterBuild()`. A rejected
-`devServerReady()` hook terminates the entire `ev dev` run while its Session is
-active, and triggers normal controller cleanup and reverse-order plugin
-disposal.
-
-The hook's `signal` aborts when its Session starts closing. Cancellation is
-cooperative: aborting the signal cannot settle the hook's returned Promise, so
-in-flight asynchronous work must observe or forward it and then settle. Session
-shutdown and replacement wait for an in-flight `devServerReady()` hook to settle
-before running plugin `dispose()` hooks. Ignoring the signal can therefore delay
-or block shutdown or replacement.
+Create long-lived resources once and close them in `dispose()`:
 
 ```ts
-const devToolsPlugin = {
-  id: "dev-tools",
-  setup() {
-    let closeDevTools: (() => Promise<void>) | undefined;
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const reporter = definePlugin({
+  id: "reporter",
+  setup(ctx) {
+    const client = createReporter(ctx.options);
+
     return {
-      async devServerReady({ origin, signal }) {
-        const devTools = await connectDevTools({ origin, signal });
-        closeDevTools = () => devTools.close();
+      afterBuild({ deploymentMetadata, isRebuild }) {
+        client.record({ deploymentMetadata, isRebuild });
       },
       async dispose() {
-        await closeDevTools?.();
+        await client.close();
       },
     };
   },
-};
+});
 ```
 
-`dispose()` runs at most once for each plugin setup, in reverse plugin order,
-when a production build ends, a development Session closes or is replaced, or
-Session construction fails after plugins have initialized. It does not run
-after an ordinary bundler/HMR rebuild inside the same Session.
+`dispose()` runs at most once for each successful setup and in reverse plugin
+order. Make cleanup safe when earlier work completed only partially.
 
-The `setup()`, `emitIR()`, and `configureBundler()` contexts expose
-`addWatchFile()` for analysis/config dependencies. `BeforeBuildContext` and the
-late `DevServerReadyContext` deliberately do not; output, HTML, and disposal
-contexts do not either.
-`emitIR()` dependencies participate in write-free candidate preparation.
-`setup()` and `configureBundler()` dependencies are opaque constructor inputs
-whose content is included in the candidate semantic fingerprint. Read changing
-analysis data inside `emitIR()`; setup state remains fixed for its Session.
+## Watch plugin inputs
 
-A real watched-input change asks the long-lived Supervisor to prepare config,
-the CoreGraph, BuildPlan, and generated IR in memory. Preparation runs neither
-build hook and leaves the current Session active if it fails. An unchanged
-semantic fingerprint is a no-op. A changed fingerprint closes the old Session
-and then constructs a replacement, rerunning plugin setup and
-`configureBundler()` against its fixed inputs. Adapters do not replace bundler
-config in place. Once replacement starts, plugin setup or adapter startup
-failure stops dev rather than combining old and new Session state.
-
-Descriptor-level `cliShortcuts()` follows the same Session boundary but is not
-a lifecycle hook or bundler/HMR cycle. When the shortcuts engine is enabled, a
-semantic no-op or candidate-preparation failure keeps the current terminal
-binding. For a replacement, the Supervisor detaches that binding before closing
-the old Session, collects contributions from the replacement Session's
-descriptors, and binds them only after its bundler controller supplies the
-actual client origin. Shortcut binding and `devServerReady()` execution proceed
-independently once the Session is active; neither waits for the other, so a
-shortcut action must not assume that ready hooks have settled. A shortcut
-action's `PluginDevSession.close()` shuts down the whole Supervisor and `ev dev`
-run, not only its owning immutable Session. See [Plugin CLI
-Shortcuts](./dev#plugin-cli-shortcuts).
-
-## Build Output Ownership
-
-`transformOutput()` may adjust only linked `AssetGroup` contents and `deployment`
-metadata. `deployment` must be a plain, losslessly JSON-serializable object.
-Functions, accessors, non-finite numbers, negative zero, unsafe keys, sparse
-arrays, and cycles are rejected immediately after the hook that introduced
-them, before later output hooks or publication run.
-
-Every other `BuildOutput` field remains framework-owned, including:
-
-- the build id, output paths, and public path;
-- runtime endpoints and transport;
-- server entry, renderers, functions, and routes;
-- Application, Page, RSC, and PPR semantics.
-
-Hooks cannot add, remove, or reorder framework records or arrays. In particular,
-a hook cannot add, remove, or rename Applications, Pages, Routes, or Documents;
-reorder Routes; change Page paths or Route ownership; or change Document file
-names and static aliases. Configure those values before graph linking.
-
-## HTML Transform Context
-
-`transformHtml()` receives one parsed document for each emitted static HTML file
-and for each Page-specific request-time document shell compiled during the
-build. Branch on `ctx.owner.kind` instead of guessing from filenames.
+`setup()`, `emitIR()`, and `configureBundler()` contexts provide
+`addWatchFile()` for project-local files that affect plugin behavior:
 
 ```ts
-transformHtml(doc, ctx) {
-  doc.head?.appendChild(doc.createComment(` build ${ctx.buildId} `));
-
-  if (ctx.owner.kind === "application") {
-    doc.documentElement?.setAttribute("data-app", ctx.applicationId);
-  }
-
-  if (ctx.owner.kind === "page") {
-    doc.documentElement?.setAttribute("data-page", ctx.owner.pageId);
-  }
+setup(ctx) {
+  ctx.addWatchFile("./config/analytics.json");
 }
 ```
 
-Context fields include:
+When a watched input changes, evjs refreshes the development environment as
+needed. Read generation-specific data in `emitIR()` so generated code changes
+with that input. Do not watch generated `.ev` or `dist` files.
 
-- `ctx.documentId` and `ctx.applicationId`;
-- `ctx.owner`: `{ kind: "application" }`,
-  `{ kind: "page", pageId }`, or `{ kind: "plugin", pluginId }`;
-- `ctx.fileName` and `ctx.template`; `fileName` is a logical Document filename
-  for a request-time shell and is not emitted as a static file;
-- `ctx.assets`;
-- `ctx.output`, the current build output;
-- `ctx.buildId` and `ctx.publicPath`.
+## Development readiness
 
-The document type is `HtmlDocument`, a bundler-agnostic subset of standard DOM
-APIs:
-
-```ts
-import type { HtmlDocument } from "@evjs/ev/plugin";
-```
-
-## Final Build Result
-
-`afterBuild()` receives the final build output, framework runtime, and canonical
-deployment metadata:
+Use `devServerReady()` when an external tool needs the actual client origin:
 
 ```ts
 setup() {
+  let closeTools: (() => Promise<void>) | undefined;
+
   return {
-    afterBuild({
-      output,
-      frameworkRuntime,
-      deploymentMetadata,
-      isRebuild,
-    }) {
-      console.log("Apps:", Object.keys(output.apps));
-      console.log("Pages:", Object.keys(output.pages));
-      console.log("Runtime routing:", frameworkRuntime?.routing.kind);
-      console.log("Server entry:", deploymentMetadata.server.entry);
-      console.log("Deploy routes:", deploymentMetadata.routes.length);
-      console.log("Rebuild:", isRebuild);
+    async devServerReady({ origin, signal }) {
+      const tools = await connectDevTools({ origin, signal });
+      closeTools = () => tools.close();
+    },
+    async dispose() {
+      await closeTools?.();
     },
   };
 }
 ```
 
-Deployment plugins should prefer `deploymentMetadata` for routes, documents,
-assets, and the server entry. Plugins that need the complete internal build
-graph can still inspect `output` in memory. Runtime-aware plugins can inspect
-`frameworkRuntime`; deployment planning should use `deploymentMetadata` rather
-than deriving split client/server manifests. HTML hooks receive the same result
-fields plus document-specific fields such as `ctx.owner`, `ctx.fileName`, and
-`ctx.assets`.
+- `origin` is the listener URL reported by the active bundler.
+- `signal` aborts when the development environment is closing.
+- Forward or observe the signal and let asynchronous work settle promptly.
+- This hook runs in development only; it does not mean the first application
+  output or the server runtime is ready.
 
-## Bundler Config
+Keep output-dependent work in `afterBuild()`.
 
-`definePlugin()` creates a bundler-agnostic plugin by default, so the same
-factory can be installed with Utoopack or webpack. Use adapter helpers for
-type-safe low-level changes; each helper runs its callback only for its own
-adapter and supplies that adapter's concrete config type.
+## Build and rebuild hooks
 
-The finalized BuildPlan remains authoritative for framework runtime endpoints
-and output ownership. A `configureBundler()` hook may customize supported loader,
-resolution, optimization, and similar low-level settings, but it cannot
-override framework client/server output paths. Adapters validate those paths
-against the BuildPlan after hooks run, even when recursive cleaning is disabled.
-Any plugin-owned clean output must also stay inside the framework-owned
-`distDir` without overlapping client or server output.
+`beforeBuild()` and `afterBuild()` run only when bundling produces a valid
+output cycle. `prepare` and `inspect` do not call them.
 
-The resulting bundler config is immutable for one development Session. A
-watched plugin-config change is handled by Supervisor preparation and automatic
-Session replacement; adapter helpers do not need an in-place update path.
+In development:
 
-Framework-owned client and server configs must also preserve their exact entry
-set and each entry's BuildPlan import after every hook. Use generated
-contributions to change framework startup composition. A webpack-only plugin
-may add a separately named config for an independent artifact, but it must use
-an explicit, portably non-overlapping `output.path`; aliases that differ only
-by case still conflict. Utoopack's single framework config cannot accept additional
-entries.
+- the first successful output uses `isRebuild: false`;
+- later successful output cycles use `isRebuild: true`;
+- a failed cycle does not call `afterBuild()`.
 
-For Utoopack:
+`afterBuild()` runs after canonical files have been published. A failure from
+that hook still fails a production build, so use it for required artifacts and
+handle optional reporting failures explicitly.
+
+## Transform build output
+
+`transformOutput()` may adjust linked asset-group contents and add plugin
+deployment metadata. Deployment metadata must be plain lossless JSON.
+
+Do not use an output hook to rename pages, routes, documents, runtime paths, or
+framework output directories. Those choices belong to application config,
+page config, or a declarative generated contribution.
+
+## Transform HTML
+
+`transformHtml()` receives a parsed `HtmlDocument` and context for one document:
+
+```ts
+transformHtml(document, ctx) {
+  document.head?.appendChild(
+    document.createComment(` build ${ctx.buildId} `),
+  );
+
+  if (ctx.owner.kind === "page") {
+    document.documentElement?.setAttribute(
+      "data-page",
+      ctx.owner.pageId,
+    );
+  }
+}
+```
+
+Useful context fields include:
+
+- `documentId`, `applicationId`, `fileName`, and `template`;
+- `owner`, which identifies an application, page, or plugin document;
+- `assets`, `buildId`, and `publicPath`;
+- the current output for advanced inspection.
+
+Branch on `owner.kind` rather than guessing ownership from filenames. Import
+the document type from the public plugin entry:
+
+```ts
+import type { HtmlDocument } from "@evjs/ev/plugin";
+```
+
+For simple `meta`, `link`, `script`, or `style` additions, prefer the
+declarative `html.tag` slot documented in [Generating Code](./generated-contributions).
+
+## Use the final build result
+
+`afterBuild()` exposes focused values for common deployment work:
+
+```ts
+setup() {
+  return {
+    afterBuild({ deploymentMetadata, frameworkRuntime, isRebuild }) {
+      writePlatformManifest({
+        assets: deploymentMetadata.assets,
+        routes: deploymentMetadata.routes,
+        server: deploymentMetadata.server,
+        runtime: frameworkRuntime,
+        isRebuild,
+      });
+    },
+  };
+}
+```
+
+Prefer `deploymentMetadata` for routes, documents, assets, and the server
+entry. Use the broader `output` only when a plugin truly needs build-time asset
+details that the deployment projection does not contain.
+
+## Configure a bundler
+
+`definePlugin()` is bundler-agnostic by default. Use adapter helpers for typed
+low-level changes; each helper runs only for its adapter.
+
+Utoopack example:
 
 ```ts
 import { merge, utoopack } from "@evjs/bundler-utoopack";
@@ -295,8 +206,8 @@ export const yamlPlugin = definePlugin({
   id: "yaml-support",
   setup() {
     return {
-      configureBundler: utoopack((cfg) => {
-        merge(cfg, {
+      configureBundler: utoopack((config) => {
+        merge(config, {
           module: {
             rules: {
               ".yaml": { type: "json" },
@@ -309,34 +220,48 @@ export const yamlPlugin = definePlugin({
 });
 ```
 
-For webpack projects, select the webpack adapter and use its typed helper.
-`defineConfig()` infers the bundler config type from the adapter, and the
-helper callback receives the complete `Configuration[]` set:
+Webpack example:
 
 ```ts
-import { defineConfig } from "@evjs/ev";
-import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
-import { definePlugin } from "@evjs/ev/plugin";
+import { webpack } from "@evjs/bundler-webpack";
 
-const webpackAlias = definePlugin({
-  id: "webpack-alias",
-  setup() {
-    return {
-      configureBundler: webpack((configs) => {
-        for (const config of configs) {
-          config.resolve ??= {};
-          config.resolve.alias ??= {};
-          config.resolve.alias["@app"] = "./src";
-        }
-      }),
-    };
-  },
-});
-
-export default defineConfig({
-  bundler: webpackAdapter,
-  plugins: [webpackAlias()],
+configureBundler: webpack((configs) => {
+  for (const config of configs) {
+    config.resolve ??= {};
+    config.resolve.alias ??= {};
+    config.resolve.alias["@app"] = "./src";
+  }
 });
 ```
 
-For complete examples, continue with [Plugin Recipes](./plugin-recipes).
+Bundler hooks can customize supported low-level settings, but cannot replace
+framework page entries or client/server output directories. Use generated
+contributions to change startup composition.
+
+## Contribute terminal shortcuts
+
+Interactive shortcuts are descriptor declarations rather than lifecycle hooks:
+
+```ts
+const tools = definePlugin({
+  id: "tools",
+  cliShortcuts() {
+    return [
+      {
+        key: "u",
+        description: "show dev url",
+        action(session) {
+          console.log(session.origin);
+        },
+      },
+    ];
+  },
+});
+```
+
+Keys are one non-whitespace character. Actions receive the current client
+`origin` and a `close()` method for the full `ev dev` run. See
+[Local Development](./dev#interactive-shortcuts) for application controls.
+
+For small end-to-end examples, continue with
+[Plugin Recipes](./plugin-recipes).

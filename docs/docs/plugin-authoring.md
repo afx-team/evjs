@@ -19,7 +19,7 @@ state. Session replacement reruns plugin setup; when the engine is enabled, it
 also collects a fresh shortcut set. An ordinary bundler/HMR cycle does neither.
 Shortcut actions receive only the current client origin and a way to shut down
 the entire dev Supervisor. See
-[Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts) for the descriptor and action
+[Plugin CLI Shortcuts](./dev#interactive-shortcuts) for the descriptor and action
 contracts.
 
 ## Define a Minimal Plugin

@@ -1,122 +1,51 @@
-# Generated Contributions IR
+# 生成代码
 
-`.ev` 是 evjs build 的 agent-readable framework IR。它记录 resolved
-Page-and-Route graph、框架生成 entry、插件新增产物，以及这些产物如何挂到
-framework slot。
+插件可以生成模块或数据，并挂载到有文档说明的框架 Slot。需要让代码进入应用入口、页面 Wrapper、服务端中间件、HTML 或模块解析时，使用这套 API。
 
-本文是声明式插件输出的 canonical reference。插件标识与类型安全 setting 请先阅读
-[插件开发](./plugin-authoring)；lifecycle side effect 则使用[插件 Hooks](./plugin-hooks)。
+外部副作用和最终平台文件请使用生命周期 Hook，决策说明见[插件 Hooks](./plugin-hooks)。
 
-## 概念
+## 基本模式
 
-Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
-并把它们挂到 framework slot 上。
+生成分为两步：
 
-`emitIR(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
-graph 时，evjs 可能会再次执行该 hook。
-
-这个定义刻意比任意临时文件系统更窄。插件不会随意向 `.ev` 写文件；插件声明 artifact
-和关系，由 evjs 统一 materialize 最终 `.ev` 目录和 manifest。
+1. 使用 `ctx.emit` 声明产物。
+2. 使用 `ctx.slot(name).add()` 挂到框架 Slot。
 
 ```mermaid
-flowchart TB
-  Hook["emitIR(ctx)"]
-
-  subgraph Declare["插件声明"]
-    Emit["ctx.emit\nmodule / data / entryFacade"]
-    Slot["ctx.slot(...).add\n结构化 framework 挂载"]
-  end
-
-  subgraph Link["生成图"]
-    Ref["GeneratedModuleRef\nopaque handle"]
-    Edge["helpers.importOf(ref)\nimport edge"]
-  end
-
-  subgraph Materialize["Materialized .ev output"]
-    Files[".ev/plugins/<id>\ngenerated artifacts"]
-    Manifest[".ev/manifest.json\nmodules + slots + importEdges"]
-  end
-
-  Hook --> Emit
-  Hook --> Slot
-  Emit --> Ref
-  Ref --> Edge
-  Ref --> Slot
-  Edge --> Files
-  Slot --> Manifest
-  Files --> Manifest
-
-  classDef hook fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
-  classDef declaration fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
-  classDef output fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class Hook hook;
-  class Emit,Slot,Ref,Edge declaration;
-  class Files,Manifest output;
+flowchart LR
+  Plugin["emitIR 或 emitPageIR"] --> Emit["生成模块或数据"]
+  Emit --> Ref["不透明模块引用"]
+  Ref --> Slot["挂载到 Slot"]
+  Slot --> App["生成的应用代码"]
 ```
 
-## 目录结构
+生成逻辑应保持确定性，不产生网络、进程或外部文件副作用。应用输入变化时，evjs 可能再次执行它。
 
-```txt
-.ev/
-├── framework/
-│   ├── core-graph.json          # normalized Page/Route/Application/Document graph
-│   └── build-plan.json
-├── entries/
-│   ├── main.ts
-│   └── server.ts
-├── plugins/
-│   └── qiankun-slave/
-│       ├── entry-wrapper.ts
-│       └── original-entry.ts
-├── manifest.json
-└── types.d.ts
+## 生成产物
+
+`ctx.emit` 支持：
+
+| 方法 | 创建内容 |
+| --- | --- |
+| `module({ id, scope, source, extension? })` | JavaScript、TypeScript、JSX、CSS、Less 或 JSON 源码 |
+| `data({ id, scope, value })` | 从静态数据生成的 JSON 模块 |
+| `entryFacade({ id, entry, autoStart? })` | 为替换 Wrapper 保留的框架入口 |
+| `importOf(ref)` | 导入另一个生成产物的 Specifier |
+
+这些方法返回不透明引用，不暴露文件路径。`importOf(ref)` 只能在生成源码中使用，应用代码绝不能导入 `.ev` 路径。
+
+选择应用或页面作用域：
+
+```ts
+scope: { kind: "application" }
+scope: { kind: "page", pageId: "checkout" }
 ```
 
-这个结构稳定且可读：
+Contribution id 在插件内局部有效。`emitPageIR()` 中还会局部到当前页面，因此每个启用页面都可以安全复用相同 id。`@evjs/` 前缀由框架保留。
 
-- `framework/` 保存 normalized graph、provenance、diagnostic 与 build-plan
-  快照。`core-graph.json` 是 planning 与 inspection 消费的唯一语义事实来源。
-- `entries/` 保存 bundler 消费的框架 entry facade。
-- `plugins/<id>/` 保存插件生成产物。
-- 插件的 canonical `id` 直接作为 generated artifact 路径段；例如
-  `qiankun-slave` 持有 `plugins/qiankun-slave/`。
-- `manifest.json` 串联 generated artifacts、import edges、slot items、生产插件 id、
-  scope 和最终 entries。
+## 向客户端入口添加代码
 
-生成文件在需要 framework runtime internals 时可以 import generated-only
-`@evjs/ev/_internal/*` helper。插件源码不应 import 这些 subpath；插件 authoring 使用
-`@evjs/ev/plugin`。`ctx.framework` 对象是 immutable 的，插件可以 inspect IR，但不能修改
-framework state。
-
-Application 与 Page view 会暴露解析后的 `plugins` setting bag。Application bag 只包含
-enablement；私有 factory 配置绝不会进入 CoreGraph。Page bag 可以包含经过校验的 static
-Page value。defined plugin 通常使用类型更窄的 `ctx.options` 与 `ctx.pages`；每个已启用
-Page 项都是 `{ page, options }`。逐 Page 的 `emitPageIR()` 使用
-`ctx.pageOptions`。这些扁平字段会保留 descriptor 推导出的类型。它的 `ctx.emit` 与
-`ctx.slot()` identity 会自动限定在当前 Page，因此插件可以在每个 Page 重用 `runtime`
-等局部 id，无需手动拼接 `ctx.page.id`。内部 provenance 与
-解析结果会在 `emitIR()` 物化 generated code 前可用。
-
-Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
-id。因此 MPA 表现为一个拥有多个 Page/Document 的逻辑 Application，而不是互不关联的
-一组 entry。Client Route view 来自 CoreGraph，包含 normalized pattern、semantic target、
-wrapper/layout facet 与 provenance。即使 pathless group 或 redirect 没有 component
-module，也仍然可见。
-
-## Authoring API
-
-使用 `ctx.emit.module()` 声明生成代码，使用 `ctx.emit.data()` 声明生成 JSON 数据。
-当 wrapper 插件需要替换 entry、但仍要保留被替换前的框架生成 entry 时，使用
-`ctx.emit.entryFacade()`。
-
-使用 `ctx.emit.importOf(ref)` 或 `helpers.importOf(ref)` 链接 generated artifacts。
-返回的 specifier 只应在生成源码中使用。应用源码不应 import `.ev` 路径或
-`evjs:generated/*` specifier。
-
-Contribution id 在插件内是局部的；在 `emitPageIR()` 中还会进一步限定到当前
-Page。`@evjs/` 前缀保留给框架内部的 namespace。
-
-插件生成模块使用 opaque ref，不暴露文件系统路径：
+生成安装器，并在应用主入口后导入：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -130,24 +59,25 @@ export const analytics = definePlugin({
       source: "export function install() { console.log('analytics'); }",
     });
 
-    const entry = ctx.emit.module({
-      id: "entry",
+    const installer = ctx.emit.module({
+      id: "installer",
       scope: { kind: "application" },
       source: ({ importOf }) =>
         `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
     });
 
     ctx.slot("client.entry").add({
-      id: "entry",
-      module: entry,
+      id: "analytics-installer",
+      module: installer,
       position: "after-main",
     });
   },
 });
 ```
 
-插件替换 entry、但仍要保留原始 framework facade 时，使用
-`ctx.emit.entryFacade()`，不要重建 framework internal：
+`client.entry` 可以在主入口之前或之后导入。`mode: "replace"` 只用于必须拥有入口导出的集成，例如微前端 Slave Wrapper。
+
+替换入口时，使用 `entryFacade()` 保留原入口，不要重建框架启动逻辑：
 
 ```ts
 emitIR(ctx) {
@@ -167,157 +97,139 @@ emitIR(ctx) {
   });
 
   ctx.slot("client.entry").add({
-    id: "entry-wrapper-slot",
+    id: "entry-wrapper",
     module: wrapper,
-    position: "before-main",
     mode: "replace",
-  });
-}
-```
-
-对于生成的 SPA Application entry，`autoStart: false` 会创建并导出 framework
-`app`，但不会挂载；同时会导出 `start(container)`，为首次挂载保留 framework
-hydration marker 语义。Replacement entry 负责首次 `start()` 调用以及之后的
-`app.render()` remount。其他 entry 类型不能关闭 framework startup。
-
-插件生成路径稳定且可读。例如 id 为 `qiankun-slave` 的插件会写入
-`.ev/plugins/qiankun-slave/*`，并暴露类似
-`evjs:generated/qiankun-slave/entry-wrapper` 的 specifier。
-
-使用 `ctx.slot(name).add(...)` 把 generated artifacts 挂到 framework 上。支持的
-slots 如下：
-
-| Slot | 覆盖能力 |
-|------|----------|
-| `client.entry` | Entry imports、entry wrapper modules 和 replacement wrappers |
-| `server.entry` | 已有 Page server entry 的 imports 与 replacement modules |
-| `page.wrapper` | 跨 client/server projection 的语义 Page component 包装 |
-| `server.request.middleware` | Server pipeline 中的 framework request middleware |
-| `html.tag` | 结构化 `meta`、`link`、`script`、`style` tags |
-| `resolve.alias` | 指向用户模块、package、绝对路径或 generated artifacts 的语义化 alias |
-| `resolve.external` | Externalized module resolution，通常和 `html.tag` CDN 资源配合 |
-
-需要 import side-effect module 或执行安装逻辑时，使用 `client.entry` 显式调用
-installer。IR 不携带 inert runtime-plugin registry。
-
-`server.entry` 要求精确的 Page target，且该 Page 必须已经拥有 `page-server` entry。
-Import contribution 会保留 generated Page server facade，并使用与 `client.entry` 相同的
-positions：
-
-```ts
-emitIR(ctx) {
-  ctx.slot("server.entry").add({
-    id: "monitoring",
-    target: { kind: "page", pageId: "dashboard" },
-    module: "./src/monitoring/server-entry.ts",
     position: "before-main",
   });
 }
 ```
 
-插件必须替换 Page server facade 时使用 `mode: "replace"`。Replacement 会保留框架
-entry 的 name、kind、owner、environment、renderer identity 与 output asset binding。
-它不能新增 entry，也不能命中其他 server renderer kind。该 entry 周围的其他 import
-contributions 仍然生效。
+对生成的 SPA 应用入口，`autoStart: false` 会导出 App 与 `start(container)` 而不自动挂载。替换入口负责第一次启动。
+
+## 包裹页面
+
+需要 React 行为包围客户端、服务端或两侧页面时，使用 `page.wrapper`。模块必须默认导出接收 `children` 的组件：
 
 ```ts
 emitIR(ctx) {
-  const entry = ctx.emit.module({
-    id: "page-server-entry",
-    scope: { kind: "page", pageId: "dashboard" },
-    source: "export default function Dashboard() { return null; }",
+  const boundary = ctx.emit.module({
+    id: "auth-boundary",
+    scope: { kind: "application" },
+    extension: ".tsx",
+    source:
+      "export default function AuthBoundary({ children }) { return children; }",
   });
 
-  ctx.slot("server.entry").add({
-    id: "page-server-entry-slot",
-    target: { kind: "page", pageId: "dashboard" },
-    module: entry,
-    mode: "replace",
-  });
-}
-```
-
-未知 Page、没有 concrete `page-server` entry 的 Page，以及同一 concrete entry 的多次
-replacement，都会在 IR materialization 阶段失败。
-
-`client.entry.runtime` 只接受 `"client"`。Client entry 无法物化 server code，
-因此 `"server"` 和具有误导性的 `"all"` 都会被拒绝。需要把 Page component
-行为真实投影到 client 与 server runtime 时，应使用 `page.wrapper`。
-
-`page.wrapper` 接受 `runtime: "client" | "server" | "all"`，以及可选的
-Application/Page target。模块必须 default-export 一个接收 `children` 的 component。
-它会按实际存在的 materialization point 投影到 SPA route composition、MPA Page
-client entry，以及 SSR/SSG/PPR shell/RSC server Page entry。filter 没有匹配
-projection 时会失败。后声明的 contribution 包在先声明的 contribution 外层；
-route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
-
-```ts
-emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
-    module: "./src/plugin/AuthBoundary.tsx",
+    module: boundary,
     runtime: "all",
     target: { kind: "application", applicationId: "default" },
   });
 }
 ```
 
-Application target 会展开到其 Pages；Page target 只选择一个 semantic Page。Client
-projection 对应 SPA route composition 或 MPA Page client entry；server projection
-对应每个 SSR、SSG、PPR shell 或 RSC Page renderer。runtime filter 没有匹配
-projection 时会失败，不会静默失效。
+`runtime` 接受 `"client"`、`"server"` 或 `"all"`。省略 `target` 会包裹所有页面，也可以指定一个应用或页面。后加入的 Wrapper 包在先加入的外层；路由源码中的 Layout 仍在插件 Wrapper 外。
 
-Wrapper contributions 按 plugin/contribution 顺序运行，并遵循 component wrapping
-语义：后声明的 contribution 会包在先声明的 contribution 外层。Route-declared layout
-与 wrapper 仍位于 contributed Page wrapper 外层。Normalized `layers` metadata 会以
-outer-to-inner 顺序记录 MPA client entry 与 server Page entry 的最终结构。
+## 添加服务端请求中间件
 
-显式 Application/Page target 必须为 `client.entry` 匹配实际 client entry，或为
-`html.tag` 匹配 HTML Document。SPA 的 semantic Page 通常与 Application 共享二者，
-因此 page-targeted entry、HTML contribution 会给出诊断，而不是静默 no-op。
+把中间件模块挂到框架服务端请求链：
 
-CSR SPA Page 与 Application 共享 Document，因此会拒绝 page-targeted HTML
-contribution。SSR/PPR/RSC SPA Page 具有构建期编译的 Page-specific request-time
-document shell，因此 page-targeted `html.tag` contribution 与 `transformHtml()`
-处理会应用到该 shell。
+```ts
+ctx.slot("server.request.middleware").add({
+  id: "request-tracing",
+  module: "./src/plugin/request-tracing.ts",
+});
+```
 
-canonical MPA 会暴露一个逻辑 `default` Application，即使它最终为每个 Page 分别
-物化 page-client entry 与 Document。因此 Application target 会把 `client.entry` 展开到
-全部 Page entry，并把 `html.tag` 展开到全部 Page Document；Page target 仍精确
-匹配单页。`page.wrapper` 则按语义 Page ownership 展开，因此同一个
-Application/Page target 可以同时用于 SPA 与 MPA。展开结果记录在 generated plan。显式
-route-tree 输入必须先 normalize 到相同 Application/Page/Document ownership。
+它适合插件拥有的跨切面服务端行为。应用专属中间件通常应使用文件约定。
 
-`resolve.external` 支持 `runtime: "client" | "server" | "all"`。Webpack adapter
-会按 target 应用 filter。Utoopack 会把 client/all external 映射到 top-level config，
-并把 server/all external 映射到独立的 `server.externals` config，因此混合构建中的
-server-only contribution 仍保持隔离。插件 contribution 仍保留在
-`plan.resolve.external`；用户声明的 `server.externals` 是独立的 server build override，
-并在这些 contribution 之后应用。
+## 添加 HTML 标签
 
-## 边界
+结构化 `meta`、`link`、`script` 或 `style` 使用 `html.tag`：
 
-Generated contributions 是 file-convention entry 组合，以及插件 entry/runtime/html/resolution
-注入的 source of truth。Bundler loader 只负责转换真实源码 module。
+```ts
+ctx.slot("html.tag").add({
+  id: "analytics-script",
+  tag: "script",
+  placement: "head-append",
+  attrs: {
+    src: "https://cdn.example.com/analytics.js",
+    crossorigin: "anonymous",
+  },
+});
+```
 
-Contribution 层不替代插件生命周期：
+可选应用或页面 `target` 限制作用范围。只有页面拥有匹配文档时才能指定页面；普通 CSR SPA 页面共享应用文档，因此不能接收页面专属标签。结构化标签无法表达修改时再使用 `transformHtml()`。
 
-- 用 `configure()` 处理 framework config 默认值或需要早期校验的配置。
-- 用 `setup()` 初始化插件状态并返回 lifecycle hooks。
-- 用 `configureBundler()` 处理不由 slot 建模的底层 bundler 能力。
-- 用 `transformHtml()` 处理 AST 级 HTML 改写。
-- 用 `transformOutput()` 和 `afterBuild()` 处理部署 metadata 和最终文件。
+## 修改模块解析
 
-这个拆分让 IR 保持可读，同时不假装所有插件能力都是 entry contribution。
+生成引用可以参与别名：
 
-## Agent 工作流
+```ts
+const config = ctx.emit.data({
+  id: "config",
+  scope: { kind: "application" },
+  value: { enabled: true },
+});
 
-调试或 code review 时，先看 `.ev/manifest.json`：
+ctx.slot("resolve.alias").add({
+  id: "runtime-config",
+  specifier: "@plugin/runtime-config",
+  replacement: config,
+});
+```
 
-1. 在 `entries` 中找到最终 entry。
-2. 查看 `generated.modules`，确认插件产物和 producer plugin id。
-3. 查看 `generated.slots`，确认产物挂载位置。
-4. 查看 `generated.importEdges`，理解 generated-to-generated import。
-5. 打开 `.ev/entries` 和 `.ev/plugins` 下对应文件。
+按运行时过滤外部依赖：
 
-这让 agent 和人类都能看到完整的框架生成代码，而不是被 loader 或任意 tmp file 隐藏。
+```ts
+ctx.slot("resolve.external").add({
+  id: "external-react",
+  specifier: "react",
+  source: "React",
+  runtime: "client",
+});
+```
+
+Slot 支持时，运行时过滤接受 `"client"`、`"server"` 或 `"all"`。
+
+## 使用服务端页面入口
+
+`server.entry` 向已有页面服务端入口导入或替换。必须精确指定一个已经具有请求时或构建时服务端渲染的页面：
+
+```ts
+ctx.slot("server.entry").add({
+  id: "server-monitoring",
+  target: { kind: "page", pageId: "dashboard" },
+  module: "./src/monitoring/server-entry.ts",
+  position: "before-main",
+});
+```
+
+只有集成拥有完整页面服务端入口时才使用 `mode: "replace"`。页面不存在、页面没有服务端入口或出现多个替换都会让生成失败，而不是变成无操作。
+
+## Slot 参考
+
+| Slot | 用途 |
+| --- | --- |
+| `client.entry` | 导入或替换客户端入口 |
+| `server.entry` | 导入或替换已有页面服务端入口 |
+| `page.wrapper` | 在客户端/服务端渲染中包裹页面组件 |
+| `server.request.middleware` | 增加插件拥有的服务端请求中间件 |
+| `html.tag` | 增加结构化文档标签 |
+| `resolve.alias` | 增加语义模块别名 |
+| `resolve.external` | 按运行时外置模块 |
+
+## 检查生成代码
+
+`.ev` 是生成产物，不能编辑，但排查插件时很有用：
+
+1. 运行 `ev prepare`。
+2. 查看 `.ev/manifest.json`，找到插件模块与 Slot 挂载。
+3. 打开 `.ev/plugins/<plugin-id>` 与 `.ev/entries` 下对应文件。
+4. 修改插件源码并重新生成，不要 Patch `.ev`。
+
+生成代码在需要时可以使用文档说明的 generated-only Helper。插件源码本身应从 `@evjs/ev/plugin` 导入公共创作类型，不应导入 `@evjs/ev/_internal/*`。
+
+完整插件流程和小型示例见[插件配方](./plugin-recipes)。

@@ -1,196 +1,103 @@
 # Deployment
 
-Production deployment starts with `ev build`. By default evjs writes browser
-files to `dist/client` and, when the app uses server capabilities, server files
-to `dist/server`.
-
-Use a deployment adapter when you want evjs to emit platform-specific files such
-as a Node server entry, static-host redirects, or an edge worker.
-
-## Production Build
+Run a production build, then deploy the browser output and any server output
+required by the application:
 
 ```bash
 npm run build
 # usually runs: ev build
 ```
 
-Typical output:
+## Choose a target
 
-```txt
-dist/
-├── client/
-│   └── ...
-├── server/
-│   └── ...
-└── deployment-metadata.json
-```
-
-Important paths:
-
-- `dist/client/`: browser assets and generated HTML.
-- `dist/server/`: server bundle and server metadata when the app uses server
-  functions, server file routes, SSR, PPR, or RSC.
-- `dist/deployment-metadata.json`: canonical deployment metadata for tooling
-  and deployment adapters. Application code should not import or edit it.
-
-`deployment-metadata.json` is the only serialized core deployment projection.
-Deployment adapters own any additional platform-specific artifacts.
-
-Generated HTML embeds the browser `ClientRuntime`. Manual `@evjs/client`
-runtime URL APIs can load JSON from an explicitly configured URL; there is no
-default standalone runtime JSON artifact.
-Runtime-only `FrameworkRuntime` data is passed through build/plugin results and
-injected into dev or deployment adapter bootstraps.
-
-## Choose A Target
-
-| Target | Use when | Adapter |
+| Target | Choose it when | Built-in adapter |
 | --- | --- | --- |
-| Static hosting | The app only needs browser assets, CSR, MPA client pages, or fully static/SSG pages. | `staticDeploymentAdapter()` |
-| Node.js | A Node process should serve assets and all server capabilities. | `nodeDeploymentAdapter()` |
-| Edge worker | The platform provides a `fetch()` worker and an asset binding. | `edgeDeploymentAdapter()` |
-| CDN + origin split | Static assets live on a CDN and server capabilities live elsewhere. | Use a server-capable adapter plus platform routing. |
+| Static hosting | The app uses CSR, MPA client pages, or SSG and no runtime server feature | `staticDeploymentAdapter()` |
+| Node.js | One Node process should serve assets and all server capabilities | `nodeDeploymentAdapter()` |
+| Edge worker | The platform provides a Fetch-compatible worker and asset binding | `edgeDeploymentAdapter()` |
+| CDN + origin | Browser assets live on a CDN and server work lives elsewhere | Server-capable adapter plus platform routing |
 
-Do not deploy only `dist/client` when the app uses server functions, server file
-routes, SSR, PPR, or RSC. Those features require a server-capable target.
+Server functions, API routes, SSR, PPR, and RSC require a server-capable
+target. Do not deploy only `dist/client` when any of those features are active.
 
-## Runtime Paths
+## Understand the output
 
-Server runtime paths are derived from `server.basePath`:
+The default production layout is:
 
-```txt
-/__evjs/fn       server functions
-/__evjs/ppr      PPR support endpoint when PPR pages exist
-/__evjs/rsc      RSC Flight endpoint when RSC pages exist
-```
-
-Most apps can keep the default `server.basePath`. Change it only when the host
-platform reserves `/__evjs`, or when a reverse proxy requires another prefix.
-
-PPR document requests still go through the page route. The PPR support endpoint
-is for framework/runtime coordination and direct debugging; it is not a user
-authored API route.
-
-When browser assets and the server runtime are on different origins, set
-`transport.baseUrl` at build time:
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  transport: {
-    baseUrl: "https://api.example.com",
-  },
-});
-```
-
-## Built-In Adapters
-
-`@evjs/ev` ships three deployment adapters:
-
-- `nodeDeploymentAdapter()` emits a Node server module plus deployment metadata.
-- `staticDeploymentAdapter()` emits static-host metadata plus `_redirects`.
-- `edgeDeploymentAdapter()` emits an edge-worker module plus deployment metadata.
-
-Adapters work from the evjs build result. They should not infer framework
-capabilities from filenames or bundler stats.
-
-## Node.js
-
-Use the Node adapter when a plain Node server should own the production request
-path:
-
-```ts
-// ev.config.ts
-import { defineConfig } from "@evjs/ev";
-import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
-
-export default defineConfig({
-  plugins: [nodeDeploymentAdapter()],
-});
-```
-
-After `ev build`, the adapter emits:
-
-```txt
+```text
 dist/
-├── deployment.node.json
-└── server.mjs
+├── client/                          # HTML, JS, CSS, and public assets
+├── server/                          # server bundle when required
+└── deployment-metadata.json        # input for deployment tooling
 ```
 
-Run the generated server module:
+Deployment adapters may add platform entry files and routing metadata. Treat
+everything under `dist` as generated.
 
-```bash
-node dist/server.mjs
-```
+## Static hosting
 
-The generated server serves `dist/client`, handles server functions and server
-file routes, mounts SSR/PPR/RSC document routes, and falls back to app HTML for
-client-side navigation. It reads the port from `PORT` by default.
+Install the static adapter:
 
-## Static Hosting
-
-Use the static adapter when the app is static-compatible:
-
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 import { staticDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [staticDeploymentAdapter()],
 });
 ```
 
-The adapter writes static-host files into the public output directory:
+After `ev build`, static-host files are written with the browser output:
 
-```txt
+```text
 dist/client/
 ├── deployment.static.json
 └── _redirects
 ```
 
-Generated redirects map static or SSG pages to their HTML files and app routes
-to the app HTML fallback. Router-free MPA pages use exact rewrites and do not
-create a global catch-all.
+The redirects map static pages to their HTML and, for an SPA, map browser
+routes to the application document. Router-free MPA pages use exact rewrites
+without a global SPA fallback.
 
-If the build contains SSR, PPR, RSC, server functions, or server file routes,
-the static adapter still emits assets and metadata, but marks the static output
-as incomplete in `deployment.static.json`. In that case the app also needs a
-server-capable deployment path.
+If the build contains a server capability, the adapter marks the static output
+as incomplete. Keep the static files for a CDN, but also deploy the server
+output to a compatible runtime.
 
-## Edge Runtime
+## Node.js
 
-Use the edge adapter when the platform provides a `fetch()` worker and a static
-asset binding:
+Use the Node adapter when a Node process should own production requests:
 
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
-import { edgeDeploymentAdapter } from "@evjs/ev/deployment";
+import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
-  plugins: [
-    edgeDeploymentAdapter({
-      assetsBinding: "ASSETS",
-    }),
-  ],
+  routing: { mode: "spa" },
+  plugins: [nodeDeploymentAdapter()],
 });
 ```
 
-After `ev build`, the adapter emits:
+The build adds:
 
-```txt
+```text
 dist/
-├── deployment.edge.json
-└── worker.mjs
+├── deployment.node.json
+└── server.mjs
 ```
 
-The generated worker routes server runtime requests and server-rendered page
-requests to the server bundle, and serves browser assets from the configured
-asset binding.
+Start the generated server:
+
+```bash
+PORT=3000 node dist/server.mjs
+```
+
+It serves browser assets, handles server functions and API routes, renders
+request-time pages, and provides the SPA fallback when needed.
 
 ## Docker
 
-For Docker, use the Node adapter and run the generated `dist/server.mjs`:
+Build the application with the Node adapter and run its generated server:
 
 ```dockerfile
 FROM node:22-alpine AS builder
@@ -209,34 +116,89 @@ EXPOSE 3000
 CMD ["node", "dist/server.mjs"]
 ```
 
-## Custom Deployment Plugins
+If runtime dependencies are bundled completely, your project may support a
+smaller final image. Confirm that with the selected bundler and every native or
+external server dependency before removing installed packages.
 
-Deployment plugins can use `afterBuild({ deploymentMetadata })` to emit platform
-files. For platform-specific schema fields, wrap that metadata before writing
-files:
+## Edge runtime
 
-```ts
-import { definePlugin } from "@evjs/ev/plugin";
+Use the edge adapter when the host provides a Fetch-compatible worker and a
+binding for static assets:
 
-export const deployAdapter = definePlugin({
-  id: "deploy-adapter",
-  setup() {
-    return {
-      afterBuild({ deploymentMetadata }) {
-        const artifact = {
-          ...deploymentMetadata,
-          platform: "custom",
-        };
+```ts title="ev.config.ts"
+import { defineConfig } from "@evjs/ev";
+import { edgeDeploymentAdapter } from "@evjs/ev/deployment";
 
-        emitPlatformFiles(artifact);
-      },
-    };
+export default defineConfig({
+  routing: { mode: "spa" },
+  plugins: [
+    edgeDeploymentAdapter({
+      assetsBinding: "ASSETS",
+    }),
+  ],
+});
+```
+
+The build adds:
+
+```text
+dist/
+├── deployment.edge.json
+└── worker.mjs
+```
+
+Connect the configured asset binding to `dist/client` according to the host's
+deployment settings. The worker handles server requests and delegates public
+assets to that binding.
+
+## Split browser and server origins
+
+When a CDN serves `dist/client` and another origin runs the server output,
+point framework browser calls at the server origin during the build:
+
+```ts title="ev.config.ts"
+export default defineConfig({
+  transport: {
+    baseUrl: "https://api.example.com",
   },
 });
 ```
 
-Applications install the resulting factory with `plugins: [deployAdapter()]`.
+The platform must route:
 
-Keep custom adapters focused on platform routing, asset serving, and process or
-worker bootstrap. Application code should continue to use evjs file
-conventions instead of reading deployment metadata directly.
+- server-function requests;
+- public API route paths;
+- SSR, PPR, and RSC document requests;
+- the active RSC or PPR support paths when those modes are used.
+
+Static files and browser-route fallbacks stay on the CDN. Configure CORS,
+cookies, and credentials for the cross-origin boundary explicitly.
+
+## Runtime paths
+
+Framework server paths derive from `server.basePath`, which defaults to
+`/__evjs`:
+
+```text
+/__evjs/fn       server functions
+/__evjs/ppr      PPR support, when used
+/__evjs/rsc      RSC Flight, when used
+```
+
+Change the prefix only when a host or reverse proxy requires it. Public API
+routes continue to use the paths created under `src/apis`.
+
+## Deployment checklist
+
+1. Run `ev inspect` and confirm every route and rendering choice.
+2. Run `ev build` and keep its diagnostics.
+3. Verify whether `dist/server` is required.
+4. Install the adapter for the selected target.
+5. Confirm public asset, SPA fallback, API, and request-time page routing.
+6. Set `transport.baseUrl` only for a split origin.
+7. Test a direct page load, a client navigation, an API route, and every active
+   server rendering mode in the production environment.
+
+Platform authors can build a custom deployment plugin with the public plugin
+APIs. Start from [Plugin Development](./plugin-authoring) rather than reading
+or rewriting application routes from generated filenames.

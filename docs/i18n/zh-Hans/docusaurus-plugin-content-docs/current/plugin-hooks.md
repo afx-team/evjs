@@ -1,263 +1,178 @@
 # 插件 Hooks
 
-插件通过 lifecycle hooks 处理构建期副作用与底层 bundler 定制。在 `setup()` 中定义共享
-状态，并返回需要该状态的 hooks。如果行为应以声明方式记录在 framework IR 中，则改用
-[generated contributions](./generated-contributions)。
+插件 Hook 用于构建时副作用、HTML 修改、最终部署文件和底层构建器定制。共享状态放在 `setup()` 中，只返回真正需要的 Hook。
 
-## 生命周期
+插件需要增加模块，或把代码挂到页面/入口时，使用[生成代码](./generated-contributions)。生成式贡献比 Hook 写临时文件更容易检查与组合。
+
+## 生命周期概览
 
 ```mermaid
-flowchart TB
-  subgraph Configure["配置阶段"]
-    AppOptions["解析类型安全的 Application options"]
-    Config["configure(config, ctx.options)"]
-    Resolve["解析框架配置"]
-    Setup["setup(ctx.options)"]
-  end
-
-  subgraph Plan["框架规划"]
-    Graph["discover graph\nroutes + server functions"]
-    PageSettings["解析 Page plugin settings"]
-    Contributions["emitIR(ctx) / emitPageIR(ctx)\nmodules + slots"]
-    BuildPlan["create BuildPlan"]
-    IR["materialize .ev"]
-  end
-
-  subgraph Build["Bundling 和输出"]
-    BundlerConfig["configureBundler()"]
-    Bundler["bundler build"]
-    DevReady["devServerReady()\n仅 dev"]
-    Facts["fresh bundler facts"]
-    BuildStart["beforeBuild()"]
-    Link["link canonical BuildOutput"]
-    BuildOutput["transformOutput()"]
-    HTML["transformHtml() + emit"]
-    BuildEnd["afterBuild()"]
-    Dispose["dispose()"]
-  end
-
-  AppOptions --> Config --> Resolve --> Setup --> Graph --> PageSettings --> Contributions --> BuildPlan
-  BuildPlan --> IR --> BundlerConfig --> Bundler --> Facts --> BuildStart --> Link
-  Bundler -. client listener ready .-> DevReady
-  Link --> BuildOutput --> HTML --> BuildEnd
-  DevReady -. Session 关闭 / 替换 .-> Dispose
-  BuildEnd -. production end / server close / Session replacement .-> Dispose
-
-  classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
-  classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
-  classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class AppOptions,Config,Resolve,Setup config;
-  class Graph,PageSettings,BuildPlan,Contributions,IR plan;
-  class BundlerConfig,Bundler,DevReady,Facts,BuildStart,Link,BuildOutput,HTML,BuildEnd,Dispose build;
+flowchart LR
+  Configure["configure"] --> Setup["setup"]
+  Setup --> Generate["emitIR / emitPageIR"]
+  Generate --> Bundler["configureBundler"]
+  Bundler --> Build["bundle"]
+  Build --> Before["beforeBuild"]
+  Before --> Output["transformOutput"]
+  Output --> HTML["transformHtml"]
+  HTML --> After["afterBuild"]
+  After --> Dispose["dispose"]
 ```
 
-通过 `definePlugin()` 创建插件时，类型安全的值在这些阶段保持扁平：configure 与 setup
-使用 `ctx.options`；`emitIR()` 使用 `ctx.options` 和
-`ctx.pages[].options`；`emitPageIR()` 使用 `ctx.options` 与
-`ctx.pageOptions`。
+`configure()` 和 `setup()` 见[插件开发](./plugin-authoring)。通过 `definePlugin()` 创建的插件以 `ctx.options` 获得类型化应用选项。
 
 | Hook | 用途 |
-|------|------|
-| `configureBundler(config, ctx)` | 修改当前 bundler 配置 |
-| `devServerReady({ origin, signal })` | development Session 开始监听后获取实际 client origin，并支持协作式取消 |
-| `beforeBuild(ctx)` | fresh bundler facts 就绪后、evjs 链接或发射 canonical output 前执行 |
-| `transformOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
-| `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
-| `afterBuild({ output, isRebuild })` | 构建后输出最终产物 |
-| `dispose(ctx)` | 清理资源 |
+| --- | --- |
+| `configureBundler(config, ctx)` | 适配器专属 Loader、解析、优化或其他底层设置 |
+| `devServerReady({ origin, signal })` | 客户端监听可用后连接开发工具 |
+| `beforeBuild(ctx)` | 在输出完成前，启动依赖最新打包结果的工作 |
+| `transformOutput(output, ctx)` | 调整资源组或增加部署元信息 |
+| `transformHtml(document, ctx)` | 修改一份生成 HTML 或请求时文档外壳 |
+| `afterBuild(result)` | 输出平台文件或报告已完成构建 |
+| `dispose(ctx)` | 释放 `setup()` 或开发 Hook 创建的资源 |
 
-先于这些 hooks 运行的 `configure()` 与 `setup()` 合同见
-[插件开发](./plugin-authoring)。
+## 在 `setup()` 中保存状态
 
-## Rebuild 与 Watch 行为
-
-每个 `afterBuild()` hook 都会收到 canonical build result 的一份隔离快照。修改只在当前
-hook 内可见，不会改变后续 hook 或 deployment adapter 收到的输入。
-
-在 dev 中，`beforeBuild()` 与 `afterBuild()` 成对执行。每个 immutable Session 首次成功
-发布的 output 使用 `isRebuild: false`；同一 Session 中后续 bundler/HMR output cycle
-使用 `isRebuild: true`。`beforeBuild()` 表示 fresh bundler facts 已就绪、evjs 即将链接并
-发布 canonical output，并不是底层 bundler 的 compile-start 回调。
-
-如果 bundler 在产生 fresh facts 前失败，两者都不会执行。如果 `beforeBuild()`、链接、
-output transform、HTML 发射或发布失败，`afterBuild()` 不会执行。`prepare` 与 `inspect`
-只暂存 framework state、不发布 output，因此也不会触发这两个 hook。
-
-`afterBuild()` 明确定义在发布之后。若它失败，evjs 会报告 production build 失败，或
-fail-stop 它所属的 development Session。
-
-每个 immutable development Session 的 client bundler listener 开始监听后，
-`devServerReady()` 执行一次。它接收 adapter 实际上报的 `origin`，而不是根据
-`dev.port` 重新拼出的 URL；官方 adapter 返回 HTTP(S) URL，自定义 adapter 也可以返回
-其他 origin 字符串。Session replacement 会用新 controller 的 origin 重放该 hook；普通
-HMR rebuild、production build、`prepare` 与 `inspect` 都不会执行它。
-
-Listener ready 不代表首次 canonical output 或 server/API runtime 已就绪。首次
-`beforeBuild()` / `afterBuild()` 可能在 `devServerReady()` 之前、期间或之后完成，两者没有
-顺序保证。依赖 output 的逻辑仍应放在 `afterBuild()`。如果 `devServerReady()` reject，
-且所属 Session 仍为 active，整个 `ev dev` 运行都会终止，并执行正常的 controller 清理与
-plugin 逆序 dispose。
-
-该 Session 开始关闭时，hook context 的 `signal` 会 abort。取消是协作式的：signal
-abort 不会自动 settle hook 返回的 Promise，进行中的异步工作必须监听或透传 signal，
-随后自行 settle。Session 关闭或 replacement 会等待进行中的 `devServerReady()` hook
-settle，再运行 plugin `dispose()` hook。因此，忽略 signal 可能延迟或阻塞关闭与
-replacement。
+长期资源只创建一次，并在 `dispose()` 中关闭：
 
 ```ts
-const devToolsPlugin = {
-  id: "dev-tools",
-  setup() {
-    let closeDevTools: (() => Promise<void>) | undefined;
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const reporter = definePlugin({
+  id: "reporter",
+  setup(ctx) {
+    const client = createReporter(ctx.options);
+
     return {
-      async devServerReady({ origin, signal }) {
-        const devTools = await connectDevTools({ origin, signal });
-        closeDevTools = () => devTools.close();
+      afterBuild({ deploymentMetadata, isRebuild }) {
+        client.record({ deploymentMetadata, isRebuild });
       },
       async dispose() {
-        await closeDevTools?.();
+        await client.close();
       },
     };
   },
-};
+});
 ```
 
-每次 plugin setup 的 `dispose()` 最多执行一次，并按 plugin 逆序运行。触发场景包括
-production build 结束、development Session 关闭或被替换，以及 plugin 初始化后 Session
-构造失败；同一 Session 内的普通 bundler/HMR rebuild 不会执行它。
+每次成功 Setup 的 `dispose()` 最多执行一次，并按插件逆序执行。即使前置工作只完成了一部分，清理也应保持安全。
 
-`setup()`、`emitIR()` 和 `configureBundler()` context 提供 `addWatchFile()` 来注册
-analysis/config 依赖；`BeforeBuildContext` 与晚期 `DevServerReadyContext` 明确不提供它，
-output、HTML 与 dispose context 也不提供。`emitIR()` 依赖参与无写入的候选 preparation；
-`setup()` 与 `configureBundler()` 依赖是 opaque constructor input，其内容会进入候选
-semantic fingerprint。变化的 analysis 数据应在 `emitIR()` 中读取；setup state 在所属
-Session 内保持不变。
+## 监听插件输入
 
-真实监听输入发生变化后，长生命周期 Supervisor 会在内存中准备 config、CoreGraph、
-BuildPlan 与 generated IR。Preparation 不执行 build hook；如果失败，当前 Session 仍会
-继续运行。Semantic fingerprint 不变即为 no-op；指纹变化时，Supervisor 先关闭旧 Session，
-再构造替代 Session，并针对固定输入重新运行 plugin setup 与 `configureBundler()`。Adapter
-不会原地替换 bundler config。Session 替换一旦开始，plugin setup 或 adapter startup
-失败会停止 dev，不会混合新旧 Session 状态。
-
-Descriptor 顶层的 `cliShortcuts()` 遵循相同的 Session 边界，但它不是 lifecycle hook，
-也不属于 bundler/HMR cycle。快捷键引擎启用时，semantic no-op 或候选 preparation 失败
-会保留当前 terminal binding。发生 Session replacement 时，Supervisor 会在关闭旧 Session
-前解绑旧集合，从 replacement Session 的 descriptor 收集 contribution，并且只在其
-bundler controller 提供实际 client origin 后绑定新集合。Session active 后，快捷键绑定与
-`devServerReady()` 独立执行，双方互不等待，因此 shortcut action 不能假设 ready hook
-已经 settle。Shortcut action 的 `PluginDevSession.close()` 会关闭整个 Supervisor 和本次
-`ev dev` 运行，而不是只关闭它所属的 immutable Session。参见[插件 CLI
-快捷键](./dev#插件-cli-快捷键)。
-
-## Build Output 所有权
-
-`transformOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。
-`deployment` 必须是可无损 JSON 序列化的普通对象。函数、访问器、非有限数值、负零、
-不安全 key、稀疏数组和循环引用会在引入它们的 hook 执行后立即被拒绝，后续 output
-hook 与发布阶段都不会继续执行。
-
-其他 `BuildOutput` 字段仍由 framework 持有，包括：
-
-- build id、输出路径和 public path；
-- runtime endpoint 与 transport；
-- server entry、renderer、function 与 route；
-- Application、Page、RSC 与 PPR 语义。
-
-Hook 不能新增、删除或重排 framework record 或数组。具体来说，hook 不能新增、删除或
-重命名 Application、Page、Route 或 Document，不能调整 Route 顺序、修改 Page path
-或 Route ownership，也不能修改 Document file name 和 static alias。这些值必须在
-graph linking 前完成配置。
-
-## HTML Transform Context
-
-`transformHtml()` 会为每个实际发射的 static HTML 文件，以及每个在构建期编译的
-Page-specific request-time document shell，分别接收一个已解析 HTML 文档。应通过
-`ctx.owner.kind` 判断当前文档归属，不要从文件名猜。
+`setup()`、`emitIR()` 和 `configureBundler()` 上下文提供 `addWatchFile()`，用于影响插件行为的项目本地文件：
 
 ```ts
-transformHtml(doc, ctx) {
-  doc.head?.appendChild(doc.createComment(` build ${ctx.buildId} `));
-
-  if (ctx.owner.kind === "application") {
-    doc.documentElement?.setAttribute("data-app", ctx.applicationId);
-  }
-
-  if (ctx.owner.kind === "page") {
-    doc.documentElement?.setAttribute("data-page", ctx.owner.pageId);
-  }
+setup(ctx) {
+  ctx.addWatchFile("./config/analytics.json");
 }
 ```
 
-Context 字段包括：
+监听输入变化时，evjs 会按需刷新开发环境。生成代码依赖的数据应在 `emitIR()` 中读取，使代码随输入变化。不要监听生成的 `.ev` 或 `dist` 文件。
 
-- `ctx.documentId` 与 `ctx.applicationId`；
-- `ctx.owner`：`{ kind: "application" }`、
-  `{ kind: "page", pageId }` 或 `{ kind: "plugin", pluginId }`；
-- `ctx.fileName` 和 `ctx.template`；对于 request-time shell，`fileName` 是逻辑
-  Document filename，不会作为 static file 发射；
-- `ctx.assets`；
-- `ctx.output`，即当前 build output；
-- `ctx.buildId` 和 `ctx.publicPath`。
+## 开发服务器就绪
 
-文档类型是 `HtmlDocument`，它是标准 DOM API 的 bundler 无关子集：
-
-```ts
-import type { HtmlDocument } from "@evjs/ev/plugin";
-```
-
-## 最终 Build Result
-
-`afterBuild()` 接收最终构建输出、framework runtime 与 canonical deployment metadata：
+外部工具需要真实客户端来源时使用 `devServerReady()`：
 
 ```ts
 setup() {
+  let closeTools: (() => Promise<void>) | undefined;
+
   return {
-    afterBuild({
-      output,
-      frameworkRuntime,
-      deploymentMetadata,
-      isRebuild,
-    }) {
-      console.log("Apps:", Object.keys(output.apps));
-      console.log("Pages:", Object.keys(output.pages));
-      console.log("Runtime routing:", frameworkRuntime?.routing.kind);
-      console.log("Server entry:", deploymentMetadata.server.entry);
-      console.log("Deploy routes:", deploymentMetadata.routes.length);
-      console.log("Rebuild:", isRebuild);
+    async devServerReady({ origin, signal }) {
+      const tools = await connectDevTools({ origin, signal });
+      closeTools = () => tools.close();
+    },
+    async dispose() {
+      await closeTools?.();
     },
   };
 }
 ```
 
-部署插件应优先从 `deploymentMetadata` 读取 routes、documents、assets 和 server entry。
-需要完整内部 build graph 的插件仍可在内存中检查 `output`；需要 runtime 信息的插件可
-读取 `frameworkRuntime`。部署规划应直接使用 `deploymentMetadata`，不要再派生拆分的
-client/server manifest。HTML hook 会收到同一组结果字段，并额外包含 `ctx.owner`、
-`ctx.fileName`、`ctx.assets` 等文档字段。
+- `origin` 是活动构建器报告的监听地址。
+- 开发环境开始关闭时，`signal` 会 Abort。
+- 转发或观察 Signal，并让异步工作及时结束。
+- 此 Hook 仅在开发中运行，不代表第一份应用产物或服务端运行时已经就绪。
 
-## Bundler Config
+依赖产物的工作请放在 `afterBuild()`。
 
-`definePlugin()` 默认创建 bundler 无关的插件，同一个 factory 可安装到
-Utoopack 或 webpack 应用。底层 bundler 修改应使用类型安全的 adapter
-helper；每个 helper 只会在对应 adapter 下调用回调，并提供该 adapter 的具体
-config 类型。
+## 构建与重构建 Hook
 
-最终 BuildPlan 始终是 framework runtime endpoint 与 output ownership 的事实源。
-`configureBundler()` hook 可以定制受支持的 loader、resolution、optimization 等底层
-setting，但不能覆盖 framework client/server 输出路径。即使关闭 recursive clean，
-adapter 也会在 hook 运行后按 BuildPlan 校验这些路径。Plugin 持有的 clean output
-同样必须位于 framework 持有的 `distDir` 内，且不能与 client/server output 重叠。
+只有打包生成有效输出周期时才执行 `beforeBuild()` 与 `afterBuild()`；`prepare` 和 `inspect` 不会调用。
 
-最终 bundler config 在一个 development Session 内不可变。被监听的 plugin config
-发生变化时，由 Supervisor preparation 与自动 Session replacement 处理；adapter helper
-不需要原地更新路径。
+开发环境中：
 
-Framework 持有的 client/server config 还必须在每个 hook 后保留完全一致的 entry
-集合，以及每个 entry 对应的 BuildPlan import。需要改变 framework 启动组合时，
-应使用 generated contributions。仅面向 webpack 的插件可以为独立产物增加一个
-单独命名的 config，但必须配置明确且可移植地不重叠的 `output.path`；仅大小写不同
-仍视为冲突。Utoopack 的单一 framework config 不允许增加额外 entry。
+- 首次成功输出使用 `isRebuild: false`；
+- 后续成功输出周期使用 `isRebuild: true`；
+- 失败周期不调用 `afterBuild()`。
+
+`afterBuild()` 在规范文件发布后运行。该 Hook 抛错仍会让生产构建失败，因此它适合必需产物；可选上报失败应由插件自行处理。
+
+## 转换构建产物
+
+`transformOutput()` 可以调整已连接的资源组内容，并增加插件部署元信息。部署元信息必须是可无损序列化的普通 JSON。
+
+不要用输出 Hook 重命名页面、路由、文档、运行时路径或框架输出目录。这些选择属于应用配置、页面配置或声明式生成贡献。
+
+## 转换 HTML
+
+`transformHtml()` 接收一份解析后的 `HtmlDocument` 及其上下文：
+
+```ts
+transformHtml(document, ctx) {
+  document.head?.appendChild(
+    document.createComment(` build ${ctx.buildId} `),
+  );
+
+  if (ctx.owner.kind === "page") {
+    document.documentElement?.setAttribute(
+      "data-page",
+      ctx.owner.pageId,
+    );
+  }
+}
+```
+
+常用上下文字段包括：
+
+- `documentId`、`applicationId`、`fileName` 与 `template`；
+- 标识应用、页面或插件文档的 `owner`；
+- `assets`、`buildId` 与 `publicPath`；
+- 供高级检查使用的当前输出。
+
+应根据 `owner.kind` 分支，不要从文件名猜所有权。文档类型从公共插件入口导入：
+
+```ts
+import type { HtmlDocument } from "@evjs/ev/plugin";
+```
+
+简单 `meta`、`link`、`script` 或 `style` 增加应优先使用[生成代码](./generated-contributions)中的声明式 `html.tag` Slot。
+
+## 使用最终构建结果
+
+`afterBuild()` 为常见部署工作提供聚焦值：
+
+```ts
+setup() {
+  return {
+    afterBuild({ deploymentMetadata, frameworkRuntime, isRebuild }) {
+      writePlatformManifest({
+        assets: deploymentMetadata.assets,
+        routes: deploymentMetadata.routes,
+        server: deploymentMetadata.server,
+        runtime: frameworkRuntime,
+        isRebuild,
+      });
+    },
+  };
+}
+```
+
+路由、文档、资源和服务端入口优先使用 `deploymentMetadata`。只有插件确实需要部署投影中没有的构建时资源细节时，才使用更宽的 `output`。
+
+## 配置构建器
+
+`definePlugin()` 默认与构建器无关。底层类型化修改使用适配器 Helper，每个 Helper 只为自己的适配器执行。
 
 Utoopack 示例：
 
@@ -269,8 +184,8 @@ export const yamlPlugin = definePlugin({
   id: "yaml-support",
   setup() {
     return {
-      configureBundler: utoopack((cfg) => {
-        merge(cfg, {
+      configureBundler: utoopack((config) => {
+        merge(config, {
           module: {
             rules: {
               ".yaml": { type: "json" },
@@ -283,34 +198,43 @@ export const yamlPlugin = definePlugin({
 });
 ```
 
-切换到 webpack 的项目，选择 webpack adapter 并使用它的类型安全 helper
-即可。`defineConfig()` 会从 adapter 自动推断 bundler config 类型，helper
-回调会收到完整的 `Configuration[]` 配置集合：
+Webpack 示例：
 
 ```ts
-import { defineConfig } from "@evjs/ev";
-import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
-import { definePlugin } from "@evjs/ev/plugin";
+import { webpack } from "@evjs/bundler-webpack";
 
-const webpackAlias = definePlugin({
-  id: "webpack-alias",
-  setup() {
-    return {
-      configureBundler: webpack((configs) => {
-        for (const config of configs) {
-          config.resolve ??= {};
-          config.resolve.alias ??= {};
-          config.resolve.alias["@app"] = "./src";
-        }
-      }),
-    };
-  },
-});
-
-export default defineConfig({
-  bundler: webpackAdapter,
-  plugins: [webpackAlias()],
+configureBundler: webpack((configs) => {
+  for (const config of configs) {
+    config.resolve ??= {};
+    config.resolve.alias ??= {};
+    config.resolve.alias["@app"] = "./src";
+  }
 });
 ```
 
-完整示例见[插件配方](./plugin-recipes)。
+构建器 Hook 可以修改受支持的底层设置，但不能替换框架页面入口或客户端/服务端输出目录。改变启动组合请使用生成式贡献。
+
+## 贡献终端快捷键
+
+交互快捷键是 Descriptor 声明，不是生命周期 Hook：
+
+```ts
+const tools = definePlugin({
+  id: "tools",
+  cliShortcuts() {
+    return [
+      {
+        key: "u",
+        description: "show dev url",
+        action(session) {
+          console.log(session.origin);
+        },
+      },
+    ];
+  },
+});
+```
+
+Key 必须是单个非空白字符。Action 获得当前客户端 `origin` 和关闭完整 `ev dev` 运行的 `close()`。应用端控制见[本地开发](./dev#交互式快捷键)。
+
+小型完整示例见[插件配方](./plugin-recipes)。

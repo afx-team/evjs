@@ -1,12 +1,9 @@
 # Server Functions
 
-Server functions let you write backend logic alongside your frontend code and
-call it from React components with local-call ergonomics over a typed server
-boundary. The call shape looks like a normal async function, but the framework
-still serializes arguments, dispatches the request through the server runtime,
-and returns a serialized result or structured error. While not strictly
-required, we recommend suffixing server function files with `.server.ts`. The
-build system transforms them into RPC calls automatically.
+Server functions let you write backend logic beside application code and call
+it through a typed asynchronous boundary. evjs handles the endpoint and client
+call wiring. Use a `.server.ts` suffix so the boundary remains obvious to
+people and tooling.
 
 ## Basic Usage
 
@@ -65,11 +62,6 @@ export const deleteUser = async (id: string) => {
 - Reachable `"use server"` modules are made callable from the browser.
   "Reachable" means imported by app code, page modules, server file routes, or
   server middleware; unrelated files are ignored.
-- The server transform preserves implementations without registering global
-  side effects. The generated server entry imports each reachable module,
-  registers its named exports in one application-owned registry, and passes
-  that registry to `createApp()`. Multiple evjs apps can therefore share a
-  process without exposing server functions to each other.
 
 ## Request Context Helpers
 
@@ -326,11 +318,11 @@ try {
 }
 ```
 
-## Build Behavior
+## What gets included
 
-During `ev dev` and `ev build`, evjs finds reachable `"use server"` modules,
-validates their exports, and makes those functions callable from browser code.
-You do not need to write an endpoint, client proxy, or server-side wiring code.
+During `ev dev` and `ev build`, evjs validates reachable `"use server"`
+modules and makes their named functions callable. You do not need to author an
+endpoint or client proxy.
 
 Unsupported exports are reported before the bundler runs.
 For example, `export default`, `export const VERSION = "1"`, and
@@ -338,8 +330,8 @@ For example, `export default`, `export const VERSION = "1"`, and
 Runtime re-exports such as `export { getUser } from "./other"` are also
 unsupported.
 
-Reachable server modules are included in the server runtime for the app. Remove
-an import when a server function should stay outside the application.
+Only modules reachable from application code are included. Remove an import
+when a server function should stay outside the application.
 
 ## Key Points
 

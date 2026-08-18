@@ -1,10 +1,7 @@
-# 服务端路由
+# API 路由与中间件
 
 Server routes 让你完全控制 HTTP methods、headers 和标准 Web
 `Request`/`Response` 对象。在 evjs framework 项目中，服务端路由通过文件约定声明。
-
-`@evjs/server` 仍然是独立的 server runtime package。它不是 evjs 的第二套路由模式，
-evjs framework routing 也不会分析编程式 route 声明。
 
 完整的服务端文件路由和 middleware 文件名规则见
 [文件约定](./file-conventions)。
@@ -42,27 +39,20 @@ export const POST = async (req) => {
 };
 ```
 
-Discovery 会在不执行应用代码的前提下拒绝 anchor AST 可明确证明为 non-callable
-的 handler。Imported handler、跨 module re-export、factory 结果与可变 binding
-仍是合法的组合方式；生成的 `createRoute()` definition 会在 server module 加载时
-校验它们的最终值。Generator handler 会在 discovery 阶段被拒绝，因为它返回
-iterator 而不是 response。
+支持导入、重新导出或由 Factory 创建的 Handler，只要最终值可调用。Generator Handler
+不受支持，因为它返回 Iterator，而不是一份响应。
 
-其他任何 basename 都是普通私有源码，因此 `schema.ts`、`db.ts`、`types.ts`、
-`index.ts` 与 `route.ts` 可以就近放置而不会发布 Route。`api.*` 锚点只能导出
-大写 HTTP methods，helper 应移到其他文件。缺少 method、`middleware`/
-`middlewares`、default export、小写 method export、不受支持的 runtime export、
-重复 path、重复 dynamic shape、多个锚点扩展名变体，以及位于 bracket、catch-all、
-optional 或其他无效目录 segment 下的锚点，都会在 bundling 前被拒绝。
+其他任何 basename 都是普通路由源码，因此 `schema.ts`、`db.ts`、`types.ts`、
+`index.ts` 与 `route.ts` 可以就近放置。`api.*` 锚点只能导出大写 HTTP 方法，辅助函数
+应移到其他文件。evjs 会拒绝缺少方法、默认或小写导出、不受支持的运行时导出、重复路径、
+模糊动态路由，以及同一目录中的多个 `api.*` 变体。
 
 发现到的 route 统一按 segment 逐段比较 specificity：父路径排在后代之前，并在
 首个不同位置优先 static segment，再处理 dynamic segment。这样注册顺序稳定，
 dynamic route 也不会遮蔽更具体的 static 分支。
 
-BuildPlan 还会拒绝与占用 URL 的 Page/redirect pattern 或 active framework
-runtime endpoint 相交的 server request Route pattern。Static alias 使用一次 decode
-后的 URL 语义：`/%75sers` 是 `/users` 的 alias，但双重编码文本仍保持不同，编码后的
-`/` 也不会合并 segment boundary。
+API 路由形态不能与页面路由、重定向或活动框架运行时端点重叠。运行 `ev inspect` 可以在
+构建前发现冲突。
 
 ## 处理器签名
 

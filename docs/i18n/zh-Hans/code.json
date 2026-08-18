@@ -1,114 +1,122 @@
 {
+  "homepage.eyebrow": {
+    "message": "React 全栈框架",
+    "description": "The eyebrow above the homepage title"
+  },
   "homepage.tagline": {
-    "message": "面向文件页面和服务端代码的 React 框架",
+    "message": "围绕页面构建，而不是维护框架胶水",
     "description": "The tagline on the homepage hero"
   },
   "homepage.hero.description": {
-    "message": "使用 src/pages 下的 page.* 锚点编写页面路由，使用 src/apis 下的 api.* 锚点编写服务端路由，使用 \"use server\" 模块编写服务端函数。先用约定开始，默认能力不够时再增加配置。",
+    "message": "用一套可预测的应用模型，获得文件页面、可选服务端代码、逐页渲染选择和可部署产物。",
     "description": "The homepage hero description"
   },
   "homepage.getStarted": {
-    "message": "快速开始",
-    "description": "The Get Started button on the homepage"
+    "message": "开始构建",
+    "description": "The primary homepage call to action"
+  },
+  "homepage.readDesign": {
+    "message": "了解框架设计",
+    "description": "The framework design call to action"
   },
   "homepage.workflow.label": {
-    "message": "构建流程",
-    "description": "Label above the homepage workflow section"
+    "message": "选择一条路径",
+    "description": "Label above the homepage learning paths"
   },
   "homepage.workflow.title": {
-    "message": "从文件到可部署产物",
-    "description": "Title of the homepage workflow section"
+    "message": "通过完成下一个任务来学习",
+    "description": "Title of the homepage learning paths"
   },
   "homepage.workflow.description": {
-    "message": "evjs 保持常用路径尽量简单：发现约定、构建应用，然后输出用于部署的浏览器和服务端产物。",
-    "description": "Description of the homepage workflow section"
+    "message": "从小处开始，只打开与你当前目标对应的指南。",
+    "description": "Description of the homepage learning paths"
   },
   "homepage.flow.source.title": {
-    "message": "编写文件",
-    "description": "Title for the first homepage flow step"
+    "message": "启动项目",
+    "description": "Title for the first homepage path"
   },
   "homepage.flow.source.description": {
-    "message": "编写页面、路由、中间件、服务端函数和 ev.config.ts。",
-    "description": "Description for the first homepage flow step"
+    "message": "创建应用并渲染最初的两个页面。",
+    "description": "Description for the first homepage path"
   },
   "homepage.flow.discover.title": {
-    "message": "发现约定",
-    "description": "Title for the second homepage flow step"
+    "message": "构建用户体验",
+    "description": "Title for the second homepage path"
   },
   "homepage.flow.discover.description": {
-    "message": "解析页面路由、服务端路由、中间件和渲染元信息。",
-    "description": "Description for the second homepage flow step"
+    "message": "添加路由、布局、导航和渲染选择。",
+    "description": "Description for the second homepage path"
   },
   "homepage.flow.bundle.title": {
-    "message": "构建入口",
-    "description": "Title for the third homepage flow step"
+    "message": "增加服务端能力",
+    "description": "Title for the third homepage path"
   },
   "homepage.flow.bundle.description": {
-    "message": "使用选定的构建器适配器构建浏览器和服务端入口。",
-    "description": "Description for the third homepage flow step"
+    "message": "调用服务端函数或暴露公共 HTTP 端点。",
+    "description": "Description for the third homepage path"
   },
   "homepage.flow.output.title": {
-    "message": "部署",
-    "description": "Title for the fourth homepage flow step"
+    "message": "交付应用",
+    "description": "Title for the fourth homepage path"
   },
   "homepage.flow.output.description": {
-    "message": "写入浏览器文件、服务端产物和部署元信息。",
-    "description": "Description for the fourth homepage flow step"
+    "message": "构建生产产物并选择部署目标。",
+    "description": "Description for the fourth homepage path"
   },
   "homepage.feature.pages.title": {
-    "message": "页面路由",
-    "description": "Title for Page Routes feature"
+    "message": "页面拥有自己的 URL",
+    "description": "Title for the page ownership feature"
   },
   "homepage.feature.pages.description": {
-    "message": "基于 src/pages 构建 SPA 或 MPA 页面，不需要手写 router bootstrap。",
-    "description": "Description for Page Routes feature"
-  },
-  "homepage.feature.serverRoutes.title": {
-    "message": "服务端路由",
-    "description": "Title for Server Routes feature"
-  },
-  "homepage.feature.serverRoutes.description": {
-    "message": "使用 positive src/apis/**/api.* 锚点与大写 HTTP method export 暴露标准 Request 和 Response handler。",
-    "description": "Description for Server Routes feature"
-  },
-  "homepage.feature.serverFunctions.title": {
-    "message": "服务端函数",
-    "description": "Title for Server Functions feature"
-  },
-  "homepage.feature.serverFunctions.description": {
-    "message": "通过内置传输层，从浏览器代码调用可达的 \"use server\" 函数。",
-    "description": "Description for Server Functions feature"
+    "message": "在路由对应的目录里放置 page.tsx，并把页面组件、数据与测试保留在附近。",
+    "description": "Description for the page ownership feature"
   },
   "homepage.feature.rendering.title": {
-    "message": "渲染模式",
-    "description": "Title for Rendering Modes feature"
+    "message": "逐页选择渲染方式",
+    "description": "Title for the rendering feature"
   },
   "homepage.feature.rendering.description": {
-    "message": "通过相邻的 page.config.ts 配置 CSR、SSR、SSG、PPR 和 RSC。",
-    "description": "Description for Rendering Modes feature"
+    "message": "从 CSR 开始，只为确实需要不同交付方式的页面选择 SSR、SSG、PPR 或 RSC。",
+    "description": "Description for the rendering feature"
+  },
+  "homepage.feature.serverFunctions.title": {
+    "message": "调用服务端操作",
+    "description": "Title for the server functions feature"
+  },
+  "homepage.feature.serverFunctions.description": {
+    "message": "从 \"use server\" 模块导出带类型的操作，并在应用代码中调用。",
+    "description": "Description for the server functions feature"
+  },
+  "homepage.feature.serverRoutes.title": {
+    "message": "暴露 Web 标准 API",
+    "description": "Title for the API routes feature"
+  },
+  "homepage.feature.serverRoutes.description": {
+    "message": "通过文件路由、大写方法以及标准 Request 和 Response 值创建 HTTP 端点。",
+    "description": "Description for the API routes feature"
   },
   "homepage.feature.plugins.title": {
-    "message": "插件",
-    "description": "Title for Plugins feature"
+    "message": "增加类型化集成",
+    "description": "Title for the plugin feature"
   },
   "homepage.feature.plugins.description": {
-    "message": "扩展配置、构建器设置、HTML 转换、构建产物和生成的框架代码。",
-    "description": "Description for Plugins feature"
+    "message": "在应用中统一配置插件，再让需要的页面选择其类型化能力。",
+    "description": "Description for the plugin feature"
   },
   "homepage.feature.deployment.title": {
-    "message": "部署产物",
-    "description": "Title for Deployment Output feature"
+    "message": "选择运行位置",
+    "description": "Title for the deployment feature"
   },
   "homepage.feature.deployment.description": {
-    "message": "输出浏览器资源、可选服务端 bundle 和规范化部署元信息。",
-    "description": "Description for Deployment Output feature"
+    "message": "将纯浏览器应用静态部署，或增加 Node.js、Edge 与前后端分离目标。",
+    "description": "Description for the deployment feature"
   },
   "homepage.features.label": {
-    "message": "evjs 处理什么",
-    "description": "Label above the features section heading"
+    "message": "框架设计",
+    "description": "Label above the homepage feature section"
   },
   "homepage.features.title": {
-    "message": "文件路由、服务端代码和构建产物",
-    "description": "Title of the features section"
+    "message": "一组能随应用一起扩展的小概念",
+    "description": "Title of the homepage feature section"
   }
 }

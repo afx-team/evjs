@@ -1,181 +1,95 @@
 # 部署
 
-生产部署从 `ev build` 开始。默认情况下，evjs 会把浏览器文件写到 `dist/client`；
-当应用使用服务端能力时，还会把服务端文件写到 `dist/server`。
-
-如果希望 evjs 生成平台专属文件，例如 Node server 入口、静态托管 redirects 或 edge
-worker，可以使用部署 adapter。
-
-## 生产构建
+先运行生产构建，再部署浏览器产物，以及应用所需的服务端产物：
 
 ```bash
 npm run build
 # 通常执行：ev build
 ```
 
-典型产物：
+## 选择目标
 
-```txt
-dist/
-├── client/
-│   └── ...
-├── server/
-│   └── ...
-└── deployment-metadata.json
-```
-
-重要路径：
-
-- `dist/client/`：浏览器资源和生成的 HTML。
-- `dist/server/`：应用使用服务端函数、服务端文件路由、SSR、PPR 或 RSC 时生成的服务端 bundle 和服务端元信息。
-- `dist/deployment-metadata.json`：面向工具和部署 adapter 的 canonical deployment
-  metadata。应用代码不应导入或修改它。
-
-`deployment-metadata.json` 是 core 唯一序列化的 deployment projection。
-其他平台专属产物由 deployment adapter 持有。
-
-生成的 HTML 会内嵌浏览器 `ClientRuntime`。手动使用 `@evjs/client` runtime URL
-API 时，可以从显式配置的 URL 加载 JSON；框架没有默认的独立 runtime JSON 产物。
-Runtime-only 的 `FrameworkRuntime` 数据通过 build/plugin result 传递，并注入 dev
-或 deployment adapter bootstrap。
-
-## 选择部署目标
-
-| 目标 | 适用场景 | Adapter |
+| 目标 | 适用情况 | 内置适配器 |
 | --- | --- | --- |
-| 静态托管 | 应用只需要浏览器资源、CSR、MPA client page，或完全静态/SSG 页面。 | `staticDeploymentAdapter()` |
-| Node.js | 一个 Node 进程负责资源和全部服务端能力。 | `nodeDeploymentAdapter()` |
-| Edge worker | 平台提供 `fetch()` worker 和静态资源 binding。 | `edgeDeploymentAdapter()` |
-| CDN + origin 拆分 | 静态资源在 CDN，服务端能力部署在另一个 origin。 | 使用具备服务端能力的 adapter，并配置平台路由。 |
+| 静态托管 | 应用使用 CSR、MPA 客户端页面或 SSG，且没有运行时服务端能力 | `staticDeploymentAdapter()` |
+| Node.js | 一个 Node 进程提供资源与所有服务端能力 | `nodeDeploymentAdapter()` |
+| Edge Worker | 平台提供 Fetch 兼容 Worker 与资源绑定 | `edgeDeploymentAdapter()` |
+| CDN + 源站 | 浏览器资源在 CDN，服务端工作在其他位置 | 服务端适配器加平台路由 |
 
-当应用使用服务端函数、服务端文件路由、SSR、PPR 或 RSC 时，不要只部署 `dist/client`。
-这些能力需要具备服务端能力的部署目标。
+服务端函数、API 路由、SSR、PPR 与 RSC 都需要服务端目标。任何一项启用时都不要只部署 `dist/client`。
 
-## 运行时路径
+## 理解产物
 
-服务端运行时路径从 `server.basePath` 派生：
+默认生产布局：
 
-```txt
-/__evjs/fn       服务端函数
-/__evjs/ppr      存在 PPR 页面时的 PPR 支持端点
-/__evjs/rsc      存在 RSC 页面时的 RSC Flight 端点
-```
-
-多数应用可以保留默认的 `server.basePath`。只有当宿主平台占用了 `/__evjs`，或反向代理要求其他前缀时，才需要修改它。
-
-PPR 文档请求仍然通过页面 route。PPR 支持端点用于框架/runtime 协作和直接调试，不是用户编写的 API route。
-
-当浏览器资源和服务端运行时位于不同 origin 时，在构建时设置 `transport.baseUrl`：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  transport: {
-    baseUrl: "https://api.example.com",
-  },
-});
-```
-
-## 内置 Adapter
-
-`@evjs/ev` 内置三类部署 adapter：
-
-- `nodeDeploymentAdapter()`：输出 Node server 入口和部署元信息。
-- `staticDeploymentAdapter()`：输出静态托管元信息和 `_redirects`。
-- `edgeDeploymentAdapter()`：输出 edge worker 入口和部署元信息。
-
-Adapter 基于 evjs 构建结果工作，不应从文件名或 bundler stats 反推框架能力。
-
-## Node.js
-
-普通 Node 服务可以使用 Node adapter 接管生产请求路径：
-
-```ts
-// ev.config.ts
-import { defineConfig } from "@evjs/ev";
-import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
-
-export default defineConfig({
-  plugins: [nodeDeploymentAdapter()],
-});
-```
-
-执行 `ev build` 后会生成：
-
-```txt
+```text
 dist/
-├── deployment.node.json
-└── server.mjs
+├── client/                          # HTML、JS、CSS 与公共资源
+├── server/                          # 需要时生成服务端包
+└── deployment-metadata.json        # 部署工具输入
 ```
 
-运行生成的服务：
-
-```bash
-node dist/server.mjs
-```
-
-生成的 server 会提供 `dist/client`，处理服务端函数和服务端文件路由，挂载
-SSR/PPR/RSC 文档路由，并对客户端导航回退到应用 HTML。默认从 `PORT` 读取端口。
+部署适配器可能增加平台入口文件和路由元信息。把 `dist` 下全部文件当作生成产物。
 
 ## 静态托管
 
-当应用兼容静态托管时，可以使用 static adapter：
+安装静态适配器：
 
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 import { staticDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [staticDeploymentAdapter()],
 });
 ```
 
-adapter 会把静态托管文件写入 public output 目录：
+`ev build` 后，静态主机文件与浏览器产物一起写入：
 
-```txt
+```text
 dist/client/
 ├── deployment.static.json
 └── _redirects
 ```
 
-生成的 redirects 会把静态或 SSG 页面映射到对应 HTML，并把 app route 映射到应用 HTML
-fallback。无路由器 MPA 页面使用精确 rewrite，不会创建全局 catch-all。
+重定向把静态页面映射到对应 HTML，并为 SPA 把浏览器路由映射到应用文档。无浏览器路由器的 MPA 页面使用精确重写，不产生全局 SPA Fallback。
 
-如果构建中包含 SSR、PPR、RSC、服务端函数或服务端文件路由，static adapter 仍会输出资源和元信息，
-但会在 `deployment.static.json` 中标记静态产物不完整。这种情况下，应用还需要一条具备服务端能力的部署路径。
+如果构建包含服务端能力，适配器会把静态产物标记为不完整。可以保留静态文件供 CDN 使用，但还必须把服务端产物部署到兼容运行时。
 
-## Edge Runtime
+## Node.js
 
-当平台提供 `fetch()` worker 和静态资源 binding 时，可以使用 edge adapter：
+Node 进程拥有生产请求时使用 Node 适配器：
 
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
-import { edgeDeploymentAdapter } from "@evjs/ev/deployment";
+import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
-  plugins: [
-    edgeDeploymentAdapter({
-      assetsBinding: "ASSETS",
-    }),
-  ],
+  routing: { mode: "spa" },
+  plugins: [nodeDeploymentAdapter()],
 });
 ```
 
-执行 `ev build` 后会生成：
+构建会增加：
 
-```txt
+```text
 dist/
-├── deployment.edge.json
-└── worker.mjs
+├── deployment.node.json
+└── server.mjs
 ```
 
-生成的 worker 会把服务端运行时请求和服务端渲染页面请求转发给服务端 bundle，并通过配置的
-asset binding 提供浏览器资源。
+启动生成的服务端：
+
+```bash
+PORT=3000 node dist/server.mjs
+```
+
+它提供浏览器资源，处理服务端函数和 API 路由，渲染请求时页面，并在需要时提供 SPA Fallback。
 
 ## Docker
 
-Docker 部署可以使用 Node adapter，并运行生成的 `dist/server.mjs`：
+使用 Node 适配器构建，并运行生成服务端：
 
 ```dockerfile
 FROM node:22-alpine AS builder
@@ -194,32 +108,77 @@ EXPOSE 3000
 CMD ["node", "dist/server.mjs"]
 ```
 
-## 自定义部署插件
+如果运行时依赖被完整打包，项目可能支持更小的最终镜像。在移除安装依赖前，请先确认所选构建器以及全部原生或外部服务端依赖的行为。
 
-部署插件可以使用 `afterBuild({ deploymentMetadata })` 输出平台文件。需要平台专属
-schema 字段时，可以在写文件前包装这份 metadata：
+## Edge Runtime
 
-```ts
-import { definePlugin } from "@evjs/ev/plugin";
+主机提供 Fetch 兼容 Worker 与静态资源绑定时使用 Edge 适配器：
 
-export const deployAdapter = definePlugin({
-  id: "deploy-adapter",
-  setup() {
-    return {
-      afterBuild({ deploymentMetadata }) {
-        const artifact = {
-          ...deploymentMetadata,
-          platform: "custom",
-        };
+```ts title="ev.config.ts"
+import { defineConfig } from "@evjs/ev";
+import { edgeDeploymentAdapter } from "@evjs/ev/deployment";
 
-        emitPlatformFiles(artifact);
-      },
-    };
+export default defineConfig({
+  routing: { mode: "spa" },
+  plugins: [
+    edgeDeploymentAdapter({
+      assetsBinding: "ASSETS",
+    }),
+  ],
+});
+```
+
+构建会增加：
+
+```text
+dist/
+├── deployment.edge.json
+└── worker.mjs
+```
+
+根据主机部署设置，把配置的资源绑定连接到 `dist/client`。Worker 处理服务端请求，并把公共资源委托给该绑定。
+
+## 拆分浏览器与服务端来源
+
+CDN 提供 `dist/client`、另一个来源运行服务端产物时，在构建期间让框架浏览器调用指向服务端来源：
+
+```ts title="ev.config.ts"
+export default defineConfig({
+  transport: {
+    baseUrl: "https://api.example.com",
   },
 });
 ```
 
-应用通过 `plugins: [deployAdapter()]` 安装该工厂返回的插件实例。
+平台必须路由：
 
-自定义 adapter 应聚焦平台路由、资源服务、进程或 worker 启动逻辑。应用代码应继续使用 evjs
-文件约定，而不是直接读取部署元信息。
+- 服务端函数请求；
+- 公共 API 路由路径；
+- SSR、PPR 与 RSC 文档请求；
+- 使用对应模式时活动的 RSC 或 PPR 支持路径。
+
+静态文件与浏览器路由 Fallback 保留在 CDN。请显式配置跨域边界的 CORS、Cookie 与 Credentials。
+
+## 运行时路径
+
+框架服务端路径来自 `server.basePath`，默认 `/__evjs`：
+
+```text
+/__evjs/fn       服务端函数
+/__evjs/ppr      使用 PPR 时的支持路径
+/__evjs/rsc      使用 RSC 时的 Flight 路径
+```
+
+只有主机或反向代理要求时才修改前缀。公共 API 路由继续使用 `src/apis` 创建的路径。
+
+## 部署检查表
+
+1. 运行 `ev inspect`，确认每条路由与渲染选择。
+2. 运行 `ev build` 并保留诊断。
+3. 确认是否需要 `dist/server`。
+4. 安装目标对应适配器。
+5. 验证公共资源、SPA Fallback、API 与请求时页面路由。
+6. 仅在来源拆分时设置 `transport.baseUrl`。
+7. 在生产环境测试直接打开页面、客户端导航、API 路由以及每种活动服务端渲染模式。
+
+平台作者可以使用公共插件 API 构建自定义部署插件。请从[插件开发](./plugin-authoring)开始，而不是根据生成文件名读取或重建应用路由。

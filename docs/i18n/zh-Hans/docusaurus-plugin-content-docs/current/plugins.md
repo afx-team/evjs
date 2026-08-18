@@ -1,98 +1,80 @@
-# 插件
+# 使用插件
 
-插件通过受支持的生命周期扩展框架，而无需扩大核心应用配置。应用在
-`ev.config.ts` 中安装一次插件；Page 再通过同一个 canonical `id` 配置、启用或禁用
-页面级行为。Lifecycle hook 与 generated contribution 继续负责 build、bundler、HTML
-和 runtime 集成。
+插件可以增加集成、构建或部署行为，而不必扩张 evjs 核心配置。先为应用安装一次插件，再在集成支持页面作用域时配置单个页面。
 
-## 安装并配置 Application
+## 安装插件
 
-导入插件工厂，并在 `plugins` 中调用：
+导入 Factory 并在 `ev.config.ts` 中调用：
 
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 import { analytics } from "@company/analytics";
 
 export default defineConfig({
-  plugins: [analytics({ endpoint: "/events" })],
+  routing: { mode: "spa" },
+  plugins: [
+    analytics({
+      endpoint: "/events",
+      debug: false,
+    }),
+  ],
 });
 ```
 
-工厂调用会安装插件，并提供类型安全的 Application 配置。没有 Application 配置的
-插件不接收参数，例如 `buildTimer()`。
+Factory 调用同时完成安装并提供应用级选项。没有选项的插件仍需调用，例如 `buildTimer()`。
 
-`plugins` 数组是有序安装边界。配置直接放在各工厂调用中，因此不需要另一份 extension
-bag，也不需要重复 package identifier。
+插件执行顺序就是数组顺序。两个插件影响同一产物时，请按各集成推荐顺序安装。
 
-## 配置 Page
+## 配置单个页面
 
-把页面行为放在 Page 旁边，并复用同一个 plugin `id`：
+支持页面配置的插件会在相邻 `page.config.ts` 中暴露 id：
 
-```ts
-// src/pages/checkout/page.config.ts
+```ts title="src/pages/checkout/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
   plugins: {
-    analytics: { channel: "checkout" },
+    analytics: {
+      channel: "checkout",
+    },
   },
 });
 ```
 
-`page.config.ts` 不需要导入插件。`ev prepare`、`ev dev` 与 `ev build` 会生成
-`src/plugin-types.d.ts`，稳定桥接实际发现的配置。使用 `ev.config.ts` 时，TypeScript
-会从静态 config 类型推导 Page 可用的精确 plugin id 与对应 value 类型；JavaScript
-配置只生成不会扩散 `any` 的安全桥接，因此 Page 需要插件补全时应使用 TypeScript
-配置。只有静态上保证安装的条目才会暴露给 Page config。不要编辑或导入这份生成声明，
-并确保项目 `tsconfig.json` 包含 `src`。
+不要在页面配置中导入插件包。使用 `ev.config.ts` 时，生成的 TypeScript 声明会为已安装插件 id 与页面值提供补全。保持忽略 `src/plugin-types.d.ts`，由框架更新。
 
-Page 保留一层 `plugins` map，避免 plugin id 与 `title`、`render` 等 core 字段冲突。
-进入该 map 后直接复用插件的短 canonical `id`，没有 package-like id、Page 别名或
-另一层 plugin 嵌套。
+## 理解两种作用域
 
-## Application 与 Page Setting 相互独立
+应用与页面选项有意保持独立：
 
-Application 配置与 Page 配置是两份独立的类型合同：
+| 作用域 | 位置 | 适合内容 |
+| --- | --- | --- |
+| 应用 | `ev.config.ts` 中的插件 Factory | 端点、凭据引用、构建选择、插件允许的回调 |
+| 页面 | `page.config.ts#plugins` 中的插件 id | 单个页面拥有的静态元信息或行为 |
 
-- Application setting 通过 `ev.config.ts` 中的工厂参数传入。插件支持时，其中可以包含
-  只在构建期使用的 callback 或 module reference。
-- Page setting 位于 `page.config.ts`。它会跨越静态 CoreGraph 边界，因此必须是普通、
-  JSON 可序列化的 object。
-- Page object 不继承、不合并 Application 字段。
-- 在同一份合同内，显式字段会先深度合并到 defaults，再进行校验。
+页面选项必须是静态 JSON 数据，不继承应用字段，应用字段也不会复制进页面值。不要把秘密放进页面值，或放进插件标记为浏览器可见的任何选项。
 
-插件配置只存在于 Application 与 Page scope。Page-aware 插件从 normalized Page graph
-派生 Route 或 Document 行为；应用不需要配置单独的 Route/Document plugin surface。
+## 选择默认或显式启用行为
 
-## 按 Scope 启用或禁用
+插件声明的页面默认值决定“省略”意味着什么：
 
-两种工厂写法都会安装并执行插件，也会解析同一份类型安全 Application options；
-它们只在“Page 省略插件项”时表现不同：
+| 写法 | 行为 |
+| --- | --- |
+| `analytics(options)` | 安装插件。存在页面默认值时，省略的页面使用默认值；否则该页面关闭。 |
+| `analytics.forPages(options)` | 安装插件，但即使存在默认值，每个页面也必须显式启用。 |
+| 页面值 `false` | 为当前页面关闭插件。 |
+| 页面值 `true` | 使用声明的页面默认值启用；插件没有默认值时非法。 |
+| 页面值 `{ ... }` | 使用提供的类型化页面选项启用，并覆盖页面默认值。 |
 
-| 写法 | 结果 |
-|---|---|
-| `analytics(options)` | 安装并执行插件。Page 有 defaults 时，省略插件项会使用 defaults；否则该 Page 关闭。 |
-| `analytics.forPages(options)` | Page 合同有 defaults 时，使用同一份 Application options 安装并执行插件，但要求每个 Page 显式启用。 |
-| `plugins` 中的 `false`、`null` 或 `undefined` | 条件式省略整个插件；不执行任何插件 hook。 |
-| `analytics(options)` 后 Page 省略插件项 | Page 合同有 defaults 时用 defaults 启用；否则关闭该 Page。 |
-| `analytics.forPages(options)` 后 Page 省略插件项 | 即使 Page 有 defaults，也关闭该 Page。 |
-| `analytics: false` | 在该 Page 禁用。 |
-| `analytics: true` | 使用 Page `defaults` 启用；合同没有 defaults 时会报错。 |
-| `analytics: { ... }` | 将 object 合并到 Page defaults，校验后启用该 Page。 |
+仅在选定页面启用时使用 `forPages()`：
 
-只在选定 Page 启用时，使用 `forPages()`：
-
-```ts
-// ev.config.ts
+```ts title="ev.config.ts"
 export default defineConfig({
   plugins: [analytics.forPages({ endpoint: "/events" })],
 });
 ```
 
-再在需要的 Page 中启用：
-
-```ts
-// src/pages/checkout/page.config.ts
+```ts title="src/pages/checkout/page.config.ts"
 export default definePageConfig({
   plugins: {
     analytics: true,
@@ -100,50 +82,56 @@ export default definePageConfig({
 });
 ```
 
-`true` 要求 Page 合同提供 defaults。如果插件要求显式 Page setting，则直接提供 object：
+插件没有页面默认值时，请提供必需对象而不是 `true`。
+
+## 条件关闭整个插件
+
+应用插件数组接受 `false`、`null` 与 `undefined`：
 
 ```ts
-export default definePageConfig({
-  plugins: {
-    analytics: { channel: "checkout" },
-  },
+export default defineConfig({
+  plugins: [process.env.ANALYTICS === "1" && analytics(options)],
 });
 ```
 
-需要广泛启用、只排除少数 Page 时，为 Page 合同提供 defaults，正常安装插件，再在
-例外 Page 中设置 `analytics: false`。没有 defaults 的 Page 合同始终把省略视为关闭，
-并要求通过 object 启用 Page。
+这种方式适合没有页面配置的集成。条件插件并不保证存在，因此其 id 无法安全提供给 `page.config.ts`。支持页面配置的插件应确定性安装，并使用 `forPages()` 或页面值 `false`。
 
-对于构建期条件，直接使用 falsy 数组项：
+## 保持页面类型可靠
+
+需要页面补全时，让支持页面配置的 Factory 直接留在 `defineConfig()` 的元组中：
 
 ```ts
-plugins: [process.env.ANALYTICS === "1" && analytics(options)]
+export default defineConfig({
+  plugins: [analytics(options), accessControl(options)],
+});
 ```
 
-可能进入 falsy 分支的插件并不保证安装，因此生成的 Page registry 不会包含其 id。
-这种写法适用于没有 Page setting 的整插件条件。Page 需要配置插件时，应确定性安装
-插件，再用 `analytics: false` 或 `forPages()` 控制 Page 级启用。
+避免把列表扩宽成通用插件数组，也不要在整组数组间做条件选择。TypeScript 只能暴露静态确定会安装的插件。
 
-生成的 Page registry 只包含 `defineConfig()` 推导出的 tuple 中确定存在的 plugin id。
-宽化后的 plugin array、在多个 array 之间做条件选择，或在多个完整 config object 之间
-做条件选择，都无法证明某个条目一定存在，因此不会向 Page config 暴露 plugin id。
-需要 Page 配置的插件应直接保留在 `defineConfig({ plugins: [...] })` tuple 中。
+## 诊断插件配置
 
-## 类型安全与校验
+运行：
 
-TypeScript 会在 authoring site 检查 Application 工厂参数与 Page value。插件还可以在
-evjs 解析配置和分析 graph 时，同步校验两份合同。
+```bash
+ev inspect
+```
 
-Page value 与解析后的 Page defaults 必须保持 static JSON。function、symbol、bigint、
-非有限数值、class instance、稀疏数组与循环引用都会被拒绝。Runtime projection 是插件的
-显式职责，插件不能泄露 Application 配置中的 secret。
+它会报告已安装插件、页面配置与校验错误。常见问题包括：
 
-## 继续阅读
+- 页面使用了未安装的插件 id；
+- 插件没有页面默认值却设置 `true`；
+- 页面配置包含函数、Symbol、类实例、循环引用或非有限数值；
+- 条件安装了页面仍尝试配置的插件；
+- 期望应用字段合并到页面值。
 
-| 目标 | 文档 |
-|---|---|
-| 定义类型安全的插件和 Application/Page 合同 | [插件开发](./plugin-authoring) |
-| 选择并实现生命周期 hooks | [插件 Hooks](./plugin-hooks) |
-| 生成模块并挂载到 framework slots | [Generated Contributions IR](./generated-contributions) |
-| 从聚焦的实现示例开始 | [插件配方](./plugin-recipes) |
-| 配置官方微前端桥接 | [qiankun](./qiankun) |
+## 开发插件
+
+应用作者通常读到这里即可。创建集成时继续阅读：
+
+| 目标 | 阅读 |
+| --- | --- |
+| 定义类型化应用与页面选项 | [插件开发](./plugin-authoring) |
+| 选择生命周期 Hook | [插件 Hooks](./plugin-hooks) |
+| 生成模块或挂载框架代码 | [生成代码](./generated-contributions) |
+| 从小型示例开始 | [插件配方](./plugin-recipes) |
+| 配置官方微前端桥接 | [Qiankun](./qiankun) |

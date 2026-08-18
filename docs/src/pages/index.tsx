@@ -5,8 +5,6 @@ import Layout from "@theme/Layout";
 import type { ReactNode } from "react";
 import styles from "./index.module.css";
 
-/* ─── Feature data ─── */
-
 type FeatureIconName =
   | "routes"
   | "function"
@@ -15,10 +13,11 @@ type FeatureIconName =
   | "render"
   | "deploy";
 
-type FlowStep = {
+type LearningPath = {
   label: string;
   title: string;
   description: string;
+  href: string;
 };
 
 function useFeatures(): Array<{
@@ -31,197 +30,220 @@ function useFeatures(): Array<{
       icon: "routes",
       title: translate({
         id: "homepage.feature.pages.title",
-        message: "Page Routes",
+        message: "Pages own their URLs",
       }),
       description: translate({
         id: "homepage.feature.pages.description",
         message:
-          "Build SPA or MPA pages from src/pages without writing router bootstrap code.",
-      }),
-    },
-    {
-      icon: "server",
-      title: translate({
-        id: "homepage.feature.serverRoutes.title",
-        message: "Server Routes",
-      }),
-      description: translate({
-        id: "homepage.feature.serverRoutes.description",
-        message:
-          "Expose Request and Response handlers with positive src/apis/**/api.* anchors and uppercase HTTP method exports.",
-      }),
-    },
-    {
-      icon: "function",
-      title: translate({
-        id: "homepage.feature.serverFunctions.title",
-        message: "Server Functions",
-      }),
-      description: translate({
-        id: "homepage.feature.serverFunctions.description",
-        message:
-          'Call reachable "use server" functions from browser code through the built-in transport.',
+          "Put page.tsx in the directory for its route and keep the page's components, data, and tests nearby.",
       }),
     },
     {
       icon: "render",
       title: translate({
         id: "homepage.feature.rendering.title",
-        message: "Rendering Modes",
+        message: "Render page by page",
       }),
       description: translate({
         id: "homepage.feature.rendering.description",
         message:
-          "Configure CSR, SSR, SSG, PPR, and RSC through adjacent page.config.ts files.",
+          "Start with CSR, then choose SSR, SSG, PPR, or RSC only for pages that need a different delivery model.",
+      }),
+    },
+    {
+      icon: "function",
+      title: translate({
+        id: "homepage.feature.serverFunctions.title",
+        message: "Call server operations",
+      }),
+      description: translate({
+        id: "homepage.feature.serverFunctions.description",
+        message:
+          'Export typed operations from a "use server" module and call them from application code.',
+      }),
+    },
+    {
+      icon: "server",
+      title: translate({
+        id: "homepage.feature.serverRoutes.title",
+        message: "Expose web-standard APIs",
+      }),
+      description: translate({
+        id: "homepage.feature.serverRoutes.description",
+        message:
+          "Create HTTP endpoints with file routes, uppercase methods, and standard Request and Response values.",
       }),
     },
     {
       icon: "plugin",
       title: translate({
         id: "homepage.feature.plugins.title",
-        message: "Plugins",
+        message: "Add typed integrations",
       }),
       description: translate({
         id: "homepage.feature.plugins.description",
         message:
-          "Extend config, bundler setup, HTML transforms, build output, and generated framework code.",
+          "Configure plugins once for the application and opt pages into their typed behavior where needed.",
       }),
     },
     {
       icon: "deploy",
       title: translate({
         id: "homepage.feature.deployment.title",
-        message: "Deployment Output",
+        message: "Choose where to run",
       }),
       description: translate({
         id: "homepage.feature.deployment.description",
         message:
-          "Emit browser assets, optional server bundles, and canonical deployment metadata.",
+          "Deploy browser-only apps statically or add Node.js, edge, and split-origin server targets.",
       }),
     },
   ];
 }
 
-function useFlowSteps(): FlowStep[] {
+function useLearningPaths(): LearningPath[] {
   return [
     {
       label: "01",
       title: translate({
         id: "homepage.flow.source.title",
-        message: "Author files",
+        message: "Start a project",
       }),
       description: translate({
         id: "homepage.flow.source.description",
-        message:
-          "Write pages, routes, middleware, server functions, and ev.config.ts.",
+        message: "Create an app and render your first two pages.",
       }),
+      href: "/docs/quick-start",
     },
     {
       label: "02",
       title: translate({
         id: "homepage.flow.discover.title",
-        message: "Discover conventions",
+        message: "Build the experience",
       }),
       description: translate({
         id: "homepage.flow.discover.description",
-        message:
-          "Resolve page routes, server routes, middleware, and rendering metadata.",
+        message: "Add routes, layouts, navigation, and rendering choices.",
       }),
+      href: "/docs/client-routes",
     },
     {
       label: "03",
       title: translate({
         id: "homepage.flow.bundle.title",
-        message: "Build entries",
+        message: "Add server features",
       }),
       description: translate({
         id: "homepage.flow.bundle.description",
-        message:
-          "Use the selected bundler adapter to build browser and server entries.",
+        message: "Call server functions or expose public HTTP endpoints.",
       }),
+      href: "/docs/server-functions",
     },
     {
       label: "04",
       title: translate({
         id: "homepage.flow.output.title",
-        message: "Deploy",
+        message: "Ship the app",
       }),
       description: translate({
         id: "homepage.flow.output.description",
-        message: "Write browser files, server output, and deployment metadata.",
+        message: "Build for production and choose a deployment target.",
       }),
+      href: "/docs/deploy",
     },
   ];
 }
 
-/* ─── Hero ─── */
-
 function HeroSection() {
   return (
     <header className={styles.hero}>
-      <div className={styles.heroContent}>
-        <h1 className={styles.heroTitle}>evjs</h1>
-        <p className={styles.heroSubtitle}>
-          <Translate id="homepage.tagline">
-            React framework for file-based pages and server code
-          </Translate>
-        </p>
-        <p className={styles.heroDescription}>
-          <Translate id="homepage.hero.description">
-            Use page.* anchors under src/pages for page routes, api.* anchors
-            under src/apis for server routes, and "use server" modules for
-            server functions. Start with conventions and add configuration only
-            when the defaults are not enough.
-          </Translate>
-        </p>
-        <div className={styles.heroButtons}>
-          <Link className={styles.btnPrimary} to="/docs/quick-start">
-            <Translate id="homepage.getStarted">Get Started</Translate>
-            <span aria-hidden="true">→</span>
-          </Link>
-          <Link
-            className={styles.btnSecondary}
-            href="https://github.com/afx-team/evjs"
-          >
-            <GitHubIcon />
-            GitHub
-          </Link>
+      <div className={styles.heroLayout}>
+        <div className={styles.heroContent}>
+          <div className={styles.eyebrow}>
+            <Translate id="homepage.eyebrow">
+              React full-stack framework
+            </Translate>
+          </div>
+          <h1 className={styles.heroTitle}>evjs</h1>
+          <p className={styles.heroSubtitle}>
+            <Translate id="homepage.tagline">
+              Build around pages, not framework plumbing
+            </Translate>
+          </p>
+          <p className={styles.heroDescription}>
+            <Translate id="homepage.hero.description">
+              File-based pages, optional server code, per-page rendering, and
+              deployable output in one predictable application model.
+            </Translate>
+          </p>
+          <div className={styles.heroButtons}>
+            <Link className={styles.btnPrimary} to="/docs/quick-start">
+              <Translate id="homepage.getStarted">Start building</Translate>
+              <span aria-hidden="true">→</span>
+            </Link>
+            <Link className={styles.btnSecondary} to="/docs/architecture">
+              <Translate id="homepage.readDesign">Read the design</Translate>
+            </Link>
+          </div>
         </div>
+
+        <section className={styles.codePreview} aria-label="evjs page example">
+          <div className={styles.codePreviewHeader}>
+            <span />
+            <span />
+            <span />
+            <strong>src/pages</strong>
+          </div>
+          <pre className={styles.codePreviewBody}>
+            <code>{`pages/
+├── page.tsx                 # /
+└── products/
+    └── $productId/
+        ├── page.tsx         # /products/:productId
+        ├── page.config.ts
+        └── get-product.server.ts
+
+// page.tsx
+export default function ProductPage() {
+  return <Product />;
+}`}</code>
+          </pre>
+        </section>
       </div>
     </header>
   );
 }
 
-/* ─── Build Flow Preview ─── */
-
-function BuildFlowPreview() {
-  const steps = useFlowSteps();
+function LearningPaths() {
+  const paths = useLearningPaths();
   return (
     <section className={styles.workflowSection}>
       <div className={styles.workflowContainer}>
         <div className={styles.workflowIntro}>
-          <div className={styles.featuresLabel}>
-            <Translate id="homepage.workflow.label">Build Flow</Translate>
+          <div className={styles.sectionLabel}>
+            <Translate id="homepage.workflow.label">Choose a path</Translate>
           </div>
           <h2 className={styles.workflowTitle}>
             <Translate id="homepage.workflow.title">
-              From files to deployable output
+              Learn by completing the next task
             </Translate>
           </h2>
           <p className={styles.workflowDescription}>
             <Translate id="homepage.workflow.description">
-              evjs keeps the common path small: discover conventions, build the
-              app, then emit browser and server artifacts for deployment.
+              Start small and open the guide that matches what you want to add.
             </Translate>
           </p>
         </div>
         <div className={styles.flowGrid}>
-          {steps.map((step) => (
-            <div key={step.label} className={styles.flowStep}>
-              <span className={styles.flowLabel}>{step.label}</span>
-              <h3 className={styles.flowTitle}>{step.title}</h3>
-              <p className={styles.flowDescription}>{step.description}</p>
-            </div>
+          {paths.map((path) => (
+            <Link key={path.label} className={styles.flowStep} to={path.href}>
+              <span className={styles.flowLabel}>{path.label}</span>
+              <h3 className={styles.flowTitle}>{path.title}</h3>
+              <p className={styles.flowDescription}>{path.description}</p>
+              <span className={styles.flowArrow} aria-hidden="true">
+                →
+              </span>
+            </Link>
           ))}
         </div>
       </div>
@@ -229,22 +251,18 @@ function BuildFlowPreview() {
   );
 }
 
-/* ─── Features ─── */
-
 function FeaturesSection() {
   const features = useFeatures();
   return (
     <section className={styles.features}>
       <div className={styles.featuresContainer}>
         <div className={styles.featuresHeading}>
-          <div className={styles.featuresLabel}>
-            <Translate id="homepage.features.label">
-              What evjs handles
-            </Translate>
+          <div className={styles.sectionLabel}>
+            <Translate id="homepage.features.label">Framework design</Translate>
           </div>
           <h2 className={styles.featuresTitle}>
             <Translate id="homepage.features.title">
-              File routes, server code, and build output
+              A small set of concepts that scale with the app
             </Translate>
           </h2>
         </div>
@@ -263,8 +281,6 @@ function FeaturesSection() {
     </section>
   );
 }
-
-/* ─── Icons ─── */
 
 function FeatureIcon({ name }: { name: FeatureIconName }) {
   const paths: Record<FeatureIconName, ReactNode> = {
@@ -336,30 +352,13 @@ function FeatureIcon({ name }: { name: FeatureIconName }) {
   );
 }
 
-function GitHubIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <title>GitHub</title>
-      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-    </svg>
-  );
-}
-
-/* ─── Page ─── */
-
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout title={siteConfig.title} description={siteConfig.tagline}>
       <HeroSection />
-      <BuildFlowPreview />
       <main>
+        <LearningPaths />
         <FeaturesSection />
       </main>
     </Layout>

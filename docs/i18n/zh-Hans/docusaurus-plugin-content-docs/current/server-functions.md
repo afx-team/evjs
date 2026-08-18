@@ -1,9 +1,7 @@
 # 服务端函数
 
-服务端函数允许你在与前端代码同源的地方编写后端逻辑，并在 React 组件中获得类似本地
-async 函数调用的体验，但它本质上仍是类型安全的服务端边界。框架会序列化参数，
-通过服务端运行时分发请求，并返回序列化后的结果或结构化错误。虽然我们不强制要求，
-但建议将服务端函数文件以 `.server.ts` 结尾。构建系统会自动将它们转换为 RPC 调用。
+服务端函数让你在应用代码旁编写后端逻辑，并通过带类型的异步边界调用。evjs 负责端点
+与客户端调用的连接。建议使用 `.server.ts` 后缀，让人和工具都能清楚识别边界。
 
 ## 基本用法
 
@@ -54,9 +52,6 @@ export const deleteUser = async (id: string) => {
 - 不支持默认导出、跨模块 runtime re-export，也不支持导出常量等非函数 runtime 值
 - 可达的 `"use server"` 模块会变成可从浏览器调用的服务端函数。"可达" 指由 app
   代码、页面模块、服务端文件路由或服务端中间件导入；无关文件会被忽略。
-- 服务端 transform 只保留函数实现，不再产生全局注册副作用。生成的服务端 entry
-  会导入每个可达模块，把命名导出注册到当前应用独享的 registry，再将该 registry
-  传给 `createApp()`。因此，同一进程中的多个 evjs 应用不会互相暴露 server function。
 
 ## 请求上下文 helper
 
@@ -301,18 +296,17 @@ try {
 }
 ```
 
-## 构建行为
+## 哪些函数会被包含
 
-执行 `ev dev` 和 `ev build` 时，evjs 会找到可达的 `"use server"` 模块、校验导出，
-并让这些函数可以从浏览器代码调用。应用不需要手写 endpoint、client proxy 或服务端注册代码。
+执行 `ev dev` 和 `ev build` 时，evjs 会校验可达的 `"use server"` 模块，并让命名函数
+可以被调用。应用不需要手写端点或客户端代理。
 
 不支持的导出会在 bundler 运行前报错。例如
 `export default`、`export const VERSION = "1"` 和
 `export declare function getUser()` 都不是合法 server function。
 `export { getUser } from "./other"` 这类 runtime re-export 同样不受支持。
 
-可达的 server module 会进入当前应用的服务端运行时。如果某个 server function 不应该属于当前应用，
-请移除对应 import。
+只有应用代码可达的模块才会被包含。如果某个服务端函数不应进入应用，请移除对应 import。
 
 ## 要点总结
 

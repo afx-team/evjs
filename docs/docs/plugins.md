@@ -1,110 +1,89 @@
-# Plugins
+# Using Plugins
 
-Plugins extend supported framework stages without expanding the core
-application config. Applications install a plugin once in `ev.config.ts`;
-Pages can then use that same canonical `id` to configure, enable, or disable
-Page-specific behavior. Lifecycle hooks and generated contributions remain
-the extension points for build, bundler, HTML, and runtime integration.
+Plugins add integrations and build or deployment behavior without expanding
+the core evjs configuration. Install a plugin once for the application, then
+configure individual pages only when the integration supports page scope.
 
-## Install and Configure an Application
+## Install a plugin
 
-Import the plugin factory and call it inside `plugins`:
+Import its factory and call it in `ev.config.ts`:
 
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 import { analytics } from "@company/analytics";
 
 export default defineConfig({
-  plugins: [analytics({ endpoint: "/events" })],
+  routing: { mode: "spa" },
+  plugins: [
+    analytics({
+      endpoint: "/events",
+      debug: false,
+    }),
+  ],
 });
 ```
 
-The factory call installs the plugin and provides its typed Application
-configuration. A plugin without Application configuration is called without
-arguments, for example `buildTimer()`.
+The factory call both installs the plugin and supplies its application-wide
+options. A plugin with no options is still called, for example `buildTimer()`.
 
-The `plugins` array is the ordered installation boundary. Configuration stays
-in each factory call, so there is no separate extension bag or duplicate
-identifier.
+Plugin order is the array order. Use the order recommended by each integration
+when two plugins affect the same output.
 
-## Configure a Page
+## Configure one page
 
-Put Page behavior next to the Page and use the same plugin `id`:
+A page-aware plugin exposes its id in adjacent `page.config.ts`:
 
-```ts
-// src/pages/checkout/page.config.ts
+```ts title="src/pages/checkout/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
   plugins: {
-    analytics: { channel: "checkout" },
+    analytics: {
+      channel: "checkout",
+    },
   },
 });
 ```
 
-No plugin import is needed in `page.config.ts`. `ev prepare`, `ev dev`, and
-`ev build` generate `src/plugin-types.d.ts` as a stable bridge to
-the discovered config. With `ev.config.ts`, TypeScript derives the exact plugin
-ids available to Pages and their value types from the static config type;
-JavaScript configs get a safe bridge without an `any` registry, so use
-TypeScript config when Pages need plugin completion. Only entries that are
-statically guaranteed to install are exposed to Page config. Do not edit or
-import the generated declaration. Keep `src` included by the project's
-`tsconfig.json`.
+Do not import the plugin package into page configuration. With
+`ev.config.ts`, generated TypeScript declarations provide completion for
+installed plugin ids and page values. Keep `src/plugin-types.d.ts` ignored and
+let the framework update it.
 
-The Page keeps one `plugins` map so plugin ids cannot collide with core fields
-such as `title` or `render`. Inside that map, Page configuration reuses the
-plugin's short canonical `id`; there is no package-like id, Page alias, or
-another nested plugin layer.
+## Understand the two scopes
 
-## Application and Page Settings Are Independent
+Application and page options are intentionally separate:
 
-Application configuration and Page configuration are two independent typed
-contracts:
+| Scope | Location | Good for |
+| --- | --- | --- |
+| Application | Plugin factory in `ev.config.ts` | Endpoints, credentials references, build choices, callbacks allowed by the plugin |
+| Page | Plugin id in `page.config.ts#plugins` | Static metadata or behavior owned by one page |
 
-- Application settings are passed to the factory in `ev.config.ts`. They may
-  include build-only callbacks or module references when the plugin supports
-  them.
-- Page settings live in `page.config.ts`. They must be plain,
-  JSON-serializable objects because they cross the static CoreGraph boundary.
-- Page objects never inherit or merge Application fields.
-- Within either contract, explicit fields are deeply merged over that
-  contract's defaults before validation.
+Page options must be static JSON data. They do not inherit application fields,
+and application fields are not copied into page values. Never put secrets in a
+page value or in any option that the plugin documents as browser-visible.
 
-Plugin configuration exists only at Application and Page scope. A Page-aware
-plugin derives any Route or Document behavior from the normalized Page graph;
-applications do not configure separate Route or Document plugin surfaces.
+## Choose default or opt-in behavior
 
-## Enable or Disable by Scope
+The plugin's declared page defaults determine what omission means:
 
-Both factory forms install and execute the plugin and resolve the same typed
-Application options. They differ only in what an omitted Page plugin entry
-means:
+| Authoring form | Behavior |
+| --- | --- |
+| `analytics(options)` | Installs the plugin. An omitted page uses page defaults when they exist; otherwise it is off for that page. |
+| `analytics.forPages(options)` | Installs the plugin but requires every page to opt in, even when defaults exist. |
+| Page entry `false` | Disable the plugin for this page. |
+| Page entry `true` | Enable with declared page defaults; invalid when the plugin has no defaults. |
+| Page entry `{ ... }` | Enable with the supplied typed page options merged over page defaults. |
 
-| Authoring form | Result |
-|---|---|
-| `analytics(options)` | Install and execute the plugin. An omitted Page uses Page defaults when they exist; otherwise that Page is off. |
-| `analytics.forPages(options)` | For a Page contract with defaults, install and execute the plugin but require every Page to opt in explicitly. |
-| `false`, `null`, or `undefined` in `plugins` | Omit the whole plugin conditionally; no plugin hook executes. |
-| Page plugin entry omitted after `analytics(options)` | Enable with Page defaults when the Page contract has defaults; otherwise disable that Page. |
-| Page plugin entry omitted after `analytics.forPages(options)` | Disable that Page, even when Page defaults exist. |
-| `analytics: false` | Disable this Page. |
-| `analytics: true` | Enable this Page with Page `defaults`; rejected when no defaults exist. |
-| `analytics: { ... }` | Enable this Page after merging the object over Page defaults and validating it. |
+Use `forPages()` for selected-page activation:
 
-To opt in only on selected Pages, use `forPages()`:
-
-```ts
-// ev.config.ts
+```ts title="ev.config.ts"
 export default defineConfig({
   plugins: [analytics.forPages({ endpoint: "/events" })],
 });
 ```
 
-Then enable it where needed:
-
-```ts
-// src/pages/checkout/page.config.ts
+```ts title="src/pages/checkout/page.config.ts"
 export default definePageConfig({
   plugins: {
     analytics: true,
@@ -112,58 +91,66 @@ export default definePageConfig({
 });
 ```
 
-`true` requires Page defaults. If the plugin requires explicit Page settings,
-provide the object instead:
+When the plugin has no page defaults, provide the required object instead of
+`true`.
+
+## Disable a plugin conditionally
+
+The application plugin array accepts `false`, `null`, and `undefined`:
 
 ```ts
-export default definePageConfig({
-  plugins: {
-    analytics: { channel: "checkout" },
-  },
+export default defineConfig({
+  plugins: [process.env.ANALYTICS === "1" && analytics(options)],
 });
 ```
 
-To enable a plugin broadly and exclude individual Pages, give the Page
-contract defaults, install the plugin normally, and set `analytics: false` on
-exceptions. A Page contract without defaults always treats omission as off and
-requires an object to enable the Page.
+Use this for integrations without page configuration. A conditional plugin is
+not guaranteed to exist, so its id cannot be offered safely to
+`page.config.ts`. For a page-aware plugin, install it deterministically and use
+`forPages()` or a page value of `false`.
 
-For a build-only condition, use a falsy array entry:
+## Keep page typing reliable
+
+Page completion works best when page-aware plugin factories remain directly in
+the tuple passed to `defineConfig()`:
 
 ```ts
-plugins: [process.env.ANALYTICS === "1" && analytics(options)]
+export default defineConfig({
+  plugins: [analytics(options), accessControl(options)],
+});
 ```
 
-A plugin with a possible falsy branch is not statically guaranteed to be
-installed, so its id is intentionally absent from the generated Page registry.
-Use this form for whole-plugin conditions that have no Page settings. When
-Pages configure the plugin, install it deterministically and use
-`analytics: false` or `forPages()` for Page-specific activation.
+Avoid widening that list to a generic plugin array or choosing between whole
+arrays when pages need exact plugin ids. TypeScript can expose only plugins
+that are statically certain to install.
 
-The generated Page registry includes plugin ids only from definite entries of
-the tuple inferred by `defineConfig()`. A widened plugin array, a conditional
-choice between arrays, or a conditional choice between whole config objects
-cannot prove that an entry exists and therefore exposes no plugin id to Page
-config. Keep Page-configurable plugins directly in the
-`defineConfig({ plugins: [...] })` tuple.
+## Diagnose plugin configuration
 
-## Type Safety and Validation
+Run:
 
-TypeScript checks Application factory arguments and Page values at their
-authoring sites. Plugins can additionally validate both contracts
-synchronously while evjs resolves configuration and analyzes the graph.
+```bash
+ev inspect
+```
 
-Page values and resolved Page defaults must remain static JSON. Functions,
-symbols, bigint, non-finite numbers, class instances, sparse arrays, and cycles
-are rejected. Runtime projection is an explicit plugin responsibility, and a
-plugin must never expose secrets from its Application configuration.
+It reports installed plugins, page configuration, and validation errors.
+Common problems are:
 
-## Next Steps
+- using a page plugin id that is not installed;
+- setting `true` for a plugin without page defaults;
+- putting functions, symbols, class instances, cycles, or non-finite numbers
+  in page configuration;
+- conditionally installing a plugin that pages try to configure;
+- expecting application fields to merge into page values.
+
+## Build a plugin
+
+Application authors normally stop here. To create an integration, continue
+with:
 
 | Goal | Read |
-|---|---|
-| Define a typed plugin and its Application/Page contracts | [Plugin Authoring](./plugin-authoring) |
-| Choose and implement lifecycle hooks | [Plugin Hooks](./plugin-hooks) |
-| Emit modules and attach them to framework slots | [Generated Contributions IR](./generated-contributions) |
-| Start from focused implementation examples | [Plugin Recipes](./plugin-recipes) |
-| Configure the official micro-frontend bridge | [qiankun](./qiankun) |
+| --- | --- |
+| Define typed application and page options | [Plugin Development](./plugin-authoring) |
+| Choose lifecycle hooks | [Plugin Hooks](./plugin-hooks) |
+| Generate modules or attach framework code | [Generating Code](./generated-contributions) |
+| Start from small examples | [Plugin Recipes](./plugin-recipes) |
+| Configure the official micro-frontend bridge | [Qiankun](./qiankun) |

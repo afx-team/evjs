@@ -1,246 +1,177 @@
-# Architecture
+# Framework Design
 
-evjs resolves framework semantics before it invokes a bundler. Page routes,
-server routes, server functions, rendering settings, and typed plugin settings
-all enter one normalized graph and one build plan.
+evjs is designed to keep the way an application is authored stable while its
+rendering, integrations, and deployment needs evolve. This page explains the
+decisions that shape the public framework experience.
+
+## Conventions describe intent
+
+Many frameworks ask an application to repeat the same information in a file
+tree, route configuration, browser entry, and build configuration. evjs uses a
+small set of positive file anchors instead:
+
+```text
+src/pages/**/page.*       React pages and client routes
+src/apis/**/api.*         public HTTP routes
+page.config.ts            static behavior for one page
+"use server"              callable server operations
+```
+
+An ordinary component or helper never becomes public because of where it is
+placed. A page is public only when its directory contains `page.*`; an API
+route is public only when its directory contains `api.*`. This makes
+colocation safe and route discovery easy to explain.
+
+## Directories own pages
+
+The directory containing `page.*` is both the page's URL position and its
+natural ownership boundary:
+
+```text
+src/pages/orders/$orderId/
+├── page.tsx
+├── page.config.ts
+├── get-order.server.ts
+├── model.ts
+└── components/
+    └── Summary.tsx
+```
+
+This design favors feature-oriented code. A team can understand or move a page
+without first reconstructing a set of unrelated route, metadata, and build
+files. Shared code can still live outside the page tree when several features
+own it together.
+
+Private here means “not discovered as another page.” It is not a JavaScript
+access-control or security boundary.
+
+## One page model, multiple outcomes
+
+Pages keep the same component and configuration shape across SPA and MPA
+projects. The routing mode chooses how the page tree is presented to the
+browser:
 
 ```mermaid
 flowchart LR
-  Source["Application source\npage.* + page.config.ts + api.* + middleware"]
-  Config["ev.config.ts\nrouting + server + plugins"]
-  Graph["CoreGraph\nApplication + Page + Route + Document"]
-  Plan["BuildPlan\nentries + HTML + server + runtime"]
-  IR[".ev framework IR\ngenerated modules + slots + manifest"]
-  Bundler["Bundler adapter\nUtoopack or webpack"]
-  Output["BuildOutput\nassets + runtime + routes"]
-  Deploy["DeploymentMetadata\nand adapter artifacts"]
-
-  Source --> Graph
-  Config --> Graph
-  Graph --> Plan --> IR --> Bundler --> Output --> Deploy
+  Source["Page directories"] --> Choice{"routing.mode"}
+  Choice -->|spa| SPA["Browser route tree"]
+  Choice -->|mpa| MPA["Independent HTML documents"]
+  SPA --> Browser["React in the browser"]
+  MPA --> Browser
 ```
 
-## Semantic Model
+- **SPA** supports nested routes, dynamic parameters, catch-alls, layouts, and
+  client-side navigation.
+- **MPA** creates an independent document for each static page and does not
+  require a browser router.
 
-The CoreGraph has four client-side owner types:
+MPA rejects dynamic routes and router-only boundaries instead of silently
+changing their meaning. See [Pages and Routing](./client-routes).
 
-| Owner | Responsibility |
+## Rendering belongs to the page
+
+Different pages in one application can have different delivery needs. A
+dashboard may be client-rendered, a landing page statically generated, and an
+account page rendered for each request.
+
+evjs keeps these choices beside the page:
+
+```ts title="src/pages/account/page.config.ts"
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  render: "ssr",
+  hydrate: "load",
+});
+```
+
+The component stays focused on UI. Static metadata, rendering, and page-level
+plugin options remain build-time configuration. See [Rendering](./rendering)
+for the supported combinations and their tradeoffs.
+
+## Server features are additive
+
+An evjs application does not need a server until it uses a server capability.
+Teams can add them independently:
+
+| Need | Authoring model |
 | --- | --- |
-| Application | One SPA or MPA materialization, shared layout, and installed plugin enablement. |
-| Page | Component source, rendering settings, metadata, private source scope, and resolved Page plugin settings. |
-| Route | URL pattern, parent relationship, target, and layouts/wrappers/boundaries. |
-| Document | HTML template, output path, mount target, and aliases. |
+| Call an application operation from UI code | Named export in a `"use server"` module |
+| Expose a public HTTP endpoint or webhook | Uppercase method export from `src/apis/**/api.*` |
+| Render a page before it reaches the browser | `render` in adjacent `page.config.ts` |
 
-Server functions and server request Routes are also normalized into the graph
-so planning, conflict detection, dev routing, and deployment use the same
-identities.
+These features share the same request context and deployment boundary, while
+remaining separate public APIs. A public API route is not a page, and a server
+function is not an HTTP route that callers construct by hand.
 
-### Canonical Page input
+## Configuration is progressive
 
-Declaring `routing.mode` enables canonical discovery:
+The filesystem provides page and route structure. `ev.config.ts` holds
+application-wide choices such as SPA versus MPA, development server behavior,
+output paths, and installed plugins. `page.config.ts` holds choices owned by
+one page.
 
-```text
-src/pages/**/page.{ts,tsx,js,jsx}
-```
-
-The containing directory owns the Page scope and determines the URL. Adjacent
-`page.config.ts` supplies static Page metadata, rendering settings, and a
-`plugins` map keyed by canonical plugin ids. SPA and MPA use the same Page and
-Route identities; only their Documents and client entries differ.
-
-### Explicit SPA input
-
-`application.routes` accepts an explicit SPA route tree with `page` or
-`component` targets, nested `routes`, layouts, wrappers, and redirects. It
-cannot be combined with `routing` and cannot materialize MPA. Both inputs
-normalize into the same Application, Page, Route, and Document contracts;
-plugin configuration remains Page-owned.
-
-### Server input
-
-With conventions enabled, server request Routes use positive anchors under the
-fixed `src/apis` root:
+This separation prevents a central configuration file from becoming a mirror
+of the whole application:
 
 ```text
-src/apis/**/api.{ts,tsx,js,jsx}
+Application-wide choice  -> ev.config.ts
+Page-specific choice     -> page.config.ts
+URL and ownership        -> directory structure
+Runtime UI behavior      -> React source
 ```
 
-The directory determines the request path and middleware scope. The anchor
-exports uppercase HTTP method handlers. `src/middlewares/middleware.*`
-explicitly composes ordered global middleware around all framework-owned
-server requests, while
-`src/apis/**/middleware.ts` wraps same-directory and descendant
-request Routes.
+## Plugins extend stable surfaces
 
-Reachable modules beginning with `"use server";` contribute named server
-functions. The directive and graph reachability drive discovery; a filename
-suffix is only a source-organization convention.
+Plugins can provide typed application options and, when appropriate, typed
+page options. Installing a plugin and configuring one page are intentionally
+separate actions:
 
-## Typed Plugin Settings
+```ts title="ev.config.ts"
+export default defineConfig({
+  plugins: [analytics({ endpoint: "/events" })],
+});
+```
 
-Applications install plugin factories through `config.plugins`. Each factory
-receives its independent typed Application configuration. A Page-aware plugin
-also declares a separate Page contract consumed from adjacent
-`page.config.ts#plugins` under the plugin's same canonical `id`.
+```ts title="src/pages/checkout/page.config.ts"
+export default definePageConfig({
+  plugins: {
+    analytics: { channel: "checkout" },
+  },
+});
+```
 
-Application and Page contracts never merge with each other. Authored values
-deep-merge over defaults within their own contract. Page settings are strict
-static JSON; executable callbacks belong in Application options or plugin
-code. Plugins derive Route and Document contributions from normalized Pages
-and explicitly project any runtime code or data.
+This keeps integrations composable without adding plugin-specific fields to
+the framework's page model. Application authors can start with
+[Using Plugins](./plugins); extension authors can continue with
+[Plugin Development](./plugin-authoring).
 
-`ev prepare`, `ev dev`, and `ev build` generate `src/plugin-types.d.ts` from
-the static `ev.config.ts` type so Page config receives plugin id and value
-completion without importing plugin packages.
+## Build once, choose a deployment target
 
-## Build Stages
+The production build separates browser files from server files. Applications
+that use only browser or static capabilities can deploy to static hosting.
+Applications that use server functions, API routes, or request-time rendering
+choose a Node.js, edge, or split CDN/origin target.
 
 ```mermaid
-sequenceDiagram
-  participant CLI as ev command
-  participant Core as @evjs/ev
-  participant Plugin as plugins
-  participant Bundler as bundler adapter
-
-  CLI->>Core: load config and select bundler
-  Core->>Plugin: configure() and resolve Application settings
-  Core->>Plugin: setup()
-  Core->>Core: resolve Page settings and create CoreGraph
-  Core->>Plugin: emitIR(FrameworkView)
-  Core->>Core: create BuildPlan
-  Core->>Core: materialize .ev
-  Core->>Plugin: configureBundler()
-  Core->>Bundler: build(BuildPlan)
-  Bundler-->>Core: fresh build facts
-  Core->>Plugin: beforeBuild()
-  Core->>Core: link BuildOutput
-  Core->>Plugin: transformOutput()
-  Core->>Plugin: transformHtml()
-  Core->>Core: publish canonical output
-  Core->>Plugin: afterBuild()
+flowchart LR
+  App["Application source"] --> Build["ev build"]
+  Build --> Client["Browser assets and HTML"]
+  Build --> Server["Server output when required"]
+  Client --> Static["Static host or CDN"]
+  Server --> Runtime["Node.js or edge runtime"]
 ```
 
-`beforeBuild()` runs after fresh bundler facts arrive and before evjs links or
-emits canonical output. Successful initial and rebuild output cycles pair it
-with `afterBuild()` using the same `isRebuild`; `prepare` and `inspect` invoke
-neither hook.
+The application authoring model does not depend on a specific host. Deployment
+adapters translate the build result into platform entry files and routing
+metadata. See [Deployment](./deploy).
 
-`ev prepare` stops after materializing the generated framework IR:
+## Design summary
 
-```text
-.ev/
-├── framework/core-graph.json
-├── framework/build-plan.json
-├── entries/
-├── plugins/
-└── manifest.json
-```
-
-The IR records generated modules, import edges, framework slots, and concrete
-entry facades. Bundler adapters compile those entries and return asset/build
-facts; they do not reconstruct route or rendering semantics. `.ev` is a
-disposable generated projection rather than source state. evjs prepares a
-complete image from authored inputs, so the directory can be deleted and
-regenerated directly by `ev prepare`, `ev build`, or `ev dev`.
-
-## Output Contracts
-
-The linked `BuildOutput` is the complete in-memory build result. Plugins and
-deployment composition can inspect it during the build, but Core does not
-serialize it as a runtime file.
-
-The default serialized deployment contract is:
-
-```text
-dist/deployment-metadata.json
-```
-
-The other projections have narrower consumers:
-
-- generated HTML embeds `ClientRuntime` for browser boot and navigation;
-- server-capable dev/deployment bootstraps receive `FrameworkRuntime` for
-  SSR, PPR, RSC, and server request coordination;
-- `DeploymentMetadata` describes public assets, Documents, the server entry,
-  and deployable route rows.
-
-Deployment adapters may emit additional platform artifacts. The built-in Node,
-static, and edge adapters live under `@evjs/ev/deployment`.
-
-## Rendering Materialization
-
-Rendering settings are adjacent build-time Page configuration, not component
-exports:
-
-| Page config | Build/runtime result |
-| --- | --- |
-| `render: "csr"` or omitted | Browser mounts a new client tree; `hydrate` is omitted. |
-| `render: "ssr", hydrate: "load"` | Server renders HTML and the browser hydrates it. |
-| `render: "ssr", hydrate: "none"` | Server renders HTML without Page-level hydration. |
-| `render: "ssg", hydrate: "load"` | Build renders static HTML and the browser hydrates it. |
-| `render: "ssg", hydrate: "none"` | Build emits static HTML without a Page client entry. |
-| `render: "ssr", hydrate: "none", prerender: { partial: true }` | Build/runtime materializes a PPR shell and regions. |
-| `render: "ssr", hydrate: "none", rsc: true` | Server renders the Page through React Flight. |
-
-The BuildPlan derives client entries, server renderers, HTML Documents,
-runtime endpoints, and bundler capability requirements from these values.
-
-## Package Ownership
-
-| Package or subpath | Role |
-| --- | --- |
-| `@evjs/ev` | Minimal config authoring. |
-| `@evjs/ev/config` | Advanced config utilities and types. |
-| `@evjs/ev/plugin` | Plugin authoring and the read-only framework view. |
-| `@evjs/ev/route`, `/navigation`, `/query` | File-convention Page authoring APIs. |
-| `@evjs/ev/server-context`, `/transport` | Framework request and transport APIs. |
-| `@evjs/ev/deployment` | Deployment artifact helpers and built-in adapters. |
-| `@evjs/client` | Standalone/manual browser runtime primitives. |
-| `@evjs/server` | Standalone/manual Hono and Fetch runtime primitives. |
-| `@evjs/shared` | Low-level shared runtime constants, validators, and errors for framework packages. |
-| `@evjs/shared/manifest` | Graph, plan, output, runtime, and deployment contracts for framework tooling. |
-| `@evjs/bundler-utoopack` | Default bundler adapter. |
-| `@evjs/bundler-webpack` | Validation/fallback bundler adapter. |
-| `@evjs/cli` | Command runner for `ev dev`, `ev build`, `ev prepare`, and `ev inspect`. |
-| `@evjs/create-app` | Project scaffold CLI and maintained example templates. |
-| `@evjs/plugin-qiankun` | Optional qiankun master/slave integration plugin. |
-
-Generated code, the CLI, and adapters use focused `@evjs/ev/_internal/*`
-subpaths. File-convention application code uses `@evjs/ev` and its public
-authoring subpaths; it does not import `@evjs/client`, `@evjs/server`,
-`@evjs/shared`, or `_internal/*` directly. Programmatic client route trees and
-`@evjs/server` `createRoute()` declarations remain standalone runtime APIs and
-are not scanned by framework conventions. Bundler packages are selected from
-framework config, `@evjs/plugin-qiankun` is registered as an optional plugin,
-and the CLI/scaffolder packages are invoked rather than imported by application
-source.
-
-## Development Sessions
-
-Normal component, style, and asset edits remain on the bundler HMR/watch path.
-Framework-owned config, plugin inputs, Page/API declarations, and route
-topology are watched by a long-lived Supervisor. Generated `.ev`, route/plugin
-declaration files, and `dist` output are excluded from those inputs.
-
-When a real framework input changes, the Supervisor prepares a candidate
-revision without writing generated output or disturbing the active Session:
-
-```text
-watch input change
-  -> reload and analyze without writes
-  -> candidate CoreGraph + BuildPlan + generated IR
-  -> stable semantic fingerprint
-  -> keep the Session when equal
-  -> close old Session and start an immutable replacement when different
-```
-
-An immutable Session owns one config, graph, plan, plugin-hook set, generated
-IR image, and bundler controller. Adapters continue to own ordinary module HMR
-inside that Session; they are not asked to replace framework or bundler config
-in place.
-
-Candidate preparation failure leaves the current Session running and waits for
-another real input change before retrying. Once replacement starts, the old
-Session has already closed, so a publication, plugin setup, or adapter startup
-failure stops `ev dev` instead of mixing generations. Changing requested dev
-ports still requires restarting `ev dev`. `ev inspect --json` performs
-preflight analysis without invoking a bundler or writing generated output.
+- Public routes require explicit positive anchors.
+- Page directories own URL position, local code, and static page behavior.
+- SPA and MPA are two outcomes of the same page tree.
+- Server capabilities are optional and additive.
+- Configuration stays at the narrowest useful scope.
+- Plugins extend the framework without redefining its core concepts.
+- Deployment choices do not leak back into page authoring.

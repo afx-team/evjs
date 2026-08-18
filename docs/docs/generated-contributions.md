@@ -1,132 +1,59 @@
-# Generated Contributions IR
+# Generating Code
 
-`.ev` is the agent-readable framework IR for evjs builds. It records the
-resolved Page-and-Route graph, generated framework entries, plugin additions,
-and how generated pieces attach to framework slots.
+Plugins can generate modules or data and attach them to documented framework
+slots. Use this API for code that must participate in application entries,
+page wrappers, server middleware, HTML, or module resolution.
 
-This is the canonical reference for declarative plugin output. Start with
-[Plugin Authoring](./plugin-authoring) for identity and typed settings, or use
-[Plugin Hooks](./plugin-hooks) for lifecycle side effects.
+Use lifecycle hooks for external side effects and final platform files. See
+[Plugin Hooks](./plugin-hooks) for that decision.
 
-## Concept
+## The pattern
 
-A contribution is a declarative unit in the framework IR. It can produce
-generated artifacts, link those artifacts together, and attach them to
-framework slots.
+Generation has two steps:
 
-Keep `emitIR(ctx)` deterministic and free of external side effects.
-evjs may evaluate it again when contributed source aliases change the
-framework graph.
-
-That definition is intentionally narrower than an arbitrary temporary file
-system. Plugins do not write random files into `.ev`; they declare artifacts and
-relationships. evjs then materializes the final `.ev` tree and manifest.
+1. Declare an artifact with `ctx.emit`.
+2. Attach it to a framework slot with `ctx.slot(name).add()`.
 
 ```mermaid
-flowchart TB
-  Hook["emitIR(ctx)"]
-
-  subgraph Declare["Plugin declarations"]
-    Emit["ctx.emit\nmodule / data / entryFacade"]
-    Slot["ctx.slot(...).add\nstructured framework attachments"]
-  end
-
-  subgraph Link["Generated graph"]
-    Ref["GeneratedModuleRef\nopaque handle"]
-    Edge["helpers.importOf(ref)\nimport edge"]
-  end
-
-  subgraph Materialize["Materialized .ev output"]
-    Files[".ev/plugins/<id>\ngenerated artifacts"]
-    Manifest[".ev/manifest.json\nmodules + slots + importEdges"]
-  end
-
-  Hook --> Emit
-  Hook --> Slot
-  Emit --> Ref
-  Ref --> Edge
-  Ref --> Slot
-  Edge --> Files
-  Slot --> Manifest
-  Files --> Manifest
-
-  classDef hook fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
-  classDef declaration fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
-  classDef output fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class Hook hook;
-  class Emit,Slot,Ref,Edge declaration;
-  class Files,Manifest output;
+flowchart LR
+  Plugin["emitIR or emitPageIR"] --> Emit["emit module or data"]
+  Emit --> Ref["opaque module reference"]
+  Ref --> Slot["attach to a slot"]
+  Slot --> App["generated application code"]
 ```
 
-## Directory Shape
+Keep generation deterministic and free of network, process, or external file
+side effects. evjs may evaluate it again while application inputs change.
 
-```txt
-.ev/
-├── framework/
-│   ├── core-graph.json          # normalized Page/Route/Application/Document graph
-│   └── build-plan.json
-├── entries/
-│   ├── main.ts
-│   └── server.ts
-├── plugins/
-│   └── qiankun-slave/
-│       ├── entry-wrapper.ts
-│       └── original-entry.ts
-├── manifest.json
-└── types.d.ts
+## Emit artifacts
+
+`ctx.emit` supports:
+
+| Method | Creates |
+| --- | --- |
+| `module({ id, scope, source, extension? })` | JavaScript, TypeScript, JSX, CSS, Less, or JSON source |
+| `data({ id, scope, value })` | A generated JSON module from static data |
+| `entryFacade({ id, entry, autoStart? })` | A preserved framework entry for a replacement wrapper |
+| `importOf(ref)` | A specifier for importing another generated artifact |
+
+Methods return an opaque reference rather than a filesystem path. Use
+`importOf(ref)` only inside generated source; application code should never
+import `.ev` paths.
+
+Choose an application or page scope:
+
+```ts
+scope: { kind: "application" }
+scope: { kind: "page", pageId: "checkout" }
 ```
 
-The structure is stable and readable:
+Contribution ids are local to the plugin. In `emitPageIR()`, ids are also local
+to the current page, so the same id can be reused safely for every enabled
+page. The `@evjs/` prefix is reserved by the framework.
 
-- `framework/` contains the normalized graph, provenance, diagnostics, and
-  build-plan snapshots. `core-graph.json` is the single semantic source of
-  truth consumed by planning and inspection.
-- `entries/` contains framework-owned entry facades consumed by bundlers.
-- `plugins/<id>/` contains plugin generated artifacts.
-- A plugin's canonical `id` is its generated-artifact path segment; for example,
-  `qiankun-slave` owns `plugins/qiankun-slave/`.
-- `manifest.json` ties together generated artifacts, import edges, slot items,
-  producer plugin ids, scopes, and final entries.
+## Add code to the client entry
 
-Generated files may import generated-only `@evjs/ev/_internal/*` helpers when
-they need framework runtime internals. Plugin source should not import those
-subpaths; plugin authoring uses `@evjs/ev/plugin`. The `ctx.framework` object
-is immutable so plugins can inspect the IR but cannot mutate framework state.
-
-Application and Page views expose resolved `plugins` setting bags. The
-Application bag contains enablement only; private factory configuration never
-enters CoreGraph. Page bags may contain the validated static Page value. A
-defined plugin normally uses its narrower `ctx.options` and `ctx.pages` views;
-each enabled Page entry is `{ page, options }`. The per-Page
-`emitPageIR()` form receives `ctx.pageOptions`. These flat fields preserve
-the descriptor's inferred types. Its `ctx.emit` and `ctx.slot()` identities are
-automatically scoped to the current Page, so a plugin can reuse a local id such
-as `runtime` on every Page without manually prefixing `ctx.page.id`. Internal
-provenance and resolved settings are
-available before `emitIR()` materializes generated code.
-
-The Application view also exposes its `root`, `routingMode`, and owned Page,
-Route, and Document ids. An MPA therefore appears as one logical Application
-with many Pages and Documents, not as unrelated entries. Client Route views
-come from CoreGraph and include normalized patterns, semantic targets,
-wrappers/layout facets, and provenance. Pathless groups and redirects remain
-visible even when they have no component module.
-
-## Authoring API
-
-Use `ctx.emit.module()` for generated code, `ctx.emit.data()` for generated JSON
-data, and `ctx.emit.entryFacade()` when a wrapper plugin needs to preserve a
-framework-generated entry that it is about to replace.
-
-Use `ctx.emit.importOf(ref)` or `helpers.importOf(ref)` to link generated
-artifacts together. The returned specifier is valid only inside generated
-source. Application source should not import `.ev` paths or
-`evjs:generated/*` specifiers.
-
-Contribution ids are local to the plugin (and, in `emitPageIR()`, to the
-current Page). The `@evjs/` prefix is reserved for framework namespacing.
-
-Generated modules use opaque refs instead of exposing filesystem paths:
+Generate an installer and import it after the main application entry:
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -140,24 +67,28 @@ export const analytics = definePlugin({
       source: "export function install() { console.log('analytics'); }",
     });
 
-    const entry = ctx.emit.module({
-      id: "entry",
+    const installer = ctx.emit.module({
+      id: "installer",
       scope: { kind: "application" },
       source: ({ importOf }) =>
         `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
     });
 
     ctx.slot("client.entry").add({
-      id: "entry",
-      module: entry,
+      id: "analytics-installer",
+      module: installer,
       position: "after-main",
     });
   },
 });
 ```
 
-When a plugin replaces an entry but still needs the original framework facade,
-use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
+`client.entry` can import before or after the main entry. `mode: "replace"` is
+reserved for integrations that must own the entry exports, such as a
+micro-frontend slave wrapper.
+
+When replacing an entry, preserve the original with `entryFacade()` instead of
+recreating framework startup:
 
 ```ts
 emitIR(ctx) {
@@ -177,171 +108,158 @@ emitIR(ctx) {
   });
 
   ctx.slot("client.entry").add({
-    id: "entry-wrapper-slot",
+    id: "entry-wrapper",
     module: wrapper,
-    position: "before-main",
     mode: "replace",
-  });
-}
-```
-
-For a generated SPA Application entry, `autoStart: false` creates and exports
-the framework `app` without mounting it. It also exports `start(container)`,
-which preserves the framework hydration-marker behavior for the first mount. A
-replacement entry owns that first `start()` call and later `app.render()`
-remounts. Other entry types cannot disable framework startup.
-
-Generated plugin paths are stable and readable. For example, a plugin with id
-`qiankun-slave` writes modules under `.ev/plugins/qiankun-slave/*` and exposes
-specifiers such as `evjs:generated/qiankun-slave/entry-wrapper`.
-
-Use `ctx.slot(name).add(...)` to attach generated artifacts to the framework.
-The supported slots are:
-
-| Slot | Covers |
-|------|--------|
-| `client.entry` | Entry imports and entry wrapper modules, including replacement wrappers |
-| `server.entry` | Entry imports and replacement modules for existing Page server entries |
-| `page.wrapper` | Semantic Page component wrapping across client and server projections |
-| `server.request.middleware` | Framework request middleware in the server pipeline |
-| `html.tag` | Structured `meta`, `link`, `script`, and `style` tags |
-| `resolve.alias` | Semantic module aliasing to user modules, packages, absolute paths, or generated artifacts |
-| `resolve.external` | Externalized module resolution, usually paired with `html.tag` CDN resources |
-
-Use `client.entry` to import a side-effect module or call an explicit
-installer. The IR does not carry an inert runtime-plugin registry.
-
-`server.entry` requires an exact Page target, and that Page must already own a
-`page-server` entry. Import contributions preserve the generated Page server
-facade and use the same positions as `client.entry`:
-
-```ts
-emitIR(ctx) {
-  ctx.slot("server.entry").add({
-    id: "monitoring",
-    target: { kind: "page", pageId: "dashboard" },
-    module: "./src/monitoring/server-entry.ts",
     position: "before-main",
   });
 }
 ```
 
-Use `mode: "replace"` when a plugin must replace the Page server facade. The
-replacement preserves the framework entry's name, kind, owner, environment,
-renderer identity, and output asset binding. It cannot create an entry or
-target another server renderer kind. Other import contributions around that
-entry remain active.
+For a generated SPA application entry, `autoStart: false` exports the app and
+`start(container)` without mounting automatically. The replacing entry becomes
+responsible for the first start.
+
+## Wrap pages
+
+Use `page.wrapper` for React behavior that surrounds pages in client, server,
+or both projections. The module must default-export a component that accepts
+`children`:
 
 ```ts
 emitIR(ctx) {
-  const entry = ctx.emit.module({
-    id: "page-server-entry",
-    scope: { kind: "page", pageId: "dashboard" },
-    source: "export default function Dashboard() { return null; }",
+  const boundary = ctx.emit.module({
+    id: "auth-boundary",
+    scope: { kind: "application" },
+    extension: ".tsx",
+    source:
+      "export default function AuthBoundary({ children }) { return children; }",
   });
 
-  ctx.slot("server.entry").add({
-    id: "page-server-entry-slot",
-    target: { kind: "page", pageId: "dashboard" },
-    module: entry,
-    mode: "replace",
-  });
-}
-```
-
-Unknown Pages, Pages without a concrete `page-server` entry, and multiple
-replacements for the same concrete entry fail during IR materialization.
-
-`client.entry.runtime` accepts only `"client"`. A client entry cannot
-materialize server code, so `"server"` and the misleading `"all"` value are
-rejected. Use `page.wrapper` for Page component behavior that genuinely
-projects to both client and server runtimes.
-
-`page.wrapper` accepts `runtime: "client" | "server" | "all"` and an optional
-Application or Page target. Its module must default-export a component that
-accepts `children`. It projects to SPA route composition, MPA Page client
-entries, and SSR/SSG/PPR-shell/RSC server Page entries as those materialization
-points exist. A filter with no matching projection fails. Later contributions
-wrap earlier contributions; route layouts and wrappers remain outside plugin
-Page wrappers.
-
-```ts
-emitIR(ctx) {
   ctx.slot("page.wrapper").add({
     id: "auth-boundary",
-    module: "./src/plugin/AuthBoundary.tsx",
+    module: boundary,
     runtime: "all",
     target: { kind: "application", applicationId: "default" },
   });
 }
 ```
 
-Application targets expand to their Pages; Page targets select one semantic
-Page. Client projection means SPA route composition or an MPA Page client
-entry. Server projection means each SSR, SSG, PPR-shell, or RSC Page renderer.
-A runtime filter that has no matching projection fails instead of becoming
-inert.
+`runtime` accepts `"client"`, `"server"`, or `"all"`. Omit `target` to wrap
+all pages, or target one application or page. Later wrapper contributions wrap
+earlier ones; route-authored layouts remain outside plugin wrappers.
 
-Wrapper contributions run in plugin/contribution order with component wrapping
-semantics: a later contribution wraps an earlier one. Route-declared layouts
-and wrappers remain outside contributed Page wrappers. The normalized `layers`
-metadata records the resulting outer-to-inner order for both MPA client entries
-and server Page entries.
+## Add server request middleware
 
-An explicit Application/Page target must match a materialized client entry for
-`client.entry`, or an HTML Document for `html.tag`.
-A semantic SPA page normally shares both with its application, so page-targeted
-entry or HTML contributions fail with a diagnostic instead of
-becoming silent no-ops.
+Attach a middleware module to the framework server request chain:
 
-A CSR SPA Page shares the Application Document and therefore rejects
-page-targeted HTML contributions. An SSR/PPR/RSC SPA Page has a build-compiled,
-Page-specific request-time document shell, so page-targeted `html.tag`
-contributions and `transformHtml()` handling apply to that shell.
+```ts
+ctx.slot("server.request.middleware").add({
+  id: "request-tracing",
+  module: "./src/plugin/request-tracing.ts",
+});
+```
 
-A canonical MPA exposes one logical `default` Application even though it
-materializes one page-client entry and one Document per Page. An Application target
-therefore expands `client.entry` to every Page entry and `html.tag` to every
-Page Document. `page.wrapper` instead expands through semantic Page ownership,
-so the same Application/Page target works in SPA and MPA. A Page target remains
-exact. This expansion is recorded in the generated plan. Explicit config-route
-input must normalize to the same
-Application/Page/Document ownership before using these semantics.
+Use this for plugin-owned cross-cutting server behavior. Application-specific
+middleware should normally use the documented file conventions.
 
-`resolve.external` accepts `runtime: "client" | "server" | "all"`. The
-Webpack adapter applies that filter per target. Utoopack maps client/all
-externals to its top-level config and server/all externals to its independent
-`server.externals` config, so server-only contributions remain isolated in
-mixed builds. Plugin contributions remain under `plan.resolve.external`;
-authored `server.externals` is a separate server-build override applied after
-those contributions.
+## Add HTML tags
 
-## Boundaries
+Use `html.tag` for structured `meta`, `link`, `script`, or `style` additions:
 
-Generated contributions are the source of truth for file-convention entry
-composition and plugin entry/runtime/html/resolution injection. Bundler loaders
-remain responsible only for transformations of real source modules.
+```ts
+ctx.slot("html.tag").add({
+  id: "analytics-script",
+  tag: "script",
+  placement: "head-append",
+  attrs: {
+    src: "https://cdn.example.com/analytics.js",
+    crossorigin: "anonymous",
+  },
+});
+```
 
-The contribution layer does not replace plugin lifecycles:
+An optional application or page `target` limits the contribution. A page can
+be targeted only when it owns a matching document; a normal CSR SPA page
+shares the application document and therefore cannot receive a page-only tag.
+Use `transformHtml()` only when a structured tag cannot express the change.
 
-- Use `configure()` for framework config defaults or validation-sensitive config.
-- Use `setup()` to allocate plugin state and return lifecycle hooks.
-- Use `configureBundler()` for low-level bundler features not modeled as slots.
-- Use `transformHtml()` for AST-level HTML rewrites.
-- Use `transformOutput()` and `afterBuild()` for deployment metadata and final files.
+## Change module resolution
 
-This split keeps the IR readable without pretending every plugin capability is
-an entry contribution.
+Generated references can participate in aliases:
 
-## Agent Workflow
+```ts
+const config = ctx.emit.data({
+  id: "config",
+  scope: { kind: "application" },
+  value: { enabled: true },
+});
 
-For code review or debugging, inspect `.ev/manifest.json` first:
+ctx.slot("resolve.alias").add({
+  id: "runtime-config",
+  specifier: "@plugin/runtime-config",
+  replacement: config,
+});
+```
 
-1. Find the final entry under `entries`.
-2. Inspect `generated.modules` for plugin artifacts and producer plugin ids.
-3. Inspect `generated.slots` to see where artifacts attach.
-4. Inspect `generated.importEdges` to understand generated-to-generated imports.
-5. Open the matching files under `.ev/entries` and `.ev/plugins`.
+Externalize a dependency with an optional runtime filter:
 
-This gives agents and humans a complete view of framework-generated code that
-would otherwise be hidden behind loaders or arbitrary temporary files.
+```ts
+ctx.slot("resolve.external").add({
+  id: "external-react",
+  specifier: "react",
+  source: "React",
+  runtime: "client",
+});
+```
+
+Runtime filters accept `"client"`, `"server"`, or `"all"` where the slot
+supports them.
+
+## Work with server page entries
+
+`server.entry` imports into or replaces an existing page server entry. It
+requires an exact page target that already has request-time or build-time
+server rendering:
+
+```ts
+ctx.slot("server.entry").add({
+  id: "server-monitoring",
+  target: { kind: "page", pageId: "dashboard" },
+  module: "./src/monitoring/server-entry.ts",
+  position: "before-main",
+});
+```
+
+Use `mode: "replace"` only when the integration owns the complete page server
+entry. A missing page, a page without a server entry, or multiple replacements
+fails generation instead of becoming a no-op.
+
+## Slot reference
+
+| Slot | Purpose |
+| --- | --- |
+| `client.entry` | Import into or replace client entries |
+| `server.entry` | Import into or replace an existing page server entry |
+| `page.wrapper` | Wrap page components across client/server rendering |
+| `server.request.middleware` | Add plugin-owned server request middleware |
+| `html.tag` | Add structured document tags |
+| `resolve.alias` | Add semantic module aliases |
+| `resolve.external` | Externalize modules by runtime |
+
+## Inspect generated code
+
+`.ev` is generated output and must not be edited, but it is useful while
+debugging a plugin:
+
+1. Run `ev prepare`.
+2. Inspect `.ev/manifest.json` to find the plugin's modules and slot attachments.
+3. Open the matching files under `.ev/plugins/<plugin-id>` and `.ev/entries`.
+4. Fix the plugin source and regenerate rather than patching `.ev`.
+
+Generated code may use documented generated-only helpers when required. Plugin
+source itself should import public authoring types from `@evjs/ev/plugin`, not
+`@evjs/ev/_internal/*`.
+
+For complete plugin flow and small examples, continue with
+[Plugin Recipes](./plugin-recipes).

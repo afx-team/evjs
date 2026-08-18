@@ -1,75 +1,72 @@
 # Build
 
-## Commands
+Inspect the application before creating production output:
 
 ```bash
 ev inspect
-ev inspect --json
-ev prepare
 ev build
 ```
 
-- `ev inspect` validates and reports framework inputs without writing `.ev` or
-  `dist`.
-- `ev prepare` writes generated framework IR under `.ev` without running the
-  bundler.
-- `ev build` resolves config, builds the graph and plan, runs the selected
-  bundler, links build facts, and writes production output.
+## Commands
 
-`ev prepare`, `ev build`, and `ev dev` share one per-project operation lock.
-Starting a second output-mutating command for the same project fails with the
-active operation and process ID instead of racing writes to `.ev`, route types,
-`dist`, or deployment artifacts. Different project directories remain
-independent.
+| Command | Use it for | Writes output? |
+| --- | --- | --- |
+| `ev inspect` | Validate config, routes, rendering, plugins, and bundler capabilities | No |
+| `ev inspect --json` | Feed the same application summary to tooling | No |
+| `ev prepare` | Generate framework entries and declarations without bundling | `.ev` and generated declarations |
+| `ev build` | Create production browser/server output | `.ev`, declarations, and `dist` |
 
-## Inspect
+Only one `dev`, `prepare`, or `build` operation can change output for the same
+project at a time.
 
-For a canonical application, the routing summary uses the public
-Page-and-Route vocabulary: mode, Page root, discovered `page.*` anchors,
-directory-derived route patterns, Documents, and diagnostics.
+## Inspect first
 
-Canonical inspect output does not present a provider, resolver implementation,
-or route-types path. It reports resolved Pages, Routes, Documents, server
-functions, server routes, rendering metadata, installed plugin settings, Page
-config sources, provenance, and diagnostics. Errors make inspect exit non-zero.
+`ev inspect` reports the public application shape:
 
-## Generated IR
+- SPA or MPA mode;
+- discovered pages and their URL patterns;
+- HTML documents and rendering choices;
+- server functions and API routes;
+- installed plugins and page settings;
+- selected bundler and missing capabilities;
+- diagnostics with source locations.
 
-`ev prepare` writes `.ev`, including:
+Treat a non-zero exit as a configuration or application-structure error. In
+CI, run inspect before the production build when you want faster, focused
+feedback.
 
-- normalized CoreGraph;
-- generated framework and plugin modules;
-- entry facades and framework slots;
-- import edges;
-- final BuildPlan;
-- manifest inputs and provenance.
+## Production output
 
-Canonical applications write the validated semantic graph to
-`.ev/framework/core-graph.json`. `.ev` is generated and must not be edited.
-
-## Output
-
-By default browser and server files are separated:
+The default layout separates browser files from server files:
 
 ```text
 dist/
 ├── client/
 │   ├── index.html
 │   ├── main.[hash].js
-│   └── [chunk].[hash].js
-├── server/
-│   └── main.[hash].js
+│   └── ...
+├── server/                          # present when server work is required
+│   └── ...
 └── deployment-metadata.json
 ```
 
-Use `output.client` and `output.server` when the host requires another layout.
-Both directories must use portable `/`-separated project-relative paths with no
-empty, `.`, or `..` segments. They must remain separate, non-nested, symlink-free
-strict descendants of the BuildPlan `distDir`:
+- `dist/client` contains HTML, JavaScript, CSS, and public assets.
+- `dist/server` contains the server bundle for server functions, API routes,
+  SSR, PPR, or RSC.
+- `deployment-metadata.json` is consumed by deployment tooling. Application
+  code should not import or edit it.
 
-```ts
+Treat `.ev`, `dist`, `src/route-types.d.ts`, and `src/plugin-types.d.ts` as
+generated output.
+
+## Change output directories
+
+Use `output.client` and `output.server` when a host expects another layout:
+
+```ts title="ev.config.ts"
+import { defineConfig } from "@evjs/ev";
+
 export default defineConfig({
-  routing: { mode: "spa" },
   output: {
     client: "dist/public",
     server: "dist/runtime",
@@ -77,229 +74,107 @@ export default defineConfig({
 });
 ```
 
-The finalized BuildPlan is the single source of truth for adapter cleanup,
-emitted assets, stats, and manifest paths. A plugin `configureBundler()` hook may
-change supported low-level bundler settings, but it cannot override a
-framework-owned client or server output path.
+Both paths must remain separate, non-nested descendants of `dist` and use
+portable `/` separators. They cannot contain empty, `.` or `..` segments.
 
-Bundler server facts use `serverEntryAssets`, keyed by each exact server
-BuildPlan entry name. Every server entry must emit exactly one self-contained
-JavaScript asset. When a bundler reports a complete server asset inventory,
-that inventory must contain each declared entry asset and no additional
-unowned JavaScript chunks; Core never infers server ownership from module
-stats or filenames.
+Set `output.crossOriginLoading` to `false`, `"anonymous"`, or
+`"use-credentials"` to control the `crossorigin` attribute on generated asset
+tags and dynamic chunk loading.
 
-Generated HTML embeds the `ClientRuntime` required by browser bootstrap.
-`deployment-metadata.json` is the canonical serialized deployment projection;
-the complete `BuildOutput` remains in memory. Application code must not import
-or edit deployment metadata.
+## SPA output
 
-## Browser Compatibility
-
-Browser compatibility is enabled with a browser target such as
-`target: { android: 5, ios: 8 }`. The configured Android/iOS versions become
-the production Browserslist target, and production JavaScript syntax output is
-ES5. Webpack transpiles both application code and client-side framework/third-party
-dependencies to that syntax baseline in production; semantic server-function
-and RSC loaders remain scoped to project source. Utoopack receives the same
-Android/iOS production target. Development retains each adapter's existing
-client target and dependency transpilation scope and does not inject core-js.
-When `target` is omitted, production also retains that existing behavior.
-
-The compatibility target is framework-owned: a plugin `configureBundler()`
-hook cannot replace it. Node, build-time, server-function, and server-renderer
-compilations retain their existing Node target.
-
-Targeted production client entries bundle `core-js/stable` by default. Setting
-an external `polyfill.coreJs` UMD URL removes that import and adds a blocking
-script before EVJS runtime data and deferred client bundles in every production
-Document with client JavaScript. See [Polyfills](./config#polyfills) for
-configuration, loading order, scope, and bundle-size details.
-
-## SPA And MPA Output
-
-`routing.mode` controls route and Document materialization:
-
-| Routing mode | Route output | Document output |
-| --- | --- | --- |
-| `spa` | Client Routes in one browser route tree | One Application-owned shell, plus a Page-owned output for each static SSG Page |
-| `mpa` | Independent Page entries for static semantic routes | One Page-owned Document per static Page route |
-
-Both use the same `src/pages/**/page.*` entry, directory scope, and
-semantic route pattern.
-
-Static SPA SSG Pages use their semantic route as the output path: `/` writes
-`index.html`, while `/report` writes `report/index.html`. When a root SSG Page
-owns `index.html` in a mixed SPA that also needs a client-route fallback, Core
-keeps the Application shell separately at `__evjs/<application-id>.html`.
-
-MPA keeps those semantic routes internally but exposes Page Documents as HTML
-URLs: `/` writes and serves `index.html`, `/report` uses `report.html`, and
-`/foo/bar` uses `foo/bar.html`. CSR emits those files directly. An ordinary MPA
-SSR Page with a Page client entry also emits the same canonical HTML as an
-empty, independently bootable CSR fallback, while its route remains
-server-rendered. PPR and RSC Pages remain request-time-only because they do not
-have an ordinary Page client entry. Outputs are derived from route segments,
-not Page ids.
-
-MPA materializes only static Page routes. `$param` and terminal
-`$...splat` remain valid SPA route identities, but selecting MPA for either
-fails graph validation because one dynamic pattern does not identify one
-build-time HTML output. Route layouts compose in both modes; router-only
-boundary facets remain SPA-only and MPA rejects them explicitly.
-
-Place `index.html` beside an MPA Page when it needs a Page-specific Document
-template:
+A normal CSR SPA emits one application document and browser route assets.
+Static SSG pages additionally emit HTML at their route paths:
 
 ```text
-src/pages/report/
-├── page.tsx
-└── index.html
+/           -> dist/client/index.html
+/report     -> dist/client/report/index.html
 ```
 
-Canonical SPA/MPA Pages both discover an optional `page.config.ts` from their
-Page directory:
+Request-time SSR, PPR, and RSC routes use the server output. They are not
+independent static HTML files.
 
-```ts
-import { definePageConfig } from "@evjs/ev";
+## MPA output
 
-export default definePageConfig({
-  title: "Report",
-  meta: {
-    description: "A generated business report.",
-    keywords: "report,analytics",
-    viewport: "width=device-width, initial-scale=1",
-    "theme-color": "#ffffff",
-  },
-  render: "ssr",
-  hydrate: "load",
-  plugins: {
-    analytics: {
-      channel: "report",
-    },
+MPA creates one HTML document for each static page route:
+
+```text
+/           -> dist/client/index.html
+/report     -> dist/client/report.html
+/foo/bar    -> dist/client/foo/bar.html
+```
+
+A colocated `index.html` supplies a page-specific template. Dynamic `$param`
+and `$...splat` paths are rejected because one dynamic pattern cannot name one
+build-time document.
+
+SSR MPA pages still require a server-capable target. CSR and SSG MPA pages can
+be deployed statically when they use no other server capabilities.
+
+## Browser compatibility
+
+Production compatibility is opt-in:
+
+```ts title="ev.config.ts"
+export default defineConfig({
+  target: {
+    android: 6,
+    ios: 10,
   },
 });
 ```
 
-The module is synchronously evaluated at graph-build time. Core rendering
-fields flow into the rendering BuildPlan. For emitted MPA/SSG Documents and
-compiled SSR/PPR/RSC request-time document shells, static `title` and named
-`meta` materialize missing tags and override matching template baseline
-values; omitted values preserve the baseline. Page plugin settings remain
-static graph data unless the owning plugin explicitly projects them into a
-generated runtime artifact. Plugin `transformHtml` hooks run after
-framework metadata, assets, and structured HTML contributions materialize and
-may explicitly override the result.
+This lowers production client syntax and includes core-js for ECMAScript
+built-ins. Development remains optimized for the active bundler. To load
+core-js from a separately hosted UMD file, configure `polyfill.coreJs` with an
+absolute HTTP(S) URL.
 
-Every server-rendered Page receives a request-time document shell during the
-build. For an MPA SSR Page with a CSR fallback, evjs first applies assets,
-structured HTML contributions, and `transformHtml` to the canonical fallback,
-then derives the server shell from that final Document without running the hook
-again. Other server-rendered Pages compile their configured template directly
-into the shell. This preserves authored
-`<html>`, `<head>`, and `<body>` attributes and content while applying the same
-assets, Page metadata, `html.tag` contributions, and `transformHtml` hooks as a
-static Document. The default React renderer inserts the Page HTML and
-request-specific bootstrap data into that shell.
+See [Configuration](./config#browser-compatibility) for validation and scope.
 
-Supplying a custom `renderDocument` completely replaces the compiled shell:
-`ctx.page.metadata` remains available, but the custom renderer owns the
-template baseline, assets, and document structure. Insert
-`renderReactPageMetadata(ctx)` from `@evjs/server/react` to retain the core
-safe-serialization and SPA cleanup behavior. Build-time `transformHtml` hooks
-do not post-process the arbitrary per-request string returned by a custom
-document renderer.
+## Rendering requirements
 
-## Page Rendering Settings
+Rendering choices can require different build and deployment capabilities:
 
-Page components do not export literal `render`, `hydrate`, `prerender`, or
-`rsc` settings. Put those values in adjacent `page.config.ts`:
+| Page behavior | Browser output | Server output | Static hosting alone? |
+| --- | --- | --- | --- |
+| CSR | Client entry | No | Yes |
+| SSR | Optional hydration entry | Renderer | No |
+| SSG | Generated HTML, optional hydration | Build-time only | Yes, unless another feature needs a server |
+| PPR | Shell/client assets as applicable | Runtime renderer | No |
+| RSC | Client component assets | Runtime renderer | No |
 
-```ts
-import { definePageConfig } from "@evjs/ev";
+Run `ev inspect` after selecting PPR or RSC to confirm the selected bundler
+supports the page. The complete authoring matrix is in
+[Rendering](./rendering).
 
-export default definePageConfig({
-  render: "ssr",
-  hydrate: "none",
-  prerender: { partial: true },
-});
+## Pre-build checklist
+
+Before shipping, verify:
+
+- `routing.mode` is intentional;
+- every public page uses exactly one `page.*` variant and default-exports a
+  component;
+- route directories use valid static, `$param`, terminal `$...splat`, or
+  `(group)` segments;
+- MPA pages use static paths and no router-only boundaries;
+- every `page.config.*` exports supported static data;
+- server-function modules begin with `"use server";` and export named
+  callables;
+- every public API route uses one `api.*` anchor with uppercase HTTP methods;
+- page routes, redirects, API routes, and framework endpoints do not conflict;
+- the HTML template contains the configured mount element;
+- the deployment target supports every server and rendering capability.
+
+Then run the repository or application checks appropriate to your project,
+followed by:
+
+```bash
+ev inspect
+ev build
 ```
 
-Static generation uses the supported `"ssg"` rendering contract. RSC and
-partial-prerendered Pages must omit `hydrate` or set it to `"none"`. RSC Pages
-use `render: "ssr"` and `rsc: true`; their Flight endpoint is derived from
-`server.basePath` unless `server.rsc.endpoint` overrides it. Both runtime path
-settings must use non-empty ASCII URL-safe segments containing only letters,
-digits, `.`, `_`, `~`, or `-`. Empty and standalone `.` or `..` segments,
-`:param`, `*`, percent escapes, and raw non-ASCII characters are rejected.
-RSC and partial prerendering cannot be combined on one Page. These settings
-normalize to Core Page rendering fields without changing Page identity.
+## Next step
 
-Omitting `render` always normalizes the Page to `"csr"`. CSR mounts a new
-client tree and therefore must omit `hydrate`; only explicitly selected SSR or
-SSG Pages can configure `hydrate: "load" | "none"`. Ordinary SSR defaults to
-load hydration, SSG defaults to no hydration, and RSC/PPR remain unhydrated at
-the Page level. Generated runtime metadata still uses an effective `"load"`
-client activation for CSR bootstrap, but that internal value is not a Page
-authoring option.
-
-The server-function and active RSC endpoints are exact paths. An active PPR
-endpoint owns its rooted subtree. Build planning requires those active
-endpoints to be disjoint and rejects any Page, redirect, or server request
-Route pattern that can match a reserved runtime path. `server.basePath` derives
-default endpoints but does not reserve a request subtree of its own; dev and
-generated Node/Edge deployment routing preserve that distinction.
-
-## Server Functions And Routes
-
-Reachable modules beginning with `"use server";` contribute supported named
-server functions.
-
-Server request Routes are discovered independently from positive `api.*`
-anchors under `src/apis`:
-
-```ts
-// src/apis/api/health/api.ts
-export const GET = async () => Response.json({ ok: true });
-```
-
-## Build Checks
-
-Check user-controlled inputs first:
-
-- `ev.config.ts` declares `routing.mode`;
-- every published client Page uses exactly one `page.*` extension variant;
-- each Page uses at most one `page.config.ts` or `page.config.js`, whose
-  default export is static JSON data;
-- Page entries default-export a component;
-- route directories use valid static, `$param`, terminal `$...splat`, and
-  `(group)` segments without normalized-path conflicts;
-- MPA does not use unsupported dynamic paths or router-only boundary facets;
-- templates contain the configured mount element;
-- Page `title` and each `meta` name/content value are valid static strings;
-- Page rendering metadata in `page.config.ts` uses supported values and
-  combinations;
-- `"use server"` modules begin with the directive and export named callables;
-- each published server request Route uses exactly one `api.*` extension
-  variant in its URL directory;
-- `api.*` anchors export uppercase HTTP methods only.
-- every URL-owning client Route (Page or redirect) is disjoint from server
-  request Route patterns, including across static, dynamic, and terminal splat
-  matches. Static aliases are compared after exactly one URL decode, so
-  `/%75sers` aliases `/users` while double-encoded text remains distinct.
-
-Before building, run `ev inspect` and review Page sources, Page config, routes,
-Documents, provenance, and diagnostics.
-
-## Key Points
-
-- SPA and MPA apps build from the same `page.*` Page-and-Route tree.
-- `ev inspect` reports `routingMode`, Page root, source, and Document defaults
-  without exposing an internal provider choice.
-- `.ev`, manifests, build output, and generated route-type declarations
-  are generated.
-- Bundler adapters consume BuildPlan as the source of routing, runtime, and
-  output ownership, then return build facts.
-- When stats expose a reliable complete physical inventory, adapters return it
-  through `BundlerBuildFacts.emittedFiles`. Each reported side is complete;
-  an omitted client or server side means unknown, never an empty output.
+Choose a target and adapter in [Deployment](./deploy). If the build output is
+unexpected, compare the resolved application in `ev inspect` with the source
+tree before inspecting generated files.

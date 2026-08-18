@@ -1,116 +1,42 @@
-# Client Routes
+# Pages and Routing
 
-Client routing has one canonical Page-and-Route model:
+Create a page by adding `page.*` to the directory for its URL. evjs turns the
+directory tree into either SPA routes or MPA documents.
 
-- `src/pages/**/page.*` is the positive Page and Route anchor;
-- the containing directory is the Page-private scope;
-- directory segments determine the URL;
-- `routing.mode` chooses SPA or MPA materialization for the same semantic
-  Page/Route tree.
-
-```ts
+```ts title="ev.config.ts"
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  routing: {
-    mode: "spa",
-  },
+  routing: { mode: "spa" },
 });
 ```
 
-```text
-src/pages/
-├── page.tsx                         # /
-├── page.config.ts                  # optional build-time config for /
-├── users/
-│   ├── page.tsx                     # /users
-│   └── $userId/
-│       ├── page.tsx                 # /users/:userId
-│       └── components/
-│           └── Profile.tsx          # Page-private code
-└── (account)/
-    └── settings/
-        └── page.tsx                 # /settings
-```
+## Create a page
 
-There is no separate route map to keep synchronized with this tree.
+A page module default-exports its React component:
 
-## Pages
-
-A canonical Page:
-
-- is a `page.{ts,tsx,js,jsx}` module;
-- default-exports its component;
-- owns its complete containing directory as private source scope;
-- receives its semantic identity and URL from its directory relative to
-  `src/pages`.
-
-```tsx
-// src/pages/users/$userId/page.tsx
-import { usePageParams } from "@evjs/ev/route";
-import { useQuery } from "@evjs/ev/query";
-import { getUser } from "./get-user.server";
-
-export default function UserDetailPage() {
-  const { userId } = usePageParams();
-  const { data: user } = useQuery(getUser, userId);
-
-  if (!user) return null;
-  return <h1>{user.name}</h1>;
+```tsx title="src/pages/about/page.tsx"
+export default function AboutPage() {
+  return <main>About this application</main>;
 }
 ```
 
-Page components do not receive framework `params`, `search`, or `loaderData`
-props. SPA Pages use the Page hooks:
+The containing directory creates `/about`. The root
+`src/pages/page.tsx` creates `/`.
 
-```tsx
-import {
-  usePageLoaderData,
-  usePageParams,
-  usePageSearch,
-} from "@evjs/ev/route";
-```
+Only `page.ts`, `page.tsx`, `page.js`, or `page.jsx` publishes a page.
+Everything else can be colocated without becoming another route.
 
-Search starts as `Record<string, string>`. Convert values in
-`validateSearch` when a Page needs numbers, booleans, or structured values.
+## Build the route tree
 
-```tsx
-export const validateSearch = (search: Record<string, string>) => ({
-  tab: typeof search.tab === "string" ? search.tab : "overview",
-});
+Directory nesting creates nested route paths:
 
-export async function loader() {
-  return { title: "User" };
-}
-
-export default function UserDetailPage() {
-  const params = usePageParams();
-  const search = usePageSearch();
-  const data = usePageLoaderData();
-  return (
-    <h1>
-      {data.title}: {params.userId} ({search.tab})
-    </h1>
-  );
-}
-```
-
-CSR SPA Pages may expose supported route lifecycle exports such as `loader`,
-`beforeLoad`, `validateSearch`, `pendingComponent`, `errorComponent`, and
-`notFoundComponent`. These hooks execute in the browser route tree;
-SSR and SSG Pages reject them. MPA does not run a browser route tree, so these
-lifecycle hooks are not an MPA data-loading model.
-
-## Directory Route Tree
-
-Directory nesting is route nesting. Segment syntax is deliberately small:
-
-| Directory segment | Route meaning |
+| Directory | URL pattern |
 | --- | --- |
-| `users` | Static `users` segment. |
-| `$userId` | Dynamic `:userId` segment. |
-| `$...splat` | Terminal catch-all. |
-| `(account)` | Pathless organization group. |
+| `users` | `/users` |
+| `users/$userId` | `/users/:userId` |
+| `files/$...splat` | `/files/*` |
+| `(marketing)/about` | `/about` |
 
 ```text
 src/pages/
@@ -127,16 +53,42 @@ src/pages/
         └── page.tsx                 # /about
 ```
 
-A directory without `page.*` can organize descendants. It does not create a
-Page by itself. The build rejects malformed segments, non-terminal splats,
-duplicate normalized paths, ambiguous dynamic shapes, and generated route-id
-collisions.
+A directory without `page.*` can group descendants. `$...splat` must be the
+last segment. Dynamic parameters and splats are SPA-only.
 
-### Page routes with children
+## Read parameters and search
 
-In SPA mode, a parent Page can render its nested route:
+Use route hooks from `@evjs/ev/route`:
+
+```tsx title="src/pages/users/$userId/page.tsx"
+import { usePageParams, usePageSearch } from "@evjs/ev/route";
+
+export default function UserPage() {
+  const { userId } = usePageParams();
+  const search = usePageSearch();
+
+  return (
+    <h1>
+      User {userId} · tab {search.tab ?? "overview"}
+    </h1>
+  );
+}
+```
+
+Search values start as strings. A CSR SPA page can export `validateSearch` to
+convert or default them:
 
 ```tsx
+export const validateSearch = (search: Record<string, string>) => ({
+  tab: typeof search.tab === "string" ? search.tab : "overview",
+});
+```
+
+## Render child pages
+
+In SPA mode, a parent page renders its active child with `Outlet`:
+
+```tsx title="src/pages/teams/page.tsx"
 import { Outlet } from "@evjs/ev/navigation";
 
 export default function TeamsPage() {
@@ -149,52 +101,32 @@ export default function TeamsPage() {
 }
 ```
 
-## Page-Private Code
+Use a directory without `page.*` when descendants should not render inside a
+parent page.
 
-Everything in the Page directory belongs to that Page unless a descendant
-directory contains another `page.*`:
+## Add layouts and boundaries
 
-```text
-src/pages/orders/$orderId/
-├── page.tsx
-├── page.config.ts
-├── index.ts
-├── model.ts
-├── get-order.server.ts
-├── components/
-│   └── Summary.tsx
-└── __tests__/
-    └── page.test.tsx
-```
-
-Only `page.*` creates a Page and Route. `index.*`, components, hooks, models,
-services, styles, tests, and assets are ordinary Page-private source, so they
-need no `_` prefix. Private scope is an ownership/discovery boundary, not
-JavaScript access control.
-
-## Layouts And Boundaries
-
-SPA route composition can use file facets beside the route tree:
+Layouts wrap descendant pages:
 
 ```text
 src/pages/
-├── layout.tsx
-├── error.tsx
-├── not-found.tsx
+├── layout.tsx                       # wraps the whole application
+├── error.tsx                        # SPA error boundary
+├── not-found.tsx                    # SPA not-found boundary
 └── admin/
-    ├── layout.tsx
+    ├── layout.tsx                   # wraps /admin descendants
     ├── page.tsx
     └── settings/
         └── page.tsx
 ```
 
-Layouts wrap descendants in both SPA and MPA materialization. Error and
-not-found facets define SPA router boundaries. MPA rejects those router-only
-facets rather than silently ignoring them.
+Layouts work in SPA and MPA. `error.*` and `not-found.*` are browser-router
+boundaries and therefore SPA-only.
 
-## Navigation
+## Navigate
 
-Use anchors or the public navigation helpers:
+Use standard anchors when a document navigation is intended. For SPA
+navigation, use the public helpers:
 
 ```tsx
 import { Link, useNavigate } from "@evjs/ev/navigation";
@@ -213,99 +145,86 @@ export default function HomePage() {
 }
 ```
 
-`src/route-types.d.ts`, when emitted, is generated output. Keep it ignored; do
-not import it from application source or copy it into templates.
+evjs may generate `src/route-types.d.ts` for file routes. Keep it ignored; the
+navigation APIs consume the declarations automatically.
 
-## SPA And MPA
+## Load route data in CSR pages
 
-`routing.mode` changes materialization, not Page or Route semantics.
+CSR SPA pages can export browser route lifecycle functions and components:
 
-### SPA
+```tsx
+import { usePageLoaderData } from "@evjs/ev/route";
 
-```ts
-export default defineConfig({
-  routing: { mode: "spa" },
-});
+export async function loader() {
+  return { title: "Users" };
+}
+
+export default function UsersPage() {
+  const data = usePageLoaderData();
+  return <h1>{data.title}</h1>;
+}
 ```
 
-SPA materializes the directory tree as browser Client Routes, normally under
-one Application-owned HTML Document. It supports nested routes, dynamic
-parameters, splats, layouts, boundaries, and browser navigation.
-Each static SSG Page additionally emits HTML at its semantic route path:
-`/` becomes `index.html` and `/report` becomes `report/index.html`.
+Supported lifecycle exports include `loader`, `beforeLoad`, `validateSearch`,
+`pendingComponent`, `errorComponent`, and `notFoundComponent`. They run in the
+SPA browser route tree. SSR and SSG pages do not use this client loader model;
+use [Server Functions](./server-functions) or the appropriate rendering data
+flow instead.
 
-### MPA
+## Choose SPA or MPA
 
-```ts
+The page files do not change when the navigation model changes:
+
+| Capability | SPA | MPA |
+| --- | --- | --- |
+| Static pages | Yes | Yes |
+| Dynamic `$param` routes | Yes | No |
+| Terminal `$...splat` | Yes | No |
+| Nested layouts | Yes | Yes |
+| Error and not-found route boundaries | Yes | No |
+| Client-side route navigation | Yes | No browser router |
+| Per-page HTML template | For static page output | Yes |
+
+Select MPA in the application config:
+
+```ts title="ev.config.ts"
 export default defineConfig({
   routing: { mode: "mpa" },
 });
 ```
 
-MPA discovers the same Pages and semantic route patterns, then materializes
-Page-owned Documents without requiring a browser router. It accepts
-only static Page paths; `$param`, terminal `$...splat`, and router-only
-boundaries fail graph validation. Layouts compose around Pages in both modes.
-`ev inspect` and `ev build` reject unsupported combinations instead of asking
-applications to use a second route model. The semantic routes stay `/`,
-`/report`, and `/foo/bar`, while their MPA Document URLs are `/index.html`,
-`/report.html`, and `/foo/bar.html`. A colocated `index.html` supplies that MPA
-Page's Document template.
+MPA creates `/index.html`, `/report.html`, and `/foo/bar.html` for the static
+routes `/`, `/report`, and `/foo/bar`. Add `index.html` beside a page to give
+that MPA page a custom document template.
 
-## Page Configuration
+## Configure metadata and rendering
 
-Put optional Page-level configuration beside the anchor:
+Put static page choices next to the component:
 
-```ts
-// src/pages/orders/$orderId/page.config.ts
+```ts title="src/pages/orders/$orderId/page.config.ts"
 import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
   title: "Order details",
   meta: {
     description: "Review an individual order.",
-    keywords: "orders,details",
-    viewport: "width=device-width, initial-scale=1",
-    "theme-color": "#ffffff",
   },
   render: "csr",
-  plugins: {
-    analytics: {
-      channel: "orders",
-    },
-  },
 });
 ```
 
-The module is synchronously evaluated at build time and must default-export
-static JSON data. Core owns `title`, named `meta`, `render`, `hydrate`,
-`prerender`, and `rsc`. `meta` accepts string key/value pairs and creates only
-`<meta name="key" content="value">`; `property`, `charset`, links, scripts,
-dynamic metadata, and a general head DSL are outside this contract. Installed
-Page-aware plugins use their canonical ids under `plugins`.
+The deepest active SPA page owns its declared title and named metadata. Route
+transitions restore template defaults when the next page does not declare a
+value.
 
-The resolved config is attached to the same normalized Page identity in SPA
-and MPA. In SPA mode, the deepest active Page owns title/meta with no parent
-Page inheritance. Route transitions restore the HTML template baseline or
-remove values that the next Page does not declare, so metadata cannot leak
-between Pages. A plugin that needs Page data at runtime must explicitly
-generate and attach the minimal projection.
+See [Rendering](./rendering) for CSR, SSR, SSG, PPR, and RSC, and
+[Using Plugins](./plugins) for page-level integration options.
 
-Page components do not export literal `render`, `hydrate`, `prerender`, or
-`rsc` settings. Put them in `page.config.ts`. See [Build](./build) and
-[Architecture](./architecture).
+## Advanced explicit routes
 
-## Explicit SPA Route Configuration
+`application.routes` is available for intentional programmatic SPA route
+trees. It cannot be combined with canonical `routing`, cannot select MPA, and
+uses `routes` for nesting. Most applications should prefer the file convention
+because it keeps URL ownership beside the page.
 
-`application.routes` can normalize an explicit SPA route tree into the same
-Core graph. It accepts nested `routes`, `page` or `component`, layouts,
-wrappers, and redirects. `children`,
-`exact: false`, and nested routes below `exact: true` are rejected;
-`exact: true` is a terminal-match structural assertion and is not copied into
-the graph. Each declared Route keeps its own semantic identity; plugin
-configuration remains Page-owned.
-
-This configuration is SPA-only, cannot be combined with `routing`, and rejects
-MPA materialization. It is an alternate input into the normalized graph, not a
-second canonical file convention. An unrelated `src/pages` directory does not
-publish routes unless canonical routing is enabled.
+See [Advanced Convention Control](./advanced-conventions) for that API.

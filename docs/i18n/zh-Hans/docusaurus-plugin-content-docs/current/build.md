@@ -1,70 +1,66 @@
 # 构建
 
-## 命令
+生成生产产物前先检查应用：
 
 ```bash
 ev inspect
-ev inspect --json
-ev prepare
 ev build
 ```
 
-- `ev inspect` 校验并报告框架输入，不写入 `.ev` 或 `dist`；
-- `ev prepare` 在 `.ev` 写入生成 IR，但不运行 bundler；
-- `ev build` 解析配置、创建 graph/plan、运行 bundler、链接 build fact 并写入
-  production output。
+## 命令
 
-`ev prepare`、`ev build` 与 `ev dev` 共用同一个项目级 operation lock。同一项目若再启动
-一个会写产物的命令，会携带当前 operation 与进程 ID 直接失败，而不是并发覆盖 `.ev`、
-route type、`dist` 或部署产物；不同项目目录仍可独立运行。
+| 命令 | 用途 | 是否写入产物？ |
+| --- | --- | --- |
+| `ev inspect` | 校验配置、路由、渲染、插件与构建器能力 | 否 |
+| `ev inspect --json` | 把同一份应用摘要提供给工具 | 否 |
+| `ev prepare` | 不打包，只生成框架入口与声明 | `.ev` 与生成声明 |
+| `ev build` | 生成生产浏览器/服务端产物 | `.ev`、声明与 `dist` |
 
-## Inspect
+同一项目一次只能有一个 `dev`、`prepare` 或 `build` 操作修改输出。
 
-canonical application 的 routing 摘要使用公开 Page-and-Route 词汇：mode、
-Page root、发现的 `page.*` 锚点、目录派生 route pattern、Document 与
-diagnostic。
+## 先 Inspect
 
-canonical inspect 输出不会展示 provider、resolver 实现或 route-types path。它会
-报告 resolved Page、Route、Document、server function、server route、rendering
-metadata、已安装 plugin settings、Page config source、provenance 与 diagnostic。
-错误会让 inspect 非零退出。
+`ev inspect` 使用公共应用概念报告：
 
-## 生成 IR
+- SPA 或 MPA 模式；
+- 已发现页面及其 URL 形态；
+- HTML 文档与渲染选择；
+- 服务端函数与 API 路由；
+- 已安装插件与页面设置；
+- 所选构建器及缺失能力；
+- 带源码位置的诊断。
 
-`ev prepare` 写入 `.ev`，包括：
+非零退出表示配置或应用结构错误。在 CI 中可以把 Inspect 放在生产构建前，以获得更快、更聚焦的反馈。
 
-- normalized CoreGraph；
-- 生成 framework/plugin module；
-- entry facade 与 framework slot；
-- import edge；
-- 最终 BuildPlan；
-- manifest input 与 provenance。
+## 生产产物
 
-canonical application 把校验后的 semantic graph 写到
-`.ev/framework/core-graph.json`。`.ev` 是生成物，不得编辑。
-
-## 输出
-
-默认分离浏览器和 server 文件：
+默认布局把浏览器与服务端文件分开：
 
 ```text
 dist/
 ├── client/
 │   ├── index.html
 │   ├── main.[hash].js
-│   └── [chunk].[hash].js
-├── server/
-│   └── main.[hash].js
+│   └── ...
+├── server/                          # 需要服务端工作时存在
+│   └── ...
 └── deployment-metadata.json
 ```
 
-部署平台需要其他目录时使用 `output.client` / `output.server`。两个目录都必须使用
-以 `/` 分隔的可移植 project-relative 路径，不得包含空、`.` 或 `..` segment；它们
-必须是 BuildPlan `distDir` 下不经过 symbolic link、互不相同且互不嵌套的严格子目录：
+- `dist/client` 包含 HTML、JavaScript、CSS 与公共资源。
+- `dist/server` 包含服务端函数、API 路由、SSR、PPR 或 RSC 所需的服务端包。
+- `deployment-metadata.json` 供部署工具消费，应用代码不应导入或编辑。
 
-```ts
+把 `.ev`、`dist`、`src/route-types.d.ts` 和 `src/plugin-types.d.ts` 当作生成产物。
+
+## 修改输出目录
+
+主机要求另一种目录布局时使用 `output.client` 和 `output.server`：
+
+```ts title="ev.config.ts"
+import { defineConfig } from "@evjs/ev";
+
 export default defineConfig({
-  routing: { mode: "spa" },
   output: {
     client: "dist/public",
     server: "dist/runtime",
@@ -72,205 +68,88 @@ export default defineConfig({
 });
 ```
 
-最终 BuildPlan 是 adapter cleanup、产物写入、stats 与 manifest 路径的唯一事实源。
-Plugin `configureBundler()` hook 可以修改受支持的底层 bundler setting，但不能覆盖
-framework 持有的 client 或 server 输出路径。
+两个路径必须保持为 `dist` 下分离且不嵌套的后代，并使用可移植 `/` 分隔符，不能包含空、`.` 或 `..` 段。
 
-Bundler server fact 使用 `serverEntryAssets`，并以每个 server BuildPlan entry 的
-精确名称为 key。每个 server entry 必须只发射一个自包含 JavaScript 产物。Bundler
-提供完整 server 产物清单时，清单必须包含每个已声明 entry 产物，且不能包含额外的
-无归属 JavaScript chunk；Core 不会再从 module stats 或文件名推断 server ownership。
+`output.crossOriginLoading` 接受 `false`、`"anonymous"` 或 `"use-credentials"`，用于控制生成资源标签与动态 Chunk 加载的 `crossorigin`。
 
-生成 HTML 包含浏览器 bootstrap 所需 `ClientRuntime`。
-`deployment-metadata.json` 是 canonical serialized deployment projection；
-完整 `BuildOutput` 只存在于内存中。应用代码不得 import 或编辑 deployment
-metadata。
+## SPA 产物
+
+普通 CSR SPA 生成一份应用文档和浏览器路由资源。静态 SSG 页面还会在路由路径生成 HTML：
+
+```text
+/           -> dist/client/index.html
+/report     -> dist/client/report/index.html
+```
+
+请求时 SSR、PPR 与 RSC 路由使用服务端产物，不是独立静态 HTML 文件。
+
+## MPA 产物
+
+MPA 为每个静态页面路由创建一份 HTML：
+
+```text
+/           -> dist/client/index.html
+/report     -> dist/client/report.html
+/foo/bar    -> dist/client/foo/bar.html
+```
+
+相邻 `index.html` 提供页面专属模板。动态 `$param` 与 `$...splat` 路径会被拒绝，因为一个动态形态无法命名一份构建时文档。
+
+SSR MPA 页面仍需要服务端部署目标。若没有其他服务端能力，CSR 与 SSG MPA 页面可以静态部署。
 
 ## 浏览器兼容性
 
-配置如 `target: { android: 5, ios: 8 }` 的浏览器目标时会启用低端浏览器兼容。
-配置的 Android/iOS 版本会成为生产 client 与 mixed build 的 Browserslist
-target，并在生产模式下输出 ES5 JavaScript 语法。Webpack 会在生产构建中把应用
-代码、客户端 framework 代码和第三方依赖一起降级到该语法基线；server-function
-与 RSC 语义 loader 仍只处理项目源码。Utoopack 接收相同的 Android/iOS 生产
-target。开发模式保留适配器现有的客户端 target 和依赖转译范围，也不注入
-core-js；省略 `target` 时，生产构建也保留该默认行为。
+生产兼容能力需显式启用：
 
-该兼容 target 由框架持有，plugin `configureBundler()` hook 不能覆盖。Node、
-构建期、server-function 与 server-renderer 编译继续使用现有 Node target。
-
-配置 target 的生产客户端 entry 默认打包 `core-js/stable`。配置外部
-`polyfill.coreJs` UMD URL 后会移除该 import，并在每个包含客户端 JavaScript 的
-生产 Document 中，把阻塞式脚本放到 EVJS runtime 数据和带 `defer` 的 client
-bundle 之前。配置、加载顺序、能力范围与体积影响详见
-[Polyfill](./config#polyfill)。
-
-## SPA 与 MPA 输出
-
-`routing.mode` 控制 Route/Document materialization：
-
-| Routing mode | Route 输出 | Document 输出 |
-| --- | --- | --- |
-| `spa` | 一个浏览器 route tree 中的 Client Route | 一个 Application-owned shell，外加每个静态 SSG Page 的 Page-owned 输出 |
-| `mpa` | 静态语义 route 的独立 Page entry | 每条静态 Page route 一个 Page-owned Document |
-
-二者使用相同 `src/pages/**/page.*` entry、目录 scope 与语义 route
-pattern。
-
-静态 SPA SSG Page 按语义 route 决定输出路径：`/` 写入 `index.html`，
-`/report` 写入 `report/index.html`。如果混合 SPA 的根 SSG Page 已拥有
-`index.html`，同时其他 client route 还需要 fallback，Core 会把 Application
-shell 单独保留在 `__evjs/<application-id>.html`。
-
-MPA 在内部保留这些语义 route，但通过 HTML URL 暴露 Page Document：`/` 写入并
-访问 `index.html`，`/report` 使用 `report.html`，`/foo/bar` 使用
-`foo/bar.html`。CSR 会直接发射这些文件。具有 Page client entry 的普通 MPA SSR
-Page 也会把同一 canonical HTML 发射为空 mount、可独立启动的 CSR fallback，同时
-保持其 route 由服务端渲染。PPR 与 RSC Page 没有普通 Page client entry，因此仍只在
-请求时渲染。输出由 route segment 推导，不使用 Page id。
-
-MPA 只物化静态 Page route。`$param` 与终止 `$...splat` 仍是有效的 SPA
-route 身份，但为它们选择 MPA 会在 graph 校验失败，因为一个动态 pattern
-不能唯一对应一个构建期 HTML 输出。Route layout 在两种 mode 中都会组合；
-router-only boundary facet 仍仅支持 SPA，MPA 会显式拒绝。
-
-需要 Page-specific Document 模板时，把 `index.html` 放在 MPA Page 旁：
-
-```text
-src/pages/report/
-├── page.tsx
-└── index.html
-```
-
-canonical SPA/MPA Page 都发现 Page 目录中可选的 `page.config.ts`：
-
-```ts
-import { definePageConfig } from "@evjs/ev";
-
-export default definePageConfig({
-  title: "报表",
-  meta: {
-    description: "构建生成的业务报表。",
-    keywords: "报表,分析",
-    viewport: "width=device-width, initial-scale=1",
-    "theme-color": "#ffffff",
-  },
-  render: "ssr",
-  hydrate: "load",
-  plugins: {
-    analytics: {
-      channel: "report",
-    },
+```ts title="ev.config.ts"
+export default defineConfig({
+  target: {
+    android: 6,
+    ios: 10,
   },
 });
 ```
 
-该 module 在 graph build 阶段同步求值。Core rendering 字段进入 rendering
-BuildPlan。对于实际发射的 MPA/SSG Document，以及构建期编译的 SSR/PPR/RSC
-request-time document shell，静态 `title` 和 named `meta` 会物化缺失 tag，并覆盖
-模板中匹配的 baseline 值；未声明值保留 baseline。Page plugin setting 保持
-static graph data，除非能力所属插件把它显式投影到 generated runtime artifact。
-Plugin `transformHtml` hook 在框架元信息、assets 与结构化 HTML contribution
-物化后运行，可以显式覆盖最终结果。
+这会降低生产客户端语法，并为 ECMAScript 内建能力加入 core-js。开发环境仍按活动构建器优化。若要从独立 UMD 文件加载 core-js，使用绝对 HTTP(S) URL 配置 `polyfill.coreJs`。
 
-每个 server-rendered Page 都会在构建期获得 request-time document shell。对于具有
-CSR fallback 的 MPA SSR Page，evjs 会先在 canonical fallback 上应用 assets、结构化
-HTML contribution 与 `transformHtml`，再从最终 Document 派生 server shell，不会
-再次执行 hook。其他 server-rendered Page 则直接把配置的模板编译成 shell。模板中
-手写的 `<html>`、`<head>`、`<body>` 属性和
-内容会被保留，同时应用与 static Document 相同的 assets、Page metadata、
-`html.tag` contribution 和 `transformHtml` hook。默认 React renderer 在请求时把
-Page HTML 与请求相关的 bootstrap data 插入该 shell。
+校验和作用域见[配置](./config#浏览器兼容性)。
 
-提供自定义 `renderDocument` 会完全替换 compiled shell：仍可从
-`ctx.page.metadata` 读取数据，但自定义 renderer 需要自行持有模板 baseline、
-assets 与 document structure。插入 `@evjs/server/react` 的
-`renderReactPageMetadata(ctx)`，可以保留 core 的安全序列化与 SPA cleanup
-行为。构建期 `transformHtml` hook 不会继续处理 custom document renderer
-逐请求返回的任意字符串。
+## 渲染要求
 
-## Page Rendering Setting
+渲染选择可能要求不同构建与部署能力：
 
-Page component 不读取 literal `render`、`hydrate`、`prerender` 或 `rsc` export。
-把这些值写入同目录 `page.config.ts`：
+| 页面行为 | 浏览器产物 | 服务端产物 | 仅静态托管？ |
+| --- | --- | --- | --- |
+| CSR | 客户端入口 | 无 | 可以 |
+| SSR | 可选 Hydration 入口 | 渲染器 | 不可以 |
+| SSG | 生成 HTML，可选 Hydration | 仅构建时 | 可以，除非其他功能需要服务端 |
+| PPR | 外壳/客户端资源（按需） | 运行时渲染器 | 不可以 |
+| RSC | 客户端组件资源 | 运行时渲染器 | 不可以 |
 
-```ts
-import { definePageConfig } from "@evjs/ev";
+选择 PPR 或 RSC 后运行 `ev inspect`，确认所选构建器支持该页面。完整配置矩阵见[渲染](./rendering)。
 
-export default definePageConfig({
-  render: "ssr",
-  hydrate: "none",
-  prerender: { partial: true },
-});
+## 构建前检查
+
+交付前确认：
+
+- `routing.mode` 是有意选择；
+- 每个公共页面只有一个 `page.*` 变体并默认导出组件；
+- 路由目录只使用有效静态、`$param`、终止 `$...splat` 或 `(group)` 段；
+- MPA 页面只使用静态路径，不使用路由器专属边界；
+- 每个 `page.config.*` 导出受支持的静态数据；
+- 服务端函数模块以 `"use server";` 开头并命名导出可调用值；
+- 每个公共 API 路由只有一个 `api.*` 锚点并导出大写 HTTP 方法；
+- 页面路由、重定向、API 路由与框架端点没有冲突；
+- HTML 模板包含配置的挂载元素；
+- 部署目标支持全部服务端与渲染能力。
+
+然后运行项目自身的类型、Lint 与测试检查，再执行：
+
+```bash
+ev inspect
+ev build
 ```
 
-静态生成使用受支持的 `"ssg"` rendering contract。RSC 与 partial-prerendered
-Page 必须省略 `hydrate` 或将其设为 `"none"`。RSC Page 使用 `render: "ssr"` 与
-`rsc: true`；Flight endpoint 从 `server.basePath` 派生，除非用
-`server.rsc.endpoint` 覆盖。这两个 runtime path setting 都必须由非空 ASCII
-URL-safe segment 组成，每个 segment 只能包含字母、数字、`.`、`_`、`~` 或 `-`；
-空 segment、单独的 `.` 或 `..` segment、`:param`、`*`、percent escape 与原始
-非 ASCII 字符都会被拒绝。同一 Page 不能组合 RSC 与 partial prerendering。这些
-setting normalize 到 Core Page rendering field，且不改变 Page identity。
+## 下一步
 
-省略 `render` 时，Page 始终归一化为 `"csr"`。CSR 会在浏览器中 mount 一棵新的
-client tree，因此必须省略 `hydrate`；只有显式选择 SSR 或 SSG 的 Page 才能配置
-`hydrate: "load" | "none"`。普通 SSR 默认执行 load hydration，SSG 默认不执行
-hydration，RSC/PPR 则保持 Page 级不 hydration。生成的 runtime metadata 仍会
-用有效值 `"load"` 表示 CSR bootstrap 的 client activation，但该内部值不是
-Page authoring option。
-
-Server-function 与启用后的 RSC endpoint 是精确路径；启用后的 PPR endpoint 持有
-以自身为根的子树。BuildPlan 要求这些 active endpoint 互不相交，并拒绝任何可能
-匹配 reserved runtime path 的 Page、redirect 或 server request Route pattern。
-`server.basePath` 只用于派生默认 endpoint，本身并不持有 request 子树；dev 与
-生成的 Node/Edge deployment routing 都保持这一边界。
-
-## 服务端函数与路由
-
-以 `"use server";` 开头的 reachable module 贡献受支持的命名 server function。
-
-服务端 request Route 独立从 `src/apis` 下的 positive `api.*` 锚点发现：
-
-```ts
-// src/apis/api/health/api.ts
-export const GET = async () => Response.json({ ok: true });
-```
-
-## 构建检查
-
-优先检查用户可控输入：
-
-- `ev.config.ts` 声明 `routing.mode`；
-- 每个发布的客户端 Page 只使用一个 `page.*` 扩展名变体；
-- 每个 Page 最多使用一个 `page.config.ts` 或 `page.config.js`，其 default
-  export 是 static JSON data；
-- Page entry 默认导出组件；
-- route 目录使用合法 static、`$param`、终止 `$...splat` 与 `(group)`
-  segment，且没有 normalized-path 冲突；
-- MPA 不使用不受支持的动态路径或 router-only boundary facet；
-- template 包含配置的 mount element；
-- Page `title` 以及每个 `meta` name/content 都是合法 static string；
-- `page.config.ts` 中 Page rendering metadata 使用受支持的值与组合；
-- `"use server"` module 以 directive 开头并导出命名 callable；
-- 每个发布的 server request Route 在其 URL 目录只使用一个 `api.*` 扩展名变体；
-- `api.*` 锚点只导出大写 HTTP method；
-- 每个占用 URL 的客户端 Route（Page 或 redirect）都必须与 server request Route
-  pattern 互不相交，包括 static、dynamic 与终止 splat 之间的匹配。Static alias
-  按恰好一次 URL decode 后比较，因此 `/%75sers` 是 `/users` 的 alias，而双重编码
-  文本仍保持不同。
-
-运行 build 前先用 `ev inspect` 审核 Page source、Page config、route、Document、
-provenance 与 diagnostic。
-
-## 要点
-
-- SPA/MPA 从同一棵 `page.*` Page-and-Route 树构建；
-- `ev inspect` 报告 `routingMode`、Page root、source、Document 默认值，不暴露内部
-  provider 选择；
-- `.ev`、manifest、build output 与生成的 route-type declaration 都是生成物；
-- Bundler adapter 以 BuildPlan 作为 routing、runtime 与 output ownership 的事实源，
-  然后返回 build fact。
-- 当 stats 能提供可靠且完整的物理产物清单时，adapter 会通过
-  `BundlerBuildFacts.emittedFiles` 返回它。已返回的每一侧都是完整清单；省略 client 或
-  server 一侧表示未知，绝不表示空输出。
+在[部署](./deploy)中选择目标与适配器。如果产物不符合预期，请先对比 `ev inspect` 的应用结果与源码树，再检查生成文件。
