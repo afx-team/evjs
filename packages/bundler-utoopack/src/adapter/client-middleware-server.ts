@@ -65,6 +65,7 @@ export async function startClientMiddlewareServer(
   let origin = "";
   let closing = false;
   let closePromise: Promise<void> | undefined;
+  const upgradedSockets = new Set<Duplex>();
   let rejectFailure!: (error: unknown) => void;
   const failure = new Promise<never>((_resolve, reject) => {
     rejectFailure = reject;
@@ -86,7 +87,11 @@ export async function startClientMiddlewareServer(
 
   const server = await createPublicServer(options, requestListener);
   server.on("upgrade", (request, socket, head) => {
-    proxyUpgradeRequest(request, socket, head, options.upstream);
+    trackUpgradeSocket(upgradedSockets, socket);
+    trackUpgradeSocket(
+      upgradedSockets,
+      proxyUpgradeRequest(request, socket, head, options.upstream),
+    );
   });
   server.on("error", (error) => {
     if (!closing) rejectFailure(error);
@@ -128,6 +133,7 @@ export async function startClientMiddlewareServer(
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections?.();
+        for (const socket of upgradedSockets) socket.destroy();
       });
     })();
     return closePromise;
@@ -254,7 +260,7 @@ function proxyUpgradeRequest(
   socket: Duplex,
   head: Buffer,
   upstream: StartClientMiddlewareServerOptions["upstream"],
-): void {
+): net.Socket {
   const proxySocket = net.connect(upstream.port, upstream.hostname);
   const fail = (error: unknown) => {
     logger.error`Failed to proxy Utoopack WebSocket upgrade: ${error}`;
@@ -263,6 +269,8 @@ function proxyUpgradeRequest(
   };
   proxySocket.once("error", fail);
   socket.once("error", () => proxySocket.destroy());
+  socket.once("close", () => proxySocket.destroy());
+  proxySocket.once("close", () => socket.destroy());
   proxySocket.once("connect", () => {
     const headerLines: string[] = [
       `${request.method ?? "GET"} ${request.url ?? "/"} HTTP/${request.httpVersion}`,
@@ -276,6 +284,12 @@ function proxyUpgradeRequest(
     if (head.length > 0) proxySocket.write(head);
     proxySocket.pipe(socket).pipe(proxySocket);
   });
+  return proxySocket;
+}
+
+function trackUpgradeSocket(sockets: Set<Duplex>, socket: Duplex): void {
+  sockets.add(socket);
+  socket.once("close", () => sockets.delete(socket));
 }
 
 function handleRequestError(response: ServerResponse, error: unknown): void {

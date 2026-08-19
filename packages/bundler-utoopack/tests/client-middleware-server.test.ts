@@ -1,6 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import net from "node:net";
+import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   reserveEphemeralPort,
@@ -136,6 +137,57 @@ describe("Utoopack client middleware server", () => {
     expect(response).toContain("101 Switching Protocols");
     expect(middleware).not.toHaveBeenCalled();
   });
+
+  it("closes live WebSocket proxy connections during shutdown", async () => {
+    let upstreamSocket: Duplex | undefined;
+    const upstreamConnected = createDeferred<void>();
+    const upstream = http.createServer();
+    upstream.on("upgrade", (_request, socket) => {
+      upstreamSocket = socket;
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+      );
+      upstreamConnected.resolve();
+    });
+    await listen(upstream);
+    cleanups.push(async () => {
+      upstreamSocket?.destroy();
+      await close(upstream);
+    });
+    const upstreamAddress = upstream.address() as AddressInfo;
+    const server = await startClientMiddlewareServer({
+      cwd: process.cwd(),
+      port: await reserveEphemeralPort(),
+      https: false,
+      signal: new AbortController().signal,
+      upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
+      middlewares: [],
+    });
+    cleanups.push(() => server.close());
+
+    const publicUrl = new URL(server.origin);
+    const clientSocket = net.connect(Number(publicUrl.port), "127.0.0.1");
+    cleanups.push(async () => {
+      clientSocket.destroy();
+    });
+    const responseReceived = createDeferred<void>();
+    clientSocket.setEncoding("utf8");
+    clientSocket.on("data", (chunk) => {
+      if (chunk.includes("101 Switching Protocols")) responseReceived.resolve();
+    });
+    clientSocket.once("connect", () => {
+      clientSocket.write(
+        `GET /__hmr HTTP/1.1\r\nHost: ${publicUrl.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`,
+      );
+    });
+
+    await Promise.all([upstreamConnected.promise, responseReceived.promise]);
+    const clientClosed = waitForClose(clientSocket);
+
+    await expect(server.close()).resolves.toBeUndefined();
+    await clientClosed;
+    expect(clientSocket.destroyed).toBe(true);
+  });
 });
 
 function listen(server: http.Server): Promise<void> {
@@ -149,4 +201,17 @@ function close(server: http.Server): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
+}
+
+function waitForClose(socket: net.Socket): Promise<void> {
+  if (socket.destroyed) return Promise.resolve();
+  return new Promise((resolve) => socket.once("close", () => resolve()));
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }

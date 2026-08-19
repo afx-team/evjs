@@ -2,6 +2,7 @@ import { parsePageSearch } from "@evjs/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AnyRoute,
+  AnyRouter,
   RouterConstructorOptions,
   RouterHistory,
   TrailingSlashOption,
@@ -11,7 +12,7 @@ import {
   RouterProvider,
   stringifySearchWith,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ComponentType, createElement, type ReactNode } from "react";
 import { createRoot, hydrateRoot } from "react-dom/client";
 import { formatErrorDetail } from "../shared/validation.js";
 import type { AppRouteContext } from "./context.js";
@@ -129,6 +130,35 @@ export function createApp<
     >
   >
 > {
+  return createAppRuntime(options);
+}
+
+/** @internal Framework bootstrap with React wrappers outside all CSR providers. */
+export function createFrameworkApp(
+  options: CreateAppOptions<AnyRoute>,
+  rootWrappers: readonly AppRootWrapper[],
+): App<AnyRouter> {
+  return createAppRuntime(options, rootWrappers) as App<AnyRouter>;
+}
+
+type AppRootWrapper = ComponentType<{ children?: ReactNode }>;
+
+function createAppRuntime<
+  TRouteTree extends AnyRoute,
+  TTrailingSlashOption extends TrailingSlashOption = "never",
+  TDefaultStructuralSharingOption extends boolean = false,
+  TRouterHistory extends RouterHistory = RouterHistory,
+  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
+>(
+  options: CreateAppOptions<
+    TRouteTree,
+    TTrailingSlashOption,
+    TDefaultStructuralSharingOption,
+    TRouterHistory,
+    TDehydrated
+  >,
+  rootWrappers: readonly AppRootWrapper[] = [],
+) {
   const {
     routeTree,
     queryClient = new QueryClient(),
@@ -164,10 +194,12 @@ export function createApp<
     const el = resolveAppContainer(container);
     assertAppRenderOptions(renderOptions);
     const generation = ++renderGeneration;
-    const tree = (
+    const tree = rootWrappers.reduceRight<ReactNode>(
+      (children, RootWrapper) =>
+        createElement(RootWrapper, undefined, children),
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     if (renderOptions.hydrate) {
