@@ -7,12 +7,12 @@ import {
   type PagesAppEntryMetadata,
 } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GENERATED_PAGES_APP_BUILD_ENTRY } from "../src/_internal/build/build-entry-conventions.js";
 import { prepareFrameworkBuild } from "../src/_internal/build/commands.js";
-import { createFrameworkHtmlDocument } from "../src/_internal/build/framework-html-document.js";
-import { createClientRuntime } from "../src/_internal/build/framework-runtime.js";
+import { GENERATED_PAGES_APP_BUILD_ENTRY } from "../src/_internal/build/conventions/build-entry-conventions.js";
 import { createConfigRouteGraph } from "../src/_internal/build/graph/config-route.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
+import { createClientRuntime } from "../src/_internal/build/output/framework-runtime.js";
+import { createFrameworkHtmlDocument } from "../src/_internal/build/output/html/framework-html-document.js";
 import { createBuildPlan } from "../src/_internal/build/plan/index.js";
 import { resolveConfig } from "../src/config/index.js";
 

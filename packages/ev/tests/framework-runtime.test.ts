@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   createFrameworkRuntime,
   serializeFrameworkRuntimeExpression,
-} from "../src/_internal/build/framework-runtime.js";
+} from "../src/_internal/build/output/framework-runtime.js";
 
 describe("createFrameworkRuntime", () => {
   it("keeps SPA Pages inside the routing union", () => {

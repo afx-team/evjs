@@ -2,19 +2,12 @@
  * @evjs/shared — runtime types and utilities shared by @evjs/client and @evjs/server.
  */
 
-export { resolveBrowserAssetHref } from "./browser-asset-url.js";
+export { resolveBrowserAssetHref } from "./assets/browser-url.js";
 export {
   BUILD_IDENTIFIER_DESCRIPTION,
   isBuildIdentifier,
-} from "./build-identifier.js";
-export {
-  DEFAULT_ENDPOINT,
-  DEFAULT_ERROR_STATUS,
-  DEFAULT_SERVER_BASE_PATH,
-  getFunctionEndpoint,
-} from "./constants.js";
-export { ServerError, ServerFunctionError } from "./errors.js";
-export type { HttpMethod } from "./http.js";
+} from "./build/identifier.js";
+export type { HttpMethod } from "./http/index.js";
 export {
   APPLICATION_JSON_CONTENT_TYPE,
   formatContentTypeHeaderValue,
@@ -33,13 +26,13 @@ export {
   TEXT_PLAIN_CONTENT_TYPE,
   TEXT_PLAIN_UTF8_CONTENT_TYPE,
   toHttpMethod,
-} from "./http.js";
+} from "./http/index.js";
 export type {
   PageRouteParamNameValidationError,
   PageRouteParamSegmentValidationError,
   PageRouteParamSegmentValidationErrorKind,
   PageSearchParams,
-} from "./page-route-data.js";
+} from "./routing/page-route.js";
 export {
   findBestPageRoute,
   getPageRouteParamNameValidationError,
@@ -51,13 +44,13 @@ export {
   pageRoutePathShapeFromPath,
   pageRoutePathToRegExp,
   parsePageSearch,
-} from "./page-route-data.js";
+} from "./routing/page-route.js";
 export type {
   PathPatternListValidationError,
   PathPatternListValidationOptions,
   PathPatternMatch,
   PathPatternValidationError,
-} from "./path-pattern.js";
+} from "./routing/path-pattern.js";
 export {
   comparePathPatternMatches,
   findBestPathPatternMatch,
@@ -65,12 +58,23 @@ export {
   getPathPatternValidationError,
   isPathPattern,
   pathPatternMatches,
-} from "./path-pattern.js";
+} from "./routing/path-pattern.js";
 export {
   isDotRouteSegment,
   staticRouteSegmentsEqual,
-} from "./route-segment.js";
-export { compareRoutePathsBySpecificity } from "./route-specificity.js";
+} from "./routing/segment.js";
+export type {
+  ServerRouteParamNameValidationError,
+  ServerRouteParamSegmentValidationError,
+  ServerRouteParamSegmentValidationErrorKind,
+} from "./routing/server-route.js";
+export {
+  getServerRouteParamNameValidationError,
+  getServerRouteParamSegmentValidationError,
+  isReservedServerRouteParamName,
+  serverRoutePathShapeFromPath,
+} from "./routing/server-route.js";
+export { compareRoutePathsBySpecificity } from "./routing/specificity.js";
 export type {
   RscFlightClientPageUrlParamError,
   RscFlightClientPageUrlParamOptions,
@@ -79,34 +83,30 @@ export type {
   RscFlightRequestPageUrlResult,
   RscFlightRequestUrl,
   RscFlightUrlBase,
-} from "./rsc-flight-url.js";
+} from "./rsc/flight-url.js";
 export {
   getRscFlightClientPageUrlParam,
   resolveRscFlightRequestPageUrl,
-} from "./rsc-flight-url.js";
-export type { ConcreteRuntimePathSegmentValidationError } from "./runtime-path.js";
+} from "./rsc/flight-url.js";
+export {
+  DEFAULT_ENDPOINT,
+  DEFAULT_ERROR_STATUS,
+  DEFAULT_SERVER_BASE_PATH,
+  getFunctionEndpoint,
+} from "./runtime/constants.js";
+export { ServerError, ServerFunctionError } from "./runtime/errors.js";
+export type { ConcreteRuntimePathSegmentValidationError } from "./runtime/path.js";
 export {
   formatConcreteRuntimePathSegmentValidationError,
   getConcreteRuntimePathSegmentValidationError,
-} from "./runtime-path.js";
+} from "./runtime/path.js";
 export {
   assertServerFunctionExportName,
   assertServerFunctionId,
   getRequestFnId,
   isServerFunctionExportName,
   isServerFunctionId,
-} from "./server-function-id.js";
-export type {
-  ServerRouteParamNameValidationError,
-  ServerRouteParamSegmentValidationError,
-  ServerRouteParamSegmentValidationErrorKind,
-} from "./server-route-data.js";
-export {
-  getServerRouteParamNameValidationError,
-  getServerRouteParamSegmentValidationError,
-  isReservedServerRouteParamName,
-  serverRoutePathShapeFromPath,
-} from "./server-route-data.js";
+} from "./server-functions/id.js";
 export type {
   AbsoluteHttpUrlValidationError,
   HttpUrlOrAbsolutePathnameValidationError,
@@ -115,10 +115,10 @@ export type {
   UrlStringValidationError,
   UrlStringValidationOptions,
   UrlValidationBase,
-} from "./url-validation.js";
+} from "./urls/validation.js";
 export {
   getAbsoluteHttpUrlValidationError,
   getHttpUrlOrAbsolutePathnameValidationError,
   getHttpUrlOrPathValidationError,
   getUrlStringValidationError,
-} from "./url-validation.js";
+} from "./urls/validation.js";

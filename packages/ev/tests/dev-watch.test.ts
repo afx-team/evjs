@@ -14,7 +14,7 @@ import {
   readWatchInputSnapshot,
   resolveInitialDevWatchMode,
   watchFiles,
-} from "../src/_internal/build/dev-watch.js";
+} from "../src/_internal/build/dev/watch.js";
 import { resolveConfig } from "../src/config/index.js";
 
 type WatchCallback = (

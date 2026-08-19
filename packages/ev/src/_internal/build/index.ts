@@ -2,7 +2,20 @@
  * Bundler-agnostic build utilities for the ev framework.
  */
 
-export { resolveBuildOutputPaths } from "./build-output-paths.js";
+export type {
+  RscReferenceAnalysis,
+  TransformRscClientFileOptions,
+} from "./analysis/rsc-refs.js";
+export {
+  detectUseClient,
+  extractRscReferences,
+  transformRscClientFile,
+} from "./analysis/rsc-refs.js";
+export { extractServerFunctionExports } from "./analysis/server-fns.js";
+export {
+  CLIENT_TARGET_MINIMUM,
+  createClientBrowserslistTarget,
+} from "./bundler/client-compatibility.js";
 export {
   type BundlerAdapter,
   type BundlerBuildCapability,
@@ -18,22 +31,8 @@ export {
   preflightBundlerDev,
   resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
-} from "./bundler.js";
-export { assertBundlerEmittedFiles } from "./bundler-output-files.js";
-export {
-  CLIENT_TARGET_MINIMUM,
-  createClientBrowserslistTarget,
-} from "./client-compatibility.js";
-export {
-  type ClientDevMiddlewareCertificateFactory,
-  type ClientDevMiddlewareHttpsConfig,
-  type ClientDevMiddlewareServerHandle,
-  type ClientDevMiddlewareTlsCredentials,
-  reserveClientDevMiddlewareUpstreamPort,
-  resolveClientDevMiddlewareTlsCredentials,
-  type StartClientDevMiddlewareServerOptions,
-  startClientDevMiddlewareServer,
-} from "./client-dev-middleware-server.js";
+} from "./bundler/contracts.js";
+export { assertBundlerEmittedFiles } from "./bundler/output-files.js";
 export {
   type BuildOptions,
   build,
@@ -51,14 +50,50 @@ export {
   type PrepareFrameworkBuildOptions,
   prepareFrameworkBuild,
 } from "./commands.js";
-export type { LoadConfigFileOptions } from "./config-module.js";
-export { loadConfigFile } from "./config-module.js";
+export type { LoadConfigFileOptions } from "./config-loading/config-module.js";
+export { loadConfigFile } from "./config-loading/config-module.js";
+export {
+  type ClientDevMiddlewareCertificateFactory,
+  type ClientDevMiddlewareHttpsConfig,
+  type ClientDevMiddlewareServerHandle,
+  type ClientDevMiddlewareTlsCredentials,
+  reserveClientDevMiddlewareUpstreamPort,
+  resolveClientDevMiddlewareTlsCredentials,
+  type StartClientDevMiddlewareServerOptions,
+  startClientDevMiddlewareServer,
+} from "./dev/client-middleware-server.js";
+export type {
+  DiscoverPageRoutesOptions,
+  PageComponentExportAnalysis,
+  PageComponentExportKind,
+  PageRouteDiscovery,
+  PageRouteDiscoveryDiagnostic,
+} from "./discovery/page-routes.js";
+export {
+  analyzePageComponentExports,
+  discoverPageRoutes,
+} from "./discovery/page-routes.js";
+export type {
+  DiscoverServerConventionsOptions,
+  ServerConventionDiagnostic,
+  ServerConventionDiscovery,
+} from "./discovery/server-conventions.js";
+export {
+  applyRouteScopedMiddlewares,
+  discoverServerConventions,
+} from "./discovery/server-conventions.js";
+export type {
+  DiscoverServerRoutesOptions,
+  ServerRouteDiscovery,
+  ServerRouteDiscoveryDiagnostic,
+} from "./discovery/server-routes.js";
+export { discoverServerRoutes } from "./discovery/server-routes.js";
 export type {
   GeneratedIRImage,
   GeneratedIRImageFile,
   PreparedFrameworkIR,
   PrepareFrameworkIROptions,
-} from "./generated-contributions.js";
+} from "./generated-ir/generated-contributions.js";
 export {
   applyHtmlTagContributions,
   GENERATED_IR_DIR,
@@ -66,7 +101,7 @@ export {
   materializeFrameworkIR,
   prepareFrameworkIR,
   publishFrameworkIR,
-} from "./generated-contributions.js";
+} from "./generated-ir/generated-contributions.js";
 export type {
   CreateCoreGraphOptions,
   Diagnostic,
@@ -74,88 +109,56 @@ export type {
   GraphConfig,
 } from "./graph/index.js";
 export { createCoreGraph } from "./graph/index.js";
-export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
-export { generateHtml, validateHtmlTemplate } from "./html.js";
-export type { BuildHtmlOptions } from "./html-transform.js";
-export { buildHtml } from "./html-transform.js";
-export type { ResolvedBuildOutputPaths } from "./output-path-safety.js";
+export { resolveBuildOutputPaths } from "./output/build-output-paths.js";
+export type { GenerateHtmlOptions, HtmlAsset } from "./output/html/html.js";
+export { generateHtml, validateHtmlTemplate } from "./output/html/html.js";
+export type { BuildHtmlOptions } from "./output/html/html-transform.js";
+export { buildHtml } from "./output/html/html-transform.js";
+export type { ResolvedBuildOutputPaths } from "./output/output-path-safety.js";
 export {
   assertSafeBuildOutputPaths,
   assertSafeBuildOwnedOutputPath,
   assertSafeBundlerCleanOutputPath,
-} from "./output-path-safety.js";
+} from "./output/output-path-safety.js";
 export {
   removeOwnedOutputFile,
   writeOwnedOutputFile,
-} from "./owned-file-output.js";
-export type { GeneratePageRouteTypesOptions } from "./page-route-types.js";
-export { generatePageRouteTypes } from "./page-route-types.js";
-export type {
-  DiscoverPageRoutesOptions,
-  PageComponentExportAnalysis,
-  PageComponentExportKind,
-  PageRouteDiscovery,
-  PageRouteDiscoveryDiagnostic,
-} from "./page-routes.js";
-export {
-  analyzePageComponentExports,
-  discoverPageRoutes,
-} from "./page-routes.js";
-export type {
-  BuildPlanConfig,
-  CreateBuildPlanOptions,
-} from "./plan/index.js";
-export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
-export { createPluginConfigView } from "./plugin-lifecycle.js";
-export type {
-  PluginSettingsRegistry,
-  PluginSettingsResolutionSession,
-  ResolvedPluginSettingsState,
-} from "./plugin-settings.js";
-export {
-  applyPluginSettings,
-  collectPluginSettingsRegistry,
-  createPluginSettingsResolutionSession,
-  resolvePluginSettingsState,
-} from "./plugin-settings.js";
-export type {
-  GeneratePluginTypesOptions,
-  SyncPluginTypesOptions,
-} from "./plugin-types.js";
-export { generatePluginTypes, syncPluginTypes } from "./plugin-types.js";
+} from "./output/owned-file-output.js";
 export {
   assertPortableRelativeArtifactPath,
   assertPortableRelativeBrowserArtifactPath,
   canonicalPortableArtifactPathKey,
   portableArtifactPathsConflict,
-} from "./portable-artifact-path.js";
+} from "./output/portable-artifact-path.js";
 export type {
-  RscReferenceAnalysis,
-  TransformRscClientFileOptions,
-} from "./rsc-refs.js";
+  BuildPlanConfig,
+  CreateBuildPlanOptions,
+} from "./plan/index.js";
+export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
+export { createPluginConfigView } from "./plugins/lifecycle.js";
+export type {
+  PluginSettingsRegistry,
+  PluginSettingsResolutionSession,
+  ResolvedPluginSettingsState,
+} from "./plugins/settings.js";
 export {
-  detectUseClient,
-  extractRscReferences,
-  transformRscClientFile,
-} from "./rsc-refs.js";
-export type {
-  DiscoverServerConventionsOptions,
-  ServerConventionDiagnostic,
-  ServerConventionDiscovery,
-} from "./server-conventions.js";
-export {
-  applyRouteScopedMiddlewares,
-  discoverServerConventions,
-} from "./server-conventions.js";
-export { extractServerFunctionExports } from "./server-fns.js";
-export type {
-  DiscoverServerRoutesOptions,
-  ServerRouteDiscovery,
-  ServerRouteDiscoveryDiagnostic,
-} from "./server-routes.js";
-export { discoverServerRoutes } from "./server-routes.js";
+  applyPluginSettings,
+  collectPluginSettingsRegistry,
+  createPluginSettingsResolutionSession,
+  resolvePluginSettingsState,
+} from "./plugins/settings.js";
 export type { TransformResult } from "./transforms/index.js";
 export { transformServerFile } from "./transforms/index.js";
+export type { GeneratePageRouteTypesOptions } from "./typegen/page-route-types.js";
+export { generatePageRouteTypes } from "./typegen/page-route-types.js";
+export type {
+  GeneratePluginTypesOptions,
+  SyncPluginTypesOptions,
+} from "./typegen/plugin-types.js";
+export {
+  generatePluginTypes,
+  syncPluginTypes,
+} from "./typegen/plugin-types.js";
 export type {
   RouteModuleInfo,
   TransformOptions,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveBrowserAssetHref } from "../src/browser-asset-url.js";
+import { resolveBrowserAssetHref } from "../src/assets/browser-url.js";
 
 describe("resolveBrowserAssetHref", () => {
   it.each([

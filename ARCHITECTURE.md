@@ -66,6 +66,31 @@ graphs, chunks, assets, stats, and HMR; they do not rediscover framework
 semantics. Deployment adapters consume `BuildOutput` or its canonical
 `DeploymentMetadata` projection; they do not infer routing from bundler stats.
 
+## Repository Source Layout
+
+Public package roots, documented subpaths, and executable entry files are
+stable façades. They curate exports or delegate startup; implementation lives
+in capability-owned leaf modules. Code inside one domain imports its leaf
+modules directly instead of routing through that domain's façade, which keeps
+ownership visible and avoids barrel-induced cycles.
+
+| Package | Implementation domains |
+| --- | --- |
+| `@evjs/ev` | Public authoring domains under `config`, `plugin`, `route`, `navigation`, `query`, `server-context`, `transport`, and `deployment`; generated compatibility entries under `_internal/generated`; framework build ownership under `_internal/build`. |
+| `@evjs/shared` | `assets`, `build`, `http`, `routing`, `rsc`, `runtime`, `serialization`, `server-functions`, and `urls`; control-plane contracts are further divided into `manifest/graph`, `manifest/page`, and `manifest/output`. |
+| `@evjs/client` | `standalone`, framework `page` and `shell`, `rsc`, `server-functions`, and client-only shared support. |
+| `@evjs/server` | Application assembly, framework rendering, middleware, request context, routes, runtimes, server functions, and server-only shared support. |
+| Bundler adapters | Adapter orchestration plus focused `config`, `development`, `execution`, and `output` modules; plugin-facing configuration helpers live outside adapter internals. |
+| `@evjs/cli` | Programmatic framework commands, config loading, user commands, and executable program assembly. |
+| `@evjs/create-app` | Scaffolding implementation behind the stable package and binary entries. |
+| `@evjs/plugin-qiankun` | Plugin-definition and browser-runtime domains behind the package's two public exports. |
+
+Package test suites stay under each package's `tests` root and name the
+capability they verify. End-to-end cases stay under `e2e/cases`. Example source
+is organized by the Page/API conventions themselves; moving those anchors into
+generic implementation folders would change framework behavior rather than
+improve repository ownership.
+
 ## Public Imports
 
 The `@evjs/ev` root is the minimal config-authoring entry. Other responsibilities
@@ -86,6 +111,26 @@ Standalone applications may use `@evjs/client` and `@evjs/server` directly.
 Programmatic `createApp()`, client route trees, and server `createRoute()`
 declarations are runtime primitives; framework convention discovery does not
 scan them.
+
+## Internal Build Layout
+
+`packages/ev/src/_internal/build` is grouped by capability instead of build
+phase. Its root contains only the curated `index.ts`, the command façade, and
+the small shared `types.ts` / `utils.ts` modules.
+
+| Domain | Responsibility |
+| --- | --- |
+| `analysis`, `discovery`, `conventions` | Parse framework semantics, discover positive anchors, and own filesystem naming rules. |
+| `graph`, `plan` | Project discovered semantics into `CoreGraph` and `BuildPlan`; each `index.ts` is a thin façade over implementation and contract modules. |
+| `generated-ir`, `typegen` | Materialize `.ev` inputs and authored-source declaration files. |
+| `bundler`, `plugins` | Define adapter contracts and orchestrate plugin settings and lifecycle state. |
+| `output` | Validate, link, transform, and transactionally publish framework-owned output, including HTML. |
+| `config-loading`, `operations`, `dev` | Load observed configuration, coordinate commands, and own development runtime/watch state. |
+| `transforms` | Rewrite client and server modules at bundler boundaries. |
+
+Domain implementations import focused leaf modules. They do not import a
+domain's broad `index.ts` façade internally; façades exist for stable consumers
+and should not become implementation owners.
 
 ## Build Flow
 

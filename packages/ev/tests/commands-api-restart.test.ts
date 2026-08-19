@@ -9,7 +9,7 @@ import type {
   BundlerBuildFacts,
   BundlerBuildFactsDisposition,
   BundlerDevController,
-} from "../src/_internal/build/bundler.js";
+} from "../src/_internal/build/bundler/contracts.js";
 import { dev } from "../src/_internal/build/commands.js";
 
 const API_READY_MARKER = "__EVJS_API_READY__";

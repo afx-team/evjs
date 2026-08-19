@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PageMetadata } from "@evjs/shared/manifest";
 import { expect, type Page } from "@playwright/test";
-import { createRscPageBuildEntryName } from "../../packages/ev/src/_internal/build/build-entry-conventions.js";
+import { createRscPageBuildEntryName } from "../../packages/ev/src/_internal/build/conventions/build-entry-conventions.js";
 import { createExampleTest } from "../fixtures";
 
 const exampleDir = path.resolve(

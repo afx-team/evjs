@@ -25,7 +25,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf esm && tsc",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

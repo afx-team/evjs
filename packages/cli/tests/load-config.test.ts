@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadConfig, resolveConfigPath } from "../src/load-config.js";
+import { loadConfig, resolveConfigPath } from "../src/config/load.js";
 
 const tempDirs: string[] = [];
 

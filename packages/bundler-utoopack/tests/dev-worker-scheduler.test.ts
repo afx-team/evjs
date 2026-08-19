@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { delegateUtoopackWorkerSchedulerToHost } from "../src/adapter/dev-worker-scheduler.js";
+import { delegateUtoopackWorkerSchedulerToHost } from "../src/adapter/development/dev-worker-scheduler.js";
 
 const require = createRequire(import.meta.url);
 

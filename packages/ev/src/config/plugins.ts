@@ -10,7 +10,7 @@ import type {
   DefinedPluginPageDefaultable,
   DefinedPluginPageInput,
   DefinitePluginId,
-} from "../plugin/defined.js";
+} from "../plugin/definition.js";
 import type { StaticConfigCompatible, StaticConfigValue } from "./static.js";
 
 declare const installedPluginRegistry: unique symbol;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILD_IDENTIFIER_DESCRIPTION,
   isBuildIdentifier,
-} from "../src/build-identifier.js";
+} from "../src/build/identifier.js";
 
 describe("build identifier helpers", () => {
   it("accepts package-safe build identifiers", () => {

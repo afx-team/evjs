@@ -5,13 +5,13 @@ import vm from "node:vm";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { assertFrameworkManifestShape } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
-import { createBuildResult } from "../src/_internal/build/build-result.js";
-import { createRouteIndexDocumentOutput } from "../src/_internal/build/page-document-output.js";
+import { createRouteIndexDocumentOutput } from "../src/_internal/build/conventions/page-document-output.js";
+import { createBuildResult } from "../src/_internal/build/output/build-result.js";
 import {
   createLatePluginContext,
   runAfterBuildHooks,
   runTransformOutputHooks,
-} from "../src/_internal/build/plugin-lifecycle.js";
+} from "../src/_internal/build/plugins/lifecycle.js";
 import {
   createDeploymentArtifact,
   createEdgeDeploymentFiles,

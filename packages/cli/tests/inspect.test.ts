@@ -5,12 +5,12 @@ import type { BundlerAdapter } from "@evjs/ev/_internal/build";
 import { inspectFrameworkBuild } from "@evjs/ev/_internal/build";
 import type { Plugin } from "@evjs/ev/plugin";
 import { afterEach, describe, expect, it } from "vitest";
+import { runInspectCommand } from "../src/commands/inspect/command.js";
 import {
   formatInspectJson,
   formatInspectText,
   hasInspectErrors,
-} from "../src/inspect.js";
-import { runInspectCommand } from "../src/inspect-command.js";
+} from "../src/commands/inspect/report.js";
 
 const tempDirs: string[] = [];
 

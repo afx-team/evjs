@@ -9,7 +9,7 @@ import {
   removeOwnedOutputFile,
   writeOwnedOutputFile,
 } from "../src/_internal/build/index.js";
-import { removeOwnedOutputFileSync } from "../src/_internal/build/owned-file-output.js";
+import { removeOwnedOutputFileSync } from "../src/_internal/build/output/owned-file-output.js";
 
 const tempDirs: string[] = [];
 

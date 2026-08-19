@@ -24,21 +24,21 @@ import {
 import { Volume } from "memfs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Compiler } from "webpack";
-import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
-import { linkAndEmitBuildOutput } from "../../ev/src/_internal/build/framework-output.js";
+import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/discovery/convention-config.js";
+import { linkAndEmitBuildOutput } from "../../ev/src/_internal/build/output/framework-output.js";
 import {
   createClientRuntime,
   createFrameworkRuntime,
   type FrameworkRuntimeOutput,
-} from "../../ev/src/_internal/build/framework-runtime.js";
-import type { WebpackConfigs } from "../src/adapter/create-config.js";
+} from "../../ev/src/_internal/build/output/framework-runtime.js";
+import type { WebpackConfigs } from "../src/adapter/config/create-config.js";
 import { __testing as webpackAdapterTesting } from "../src/adapter/index.js";
-import { __testing as serverPublicAssetTesting } from "../src/adapter/server-public-assets.js";
-import { webpackAdapter } from "../src/index.js";
 import {
   WebpackManifestGenerator,
   type WebpackStatsLike,
-} from "../src/manifest-generator.js";
+} from "../src/adapter/output/manifest-generator.js";
+import { __testing as serverPublicAssetTesting } from "../src/adapter/output/server-public-assets.js";
+import { webpackAdapter } from "../src/index.js";
 
 const tempDirs: string[] = [];
 const WEBPACK_BUILD_TEST_TIMEOUT = 20_000;

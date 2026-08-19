@@ -6,7 +6,7 @@ import {
 } from "@evjs/ev/plugin";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { WebpackConfigs } from "../src/index.js";
-import { webpack } from "../src/plugin-helper.js";
+import { webpack } from "../src/plugin/configure.js";
 
 describe("webpack plugin helper", () => {
   function createCtx(

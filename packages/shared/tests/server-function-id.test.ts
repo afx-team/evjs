@@ -5,7 +5,7 @@ import {
   getRequestFnId,
   isServerFunctionExportName,
   isServerFunctionId,
-} from "../src/server-function-id.js";
+} from "../src/server-functions/id.js";
 
 describe("server function ID helpers", () => {
   it("accepts non-empty IDs without surrounding whitespace", () => {

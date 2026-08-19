@@ -1,4 +1,4 @@
-import type { PprRegionCache, PprRegionCacheEntry } from "./framework.js";
+import type { PprRegionCache, PprRegionCacheEntry } from "./runtime.js";
 
 export const DEFAULT_PPR_REGION_CACHE_MAX_ENTRIES = 256;
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ensureUtoopackProcessWorkerScheduler,
   markUtoopackProcessForBuild,
-} from "../src/adapter/dev-worker-scheduler.js";
+} from "../src/adapter/development/dev-worker-scheduler.js";
 
 describe("Utoopack process mode", () => {
   it("rejects dev after the process has hosted build", async () => {

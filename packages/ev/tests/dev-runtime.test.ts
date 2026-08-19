@@ -15,7 +15,7 @@ import {
   reserveDevPorts,
   stopApiProcess,
   writeDevDistLock,
-} from "../src/_internal/build/dev-runtime.js";
+} from "../src/_internal/build/dev/runtime.js";
 
 const cleanups: Array<() => void | Promise<void>> = [];
 

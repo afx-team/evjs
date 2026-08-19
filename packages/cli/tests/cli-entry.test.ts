@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CliProgramDependencies } from "../src/cli-program.js";
+import type { CliProgramDependencies } from "../src/program/command-program.js";
 
 const entryMocks = vi.hoisted(() => ({
   build: vi.fn(async () => {}),
@@ -8,13 +8,13 @@ const entryMocks = vi.hoisted(() => ({
   prepare: vi.fn(async () => {}),
 }));
 
-vi.mock("../src/index.js", () => ({
+vi.mock("../src/api/framework-commands.js", () => ({
   build: entryMocks.build,
   dev: entryMocks.dev,
   prepare: entryMocks.prepare,
 }));
 
-vi.mock("../src/load-config.js", () => ({
+vi.mock("../src/config/load.js", () => ({
   loadConfig: entryMocks.loadConfig,
 }));
 

@@ -8,7 +8,7 @@ import {
   preflightBundlerDev,
   resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
-} from "../src/_internal/build/bundler.js";
+} from "../src/_internal/build/bundler/contracts.js";
 
 const noCapabilities: BundlerCapabilities = {
   build: { server: false, rsc: false, ppr: false },

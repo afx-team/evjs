@@ -7,7 +7,7 @@ import type {
   BundlerAdapter,
   BundlerDevContext,
   BundlerDevController,
-} from "../src/_internal/build/bundler.js";
+} from "../src/_internal/build/bundler/contracts.js";
 import { type DevOptions, dev } from "../src/_internal/build/commands.js";
 import type { Config } from "../src/config/index.js";
 import type { Plugin, PluginCliShortcut } from "../src/plugin/index.js";

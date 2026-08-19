@@ -5,12 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { startUtoopackDevWorker } from "../src/adapter/dev-worker-client.js";
+import { startUtoopackDevWorker } from "../src/adapter/development/dev-worker-client.js";
 import {
   ensureUtoopackProcessWorkerScheduler,
   markUtoopackProcessForBuild,
   __testing as schedulerTesting,
-} from "../src/adapter/dev-worker-scheduler.js";
+} from "../src/adapter/development/dev-worker-scheduler.js";
 
 const fixtureUrl = new URL(
   "./fixtures/dev-worker-native-session.mjs",

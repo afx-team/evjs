@@ -1,11 +1,11 @@
 import path from "node:path";
-import { writeOwnedOutputFile } from "../_internal/build/owned-file-output.js";
+import { writeOwnedOutputFile } from "../_internal/build/output/owned-file-output.js";
 import {
   assertPortableArtifactFileName,
   assertPortableRelativeArtifactPath,
   canonicalPortableArtifactPathKey,
   portableArtifactPathsConflict,
-} from "../_internal/build/portable-artifact-path.js";
+} from "../_internal/build/output/portable-artifact-path.js";
 
 export interface NamedDeploymentFile {
   field: string;

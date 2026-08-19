@@ -7,7 +7,7 @@ import {
   reserveClientDevMiddlewareUpstreamPort,
   resolveClientDevMiddlewareTlsCredentials,
   startClientDevMiddlewareServer,
-} from "../src/_internal/build/client-dev-middleware-server.js";
+} from "../src/_internal/build/dev/client-middleware-server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
