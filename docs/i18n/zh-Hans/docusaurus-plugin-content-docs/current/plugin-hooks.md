@@ -32,6 +32,7 @@ flowchart LR
 | 钩子 | 用途 |
 | --- | --- |
 | `configureBundler(config, ctx)` | 适配器专属 Loader、解析、优化或其他底层设置 |
+| `clientDevMiddleware({ signal })` | 在静态资源和 HTML fallback 前拦截客户端开发请求 |
 | `devServerReady({ origin, signal })` | 客户端监听可用后连接开发工具 |
 | `beforeBuild(ctx)` | 在输出完成前，启动依赖最新打包结果的工作 |
 | `transformOutput(output, ctx)` | 调整资源组或增加部署元信息 |
@@ -103,6 +104,27 @@ setup() {
 - 此钩子仅在开发中运行，不代表第一份应用产物或服务端运行时已经就绪。
 
 依赖产物的工作请放在 `afterBuild()`。
+
+## 客户端开发中间件
+
+`clientDevMiddleware()` 按稳定的插件顺序，在客户端开发服务器 fallback 前注册 Node 请求/响应中间件：
+
+```ts
+setup() {
+  return {
+    clientDevMiddleware({ signal: sessionSignal }) {
+      return async (request, response, next, { origin, signal }) => {
+        if (!request.url?.startsWith("/__plugin/")) return next();
+        if (signal.aborted || sessionSignal.aborted) return;
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ origin }));
+      };
+    },
+  };
+}
+```
+
+该钩子可以返回一个中间件、数组或 `undefined`。需要在下游处理后继续工作时应 `await next()`；向 `next()` 传错或直接抛错会生成适配器诊断响应。请求上下文提供真实公共 `origin` 和不可变开发 Session 的中止信号。WebSocket upgrade 会绕过插件中间件并透明转发给构建器。内置 Utoopack 和 Webpack 适配器均支持此能力；选择未声明 `dev.clientMiddleware` 的适配器会在监听前失败。
 
 ## 构建与重新构建
 

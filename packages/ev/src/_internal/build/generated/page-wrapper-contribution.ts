@@ -13,7 +13,7 @@ import type {
 export function applyPageWrapperContributions(
   plan: BuildPlan,
   graph: CoreGraph,
-  generated: GeneratedFrameworkPlan,
+  generated: Pick<GeneratedFrameworkPlan, "slots">,
 ): void {
   const contributions = generated.slots.filter(
     (item): item is PageWrapperSlotPlanItem => item.slot === "page.wrapper",

@@ -38,6 +38,12 @@ export function createPagesAppEntryMainSource(
 ): string[] {
   const imports = [
     `import { createPagesApp, startPagesApp } from "@evjs/ev/_internal/client";`,
+    ...(metadata.wrappers ?? []).map(
+      (wrapper, index) =>
+        `import * as applicationWrapperModule${index} from ${JSON.stringify(
+          importFile(wrapper),
+        )};`,
+    ),
     metadata.rootModule
       ? `import * as rootModule from ${JSON.stringify(
           importFile(metadata.rootModule),
@@ -114,6 +120,11 @@ export function createPagesAppEntryMainSource(
     "",
     "export const pagesApp = createPagesApp({",
     metadata.rootModule ? "  rootModule," : "",
+    metadata.wrappers && metadata.wrappers.length > 0
+      ? `  wrappers: [${metadata.wrappers
+          .map((_, index) => `applicationWrapperModule${index}`)
+          .join(", ")}],`
+      : "",
     `  routes: [${routeDefinitions.join(", ")}],`,
     "});",
     "const { app } = pagesApp;",

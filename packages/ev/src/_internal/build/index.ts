@@ -15,6 +15,7 @@ export {
   type BundlerDevContext,
   type BundlerDevController,
   type BundlerEmittedFiles,
+  preflightBundlerDev,
   resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
 } from "./bundler.js";
@@ -23,6 +24,16 @@ export {
   CLIENT_TARGET_MINIMUM,
   createClientBrowserslistTarget,
 } from "./client-compatibility.js";
+export {
+  type ClientDevMiddlewareCertificateFactory,
+  type ClientDevMiddlewareHttpsConfig,
+  type ClientDevMiddlewareServerHandle,
+  type ClientDevMiddlewareTlsCredentials,
+  reserveClientDevMiddlewareUpstreamPort,
+  resolveClientDevMiddlewareTlsCredentials,
+  type StartClientDevMiddlewareServerOptions,
+  startClientDevMiddlewareServer,
+} from "./client-dev-middleware-server.js";
 export {
   type BuildOptions,
   build,

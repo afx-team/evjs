@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  collectClientDevMiddlewares,
   collectPluginCliShortcuts,
   collectPluginHooks,
   createLatePluginContext,
@@ -648,6 +649,74 @@ describe("runDevServerReadyHooks", () => {
         context,
       ),
     ).rejects.toThrow('Use "devServerReady" instead');
+  });
+});
+
+describe("collectClientDevMiddlewares", () => {
+  it("flattens middleware in plugin order with a frozen session context", async () => {
+    const abortController = new AbortController();
+    const events: string[] = [];
+    const firstMiddleware = vi.fn();
+    const secondMiddleware = vi.fn();
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    const middlewares = await collectClientDevMiddlewares(
+      [
+        {
+          clientDevMiddleware(ctx) {
+            events.push("first");
+            expect(ctx.signal).toBe(abortController.signal);
+            expect(Object.isFrozen(ctx)).toBe(true);
+            return [firstMiddleware, secondMiddleware];
+          },
+        },
+        {
+          async clientDevMiddleware() {
+            events.push("second");
+            return () => {};
+          },
+        },
+      ],
+      context,
+      abortController.signal,
+    );
+
+    expect(events).toEqual(["first", "second"]);
+    expect(middlewares).toHaveLength(3);
+    expect(middlewares.slice(0, 2)).toEqual([
+      firstMiddleware,
+      secondMiddleware,
+    ]);
+  });
+
+  it("rejects invalid middleware contributions", async () => {
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await expect(
+      collectClientDevMiddlewares(
+        [
+          {
+            clientDevMiddleware: (() => ["invalid"]) as never,
+          },
+        ],
+        context,
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(
+      "clientDevMiddleware hook must return a middleware function",
+    );
   });
 });
 

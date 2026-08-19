@@ -1653,6 +1653,140 @@ describe("prepareFrameworkBuild", () => {
     }
   });
 
+  it("projects Application wrappers outside the generated CSR root", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      id: "application-wrappers",
+      emitIR(ctx) {
+        const first = ctx.emit.module({
+          id: "first-application-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function First({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        const second = ctx.emit.module({
+          id: "second-application-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function Second({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("application.wrapper").add({
+          id: "first",
+          module: first,
+          target: { kind: "application", applicationId: "default" },
+        });
+        ctx.slot("application.wrapper").add({ id: "second", module: second });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const first = manifest.generated?.modules.find(
+        (module) => module.id === "first-application-wrapper",
+      );
+      const second = manifest.generated?.modules.find(
+        (module) => module.id === "second-application-wrapper",
+      );
+      const main = manifest.entries.find((entry) => entry.name === "main");
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/main.ts"),
+        "utf-8",
+      );
+
+      expect(
+        main?.metadata?.type === "pages-app"
+          ? main.metadata.wrappers
+          : undefined,
+      ).toEqual([second?.file, first?.file]);
+      expect(source).toContain(
+        "wrappers: [applicationWrapperModule0, applicationWrapperModule1]",
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("projects Application wrappers into plugin-owned entry facades", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      id: "wrapped-entry-facade",
+      emitIR(ctx) {
+        const entry = ctx.framework.getApplicationEntry();
+        if (!entry) throw new Error("missing Application entry");
+        const boundary = ctx.emit.module({
+          id: "boundary",
+          scope: { kind: "application" },
+          source:
+            "export default function Boundary({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("application.wrapper").add({
+          id: "boundary-slot",
+          module: boundary,
+        });
+        const original = ctx.emit.entryFacade({
+          id: "original-entry",
+          entry,
+          autoStart: false,
+        });
+        ctx.slot("client.entry").add({
+          id: "entry-replacement",
+          module: original,
+          position: "before-main",
+          mode: "replace",
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/plugins/wrapped-entry-facade/original-entry.ts"),
+        "utf-8",
+      );
+      expect(source).toContain(
+        'import * as applicationWrapperModule0 from "./boundary";',
+      );
+      expect(source).toContain("wrappers: [applicationWrapperModule0]");
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
   it("projects Page wrappers through MPA client and server Page entries", async () => {
     const cwd = await createProject();
     await writeFile(

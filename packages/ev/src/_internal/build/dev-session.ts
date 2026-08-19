@@ -8,7 +8,7 @@ import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type { PluginSetupContext } from "../../plugin/index.js";
 import { createBuildResult } from "./build-result.js";
 import type { BundlerAdapter, BundlerDevController } from "./bundler.js";
-import { preflightBundlerBuild } from "./bundler.js";
+import { preflightBundlerBuild, preflightBundlerDev } from "./bundler.js";
 import { DevApiProcessController } from "./dev-api-process.js";
 import {
   API_READY_MARKER,
@@ -29,6 +29,7 @@ import {
   serializeFrameworkRuntimeExpression,
 } from "./framework-runtime.js";
 import {
+  collectClientDevMiddlewares,
   collectPluginHooks,
   rethrowAfterCleanup,
   runAfterBuildHooks,
@@ -248,6 +249,14 @@ export async function startDevSession<TBundlerCfg>(
 
   try {
     preflightBundlerBuild(options.bundler, options.plan);
+    const clientMiddlewares = await collectClientDevMiddlewares(
+      hooks,
+      pluginContext,
+      abortController.signal,
+    );
+    preflightBundlerDev(options.bundler, {
+      clientMiddleware: clientMiddlewares.length > 0,
+    });
     releaseDistLock = await writeDevDistLock(options.cwd, options.plan.distDir);
     unregisterDistExitCleanup = options.registerExitCleanup(() =>
       releaseDistLock?.sync(),
@@ -259,6 +268,7 @@ export async function startDevSession<TBundlerCfg>(
       hooks,
       plan: options.plan,
       signal: abortController.signal,
+      clientMiddlewares,
       addWatchFile(file) {
         if (closing) return;
         options.registerWatchFile(path.resolve(options.cwd, file));

@@ -12,6 +12,8 @@ import { PLUGIN_HOOK_NAMES } from "../../plugin/hook-names.js";
 import type {
   BeforeBuildContext,
   BuildResult,
+  ClientDevMiddleware,
+  ClientDevMiddlewareSetupContext,
   CliFlags,
   DevServerReadyContext,
   Plugin,
@@ -533,6 +535,34 @@ export async function runDevServerReadyHooks<TBundlerCfg>(
     }) as DevServerReadyContext<TBundlerCfg>;
     await hook.devServerReady(readyContext);
   }
+}
+
+export async function collectClientDevMiddlewares<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  ctx: PluginSetupContext<TBundlerCfg>,
+  signal: AbortSignal,
+): Promise<ClientDevMiddleware[]> {
+  const middlewares: ClientDevMiddleware[] = [];
+  for (const hook of hooks) {
+    if (signal.aborted) return middlewares;
+    if (!hook.clientDevMiddleware) continue;
+    const middlewareContext = Object.freeze({
+      ...createLatePluginContext(ctx),
+      signal,
+    }) as ClientDevMiddlewareSetupContext<TBundlerCfg>;
+    const value = await hook.clientDevMiddleware(middlewareContext);
+    if (value === undefined) continue;
+    const contributions = Array.isArray(value) ? value : [value];
+    for (const middleware of contributions) {
+      if (typeof middleware !== "function") {
+        throw new Error(
+          "[evjs] clientDevMiddleware hook must return a middleware function, an array of middleware functions, or undefined.",
+        );
+      }
+      middlewares.push(middleware);
+    }
+  }
+  return middlewares;
 }
 
 export async function runTransformOutputHooks<TBundlerCfg>(

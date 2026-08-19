@@ -121,6 +121,33 @@ For a generated SPA application entry, `autoStart: false` exports the app and
 `start(container)` without mounting automatically. The replacing entry becomes
 responsible for the first start.
 
+## Wrap the CSR Application root
+
+Use `application.wrapper` for a client-only React component that must surround
+the complete CSR Application, including routes that opt out of the root layout:
+
+```ts
+emitIR(ctx) {
+  const boundary = ctx.emit.module({
+    id: "root-boundary",
+    scope: { kind: "application" },
+    extension: ".tsx",
+    source:
+      "export default function RootBoundary({ children }) { return children; }",
+  });
+
+  ctx.slot("application.wrapper").add({
+    id: "root-boundary",
+    module: boundary,
+    target: { kind: "application", applicationId: "default" },
+  });
+}
+```
+
+Omit `target` to wrap every generated CSR Application. Later contributions are
+outer wrappers. This slot intentionally has no SSR projection; use
+`page.wrapper` when behavior must exist on client and server pages.
+
 ## Wrap page components
 
 Use `page.wrapper` for React behavior that surrounds pages in client, server,
@@ -242,6 +269,7 @@ fails generation instead of becoming a no-op.
 | --- | --- |
 | `client.entry` | Import into or replace client entries |
 | `server.entry` | Import into or replace an existing page server entry |
+| `application.wrapper` | Wrap the complete client CSR Application root |
 | `page.wrapper` | Wrap page components across client/server rendering |
 | `server.request.middleware` | Add plugin-owned server request middleware |
 | `html.tag` | Add structured document tags |

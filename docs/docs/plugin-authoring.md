@@ -293,6 +293,7 @@ Required Application options stay required in either available factory form.
 | Declare interactive dev CLI keys and actions | `cliShortcuts()` |
 | Allocate shared state | `setup()` |
 | Run build lifecycle behavior | Hooks returned by `setup()` |
+| Intercept client development requests before fallback | `clientDevMiddleware()` |
 | Consume the actual client origin after the dev listener starts | `devServerReady()` |
 | Generate modules or attach structured behavior | `emitIR()` or `emitPageIR()` |
 | Compile a custom file type or tune optimization | `configureBundler()` |

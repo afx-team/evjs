@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { FrameworkRuntime } from "@evjs/server";
 import type {
   AppRouteTarget,
@@ -536,6 +537,7 @@ export interface FrameworkApplicationEntryMetadata {
   readonly routes: readonly FrameworkPageAppRouteView[];
   readonly mount: string;
   readonly rootModule?: string;
+  readonly wrappers?: readonly string[];
 }
 
 export interface FrameworkPageAppRouteView {
@@ -623,17 +625,31 @@ export type FrameworkSlotInput<K extends FrameworkSlotName> =
     ? ClientEntryContribution
     : K extends "server.entry"
       ? ServerEntryContribution
-      : K extends "page.wrapper"
-        ? PageWrapperContribution
-        : K extends "server.request.middleware"
-          ? ServerRequestMiddlewareContribution
-          : K extends "html.tag"
-            ? HtmlTagContribution
-            : K extends "resolve.alias"
-              ? ResolveAliasContribution
-              : K extends "resolve.external"
-                ? ResolveExternalContribution
-                : never;
+      : K extends "application.wrapper"
+        ? ApplicationWrapperContribution
+        : K extends "page.wrapper"
+          ? PageWrapperContribution
+          : K extends "server.request.middleware"
+            ? ServerRequestMiddlewareContribution
+            : K extends "html.tag"
+              ? HtmlTagContribution
+              : K extends "resolve.alias"
+                ? ResolveAliasContribution
+                : K extends "resolve.external"
+                  ? ResolveExternalContribution
+                  : never;
+
+/**
+ * Wraps one generated client Application root with a React component module.
+ *
+ * The module must default-export a component that accepts `children`.
+ */
+export interface ApplicationWrapperContribution {
+  id: string;
+  module: GeneratedModuleRef | string;
+  /** Omit to wrap every generated client Application. */
+  target?: { kind: "application"; applicationId?: string };
+}
 
 export interface ClientEntryContribution {
   id: string;
@@ -735,6 +751,33 @@ export interface DevServerReadyContext<TBundlerCfg = unknown>
   readonly signal: AbortSignal;
 }
 
+/** Context supplied while a plugin registers client development middleware. */
+export interface ClientDevMiddlewareSetupContext<TBundlerCfg = unknown>
+  extends PluginBaseContext<TBundlerCfg> {
+  readonly mode: "development";
+  /** Aborted when the owning immutable development Session starts closing. */
+  readonly signal: AbortSignal;
+}
+
+/** Per-request context supplied by the selected bundler adapter. */
+export interface ClientDevRequestContext {
+  /** Actual public client development origin. */
+  readonly origin: string;
+  /** Aborted when the owning immutable development Session starts closing. */
+  readonly signal: AbortSignal;
+}
+
+/** Continue to the next plugin middleware or the adapter's own dev server. */
+export type ClientDevMiddlewareNext = (error?: unknown) => Promise<void>;
+
+/** Node-compatible client development middleware. */
+export type ClientDevMiddleware = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  next: ClientDevMiddlewareNext,
+  context: ClientDevRequestContext,
+) => void | Promise<void>;
+
 export interface TransformOutputContext<TBundlerCfg = unknown>
   extends PluginBaseContext<TBundlerCfg> {}
 
@@ -752,6 +795,16 @@ type DevServerReadyHook<TBundlerCfg> = <
 >(
   ctx: DevServerReadyContext<TActualBundlerCfg>,
 ) => void | Promise<void>;
+
+type ClientDevMiddlewareHook<TBundlerCfg> = <
+  TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
+>(
+  ctx: ClientDevMiddlewareSetupContext<TActualBundlerCfg>,
+) =>
+  | ClientDevMiddleware
+  | readonly ClientDevMiddleware[]
+  | undefined
+  | Promise<ClientDevMiddleware | readonly ClientDevMiddleware[] | undefined>;
 
 type TransformOutputHook<TBundlerCfg> = <
   TActualBundlerCfg extends TBundlerCfg = TBundlerCfg,
@@ -797,6 +850,13 @@ export interface PluginHooks<TBundlerCfg = unknown> {
    * adapter or pass a concrete config type for adapter-specific changes.
    */
   configureBundler?: ConfigureBundlerHook<TBundlerCfg>;
+
+  /**
+   * Register Node request/response middleware in plugin order before the
+   * client development server's HTML fallback. The selected adapter must
+   * declare `dev.clientMiddleware` support or startup fails before listening.
+   */
+  clientDevMiddleware?: ClientDevMiddlewareHook<TBundlerCfg>;
 
   /**
    * Called once after this immutable development Session's client server is

@@ -240,6 +240,8 @@ export interface PagesAppEntryMetadata {
   routes: PagesAppRouteNode[];
   mount: string;
   rootModule?: string;
+  /** Application-root React wrappers, ordered outer-to-inner. */
+  wrappers?: string[];
 }
 
 /** Route input consumed only by the generated framework SPA bootstrap. */
@@ -740,6 +742,7 @@ export type GeneratedScope =
 export type FrameworkSlotName =
   | "client.entry"
   | "server.entry"
+  | "application.wrapper"
   | "page.wrapper"
   | "server.request.middleware"
   | "html.tag"
@@ -814,6 +817,7 @@ export interface GeneratedImportEdgePlan {
 export type FrameworkSlotPlanItem =
   | ClientEntrySlotPlanItem
   | ServerEntrySlotPlanItem
+  | ApplicationWrapperSlotPlanItem
   | PageWrapperSlotPlanItem
   | ServerRequestMiddlewareSlotPlanItem
   | HtmlTagSlotPlanItem
@@ -841,6 +845,13 @@ export interface ServerEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   position: EntryContributionPosition;
   mode: "import" | "replace";
   target: { kind: "page"; pageId: string };
+}
+
+export interface ApplicationWrapperSlotPlanItem
+  extends FrameworkSlotPlanItemBase {
+  slot: "application.wrapper";
+  module: string;
+  target?: { kind: "application"; applicationId?: string };
 }
 
 export interface PageWrapperSlotPlanItem extends FrameworkSlotPlanItemBase {

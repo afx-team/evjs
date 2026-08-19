@@ -4,7 +4,7 @@ import {
   assertServerRelativeArtifactPath,
 } from "@evjs/shared/manifest";
 import type { ResolvedFrameworkConfig } from "../../config/index.js";
-import type { PluginHooks } from "../../plugin/index.js";
+import type { ClientDevMiddleware, PluginHooks } from "../../plugin/index.js";
 
 export interface BundlerEmittedFiles {
   client?: readonly string[];
@@ -194,6 +194,8 @@ export interface BundlerDevContext<TBundlerCfg = unknown>
   extends BundlerBuildContext<TBundlerCfg> {
   /** Aborted when the immutable framework development session is closing. */
   signal: AbortSignal;
+  /** Plugin middleware, already flattened in stable plugin order. */
+  clientMiddlewares?: readonly ClientDevMiddleware[];
   callbacks: {
     /**
      * Called by the bundler adapter after a dev compile has fresh build facts,
@@ -230,10 +232,16 @@ export interface BundlerCapabilities {
     /** Build partial-prerender shell and region entries. */
     ppr: boolean;
   };
+  dev?: {
+    /** Mount Node middleware before the adapter's client HTML fallback. */
+    clientMiddleware: boolean;
+  };
 }
 
 export type BundlerBuildCapability = keyof BundlerCapabilities["build"];
-export type BundlerCapability = `build.${BundlerBuildCapability}`;
+export type BundlerCapability =
+  | `build.${BundlerBuildCapability}`
+  | "dev.clientMiddleware";
 
 export interface BundlerCapabilityGap {
   capability: BundlerCapability;
@@ -305,6 +313,21 @@ export function preflightBundlerBuild(
     bundler.name,
     getBundlerBuildCapabilityGaps(bundler, plan),
   );
+}
+
+export function preflightBundlerDev(
+  bundler: Pick<BundlerAdapter, "name" | "capabilities">,
+  options: { clientMiddleware: boolean },
+): void {
+  if (!options.clientMiddleware || bundler.capabilities.dev?.clientMiddleware) {
+    return;
+  }
+  assertNoBundlerCapabilityGaps(bundler.name, [
+    {
+      capability: "dev.clientMiddleware",
+      reason: "required by one or more plugin clientDevMiddleware hooks",
+    },
+  ]);
 }
 
 function assertNoBundlerCapabilityGaps(

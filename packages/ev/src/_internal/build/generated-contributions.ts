@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { assertStaticJsonValue } from "@evjs/shared/_internal/static-json";
 import type {
+  ApplicationWrapperSlotPlanItem,
   BuildEntry,
   BuildPlan,
   ClientEntrySlotPlanItem,
@@ -50,6 +51,7 @@ import {
   pluginEmitIRScopeFactory,
   type ScopedPluginEmitIRContext,
 } from "../../plugin/internal.js";
+import { applyApplicationWrapperContributions } from "./generated/application-wrapper-contribution.js";
 import {
   createOriginalClientEntryFacadeSource,
   createPagesAppEntryMainSource,
@@ -72,6 +74,7 @@ const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
   "client.entry",
   "server.entry",
+  "application.wrapper",
   "page.wrapper",
   "server.request.middleware",
   "html.tag",
@@ -149,6 +152,7 @@ interface InternalGeneratedModuleRef {
 type TargetedSlotPlanItem =
   | ClientEntrySlotPlanItem
   | ServerEntrySlotPlanItem
+  | ApplicationWrapperSlotPlanItem
   | PageWrapperSlotPlanItem
   | HtmlTagSlotPlanItem;
 
@@ -227,11 +231,15 @@ export async function prepareFrameworkIR<TBundlerCfg>(
     if (!plugin.emitIR) continue;
     await collector.run(plugin);
   }
-  collector.resolveModuleSources();
   collector.validateTargets();
 
+  // Wrapper slots mutate entry metadata consumed by emit.entryFacade source
+  // factories, so project them before resolving any generated module source.
+  const slotProjection = collector.toSlotProjection();
+  applyApplicationWrapperContributions(plan, slotProjection);
+  applyPageWrapperContributions(plan, options.graph, slotProjection);
+  collector.resolveModuleSources();
   const generated = collector.toGeneratedPlan();
-  applyPageWrapperContributions(plan, options.graph, generated);
   applyResolveContributions(plan, generated);
   ensureServerEntryForMiddlewareContributions(plan, generated);
   assertUniqueBuildEntryNames(plan.entries);
@@ -502,6 +510,10 @@ class ContributionCollector<TBundlerCfg> {
     };
   }
 
+  toSlotProjection(): Pick<GeneratedFrameworkPlan, "slots"> {
+    return { slots: this.slots };
+  }
+
   private createScopedEmitContext(
     pluginId: string,
     namespace: string,
@@ -720,6 +732,25 @@ class ContributionCollector<TBundlerCfg> {
                 ),
           target: validateServerEntryTarget(item.target),
           mode,
+        };
+      }
+      case "application.wrapper": {
+        const item = input as FrameworkSlotInput<"application.wrapper">;
+        assertGeneratedModuleOrString(pluginId, item.id, item.module);
+        return {
+          ...base,
+          slot: name,
+          module: this.resolveModuleValue(
+            item.module,
+            {
+              from: base.key,
+              kind: "slot-module",
+            },
+            "file",
+          ),
+          ...(item.target
+            ? { target: validateApplicationContributionTarget(item.target) }
+            : {}),
         };
       }
       case "page.wrapper": {
@@ -964,6 +995,7 @@ function isTargetedSlotPlanItem(
   return (
     slot.slot === "client.entry" ||
     slot.slot === "server.entry" ||
+    slot.slot === "application.wrapper" ||
     slot.slot === "page.wrapper" ||
     slot.slot === "html.tag"
   );
@@ -2130,6 +2162,26 @@ function validateContributionTarget(
     return { ...target };
   }
   throw new Error('[evjs] target.kind must be "application" or "page".');
+}
+
+function validateApplicationContributionTarget(target: unknown): {
+  kind: "application";
+  applicationId?: string;
+} {
+  if (!target || typeof target !== "object" || Array.isArray(target)) {
+    throw new Error(
+      "[evjs] application.wrapper target must be an Application target.",
+    );
+  }
+  if (Reflect.get(target, "kind") !== "application") {
+    throw new Error(
+      '[evjs] application.wrapper target.kind must be "application".',
+    );
+  }
+  return validateContributionTarget(target as ContributionTarget) as {
+    kind: "application";
+    applicationId?: string;
+  };
 }
 
 function validateServerEntryTarget(target: unknown): {

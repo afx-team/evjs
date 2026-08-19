@@ -38,7 +38,7 @@ import {
 } from "react";
 import { isReactComponentExport } from "../../rsc/react-component.js";
 import { isRecord } from "../../shared/validation.js";
-import { type App, createApp } from "../../standalone/app.js";
+import { type App, createFrameworkApp } from "../../standalone/app.js";
 import { PageProvider } from "./page-context.js";
 import { createPageMetadataController } from "./page-metadata.js";
 
@@ -108,6 +108,8 @@ interface NormalizedPageDefinition extends PageDefinition {
 export interface CreatePagesAppOptions {
   routes: PageDefinition[];
   rootModule?: RootLayoutModule;
+  /** Application-root wrappers applied outside all CSR providers and routes. */
+  wrappers?: PageWrapperModule[];
   basepath?: string;
   history?: PagesAppHistoryInput;
 }
@@ -147,6 +149,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   assertCreatePagesAppOptions(options);
   const canonicalRoutes = clonePageDefinitions(options.routes);
   const rootModule = options.rootModule;
+  const wrappers = options.wrappers?.map((wrapper) => ({ ...wrapper }));
   const queryClient = new QueryClient();
   let runtimeState: PagesAppRuntimeState = {
     routes: [],
@@ -194,12 +197,17 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       routes: composePageDefinitions(canonicalRoutes, state.routes),
       ...(rootModule ? { rootModule } : {}),
     });
-    const runtimeApp = createApp({
-      routeTree,
-      queryClient,
-      ...(state.basepath !== undefined ? { basepath: state.basepath } : {}),
-      ...(history ? { history: history.history } : {}),
-    });
+    const runtimeApp = createFrameworkApp(
+      {
+        routeTree,
+        queryClient,
+        ...(state.basepath !== undefined ? { basepath: state.basepath } : {}),
+        ...(history ? { history: history.history } : {}),
+      },
+      wrappers?.map(
+        (wrapper) => wrapper.default as ComponentType<{ children?: ReactNode }>,
+      ) ?? [],
+    );
     return {
       app: runtimeApp,
       history: captureInitialPagesAppHistory(runtimeApp.router, history),
@@ -228,6 +236,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       assertCreatePagesAppOptions({
         routes: composePageDefinitions(canonicalRoutes, nextRuntimeRoutes),
         ...(rootModule ? { rootModule } : {}),
+        ...(wrappers ? { wrappers } : {}),
       });
     }
     const nextBasepath = runtimeOptions.basepath ?? runtimeState.basepath;
@@ -784,6 +793,7 @@ function assertCreatePagesAppOptions(
       "[evjs] createPagesApp() rootModule.default must be a React component.",
     );
   }
+  assertPageWrapperModules(options.wrappers, "application", "wrappers");
   assertPagesAppBasepath(options.basepath, "basepath");
   assertPagesAppHistoryInput(options.history, "history");
 
@@ -1281,7 +1291,7 @@ function assertPageRouteRedirect(
 
 function assertPageWrapperModules(
   value: unknown,
-  routeKind: PageRouteKind,
+  routeKind: PageRouteKind | "application",
   path: string,
 ): asserts value is PageWrapperModule[] | undefined {
   if (value === undefined) return;

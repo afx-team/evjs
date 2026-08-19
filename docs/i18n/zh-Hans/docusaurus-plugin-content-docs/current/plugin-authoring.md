@@ -250,6 +250,7 @@ export default defineConfig({
 | 声明交互式开发命令行快捷键 | `cliShortcuts()` |
 | 初始化共享状态 | `setup()` |
 | 执行构建生命周期行为 | `setup()` 返回的钩子 |
+| 在 fallback 前拦截客户端开发请求 | `clientDevMiddleware()` |
 | 开发服务器监听后获取实际客户端来源 | `devServerReady()` |
 | 生成模块或挂载结构化行为 | `emitIR()` 或 `emitPageIR()` |
 | 编译自定义文件类型或调整优化 | `configureBundler()` |

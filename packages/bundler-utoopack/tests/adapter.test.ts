@@ -7,6 +7,7 @@ import {
   createBuildPlan,
   createCoreGraph,
   generateHtml,
+  reserveClientDevMiddlewareUpstreamPort,
 } from "@evjs/ev/_internal/build";
 import {
   type Config,
@@ -158,7 +159,7 @@ const utoopackMock = vi.hoisted(() => ({
         );
       }
       await serverOptions?.onReady?.({
-        port: 3210,
+        port: serverOptions.port === 3000 ? 3210 : (serverOptions.port ?? 3210),
         hostname: "0.0.0.0",
       });
     }),
@@ -528,6 +529,56 @@ describe("utoopackAdapter dev", () => {
         "Utoopack did not publish its initial build facts",
       );
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
+    } finally {
+      await controller.close();
+    }
+  });
+
+  it("runs client middleware through the shared public server", async () => {
+    const port = await reserveClientDevMiddlewareUpstreamPort();
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      dev: { port },
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const origins: string[] = [];
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      signal: new AbortController().signal,
+      plan: buildContext.plan,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+      clientMiddlewares: [
+        async (request, response, next, context) => {
+          origins.push(context.origin);
+          if (request.url === "/__middleware") {
+            response.end("handled by Utoopack middleware");
+            return;
+          }
+          await next();
+        },
+      ],
+    });
+
+    try {
+      await expect(
+        fetch(`${controller.origin}/__middleware`).then((response) =>
+          response.text(),
+        ),
+      ).resolves.toBe("handled by Utoopack middleware");
+      expect(controller.origin).toBe(`http://localhost:${port}`);
+      expect(origins).toEqual([controller.origin]);
+      const workerOptions = utoopackMock.startUtoopackDevWorker.mock.calls.at(
+        -1,
+      )?.[0] as { server: { https: boolean; port: number } } | undefined;
+      expect(workerOptions?.server.https).toBe(false);
+      expect(workerOptions?.server.port).not.toBe(port);
     } finally {
       await controller.close();
     }

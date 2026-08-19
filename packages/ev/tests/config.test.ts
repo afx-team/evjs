@@ -149,6 +149,7 @@ declare module "../src/config/index.js" {
 
 const fullBundlerCapabilities = {
   build: { server: true, rsc: true, ppr: true },
+  dev: { clientMiddleware: true },
 } as const;
 
 describe("config authoring", () => {
@@ -1254,17 +1255,39 @@ describe("resolveConfig", () => {
         } as never,
       }),
     ).toThrow("bundler.capabilities.build.rsc must be a boolean");
+    expect(
+      resolveConfig({
+        bundler: {
+          ...adapter,
+          capabilities: {
+            ...fullBundlerCapabilities,
+            dev: { clientMiddleware: false },
+          },
+        },
+      }).bundler?.capabilities.dev,
+    ).toEqual({ clientMiddleware: false });
     expect(() =>
       resolveConfig({
         bundler: {
           ...adapter,
           capabilities: {
             ...fullBundlerCapabilities,
-            dev: {},
+            dev: { clientMiddleware: "yes" },
           },
         } as never,
       }),
-    ).toThrow("bundler.capabilities.dev is not supported");
+    ).toThrow("bundler.capabilities.dev.clientMiddleware must be a boolean");
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          ...adapter,
+          capabilities: {
+            ...fullBundlerCapabilities,
+            dev: { clientMiddleware: true, websocket: true },
+          },
+        } as never,
+      }),
+    ).toThrow("bundler.capabilities.dev.websocket is not supported");
   });
 
   it("accepts only the single plugin descriptor shape", () => {
