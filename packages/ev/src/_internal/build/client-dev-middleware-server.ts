@@ -12,7 +12,7 @@ import type { Duplex } from "node:stream";
 import { getLogger } from "@logtape/logtape";
 import type { ClientDevMiddleware } from "../../plugin/index.js";
 
-const logger = getLogger(["evjs", "client-dev-middleware-gateway"]);
+const logger = getLogger(["evjs", "client-dev-middleware-server"]);
 
 export type ClientDevMiddlewareHttpsConfig =
   | boolean
@@ -27,14 +27,14 @@ export type ClientDevMiddlewareCertificateFactory = () => Promise<
   ClientDevMiddlewareTlsCredentials | undefined
 >;
 
-export interface ClientDevMiddlewareGatewayHandle {
+export interface ClientDevMiddlewareServerHandle {
   readonly origin: string;
   /** Rejects on unexpected listener failure and stays pending after close. */
   readonly failure: Promise<never>;
   close(): Promise<void>;
 }
 
-export interface StartClientDevMiddlewareGatewayOptions {
+export interface StartClientDevMiddlewareServerOptions {
   port: number;
   tls?: ClientDevMiddlewareTlsCredentials;
   signal: AbortSignal;
@@ -66,7 +66,7 @@ export async function reserveClientDevMiddlewareUpstreamPort(): Promise<number> 
 }
 
 /**
- * Resolve the public gateway TLS credentials without coupling Core to a
+ * Resolve the public middleware server TLS credentials without coupling Core to a
  * bundler-specific certificate generator.
  */
 export async function resolveClientDevMiddlewareTlsCredentials(
@@ -85,7 +85,7 @@ export async function resolveClientDevMiddlewareTlsCredentials(
   const credentials = await createSelfSignedCertificate?.();
   if (!credentials) {
     throw new Error(
-      "[evjs] Unable to create the HTTPS certificate required by the client development middleware gateway.",
+      "[evjs] Unable to create the HTTPS certificate required by the client development middleware server.",
     );
   }
   return credentials;
@@ -95,9 +95,9 @@ export async function resolveClientDevMiddlewareTlsCredentials(
  * Start a public listener that runs plugin middleware and forwards everything
  * else to a private bundler listener. Upgrade requests bypass all middleware.
  */
-export async function startClientDevMiddlewareGateway(
-  options: StartClientDevMiddlewareGatewayOptions,
-): Promise<ClientDevMiddlewareGatewayHandle> {
+export async function startClientDevMiddlewareServer(
+  options: StartClientDevMiddlewareServerOptions,
+): Promise<ClientDevMiddlewareServerHandle> {
   let origin = "";
   let closing = false;
   let closePromise: Promise<void> | undefined;
@@ -136,7 +136,7 @@ export async function startClientDevMiddlewareGateway(
     if (!closing) {
       rejectFailure(
         new Error(
-          "[evjs] Client development middleware gateway closed unexpectedly.",
+          "[evjs] Client development middleware server closed unexpectedly.",
         ),
       );
     }
@@ -158,7 +158,7 @@ export async function startClientDevMiddlewareGateway(
     closing = true;
     server.close();
     throw new Error(
-      "[evjs] Client development middleware gateway has no TCP address.",
+      "[evjs] Client development middleware server has no TCP address.",
     );
   }
   origin = `${options.tls ? "https" : "http"}://localhost:${address.port}`;
@@ -234,7 +234,7 @@ async function runMiddlewareChain(
 function proxyHttpRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  upstream: StartClientDevMiddlewareGatewayOptions["upstream"],
+  upstream: StartClientDevMiddlewareServerOptions["upstream"],
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const requestOptions: RequestOptions = {
@@ -264,7 +264,7 @@ function proxyUpgradeRequest(
   request: IncomingMessage,
   socket: Duplex,
   head: Buffer,
-  upstream: StartClientDevMiddlewareGatewayOptions["upstream"],
+  upstream: StartClientDevMiddlewareServerOptions["upstream"],
 ): net.Socket {
   const proxySocket = net.connect(upstream.port, upstream.hostname);
   const fail = (error: unknown) => {

@@ -2899,7 +2899,7 @@ describe("webpackAdapter dev", () => {
   );
 
   devIt(
-    "serves the webpack client middleware gateway over generated HTTPS",
+    "serves the webpack client middleware server over generated HTTPS",
     async () => {
       const port = await getAvailablePort();
       const cwd = await createFixture({

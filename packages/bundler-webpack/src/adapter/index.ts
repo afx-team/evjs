@@ -10,7 +10,7 @@ import type {
   BundlerBuildFactsDisposition,
   BundlerDevContext,
   BundlerDevController,
-  ClientDevMiddlewareGatewayHandle,
+  ClientDevMiddlewareServerHandle,
   ClientDevMiddlewareTlsCredentials,
 } from "@evjs/ev/_internal/build";
 import {
@@ -20,7 +20,7 @@ import {
   reserveClientDevMiddlewareUpstreamPort,
   resolveBuildOutputPaths,
   resolveClientDevMiddlewareTlsCredentials,
-  startClientDevMiddlewareGateway,
+  startClientDevMiddlewareServer,
   writeOwnedOutputFile,
 } from "@evjs/ev/_internal/build";
 import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
@@ -216,7 +216,7 @@ class WebpackDevSession implements BundlerDevController {
   private buildState: WebpackDevBuildState;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private clientServer: WebpackDevServerInstance | undefined;
-  private clientMiddlewareGateway: ClientDevMiddlewareGatewayHandle | undefined;
+  private clientMiddlewareServer: ClientDevMiddlewareServerHandle | undefined;
   private serverWatching: WebpackWatching | undefined;
   private lifecycleEpoch = 0;
   private fatalError: Error | undefined;
@@ -366,14 +366,14 @@ class WebpackDevSession implements BundlerDevController {
         createWebpackSelfSignedCertificate,
       );
       throwIfWebpackDevAborted(this.ctx.signal);
-      const gateway = await startClientDevMiddlewareGateway({
+      const middlewareServer = await startClientDevMiddlewareServer({
         port: this.config.dev.port,
         tls,
         signal: this.ctx.signal,
         middlewares: clientMiddlewares,
         upstream: { hostname: "127.0.0.1", port: internalPort },
       });
-      await this.attachClientMiddlewareGateway(gateway);
+      await this.attachClientMiddlewareServer(middlewareServer);
     }
 
     throwIfWebpackDevAborted(this.ctx.signal);
@@ -397,11 +397,11 @@ class WebpackDevSession implements BundlerDevController {
     this.cancelStatsReservations();
     const errors: unknown[] = [];
 
-    if (this.clientMiddlewareGateway) {
-      const gateway = this.clientMiddlewareGateway;
-      this.clientMiddlewareGateway = undefined;
+    if (this.clientMiddlewareServer) {
+      const server = this.clientMiddlewareServer;
+      this.clientMiddlewareServer = undefined;
       try {
-        await gateway.close();
+        await server.close();
       } catch (error) {
         errors.push(error);
       }
@@ -765,23 +765,23 @@ class WebpackDevSession implements BundlerDevController {
     this.sessionDone.reject(this.fatalError);
   }
 
-  private async attachClientMiddlewareGateway(
-    gateway: ClientDevMiddlewareGatewayHandle,
+  private async attachClientMiddlewareServer(
+    server: ClientDevMiddlewareServerHandle,
   ): Promise<void> {
-    if (this.clientMiddlewareGateway) {
-      await gateway.close();
+    if (this.clientMiddlewareServer) {
+      await server.close();
       throw new Error(
-        "[evjs] Webpack client middleware gateway was attached more than once.",
+        "[evjs] Webpack client middleware server was attached more than once.",
       );
     }
     if (this.closePromise) {
-      await gateway.close();
+      await server.close();
       throw new Error(
-        "[evjs] Webpack client middleware gateway started after the development session began closing.",
+        "[evjs] Webpack client middleware server started after the development session began closing.",
       );
     }
-    this.clientMiddlewareGateway = gateway;
-    void gateway.failure.catch((error) => this.failDevSession(error));
+    this.clientMiddlewareServer = server;
+    void server.failure.catch((error) => this.failDevSession(error));
   }
 }
 

@@ -284,7 +284,7 @@ const expectedBuildToolsRuntimeExports = [
   "resolveBundlerServerEntryAssets",
   "resolveClientDevMiddlewareTlsCredentials",
   "resolvePluginSettingsState",
-  "startClientDevMiddlewareGateway",
+  "startClientDevMiddlewareServer",
   "syncPluginTypes",
   "transformRscClientFile",
   "transformServerFile",

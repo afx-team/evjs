@@ -534,7 +534,7 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it("runs client middleware through the shared public gateway", async () => {
+  it("runs client middleware through the shared public server", async () => {
     const port = await reserveClientDevMiddlewareUpstreamPort();
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {

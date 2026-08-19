@@ -17,7 +17,7 @@ import type {
   BundlerBuildFactsDisposition,
   BundlerDevContext,
   BundlerDevController,
-  ClientDevMiddlewareGatewayHandle,
+  ClientDevMiddlewareServerHandle,
   ClientDevMiddlewareTlsCredentials,
   ResolvedBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
@@ -26,7 +26,7 @@ import {
   reserveClientDevMiddlewareUpstreamPort,
   resolveBuildOutputPaths,
   resolveClientDevMiddlewareTlsCredentials,
-  startClientDevMiddlewareGateway,
+  startClientDevMiddlewareServer,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan } from "@evjs/shared/manifest";
@@ -318,7 +318,7 @@ async function startUtoopackDev(
         config.dev.https,
         createUtoopackSelfSignedCertificate,
       );
-      const middlewareGateway = await startClientDevMiddlewareGateway({
+      const middlewareServer = await startClientDevMiddlewareServer({
         tls,
         port: config.dev.port,
         signal,
@@ -328,8 +328,8 @@ async function startUtoopackDev(
           port: ready.port,
         },
       });
-      await controller.attachClientMiddlewareGateway(middlewareGateway);
-      controller.setOrigin(middlewareGateway.origin);
+      await controller.attachClientMiddlewareServer(middlewareServer);
+      controller.setOrigin(middlewareServer.origin);
     } else {
       controller.setOrigin(
         formatDevServerOrigin(config, ready.port, ready.hostname),
@@ -412,7 +412,7 @@ class UtoopackDevController implements BundlerDevController {
   origin = "";
   readonly done: Promise<void>;
   private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
-  private clientMiddlewareGateway: ClientDevMiddlewareGatewayHandle | undefined;
+  private clientMiddlewareServer: ClientDevMiddlewareServerHandle | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private hasEmittedDevArtifacts = false;
   private closed = false;
@@ -446,23 +446,23 @@ class UtoopackDevController implements BundlerDevController {
     this.origin = origin;
   }
 
-  async attachClientMiddlewareGateway(
-    gateway: ClientDevMiddlewareGatewayHandle,
+  async attachClientMiddlewareServer(
+    server: ClientDevMiddlewareServerHandle,
   ): Promise<void> {
-    if (this.clientMiddlewareGateway) {
-      await gateway.close();
+    if (this.clientMiddlewareServer) {
+      await server.close();
       throw new Error(
-        "[evjs] Utoopack client middleware gateway was attached more than once.",
+        "[evjs] Utoopack client middleware server was attached more than once.",
       );
     }
     if (this.closePromise || this.closed) {
-      await gateway.close();
+      await server.close();
       throw new Error(
-        "[evjs] Utoopack client middleware gateway started after the development session began closing.",
+        "[evjs] Utoopack client middleware server started after the development session began closing.",
       );
     }
-    this.clientMiddlewareGateway = gateway;
-    void gateway.failure.catch(this.rejectClientMiddlewareFailure);
+    this.clientMiddlewareServer = server;
+    void server.failure.catch(this.rejectClientMiddlewareFailure);
   }
 
   attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
@@ -493,7 +493,7 @@ class UtoopackDevController implements BundlerDevController {
       this.closingController.abort();
       const errors: unknown[] = [];
       try {
-        await this.clientMiddlewareGateway?.close();
+        await this.clientMiddlewareServer?.close();
       } catch (error) {
         errors.push(error);
       }

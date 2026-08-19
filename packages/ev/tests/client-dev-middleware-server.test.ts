@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   reserveClientDevMiddlewareUpstreamPort,
   resolveClientDevMiddlewareTlsCredentials,
-  startClientDevMiddlewareGateway,
-} from "../src/_internal/build/client-dev-middleware-gateway.js";
+  startClientDevMiddlewareServer,
+} from "../src/_internal/build/client-dev-middleware-server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -20,7 +20,7 @@ afterEach(async () => {
   );
 });
 
-describe("client development middleware gateway", () => {
+describe("client development middleware server", () => {
   it("runs middleware in order before forwarding to the bundler", async () => {
     const upstream = http.createServer((_request, response) => {
       response.end("upstream");
@@ -31,7 +31,7 @@ describe("client development middleware gateway", () => {
     const events: string[] = [];
     const port = await reserveClientDevMiddlewareUpstreamPort();
     const abortController = new AbortController();
-    const gateway = await startClientDevMiddlewareGateway({
+    const middlewareServer = await startClientDevMiddlewareServer({
       port,
       signal: abortController.signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
@@ -52,19 +52,23 @@ describe("client development middleware gateway", () => {
         },
       ],
     });
-    cleanups.push(() => gateway.close());
+    cleanups.push(() => middlewareServer.close());
 
     await expect(
-      fetch(`${gateway.origin}/handled`).then((result) => result.text()),
+      fetch(`${middlewareServer.origin}/handled`).then((result) =>
+        result.text(),
+      ),
     ).resolves.toBe("handled");
     await expect(
-      fetch(`${gateway.origin}/asset.js`).then((result) => result.text()),
+      fetch(`${middlewareServer.origin}/asset.js`).then((result) =>
+        result.text(),
+      ),
     ).resolves.toBe("upstream");
     expect(events).toEqual([
-      `first:${gateway.origin}`,
+      `first:${middlewareServer.origin}`,
       "second",
       "first:after",
-      `first:${gateway.origin}`,
+      `first:${middlewareServer.origin}`,
       "second",
       "first:after",
     ]);
@@ -75,7 +79,7 @@ describe("client development middleware gateway", () => {
     await listen(upstream);
     cleanups.push(() => close(upstream));
     const upstreamAddress = upstream.address() as AddressInfo;
-    const gateway = await startClientDevMiddlewareGateway({
+    const middlewareServer = await startClientDevMiddlewareServer({
       port: await reserveClientDevMiddlewareUpstreamPort(),
       signal: new AbortController().signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
@@ -86,9 +90,9 @@ describe("client development middleware gateway", () => {
         },
       ],
     });
-    cleanups.push(() => gateway.close());
+    cleanups.push(() => middlewareServer.close());
 
-    const response = await fetch(gateway.origin);
+    const response = await fetch(middlewareServer.origin);
     expect(response.status).toBe(500);
     await expect(response.text()).resolves.toContain("middleware exploded");
   });
@@ -104,15 +108,15 @@ describe("client development middleware gateway", () => {
     cleanups.push(() => close(upstream));
     const upstreamAddress = upstream.address() as AddressInfo;
     const middleware = vi.fn();
-    const gateway = await startClientDevMiddlewareGateway({
+    const middlewareServer = await startClientDevMiddlewareServer({
       port: await reserveClientDevMiddlewareUpstreamPort(),
       signal: new AbortController().signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
       middlewares: [middleware],
     });
-    cleanups.push(() => gateway.close());
+    cleanups.push(() => middlewareServer.close());
 
-    const publicUrl = new URL(gateway.origin);
+    const publicUrl = new URL(middlewareServer.origin);
     const response = await new Promise<string>((resolve, reject) => {
       const socket = net.connect(Number(publicUrl.port), "127.0.0.1");
       let received = "";
@@ -150,15 +154,15 @@ describe("client development middleware gateway", () => {
       await close(upstream);
     });
     const upstreamAddress = upstream.address() as AddressInfo;
-    const gateway = await startClientDevMiddlewareGateway({
+    const middlewareServer = await startClientDevMiddlewareServer({
       port: await reserveClientDevMiddlewareUpstreamPort(),
       signal: new AbortController().signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
       middlewares: [],
     });
-    cleanups.push(() => gateway.close());
+    cleanups.push(() => middlewareServer.close());
 
-    const publicUrl = new URL(gateway.origin);
+    const publicUrl = new URL(middlewareServer.origin);
     const clientSocket = net.connect(Number(publicUrl.port), "127.0.0.1");
     cleanups.push(async () => {
       clientSocket.destroy();
@@ -177,7 +181,7 @@ describe("client development middleware gateway", () => {
     await Promise.all([upstreamConnected.promise, responseReceived.promise]);
     const clientClosed = waitForClose(clientSocket);
 
-    await expect(gateway.close()).resolves.toBeUndefined();
+    await expect(middlewareServer.close()).resolves.toBeUndefined();
     await clientClosed;
     expect(clientSocket.destroyed).toBe(true);
   });

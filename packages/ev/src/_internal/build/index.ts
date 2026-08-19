@@ -26,14 +26,14 @@ export {
 } from "./client-compatibility.js";
 export {
   type ClientDevMiddlewareCertificateFactory,
-  type ClientDevMiddlewareGatewayHandle,
   type ClientDevMiddlewareHttpsConfig,
+  type ClientDevMiddlewareServerHandle,
   type ClientDevMiddlewareTlsCredentials,
   reserveClientDevMiddlewareUpstreamPort,
   resolveClientDevMiddlewareTlsCredentials,
-  type StartClientDevMiddlewareGatewayOptions,
-  startClientDevMiddlewareGateway,
-} from "./client-dev-middleware-gateway.js";
+  type StartClientDevMiddlewareServerOptions,
+  startClientDevMiddlewareServer,
+} from "./client-dev-middleware-server.js";
 export {
   type BuildOptions,
   build,
