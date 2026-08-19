@@ -10,12 +10,17 @@ import type {
   BundlerBuildFactsDisposition,
   BundlerDevContext,
   BundlerDevController,
+  ClientDevMiddlewareGatewayHandle,
+  ClientDevMiddlewareTlsCredentials,
 } from "@evjs/ev/_internal/build";
 import {
   assertPortableRelativeArtifactPath,
   assertSafeBuildOutputPaths,
   portableArtifactPathsConflict,
+  reserveClientDevMiddlewareUpstreamPort,
   resolveBuildOutputPaths,
+  resolveClientDevMiddlewareTlsCredentials,
+  startClientDevMiddlewareGateway,
   writeOwnedOutputFile,
 } from "@evjs/ev/_internal/build";
 import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
@@ -116,7 +121,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfigs> = {
       ppr: true,
     },
     dev: {
-      clientMiddleware: false,
+      clientMiddleware: true,
     },
   },
 
@@ -211,6 +216,7 @@ class WebpackDevSession implements BundlerDevController {
   private buildState: WebpackDevBuildState;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private clientServer: WebpackDevServerInstance | undefined;
+  private clientMiddlewareGateway: ClientDevMiddlewareGatewayHandle | undefined;
   private serverWatching: WebpackWatching | undefined;
   private lifecycleEpoch = 0;
   private fatalError: Error | undefined;
@@ -275,6 +281,23 @@ class WebpackDevSession implements BundlerDevController {
     );
     const needsClient = clientConfigs.length > 0;
     const needsServer = serverConfigs.length > 0;
+    const clientMiddlewares = this.ctx.clientMiddlewares ?? [];
+    const middlewareEnabled = clientMiddlewares.length > 0;
+    const internalPort = middlewareEnabled
+      ? await reserveClientDevMiddlewareUpstreamPort()
+      : this.config.dev.port;
+    const devServerBinding: WebpackDevServerBinding = {
+      port: internalPort,
+      https: middlewareEnabled ? false : this.config.dev.https,
+      ...(middlewareEnabled
+        ? {
+            publicWebSocket: {
+              https: Boolean(this.config.dev.https),
+              port: this.config.dev.port,
+            },
+          }
+        : {}),
+    };
 
     if (needsClient) {
       const compiler = createWebpackCompiler(clientConfigs);
@@ -284,7 +307,12 @@ class WebpackDevSession implements BundlerDevController {
       });
       this.trackCompileCompletion("client", sessionEpoch, compiler);
       const clientServer = new WebpackDevServer(
-        createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
+        createDevServerOptions(
+          this.config,
+          this.plan,
+          outputPaths.clientDir,
+          devServerBinding,
+        ),
         compiler,
       );
       this.clientServer = clientServer;
@@ -318,12 +346,34 @@ class WebpackDevSession implements BundlerDevController {
         outputPaths.clientDir,
       );
       const clientServer = new WebpackDevServer(
-        createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
+        createDevServerOptions(
+          this.config,
+          this.plan,
+          outputPaths.clientDir,
+          devServerBinding,
+        ),
         compiler,
       );
       this.clientServer = clientServer;
       await clientServer.start();
       throwIfWebpackDevAborted(this.ctx.signal);
+    }
+
+    if (middlewareEnabled) {
+      const tls = await resolveClientDevMiddlewareTlsCredentials(
+        this.ctx.cwd,
+        this.config.dev.https,
+        createWebpackSelfSignedCertificate,
+      );
+      throwIfWebpackDevAborted(this.ctx.signal);
+      const gateway = await startClientDevMiddlewareGateway({
+        port: this.config.dev.port,
+        tls,
+        signal: this.ctx.signal,
+        middlewares: clientMiddlewares,
+        upstream: { hostname: "127.0.0.1", port: internalPort },
+      });
+      await this.attachClientMiddlewareGateway(gateway);
     }
 
     throwIfWebpackDevAborted(this.ctx.signal);
@@ -346,6 +396,16 @@ class WebpackDevSession implements BundlerDevController {
     this.lifecycleEpoch++;
     this.cancelStatsReservations();
     const errors: unknown[] = [];
+
+    if (this.clientMiddlewareGateway) {
+      const gateway = this.clientMiddlewareGateway;
+      this.clientMiddlewareGateway = undefined;
+      try {
+        await gateway.close();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
 
     if (this.serverWatching) {
       const watching = this.serverWatching;
@@ -704,6 +764,25 @@ class WebpackDevSession implements BundlerDevController {
     this.fatalError = error instanceof Error ? error : new Error(String(error));
     this.sessionDone.reject(this.fatalError);
   }
+
+  private async attachClientMiddlewareGateway(
+    gateway: ClientDevMiddlewareGatewayHandle,
+  ): Promise<void> {
+    if (this.clientMiddlewareGateway) {
+      await gateway.close();
+      throw new Error(
+        "[evjs] Webpack client middleware gateway was attached more than once.",
+      );
+    }
+    if (this.closePromise) {
+      await gateway.close();
+      throw new Error(
+        "[evjs] Webpack client middleware gateway started after the development session began closing.",
+      );
+    }
+    this.clientMiddlewareGateway = gateway;
+    void gateway.failure.catch((error) => this.failDevSession(error));
+  }
 }
 
 function throwIfWebpackDevAborted(signal: AbortSignal): void {
@@ -791,16 +870,26 @@ function configureBuildOnlyMemoryOutputs(compiler: Compiler | MultiCompiler): {
   return { volume, outputPaths };
 }
 
+interface WebpackDevServerBinding {
+  port: number;
+  https: ResolvedConfig<WebpackConfigs>["dev"]["https"];
+  publicWebSocket?: {
+    https: boolean;
+    port: number;
+  };
+}
+
 function createDevServerOptions(
   config: ResolvedConfig<WebpackConfigs>,
   plan: BuildPlan,
   clientDir: string,
+  binding: WebpackDevServerBinding,
 ): ConstructorParameters<typeof WebpackDevServer>[0] {
   const classifyRequestPath = createFrameworkRequestPathClassifier(plan);
 
   return {
     host: "0.0.0.0",
-    port: config.dev.port,
+    port: binding.port,
     hot: true,
     liveReload: true,
     allowedHosts: "all",
@@ -809,7 +898,7 @@ function createDevServerOptions(
       "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
       "Access-Control-Allow-Origin": "*",
     },
-    server: createDevServerTransport(config.dev.https),
+    server: createDevServerTransport(binding.https),
     static: {
       directory: clientDir,
       publicPath: "/",
@@ -854,8 +943,47 @@ function createDevServerOptions(
         errors: true,
         warnings: false,
       },
+      ...(binding.publicWebSocket
+        ? {
+            webSocketURL: {
+              hostname: "0.0.0.0",
+              port: binding.publicWebSocket.port,
+              protocol: binding.publicWebSocket.https ? "wss:" : "ws:",
+            },
+          }
+        : {}),
     },
   };
+}
+
+let webpackSelfSignedCertificate:
+  | Promise<ClientDevMiddlewareTlsCredentials>
+  | undefined;
+
+function createWebpackSelfSignedCertificate(): Promise<ClientDevMiddlewareTlsCredentials> {
+  webpackSelfSignedCertificate ??= import("selfsigned").then(
+    async ({ generate }) => {
+      const certificate = await generate(
+        [{ name: "commonName", value: "localhost" }],
+        {
+          algorithm: "sha256",
+          keySize: 2048,
+          notAfterDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000),
+          extensions: [
+            {
+              name: "subjectAltName",
+              altNames: [
+                { type: 2, value: "localhost" },
+                { type: 7, ip: "127.0.0.1" },
+              ],
+            },
+          ],
+        },
+      );
+      return { key: certificate.private, cert: certificate.cert };
+    },
+  );
+  return webpackSelfSignedCertificate;
 }
 
 function createDevProxyRules(

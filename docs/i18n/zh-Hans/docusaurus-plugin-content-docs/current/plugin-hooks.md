@@ -124,7 +124,7 @@ setup() {
 }
 ```
 
-该钩子可以返回一个中间件、数组或 `undefined`。需要在下游处理后继续工作时应 `await next()`；向 `next()` 传错或直接抛错会生成适配器诊断响应。请求上下文提供真实公共 `origin` 和不可变开发 Session 的中止信号。WebSocket upgrade 会绕过插件中间件，使 HMR 始终直连构建器。Utoopack 支持此能力；选择未声明 `dev.clientMiddleware` 的适配器会在监听前失败。
+该钩子可以返回一个中间件、数组或 `undefined`。需要在下游处理后继续工作时应 `await next()`；向 `next()` 传错或直接抛错会生成适配器诊断响应。请求上下文提供真实公共 `origin` 和不可变开发 Session 的中止信号。WebSocket upgrade 会绕过插件中间件并透明转发给构建器。内置 Utoopack 和 Webpack 适配器均支持此能力；选择未声明 `dev.clientMiddleware` 的适配器会在监听前失败。
 
 ## 构建与重新构建
 

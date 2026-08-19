@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
-import { createServer } from "node:net";
+import https from "node:https";
+import net, { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -163,6 +164,57 @@ async function canListenOnPort(port: number): Promise<boolean> {
   });
 }
 
+function openWebpackWebSocket(port: number): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, "127.0.0.1");
+    let response = "";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("Timed out waiting for webpack WebSocket upgrade."));
+    }, 5_000);
+    timeout.unref();
+    socket.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    socket.on("data", (chunk) => {
+      response += chunk.toString();
+      if (!response.includes("101 Switching Protocols")) return;
+      clearTimeout(timeout);
+      resolve(socket);
+    });
+    socket.once("connect", () => {
+      socket.write(
+        [
+          "GET /ws HTTP/1.1",
+          `Host: 127.0.0.1:${port}`,
+          "Connection: Upgrade",
+          "Upgrade: websocket",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13",
+          "",
+          "",
+        ].join("\r\n"),
+      );
+    });
+  });
+}
+
+function waitForSocketClose(socket: net.Socket): Promise<void> {
+  if (socket.destroyed) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for WebSocket shutdown.")),
+      5_000,
+    );
+    timeout.unref();
+    socket.once("close", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
 interface DevResponse {
   status: number;
   headers: Headers;
@@ -202,6 +254,24 @@ async function fetchDevResponse(
 async function fetchDevText(url: string): Promise<string> {
   const response = await fetchDevResponse(url);
   return response.text;
+}
+
+function fetchInsecureHttpsText(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      { rejectUnauthorized: false },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.once("end", () =>
+          resolve(Buffer.concat(chunks).toString("utf8")),
+        );
+        response.once("error", reject);
+      },
+    );
+    request.once("error", reject);
+  });
 }
 
 function readEmbeddedClientRuntime(html: string): unknown {
@@ -2734,6 +2804,159 @@ describe("webpackAdapter dev", () => {
       await controller.close?.();
     }
   });
+
+  devIt(
+    "runs client middleware in front of webpack HTTP and WebSocket traffic",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/home/page.tsx": `
+          import { createElement } from "react";
+
+          export default function Home() {
+            return createElement("h1", null, "Home behind middleware");
+          }
+        `,
+      });
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        dev: { port },
+        routing: { mode: "mpa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = await materializeTestPlan({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan: createBuildPlan(config, analysis.graph, {
+          mode: "development",
+        }),
+      });
+      const onBuildOutput = vi.fn();
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        onBuildOutput,
+      });
+      const middlewareRequests: string[] = [];
+      const middlewareOrigins: string[] = [];
+      const controller = await webpackAdapter.dev({
+        config,
+        cwd,
+        signal: new AbortController().signal,
+        plan,
+        hooks: [],
+        clientMiddlewares: [
+          async (request, response, next, context) => {
+            middlewareRequests.push(request.url ?? "");
+            middlewareOrigins.push(context.origin);
+            if (request.url === "/__middleware") {
+              response.end("handled by plugin middleware");
+              return;
+            }
+            await next();
+          },
+        ],
+        callbacks: framework.callbacks,
+      });
+      if (!controller) throw new Error("Expected webpack dev controller");
+      let closed = false;
+      try {
+        await waitForCondition(
+          () => onBuildOutput.mock.calls.length > 0,
+          "Webpack did not publish initial build facts",
+        );
+
+        await expect(
+          fetchDevText(`http://127.0.0.1:${port}/__middleware`),
+        ).resolves.toBe("handled by plugin middleware");
+        await expect(
+          fetchDevText(`http://127.0.0.1:${port}/home.html`),
+        ).resolves.toContain('data-evjs-id="home"');
+        expect(controller.origin).toBe(`http://localhost:${port}`);
+        expect(middlewareOrigins).toEqual([
+          controller.origin,
+          controller.origin,
+        ]);
+
+        const socket = await openWebpackWebSocket(port);
+        const socketClosed = waitForSocketClose(socket);
+        expect(middlewareRequests).not.toContain("/ws");
+
+        await controller.close?.();
+        closed = true;
+        await socketClosed;
+        expect(socket.destroyed).toBe(true);
+        await expect(canListenOnPort(port)).resolves.toBe(true);
+      } finally {
+        if (!closed) await controller.close?.();
+      }
+    },
+  );
+
+  devIt(
+    "serves the webpack client middleware gateway over generated HTTPS",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/page.tsx": "export default function Home() { return null; }",
+      });
+      const config = await resolveProjectConfig(cwd, {
+        dev: { https: true, port },
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = await materializeTestPlan({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan: createBuildPlan(config, analysis.graph, {
+          mode: "development",
+        }),
+      });
+      const framework = createFrameworkCallbacks({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+      });
+      const controller = await webpackAdapter.dev({
+        config,
+        cwd,
+        signal: new AbortController().signal,
+        plan,
+        hooks: [],
+        clientMiddlewares: [
+          async (request, response, next) => {
+            if (request.url === "/__secure-middleware") {
+              response.end("secure middleware response");
+              return;
+            }
+            await next();
+          },
+        ],
+        callbacks: framework.callbacks,
+      });
+      if (!controller) throw new Error("Expected webpack dev controller");
+      try {
+        expect(controller.origin).toBe(`https://localhost:${port}`);
+        await expect(
+          fetchInsecureHttpsText(
+            `https://127.0.0.1:${port}/__secure-middleware`,
+          ),
+        ).resolves.toBe("secure middleware response");
+      } finally {
+        await controller.close?.();
+      }
+    },
+  );
 
   devIt(WEBPACK_DEV_TEST_NAMES.concurrentDone, async () => {
     const port = await getAvailablePort();

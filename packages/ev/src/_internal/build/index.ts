@@ -25,6 +25,16 @@ export {
   createClientBrowserslistTarget,
 } from "./client-compatibility.js";
 export {
+  type ClientDevMiddlewareCertificateFactory,
+  type ClientDevMiddlewareGatewayHandle,
+  type ClientDevMiddlewareHttpsConfig,
+  type ClientDevMiddlewareTlsCredentials,
+  reserveClientDevMiddlewareUpstreamPort,
+  resolveClientDevMiddlewareTlsCredentials,
+  type StartClientDevMiddlewareGatewayOptions,
+  startClientDevMiddlewareGateway,
+} from "./client-dev-middleware-gateway.js";
+export {
   type BuildOptions,
   build,
   type DevOptions,

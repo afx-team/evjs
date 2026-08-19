@@ -6,29 +6,37 @@ import http, {
   type ServerResponse,
 } from "node:http";
 import https, { type Server as HttpsServer } from "node:https";
-import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import type { Duplex } from "node:stream";
-import type { ClientDevMiddleware } from "@evjs/ev/plugin";
 import { getLogger } from "@logtape/logtape";
+import type { ClientDevMiddleware } from "../../plugin/index.js";
 
-const logger = getLogger(["evjs", "bundler-utoopack", "client-middleware"]);
-const require = createRequire(import.meta.url);
+const logger = getLogger(["evjs", "client-dev-middleware-gateway"]);
 
-type DevHttps = boolean | { key: string; cert: string };
+export type ClientDevMiddlewareHttpsConfig =
+  | boolean
+  | { key: string; cert: string };
 
-export interface ClientMiddlewareServerHandle {
+export interface ClientDevMiddlewareTlsCredentials {
+  key: string | Buffer;
+  cert: string | Buffer;
+}
+
+export type ClientDevMiddlewareCertificateFactory = () => Promise<
+  ClientDevMiddlewareTlsCredentials | undefined
+>;
+
+export interface ClientDevMiddlewareGatewayHandle {
   readonly origin: string;
   /** Rejects on unexpected listener failure and stays pending after close. */
   readonly failure: Promise<never>;
   close(): Promise<void>;
 }
 
-interface StartClientMiddlewareServerOptions {
-  cwd: string;
+export interface StartClientDevMiddlewareGatewayOptions {
   port: number;
-  https: DevHttps;
+  tls?: ClientDevMiddlewareTlsCredentials;
   signal: AbortSignal;
   middlewares: readonly ClientDevMiddleware[];
   upstream: {
@@ -37,8 +45,8 @@ interface StartClientMiddlewareServerOptions {
   };
 }
 
-/** Reserve a best-effort internal port before Utoopack starts listening. */
-export async function reserveEphemeralPort(): Promise<number> {
+/** Reserve a best-effort loopback port for a bundler's private listener. */
+export async function reserveClientDevMiddlewareUpstreamPort(): Promise<number> {
   const server = net.createServer();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -47,7 +55,9 @@ export async function reserveEphemeralPort(): Promise<number> {
     });
     const address = server.address();
     if (!address || typeof address === "string") {
-      throw new Error("[evjs] Unable to reserve an internal Utoopack port.");
+      throw new Error(
+        "[evjs] Unable to reserve a client middleware upstream port.",
+      );
     }
     return address.port;
   } finally {
@@ -56,12 +66,38 @@ export async function reserveEphemeralPort(): Promise<number> {
 }
 
 /**
- * Start a public listener that runs plugin middleware and forwards everything
- * else to Utoopack. Upgrade requests intentionally bypass all middleware.
+ * Resolve the public gateway TLS credentials without coupling Core to a
+ * bundler-specific certificate generator.
  */
-export async function startClientMiddlewareServer(
-  options: StartClientMiddlewareServerOptions,
-): Promise<ClientMiddlewareServerHandle> {
+export async function resolveClientDevMiddlewareTlsCredentials(
+  cwd: string,
+  config: ClientDevMiddlewareHttpsConfig,
+  createSelfSignedCertificate?: ClientDevMiddlewareCertificateFactory,
+): Promise<ClientDevMiddlewareTlsCredentials | undefined> {
+  if (!config) return undefined;
+  if (config !== true) {
+    return {
+      key: await readPemOrFile(cwd, config.key),
+      cert: await readPemOrFile(cwd, config.cert),
+    };
+  }
+
+  const credentials = await createSelfSignedCertificate?.();
+  if (!credentials) {
+    throw new Error(
+      "[evjs] Unable to create the HTTPS certificate required by the client development middleware gateway.",
+    );
+  }
+  return credentials;
+}
+
+/**
+ * Start a public listener that runs plugin middleware and forwards everything
+ * else to a private bundler listener. Upgrade requests bypass all middleware.
+ */
+export async function startClientDevMiddlewareGateway(
+  options: StartClientDevMiddlewareGatewayOptions,
+): Promise<ClientDevMiddlewareGatewayHandle> {
   let origin = "";
   let closing = false;
   let closePromise: Promise<void> | undefined;
@@ -85,7 +121,7 @@ export async function startClientMiddlewareServer(
     ).catch((error) => handleRequestError(response, error));
   };
 
-  const server = await createPublicServer(options, requestListener);
+  const server = createPublicServer(options.tls, requestListener);
   server.on("upgrade", (request, socket, head) => {
     trackUpgradeSocket(upgradedSockets, socket);
     trackUpgradeSocket(
@@ -100,7 +136,7 @@ export async function startClientMiddlewareServer(
     if (!closing) {
       rejectFailure(
         new Error(
-          "[evjs] Utoopack client middleware listener closed unexpectedly.",
+          "[evjs] Client development middleware gateway closed unexpectedly.",
         ),
       );
     }
@@ -122,10 +158,10 @@ export async function startClientMiddlewareServer(
     closing = true;
     server.close();
     throw new Error(
-      "[evjs] Utoopack client middleware listener has no TCP address.",
+      "[evjs] Client development middleware gateway has no TCP address.",
     );
   }
-  origin = `${options.https ? "https" : "http"}://localhost:${address.port}`;
+  origin = `${options.tls ? "https" : "http"}://localhost:${address.port}`;
 
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
@@ -142,42 +178,11 @@ export async function startClientMiddlewareServer(
   return { origin, failure, close };
 }
 
-async function createPublicServer(
-  options: StartClientMiddlewareServerOptions,
+function createPublicServer(
+  tls: ClientDevMiddlewareTlsCredentials | undefined,
   listener: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<HttpServer | HttpsServer> {
-  if (!options.https) return http.createServer(listener);
-  const credentials = await resolveTlsCredentials(options.cwd, options.https);
-  return https.createServer(credentials, listener);
-}
-
-async function resolveTlsCredentials(
-  cwd: string,
-  config: Exclude<DevHttps, false>,
-): Promise<{ key: string | Buffer; cert: string | Buffer }> {
-  if (config !== true) {
-    return {
-      key: await readPemOrFile(cwd, config.key),
-      cert: await readPemOrFile(cwd, config.cert),
-    };
-  }
-
-  const { createSelfSignedCertificate } =
-    require("@utoo/pack/cjs/utils/mkcert.js") as {
-      createSelfSignedCertificate(
-        host?: string,
-      ): Promise<{ key: string; cert: string } | undefined>;
-    };
-  const certificate = await createSelfSignedCertificate("localhost");
-  if (!certificate) {
-    throw new Error(
-      "[evjs] Unable to create the HTTPS certificate required by the Utoopack client middleware listener.",
-    );
-  }
-  return {
-    key: await fs.promises.readFile(certificate.key),
-    cert: await fs.promises.readFile(certificate.cert),
-  };
+): HttpServer | HttpsServer {
+  return tls ? https.createServer(tls, listener) : http.createServer(listener);
 }
 
 async function readPemOrFile(
@@ -229,7 +234,7 @@ async function runMiddlewareChain(
 function proxyHttpRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  upstream: StartClientMiddlewareServerOptions["upstream"],
+  upstream: StartClientDevMiddlewareGatewayOptions["upstream"],
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const requestOptions: RequestOptions = {
@@ -259,11 +264,11 @@ function proxyUpgradeRequest(
   request: IncomingMessage,
   socket: Duplex,
   head: Buffer,
-  upstream: StartClientMiddlewareServerOptions["upstream"],
+  upstream: StartClientDevMiddlewareGatewayOptions["upstream"],
 ): net.Socket {
   const proxySocket = net.connect(upstream.port, upstream.hostname);
   const fail = (error: unknown) => {
-    logger.error`Failed to proxy Utoopack WebSocket upgrade: ${error}`;
+    logger.error`Failed to proxy bundler WebSocket upgrade: ${error}`;
     socket.destroy();
     proxySocket.destroy();
   };

@@ -17,22 +17,22 @@ import type {
   BundlerBuildFactsDisposition,
   BundlerDevContext,
   BundlerDevController,
+  ClientDevMiddlewareGatewayHandle,
+  ClientDevMiddlewareTlsCredentials,
   ResolvedBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
 import {
   assertSafeBuildOutputPaths,
+  reserveClientDevMiddlewareUpstreamPort,
   resolveBuildOutputPaths,
+  resolveClientDevMiddlewareTlsCredentials,
+  startClientDevMiddlewareGateway,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
-import {
-  type ClientMiddlewareServerHandle,
-  reserveEphemeralPort,
-  startClientMiddlewareServer,
-} from "./client-middleware-server.js";
 import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
@@ -57,6 +57,23 @@ const { version: utoopackVersion } = require("@utoo/pack/package.json") as {
 };
 type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build">;
 const DEV_STATS_POLL_INTERVAL_MS = 25;
+
+async function createUtoopackSelfSignedCertificate(): Promise<
+  ClientDevMiddlewareTlsCredentials | undefined
+> {
+  const { createSelfSignedCertificate } =
+    require("@utoo/pack/cjs/utils/mkcert.js") as {
+      createSelfSignedCertificate(
+        host?: string,
+      ): Promise<{ key: string; cert: string } | undefined>;
+    };
+  const certificate = await createSelfSignedCertificate("localhost");
+  if (!certificate) return undefined;
+  return {
+    key: await fs.promises.readFile(certificate.key),
+    cert: await fs.promises.readFile(certificate.cert),
+  };
+}
 
 async function cleanServerOutput(
   cwd: string,
@@ -236,7 +253,7 @@ async function startUtoopackDev(
   const clientMiddlewares = ctx.clientMiddlewares ?? [];
   const middlewareEnabled = clientMiddlewares.length > 0;
   const internalPort = middlewareEnabled
-    ? await reserveEphemeralPort()
+    ? await reserveClientDevMiddlewareUpstreamPort()
     : config.dev.port;
 
   logger.info`Using @utoo/pack@${utoopackVersion}.`;
@@ -296,9 +313,13 @@ async function startUtoopackDev(
       waitForAbort(signal),
     ]);
     if (middlewareEnabled) {
-      const middlewareServer = await startClientMiddlewareServer({
+      const tls = await resolveClientDevMiddlewareTlsCredentials(
         cwd,
-        https: config.dev.https,
+        config.dev.https,
+        createUtoopackSelfSignedCertificate,
+      );
+      const middlewareGateway = await startClientDevMiddlewareGateway({
+        tls,
         port: config.dev.port,
         signal,
         middlewares: clientMiddlewares,
@@ -307,8 +328,8 @@ async function startUtoopackDev(
           port: ready.port,
         },
       });
-      controller.attachClientMiddlewareServer(middlewareServer);
-      controller.setOrigin(middlewareServer.origin);
+      await controller.attachClientMiddlewareGateway(middlewareGateway);
+      controller.setOrigin(middlewareGateway.origin);
     } else {
       controller.setOrigin(
         formatDevServerOrigin(config, ready.port, ready.hostname),
@@ -391,7 +412,7 @@ class UtoopackDevController implements BundlerDevController {
   origin = "";
   readonly done: Promise<void>;
   private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
-  private clientMiddlewareServer: ClientMiddlewareServerHandle | undefined;
+  private clientMiddlewareGateway: ClientDevMiddlewareGatewayHandle | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private hasEmittedDevArtifacts = false;
   private closed = false;
@@ -425,14 +446,23 @@ class UtoopackDevController implements BundlerDevController {
     this.origin = origin;
   }
 
-  attachClientMiddlewareServer(server: ClientMiddlewareServerHandle): void {
-    if (this.clientMiddlewareServer) {
+  async attachClientMiddlewareGateway(
+    gateway: ClientDevMiddlewareGatewayHandle,
+  ): Promise<void> {
+    if (this.clientMiddlewareGateway) {
+      await gateway.close();
       throw new Error(
-        "[evjs] Utoopack client middleware server was attached more than once.",
+        "[evjs] Utoopack client middleware gateway was attached more than once.",
       );
     }
-    this.clientMiddlewareServer = server;
-    void server.failure.catch(this.rejectClientMiddlewareFailure);
+    if (this.closePromise || this.closed) {
+      await gateway.close();
+      throw new Error(
+        "[evjs] Utoopack client middleware gateway started after the development session began closing.",
+      );
+    }
+    this.clientMiddlewareGateway = gateway;
+    void gateway.failure.catch(this.rejectClientMiddlewareFailure);
   }
 
   attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
@@ -463,7 +493,7 @@ class UtoopackDevController implements BundlerDevController {
       this.closingController.abort();
       const errors: unknown[] = [];
       try {
-        await this.clientMiddlewareServer?.close();
+        await this.clientMiddlewareGateway?.close();
       } catch (error) {
         errors.push(error);
       }

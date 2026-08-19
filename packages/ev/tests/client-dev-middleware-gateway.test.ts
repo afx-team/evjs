@@ -4,9 +4,10 @@ import net from "node:net";
 import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  reserveEphemeralPort,
-  startClientMiddlewareServer,
-} from "../src/adapter/client-middleware-server.js";
+  reserveClientDevMiddlewareUpstreamPort,
+  resolveClientDevMiddlewareTlsCredentials,
+  startClientDevMiddlewareGateway,
+} from "../src/_internal/build/client-dev-middleware-gateway.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -19,8 +20,8 @@ afterEach(async () => {
   );
 });
 
-describe("Utoopack client middleware server", () => {
-  it("runs middleware in order before forwarding to Utoopack", async () => {
+describe("client development middleware gateway", () => {
+  it("runs middleware in order before forwarding to the bundler", async () => {
     const upstream = http.createServer((_request, response) => {
       response.end("upstream");
     });
@@ -28,12 +29,10 @@ describe("Utoopack client middleware server", () => {
     cleanups.push(() => close(upstream));
     const upstreamAddress = upstream.address() as AddressInfo;
     const events: string[] = [];
-    const port = await reserveEphemeralPort();
+    const port = await reserveClientDevMiddlewareUpstreamPort();
     const abortController = new AbortController();
-    const server = await startClientMiddlewareServer({
-      cwd: process.cwd(),
+    const gateway = await startClientDevMiddlewareGateway({
       port,
-      https: false,
       signal: abortController.signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
       middlewares: [
@@ -53,19 +52,19 @@ describe("Utoopack client middleware server", () => {
         },
       ],
     });
-    cleanups.push(() => server.close());
+    cleanups.push(() => gateway.close());
 
     await expect(
-      fetch(`${server.origin}/handled`).then((result) => result.text()),
+      fetch(`${gateway.origin}/handled`).then((result) => result.text()),
     ).resolves.toBe("handled");
     await expect(
-      fetch(`${server.origin}/asset.js`).then((result) => result.text()),
+      fetch(`${gateway.origin}/asset.js`).then((result) => result.text()),
     ).resolves.toBe("upstream");
     expect(events).toEqual([
-      `first:${server.origin}`,
+      `first:${gateway.origin}`,
       "second",
       "first:after",
-      `first:${server.origin}`,
+      `first:${gateway.origin}`,
       "second",
       "first:after",
     ]);
@@ -76,10 +75,8 @@ describe("Utoopack client middleware server", () => {
     await listen(upstream);
     cleanups.push(() => close(upstream));
     const upstreamAddress = upstream.address() as AddressInfo;
-    const server = await startClientMiddlewareServer({
-      cwd: process.cwd(),
-      port: await reserveEphemeralPort(),
-      https: false,
+    const gateway = await startClientDevMiddlewareGateway({
+      port: await reserveClientDevMiddlewareUpstreamPort(),
       signal: new AbortController().signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
       middlewares: [
@@ -89,9 +86,9 @@ describe("Utoopack client middleware server", () => {
         },
       ],
     });
-    cleanups.push(() => server.close());
+    cleanups.push(() => gateway.close());
 
-    const response = await fetch(server.origin);
+    const response = await fetch(gateway.origin);
     expect(response.status).toBe(500);
     await expect(response.text()).resolves.toContain("middleware exploded");
   });
@@ -107,17 +104,15 @@ describe("Utoopack client middleware server", () => {
     cleanups.push(() => close(upstream));
     const upstreamAddress = upstream.address() as AddressInfo;
     const middleware = vi.fn();
-    const server = await startClientMiddlewareServer({
-      cwd: process.cwd(),
-      port: await reserveEphemeralPort(),
-      https: false,
+    const gateway = await startClientDevMiddlewareGateway({
+      port: await reserveClientDevMiddlewareUpstreamPort(),
       signal: new AbortController().signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
       middlewares: [middleware],
     });
-    cleanups.push(() => server.close());
+    cleanups.push(() => gateway.close());
 
-    const publicUrl = new URL(server.origin);
+    const publicUrl = new URL(gateway.origin);
     const response = await new Promise<string>((resolve, reject) => {
       const socket = net.connect(Number(publicUrl.port), "127.0.0.1");
       let received = "";
@@ -155,17 +150,15 @@ describe("Utoopack client middleware server", () => {
       await close(upstream);
     });
     const upstreamAddress = upstream.address() as AddressInfo;
-    const server = await startClientMiddlewareServer({
-      cwd: process.cwd(),
-      port: await reserveEphemeralPort(),
-      https: false,
+    const gateway = await startClientDevMiddlewareGateway({
+      port: await reserveClientDevMiddlewareUpstreamPort(),
       signal: new AbortController().signal,
       upstream: { hostname: "127.0.0.1", port: upstreamAddress.port },
       middlewares: [],
     });
-    cleanups.push(() => server.close());
+    cleanups.push(() => gateway.close());
 
-    const publicUrl = new URL(server.origin);
+    const publicUrl = new URL(gateway.origin);
     const clientSocket = net.connect(Number(publicUrl.port), "127.0.0.1");
     cleanups.push(async () => {
       clientSocket.destroy();
@@ -184,9 +177,33 @@ describe("Utoopack client middleware server", () => {
     await Promise.all([upstreamConnected.promise, responseReceived.promise]);
     const clientClosed = waitForClose(clientSocket);
 
-    await expect(server.close()).resolves.toBeUndefined();
+    await expect(gateway.close()).resolves.toBeUndefined();
     await clientClosed;
     expect(clientSocket.destroyed).toBe(true);
+  });
+
+  it("resolves configured and adapter-provided TLS credentials", async () => {
+    const credentials = { key: "generated-key", cert: "generated-cert" };
+
+    await expect(
+      resolveClientDevMiddlewareTlsCredentials(
+        process.cwd(),
+        true,
+        async () => credentials,
+      ),
+    ).resolves.toEqual(credentials);
+    await expect(
+      resolveClientDevMiddlewareTlsCredentials(process.cwd(), false),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveClientDevMiddlewareTlsCredentials(process.cwd(), {
+        key: "inline-key",
+        cert: "inline-cert",
+      }),
+    ).resolves.toEqual({ key: "inline-key", cert: "inline-cert" });
+    await expect(
+      resolveClientDevMiddlewareTlsCredentials(process.cwd(), true),
+    ).rejects.toThrow("Unable to create the HTTPS certificate");
   });
 });
 

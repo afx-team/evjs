@@ -141,9 +141,10 @@ The hook may return one middleware, an array, or `undefined`. Await `next()`
 when work must continue after downstream handling; pass an error to `next()` or
 throw to produce the adapter's diagnostic response. The request context exposes
 the actual public `origin` and the immutable development Session's abort signal.
-WebSocket upgrades bypass plugin middleware so HMR remains attached directly to
-the bundler. Utoopack supports this capability; selecting an adapter that does
-not declare `dev.clientMiddleware` fails before its listener starts.
+WebSocket upgrades bypass plugin middleware and are forwarded transparently to
+the bundler. The built-in Utoopack and Webpack adapters support this capability;
+selecting an adapter that does not declare `dev.clientMiddleware` fails before
+its listener starts.
 
 ## Build and rebuild
 
