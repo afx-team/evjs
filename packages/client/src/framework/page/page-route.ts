@@ -108,6 +108,8 @@ interface NormalizedPageDefinition extends PageDefinition {
 export interface CreatePagesAppOptions {
   routes: PageDefinition[];
   rootModule?: RootLayoutModule;
+  /** Application-root wrappers applied outside the optional root layout. */
+  wrappers?: PageWrapperModule[];
   basepath?: string;
   history?: PagesAppHistoryInput;
 }
@@ -147,6 +149,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   assertCreatePagesAppOptions(options);
   const canonicalRoutes = clonePageDefinitions(options.routes);
   const rootModule = options.rootModule;
+  const wrappers = options.wrappers?.map((wrapper) => ({ ...wrapper }));
   const queryClient = new QueryClient();
   let runtimeState: PagesAppRuntimeState = {
     routes: [],
@@ -193,6 +196,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
     const routeTree = createGeneratedRouteTree({
       routes: composePageDefinitions(canonicalRoutes, state.routes),
       ...(rootModule ? { rootModule } : {}),
+      ...(wrappers ? { wrappers } : {}),
     });
     const runtimeApp = createApp({
       routeTree,
@@ -228,6 +232,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       assertCreatePagesAppOptions({
         routes: composePageDefinitions(canonicalRoutes, nextRuntimeRoutes),
         ...(rootModule ? { rootModule } : {}),
+        ...(wrappers ? { wrappers } : {}),
       });
     }
     const nextBasepath = runtimeOptions.basepath ?? runtimeState.basepath;
@@ -583,9 +588,11 @@ function createGeneratedRouteTree(options: CreatePagesAppOptions): AnyRoute {
       pageMetadataController.apply(pageMetadata);
       return () => pageMetadataController.restore();
     }, [pageMetadata]);
-    return RootComponent && !bypassRootLayout
-      ? createElement(RootComponent, undefined, outlet)
-      : outlet;
+    const content =
+      RootComponent && !bypassRootLayout
+        ? createElement(RootComponent, undefined, outlet)
+        : outlet;
+    return applyRouteWrappers(content, options.wrappers ?? []);
   }
 
   const rootRoute = createPageRootRoute({
@@ -784,6 +791,7 @@ function assertCreatePagesAppOptions(
       "[evjs] createPagesApp() rootModule.default must be a React component.",
     );
   }
+  assertPageWrapperModules(options.wrappers, "application", "wrappers");
   assertPagesAppBasepath(options.basepath, "basepath");
   assertPagesAppHistoryInput(options.history, "history");
 
@@ -1281,7 +1289,7 @@ function assertPageRouteRedirect(
 
 function assertPageWrapperModules(
   value: unknown,
-  routeKind: PageRouteKind,
+  routeKind: PageRouteKind | "application",
   path: string,
 ): asserts value is PageWrapperModule[] | undefined {
   if (value === undefined) return;

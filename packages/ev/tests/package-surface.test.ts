@@ -273,6 +273,7 @@ const expectedBuildToolsRuntimeExports = [
   "loadConfigFile",
   "materializeFrameworkIR",
   "portableArtifactPathsConflict",
+  "preflightBundlerDev",
   "prepareFrameworkBuild",
   "prepareFrameworkIR",
   "publishFrameworkIR",

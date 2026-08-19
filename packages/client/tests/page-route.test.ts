@@ -942,6 +942,60 @@ describe("createPagesApp", () => {
     expect(await renderRoute("/group/plain")).not.toContain("data-root-layout");
   });
 
+  it("keeps Application wrappers around routes that bypass the root layout", async () => {
+    function OuterApplicationWrapper({ children }: { children?: ReactNode }) {
+      return createElement(
+        "section",
+        { "data-application-wrapper": "outer" },
+        children,
+      );
+    }
+    function InnerApplicationWrapper({ children }: { children?: ReactNode }) {
+      return createElement(
+        "article",
+        { "data-application-wrapper": "inner" },
+        children,
+      );
+    }
+    function RootLayout({ children }: { children?: ReactNode }) {
+      return createElement("main", { "data-root-layout": true }, children);
+    }
+    function Plain() {
+      return createElement("p", undefined, "plain");
+    }
+    const { app } = createPagesApp({
+      wrappers: [
+        { default: OuterApplicationWrapper },
+        { default: InnerApplicationWrapper },
+      ],
+      rootModule: { default: RootLayout },
+      routes: [
+        {
+          path: "/plain",
+          module: { default: Plain },
+          layout: false,
+        },
+      ],
+      history: { type: "memory", initialEntries: ["/plain"] },
+    });
+    const router = app.router as client.AnyRouter;
+    await router.load();
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: app.queryClient },
+        createElement(client.RouterProvider, { router }),
+      ),
+    );
+
+    expect(html).toContain('data-application-wrapper="outer"');
+    expect(html).toContain('data-application-wrapper="inner"');
+    expect(html.indexOf('data-application-wrapper="outer"')).toBeLessThan(
+      html.indexOf('data-application-wrapper="inner"'),
+    );
+    expect(html).not.toContain("data-root-layout");
+  });
+
   it("rejects malformed generated page route options before router setup", () => {
     function Home() {
       return null;

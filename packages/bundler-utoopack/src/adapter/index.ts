@@ -29,6 +29,11 @@ import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
 import {
+  type ClientMiddlewareServerHandle,
+  reserveEphemeralPort,
+  startClientMiddlewareServer,
+} from "./client-middleware-server.js";
+import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./dev-worker-client.js";
@@ -168,6 +173,9 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       rsc: false,
       ppr: false,
     },
+    dev: {
+      clientMiddleware: true,
+    },
   },
   async build(
     ctx: BundlerBuildContext<ConfigComplete>,
@@ -225,6 +233,11 @@ async function startUtoopackDev(
   );
   throwIfUtoopackDevAborted(signal);
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
+  const clientMiddlewares = ctx.clientMiddlewares ?? [];
+  const middlewareEnabled = clientMiddlewares.length > 0;
+  const internalPort = middlewareEnabled
+    ? await reserveEphemeralPort()
+    : config.dev.port;
 
   logger.info`Using @utoo/pack@${utoopackVersion}.`;
   logger.info`Starting development server with utoopack...`;
@@ -239,8 +252,8 @@ async function startUtoopackDev(
     workerSchedulerBindingPath: workerScheduler.bindingPath,
     spaHistoryFallbackRuleIndex: getSpaHistoryFallbackRuleIndex(utoopackConfig),
     server: {
-      port: config.dev.port,
-      https: config.dev.https !== false,
+      port: internalPort,
+      https: middlewareEnabled ? false : config.dev.https !== false,
       hostname: "0.0.0.0",
       logServerInfo: false,
     },
@@ -282,15 +295,31 @@ async function startUtoopackDev(
       workerScheduler.failure,
       waitForAbort(signal),
     ]);
-    controller.setOrigin(
-      formatDevServerOrigin(config, ready.port, ready.hostname),
-    );
+    if (middlewareEnabled) {
+      const middlewareServer = await startClientMiddlewareServer({
+        cwd,
+        https: config.dev.https,
+        port: config.dev.port,
+        signal,
+        middlewares: clientMiddlewares,
+        upstream: {
+          hostname: ready.hostname === "0.0.0.0" ? "127.0.0.1" : ready.hostname,
+          port: ready.port,
+        },
+      });
+      controller.attachClientMiddlewareServer(middlewareServer);
+      controller.setOrigin(middlewareServer.origin);
+    } else {
+      controller.setOrigin(
+        formatDevServerOrigin(config, ready.port, ready.hostname),
+      );
+    }
     const fallbackUpdated = ready.spaHistoryFallbackUpdated;
-    if (ready.port !== config.dev.port) {
+    if (ready.port !== internalPort) {
       const fallbackStatus = fallbackUpdated
         ? " The SPA fallback now targets the actual dev server."
         : "";
-      logger.warn`Reserved client port ${config.dev.port} became unavailable during startup; Utoopack is listening on ${ready.port}.${fallbackStatus}`;
+      logger.warn`Reserved client port ${internalPort} became unavailable during startup; Utoopack is listening on ${ready.port}.${fallbackStatus}`;
     }
 
     const serverStatsPath = path.join(outputPaths.serverDir, "stats.json");
@@ -362,11 +391,13 @@ class UtoopackDevController implements BundlerDevController {
   origin = "";
   readonly done: Promise<void>;
   private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
+  private clientMiddlewareServer: ClientMiddlewareServerHandle | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private hasEmittedDevArtifacts = false;
   private closed = false;
   private closePromise: Promise<void> | undefined;
   private readonly closingController = new AbortController();
+  private rejectClientMiddlewareFailure!: (error: unknown) => void;
 
   constructor(
     private readonly options: {
@@ -378,15 +409,30 @@ class UtoopackDevController implements BundlerDevController {
       onServerBundleReady: BundlerDevContext<ConfigComplete>["callbacks"]["onServerBundleReady"];
     },
   ) {
+    const clientMiddlewareFailure = new Promise<never>((_resolve, reject) => {
+      this.rejectClientMiddlewareFailure = reject;
+    });
+    void clientMiddlewareFailure.catch(() => {});
     this.done = Promise.race([
       options.worker.done,
       options.workerScheduler.failure,
+      clientMiddlewareFailure,
     ]);
     void this.done.catch(() => {});
   }
 
   setOrigin(origin: string): void {
     this.origin = origin;
+  }
+
+  attachClientMiddlewareServer(server: ClientMiddlewareServerHandle): void {
+    if (this.clientMiddlewareServer) {
+      throw new Error(
+        "[evjs] Utoopack client middleware server was attached more than once.",
+      );
+    }
+    this.clientMiddlewareServer = server;
+    void server.failure.catch(this.rejectClientMiddlewareFailure);
   }
 
   attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
@@ -416,6 +462,11 @@ class UtoopackDevController implements BundlerDevController {
       this.closed = true;
       this.closingController.abort();
       const errors: unknown[] = [];
+      try {
+        await this.clientMiddlewareServer?.close();
+      } catch (error) {
+        errors.push(error);
+      }
       try {
         await this.serverStatsMonitor?.close();
       } catch (error) {

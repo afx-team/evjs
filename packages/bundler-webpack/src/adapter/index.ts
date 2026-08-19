@@ -115,6 +115,9 @@ export const webpackAdapter: BundlerAdapter<WebpackConfigs> = {
       rsc: true,
       ppr: true,
     },
+    dev: {
+      clientMiddleware: false,
+    },
   },
 
   async build(

@@ -108,6 +108,30 @@ emitIR(ctx) {
 
 对生成的 SPA 应用入口，`autoStart: false` 会导出 App 与 `start(container)` 而不自动挂载。替换入口负责第一次启动。
 
+## 包装 CSR Application 根节点
+
+需要一个只在客户端运行、并包围完整 CSR Application 的 React 组件时使用 `application.wrapper`。它也覆盖显式跳过根 Layout 的路由：
+
+```ts
+emitIR(ctx) {
+  const boundary = ctx.emit.module({
+    id: "root-boundary",
+    scope: { kind: "application" },
+    extension: ".tsx",
+    source:
+      "export default function RootBoundary({ children }) { return children; }",
+  });
+
+  ctx.slot("application.wrapper").add({
+    id: "root-boundary",
+    module: boundary,
+    target: { kind: "application", applicationId: "default" },
+  });
+}
+```
+
+省略 `target` 会包裹所有生成的 CSR Application。后加入的贡献位于外层。该槽位刻意不投影 SSR；需要客户端与服务端页面同时生效时使用 `page.wrapper`。
+
 ## 为页面添加包装组件
 
 需要 React 行为包围客户端、服务端或两侧页面时，使用 `page.wrapper`。模块必须默认导出接收 `children` 的组件：
@@ -216,6 +240,7 @@ ctx.slot("server.entry").add({
 | --- | --- |
 | `client.entry` | 导入或替换客户端入口 |
 | `server.entry` | 导入或替换已有页面服务端入口 |
+| `application.wrapper` | 包裹完整的客户端 CSR Application 根节点 |
 | `page.wrapper` | 在客户端/服务端渲染中包裹页面组件 |
 | `server.request.middleware` | 增加插件拥有的服务端请求中间件 |
 | `html.tag` | 增加结构化文档标签 |

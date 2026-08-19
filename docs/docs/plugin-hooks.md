@@ -39,6 +39,7 @@ inside the hooks returned from `setup()`.
 | Hook | Use it for |
 | --- | --- |
 | `configureBundler(config, ctx)` | Adapter-specific loaders, resolution, optimization, or other low-level settings |
+| `clientDevMiddleware({ signal })` | Intercept client development HTTP requests before static and HTML fallback handling |
 | `devServerReady({ origin, signal })` | Connect development tools after the client listener is available |
 | `beforeBuild(ctx)` | Start work that needs fresh bundler results before output is finalized |
 | `transformOutput(output, ctx)` | Adjust asset groups or add deployment metadata |
@@ -115,6 +116,34 @@ setup() {
   output or the server runtime is ready.
 
 Keep output-dependent work in `afterBuild()`.
+
+## Client development middleware
+
+`clientDevMiddleware()` registers Node request/response middleware in stable
+plugin order before the client development server's fallback:
+
+```ts
+setup() {
+  return {
+    clientDevMiddleware({ signal: sessionSignal }) {
+      return async (request, response, next, { origin, signal }) => {
+        if (!request.url?.startsWith("/__plugin/")) return next();
+        if (signal.aborted || sessionSignal.aborted) return;
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ origin }));
+      };
+    },
+  };
+}
+```
+
+The hook may return one middleware, an array, or `undefined`. Await `next()`
+when work must continue after downstream handling; pass an error to `next()` or
+throw to produce the adapter's diagnostic response. The request context exposes
+the actual public `origin` and the immutable development Session's abort signal.
+WebSocket upgrades bypass plugin middleware so HMR remains attached directly to
+the bundler. Utoopack supports this capability; selecting an adapter that does
+not declare `dev.clientMiddleware` fails before its listener starts.
 
 ## Build and rebuild
 

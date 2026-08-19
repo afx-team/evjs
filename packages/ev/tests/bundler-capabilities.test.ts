@@ -5,6 +5,7 @@ import {
   type BundlerCapabilities,
   getBundlerBuildCapabilityGaps,
   preflightBundlerBuild,
+  preflightBundlerDev,
   resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
 } from "../src/_internal/build/bundler.js";
@@ -156,5 +157,28 @@ describe("bundler capability preflight", () => {
     expect(
       getBundlerBuildCapabilityGaps({ capabilities: noCapabilities }, plan),
     ).toEqual([]);
+  });
+
+  it("fails before startup when plugin client middleware is unsupported", () => {
+    expect(() =>
+      preflightBundlerDev(
+        { name: "limited", capabilities: noCapabilities },
+        { clientMiddleware: true },
+      ),
+    ).toThrow(
+      'Bundler "limited" does not support the capabilities required by this framework plan: dev.clientMiddleware',
+    );
+    expect(() =>
+      preflightBundlerDev(
+        {
+          name: "complete",
+          capabilities: {
+            ...allCapabilities,
+            dev: { clientMiddleware: true },
+          },
+        },
+        { clientMiddleware: true },
+      ),
+    ).not.toThrow();
   });
 });

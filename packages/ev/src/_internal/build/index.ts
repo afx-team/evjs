@@ -15,6 +15,7 @@ export {
   type BundlerDevContext,
   type BundlerDevController,
   type BundlerEmittedFiles,
+  preflightBundlerDev,
   resolveBundlerClientEntryAssets,
   resolveBundlerServerEntryAssets,
 } from "./bundler.js";
