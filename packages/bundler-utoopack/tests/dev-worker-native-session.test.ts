@@ -1,52 +1,22 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import type { ConfigComplete } from "@utoo/pack";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { startUtoopackDevWorker } from "../src/adapter/development/dev-worker-client.js";
-import {
-  ensureUtoopackProcessWorkerScheduler,
-  markUtoopackProcessForBuild,
-  __testing as schedulerTesting,
-} from "../src/adapter/development/dev-worker-scheduler.js";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { afterEach, describe, expect, it } from "vitest";
 
-const fixtureUrl = new URL(
-  "./fixtures/dev-worker-native-session.mjs",
-  import.meta.url,
+const execFileAsync = promisify(execFile);
+const harnessPath = fileURLToPath(
+  new URL("./fixtures/dev-worker-native-owner-harness.mjs", import.meta.url),
 );
-const require = createRequire(import.meta.url);
+const hostPreloadHarnessPath = fileURLToPath(
+  new URL("./fixtures/dev-worker-host-preload-harness.mjs", import.meta.url),
+);
 const tempDirs: string[] = [];
-let previousDisablePersistentCache: string | undefined;
-let previousNodeEnv: string | undefined;
-let previousLoaderTestEnv: string | undefined;
-
-beforeEach(() => {
-  previousDisablePersistentCache = process.env.DISABLE_PERSISTENT_CACHE;
-  previousNodeEnv = process.env.NODE_ENV;
-  previousLoaderTestEnv = process.env.EVJS_LOADER_TEST_ENV;
-  delete process.env.DISABLE_PERSISTENT_CACHE;
-  process.env.NODE_ENV = "production";
-  process.env.EVJS_LOADER_TEST_ENV = "inherited-from-host";
-});
 
 afterEach(async () => {
-  if (previousDisablePersistentCache === undefined) {
-    delete process.env.DISABLE_PERSISTENT_CACHE;
-  } else {
-    process.env.DISABLE_PERSISTENT_CACHE = previousDisablePersistentCache;
-  }
-  if (previousNodeEnv === undefined) {
-    delete process.env.NODE_ENV;
-  } else {
-    process.env.NODE_ENV = previousNodeEnv;
-  }
-  if (previousLoaderTestEnv === undefined) {
-    delete process.env.EVJS_LOADER_TEST_ENV;
-  } else {
-    process.env.EVJS_LOADER_TEST_ENV = previousLoaderTestEnv;
-  }
   await Promise.all(
     tempDirs.splice(0).map((cwd) =>
       fs.promises.rm(cwd, {
@@ -57,10 +27,10 @@ afterEach(async () => {
   );
 });
 
-describe("Utoopack native dev Session replacement", () => {
-  it("starts a second native project after the first Session closes", async () => {
+describe("Utoopack single native-owner Session replacement", () => {
+  it("replaces Projects in one Worker without loading the addon in the host", async () => {
     const cwd = await fs.promises.mkdtemp(
-      path.join(os.tmpdir(), "evjs-utoopack-native-session-"),
+      path.join(os.tmpdir(), "evjs-utoopack-native-owner-"),
     );
     tempDirs.push(cwd);
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
@@ -72,22 +42,51 @@ describe("Utoopack native dev Session replacement", () => {
     const loaderPath = path.join(cwd, "custom-loader.cjs");
     await fs.promises.writeFile(loaderPath, createLoaderSource(loaderLogPath));
     await fs.promises.writeFile(path.join(cwd, "src/message.foo"), "A\n");
-    const config = createConfig(loaderPath);
-    const scheduler = await ensureUtoopackProcessWorkerScheduler();
-    const hostBinding = require(scheduler.bindingPath) as {
-      registerWorkerScheduler?: unknown;
-    };
-    expect(hostBinding.registerWorkerScheduler).toBeUndefined();
+    const port = await reservePort();
 
-    await runSession(cwd, config, scheduler.bindingPath);
-    await fs.promises.writeFile(path.join(cwd, "src/message.foo"), "B\n");
-    await fs.promises.rm(path.join(cwd, "dist"), {
-      recursive: true,
-      force: true,
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [harnessPath, cwd, loaderPath, String(port)],
+      {
+        env: {
+          ...process.env,
+          NODE_ENV: "production",
+          EVJS_LOADER_TEST_ENV: "inherited-from-host",
+        },
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: 30_000,
+      },
+    );
+    const resultLine = stdout
+      .split("\n")
+      .find((line) => line.startsWith("EVJS_NATIVE_OWNER_RESULT="));
+    expect(resultLine).toBeDefined();
+    const result = JSON.parse(
+      resultLine?.slice("EVJS_NATIVE_OWNER_RESULT=".length) ?? "null",
+    ) as {
+      firstOwnerThreadId: number;
+      secondOwnerThreadId: number;
+      hostLoadedBinding: boolean;
+      buildModeRejected: boolean;
+    };
+    expect(result).toMatchObject({
+      hostLoadedBinding: false,
+      buildModeRejected: true,
     });
-    const replacementScheduler = await ensureUtoopackProcessWorkerScheduler();
-    expect(replacementScheduler.bindingPath).toBe(scheduler.bindingPath);
-    await runSession(cwd, config, replacementScheduler.bindingPath);
+    expect(result.firstOwnerThreadId).toBeGreaterThan(0);
+    expect(result.secondOwnerThreadId).toBe(result.firstOwnerThreadId);
+
+    const { stdout: hostPreloadStdout } = await execFileAsync(
+      process.execPath,
+      [hostPreloadHarnessPath],
+      {
+        env: process.env,
+        timeout: 10_000,
+      },
+    );
+    expect(hostPreloadStdout).toContain(
+      "host process already loaded @utoo/pack's native binding",
+    );
 
     const loaderRuns = (await fs.promises.readFile(loaderLogPath, "utf8"))
       .trim()
@@ -101,52 +100,8 @@ describe("Utoopack native dev Session replacement", () => {
       expect(nodeEnv).toBe("development");
       expect(inheritedEnv).toBe("inherited-from-host");
     }
-    expect(() => markUtoopackProcessForBuild()).toThrow(
-      "build cannot run in a process that already hosted dev",
-    );
-
-    const workerCount = schedulerTesting.getLoaderWorkerCount(scheduler);
-    const exitWorkerPath = path.join(cwd, "exit-worker.mjs");
-    await fs.promises.writeFile(exitWorkerPath, "process.exit(0);\n");
-    schedulerTesting.createLoaderWorker(scheduler, {
-      cwd,
-      filename: exitWorkerPath,
-    });
-    await expect(scheduler.failure).rejects.toThrow(
-      "loader worker exited unexpectedly",
-    );
-    expect(schedulerTesting.getLoaderWorkerCount(scheduler)).toBe(workerCount);
   }, 30_000);
 });
-
-function createConfig(loaderPath: string): ConfigComplete {
-  return {
-    mode: "development",
-    entry: [{ import: "./src/index.js", name: "main" }],
-    output: {
-      path: "./dist/client",
-      filename: "[name].js",
-      chunkFilename: "[name].js",
-      clean: true,
-      publicPath: "auto",
-    },
-    // Native cache-lock release is covered by dev-worker-client.test.ts. This
-    // process-owned scheduler test must be able to remove its temporary
-    // project before the Vitest worker itself exits.
-    persistentCaching: false,
-    pluginRuntimeStrategy: "workerThreads",
-    module: {
-      rules: {
-        "*.foo": {
-          loaders: [{ loader: loaderPath }],
-          as: "*.js",
-        },
-      },
-    },
-    sourceMaps: true,
-    stats: true,
-  } as ConfigComplete;
-}
 
 function createLoaderSource(logPath: string): string {
   return `const fs = require("node:fs");
@@ -158,43 +113,6 @@ module.exports = function transform(source) {
   return "export default " + JSON.stringify(value) + ";";
 };
 `;
-}
-
-async function runSession(
-  cwd: string,
-  config: ConfigComplete,
-  workerSchedulerBindingPath: string,
-): Promise<void> {
-  const port = await reservePort();
-  const handle = startUtoopackDevWorker(
-    {
-      cwd,
-      config,
-      workerSchedulerBindingPath,
-      server: {
-        port,
-        https: false,
-        hostname: "127.0.0.1",
-        logServerInfo: false,
-      },
-    },
-    fixtureUrl,
-  );
-
-  try {
-    await expect(handle.ready).resolves.toMatchObject({
-      port,
-      spaHistoryFallbackUpdated: false,
-    });
-    await expect(
-      fs.promises.readFile(path.join(cwd, "dist/client/stats.json"), "utf8"),
-    ).resolves.toContain("entrypoints");
-    await handle.close();
-    await expect(handle.done).resolves.toBeUndefined();
-  } catch (error) {
-    await handle.close().catch(() => {});
-    throw error;
-  }
 }
 
 async function reservePort(): Promise<number> {

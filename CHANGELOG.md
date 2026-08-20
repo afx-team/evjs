@@ -6,6 +6,15 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Single-realm Utoopack native ownership** — `ev dev` now keeps Utoopack's
+  native binding, process-global loader scheduler, loader-worker pool, and all
+  sequential Projects in one long-lived Worker. Immutable Session replacement
+  runs complete Project, server, subscription, and persistent-cache cleanup
+  without moving native callbacks across Worker environments; owner and
+  shutdown failures remain fail-stop instead of starting overlapping Projects.
+
 ---
 
 ## [0.3.15] — 2026-08-20
