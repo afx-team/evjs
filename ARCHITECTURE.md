@@ -242,6 +242,20 @@ one fixed config, CoreGraph, BuildPlan, plugin-hook set, generated IR image,
 and bundler controller; adapters are never asked to replace those inputs in
 place.
 
+The Utoopack adapter keeps one native-owner Worker for the lifetime of
+`ev dev`. That Worker is the only development realm that loads Utoopack's
+native binding: it registers the process-global loader scheduler and owns all
+sequential native Projects. Individual Sessions still own and fully release
+their Project, HTTP server, subscriptions, and persistent-cache lock. The host
+exchanges cloneable Session commands with the owner and retains only callbacks
+that cannot cross the Worker boundary, such as function-valued proxy rewrites.
+Successful Utoopack process-exit requests are converted into Session-close
+acknowledgements inside the owner; unexpected exits, scheduler failures, and
+shutdown timeouts poison the owner and prevent an overlapping replacement.
+Production build and development ownership cannot be mixed in one process;
+development also rejects a host-preloaded Utoopack binding before it creates
+the owner Worker.
+
 Framework watchers cover opaque config/plugin inputs, semantic analysis
 dependencies, and Page/API topology. They compare file content and stable
 directory topology, ignore generated output, and fall back from native events

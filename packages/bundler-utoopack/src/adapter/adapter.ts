@@ -32,15 +32,11 @@ import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
+import { markUtoopackProcessForBuild } from "./development/dev-process-mode.js";
 import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./development/dev-worker-client.js";
-import {
-  ensureUtoopackProcessWorkerScheduler,
-  markUtoopackProcessForBuild,
-  type UtoopackProcessWorkerScheduler,
-} from "./development/dev-worker-scheduler.js";
 import {
   readServerStatsVersion,
   startUtoopackServerStatsMonitor,
@@ -260,13 +256,10 @@ async function startUtoopackDev(
   logger.info`Starting development server with utoopack...`;
   await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
   throwIfUtoopackDevAborted(signal);
-  const workerScheduler = await ensureUtoopackProcessWorkerScheduler();
-  throwIfUtoopackDevAborted(signal);
 
   const worker = startUtoopackDevWorker({
     cwd,
     config: utoopackConfig,
-    workerSchedulerBindingPath: workerScheduler.bindingPath,
     spaHistoryFallbackRuleIndex: getSpaHistoryFallbackRuleIndex(utoopackConfig),
     server: {
       port: internalPort,
@@ -279,7 +272,6 @@ async function startUtoopackDev(
     cwd,
     plan,
     worker,
-    workerScheduler,
     onBuildFacts: callbacks.onBuildFacts,
     onServerBundleReady: callbacks.onServerBundleReady,
   });
@@ -309,7 +301,6 @@ async function startUtoopackDev(
     const ready = await Promise.race([
       worker.ready,
       worker.failure,
-      workerScheduler.failure,
       waitForAbort(signal),
     ]);
     if (middlewareEnabled) {
@@ -366,7 +357,6 @@ async function startUtoopackDev(
     }
     controller.startInitialFacts();
     worker.throwIfFailed();
-    workerScheduler.throwIfFailed();
     return controller;
   } catch (error) {
     try {
@@ -425,7 +415,6 @@ class UtoopackDevController implements BundlerDevController {
       cwd: string;
       plan: BuildPlan;
       worker: UtoopackDevWorkerHandle;
-      workerScheduler: UtoopackProcessWorkerScheduler;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
       onServerBundleReady: BundlerDevContext<ConfigComplete>["callbacks"]["onServerBundleReady"];
     },
@@ -434,11 +423,7 @@ class UtoopackDevController implements BundlerDevController {
       this.rejectClientMiddlewareFailure = reject;
     });
     void clientMiddlewareFailure.catch(() => {});
-    this.done = Promise.race([
-      options.worker.done,
-      options.workerScheduler.failure,
-      clientMiddlewareFailure,
-    ]);
+    this.done = Promise.race([options.worker.done, clientMiddlewareFailure]);
     void this.done.catch(() => {});
   }
 
@@ -508,11 +493,6 @@ class UtoopackDevController implements BundlerDevController {
         errors.push(error);
       }
       try {
-        this.options.workerScheduler.throwIfFailed();
-      } catch (error) {
-        errors.push(error);
-      }
-      try {
         await this.devWorkQueue;
       } catch (error) {
         errors.push(error);
@@ -541,7 +521,6 @@ class UtoopackDevController implements BundlerDevController {
         this.closingController.signal,
       ),
       this.options.worker.failure,
-      this.options.workerScheduler.failure,
     ]);
   }
 
