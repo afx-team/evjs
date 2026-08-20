@@ -1,49 +1,63 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import {
-  installUtoopackGracefulShutdownBridge,
-  type UtoopackDevWorkerCommand,
-  type UtoopackDevWorkerLifecycleMessage,
-} from "../src/adapter/development/dev-worker-shutdown.js";
+import { createUtoopackReusableSessionLifecycle } from "../src/adapter/development/dev-worker-shutdown.js";
 
-class TestShutdownPort extends EventEmitter {
-  readonly postMessage =
-    vi.fn<(message: UtoopackDevWorkerLifecycleMessage) => void>();
-
-  request(message: UtoopackDevWorkerCommand): void {
-    this.emit("message", message);
-  }
+class TestSessionProcess extends EventEmitter {
+  readonly originalExit = vi.fn(
+    (_code?: string | number | null) => undefined as never,
+  );
+  exit = this.originalExit as NodeJS.Process["exit"];
 }
 
-describe("Utoopack dev worker shutdown bridge", () => {
-  it("holds an early close until Utoopack installs its signal handler", async () => {
-    const port = new TestShutdownPort();
-    const signalTarget = new EventEmitter();
-    const cleanup = vi.fn();
-    installUtoopackGracefulShutdownBridge(port, signalTarget);
+describe("Utoopack reusable Session lifecycle", () => {
+  it("converts Utoopack's successful process exit into a reusable Session close", async () => {
+    const target = new TestSessionProcess();
+    const baselineSignalHandler = vi.fn();
+    const sessionSignalHandler = vi.fn(() => {
+      queueMicrotask(() => target.exit(0));
+    });
+    target.on("SIGTERM", baselineSignalHandler);
+    const lifecycle = createUtoopackReusableSessionLifecycle(target);
+    target.on("SIGTERM", sessionSignalHandler);
 
-    port.request({ type: "close" });
-    expect(port.postMessage).not.toHaveBeenCalled();
+    await expect(lifecycle.close()).resolves.toBeUndefined();
 
-    signalTarget.on("SIGTERM", cleanup);
-    await Promise.resolve();
-
-    expect(port.postMessage).toHaveBeenCalledOnce();
-    expect(port.postMessage).toHaveBeenCalledWith({ type: "close-accepted" });
-    expect(cleanup).toHaveBeenCalledOnce();
+    expect(baselineSignalHandler).not.toHaveBeenCalled();
+    expect(sessionSignalHandler).toHaveBeenCalledOnce();
+    expect(target.originalExit).not.toHaveBeenCalled();
+    expect(target.exit).toBe(target.originalExit);
+    expect(target.rawListeners("SIGTERM")).toEqual([baselineSignalHandler]);
   });
 
-  it("acknowledges close before invoking an installed cleanup handler", async () => {
-    const order: string[] = [];
-    const port = new TestShutdownPort();
-    port.postMessage.mockImplementation(() => order.push("accepted"));
-    const signalTarget = new EventEmitter();
-    installUtoopackGracefulShutdownBridge(port, signalTarget);
-    signalTarget.on("SIGTERM", () => order.push("cleanup"));
-    await Promise.resolve();
+  it("rejects a nonzero Utoopack shutdown without terminating the test owner", async () => {
+    const target = new TestSessionProcess();
+    const lifecycle = createUtoopackReusableSessionLifecycle(target);
+    target.on("SIGTERM", () => {
+      queueMicrotask(() => target.exit(1));
+    });
 
-    port.request({ type: "close" });
+    await expect(lifecycle.close()).rejects.toThrow("reported exit code 1");
+    expect(target.originalExit).not.toHaveBeenCalled();
+    expect(target.exit).toBe(target.originalExit);
+  });
 
-    expect(order).toEqual(["accepted", "cleanup"]);
+  it("preserves unexpected process exits outside a host close request", () => {
+    const target = new TestSessionProcess();
+    const lifecycle = createUtoopackReusableSessionLifecycle(target);
+
+    target.exit(7);
+
+    expect(target.originalExit).toHaveBeenCalledWith(7);
+    lifecycle.dispose();
+  });
+
+  it("rejects close when serve did not install a Session cleanup handler", async () => {
+    const target = new TestSessionProcess();
+    const lifecycle = createUtoopackReusableSessionLifecycle(target);
+
+    await expect(lifecycle.close()).rejects.toThrow(
+      "without installing its SIGTERM cleanup handler",
+    );
+    lifecycle.dispose();
   });
 });

@@ -5,13 +5,10 @@ const require = createRequire(import.meta.url);
 const PROCESS_SCHEDULER_KEY = Symbol.for(
   "@evjs/bundler-utoopack/process-worker-scheduler",
 );
-const PROCESS_BUILD_KEY = Symbol.for(
-  "@evjs/bundler-utoopack/process-build-runtime",
-);
 const PROCESS_SCHEDULER_OWNER = "@evjs/bundler-utoopack";
 
 type UtoopackNativeBinding = typeof import("@utoo/pack/cjs/binding.js");
-interface UtoopackWorkerSchedulerBinding {
+export interface UtoopackWorkerSchedulerBinding {
   registerWorkerScheduler?: UtoopackNativeBinding["registerWorkerScheduler"];
 }
 type UtoopackWorkerCreation = Parameters<
@@ -44,13 +41,12 @@ interface UtoopackProcessWorkerSchedulerState
 
 type SchedulerGlobal = typeof globalThis & {
   [PROCESS_SCHEDULER_KEY]?: UtoopackProcessWorkerSchedulerState;
-  [PROCESS_BUILD_KEY]?: true;
 };
 
 /**
  * Turbopack's loader-worker scheduler is a native process singleton. Own its
- * JavaScript callbacks in the long-lived adapter realm so immutable dev
- * Session workers can be replaced without registering stale callbacks.
+ * JavaScript callbacks in the same long-lived Worker that owns every dev
+ * Project so adapter-owned native state never crosses a N-API environment.
  *
  * The native loader pool is process-wide too: workers may be reused by later
  * dev Projects and remain in development mode for this process's lifetime.
@@ -58,11 +54,6 @@ type SchedulerGlobal = typeof globalThis & {
 export async function ensureUtoopackProcessWorkerScheduler(): Promise<UtoopackProcessWorkerScheduler> {
   const bindingPath = require.resolve("@utoo/pack/cjs/binding.js");
   const schedulerGlobal = globalThis as SchedulerGlobal;
-  if (schedulerGlobal[PROCESS_BUILD_KEY]) {
-    throw new Error(
-      "[evjs] Utoopack dev cannot run in a process that already hosted build. Run build and dev as separate commands.",
-    );
-  }
   let scheduler = schedulerGlobal[PROCESS_SCHEDULER_KEY];
 
   if (scheduler) {
@@ -80,39 +71,6 @@ export async function ensureUtoopackProcessWorkerScheduler(): Promise<UtoopackPr
   await scheduler.registration;
   scheduler.throwIfFailed();
   return scheduler;
-}
-
-/**
- * A native loader pool cannot safely change from dev to build semantics in
- * place because existing loader workers retain their original environment.
- */
-export function markUtoopackProcessForBuild(): void {
-  const schedulerGlobal = globalThis as SchedulerGlobal;
-  const scheduler = schedulerGlobal[PROCESS_SCHEDULER_KEY];
-  if (scheduler) {
-    throw new Error(
-      "[evjs] Utoopack build cannot run in a process that already hosted dev. Run build and dev as separate commands.",
-    );
-  }
-  schedulerGlobal[PROCESS_BUILD_KEY] = true;
-}
-
-/**
- * ProjectImpl registers the loader scheduler when the binding export is a
- * function. The host already owns that process-global registration, so hide
- * only this Session realm's duplicate entry point before loading @utoo/pack.
- */
-export function delegateUtoopackWorkerSchedulerToHost(
-  expectedBindingPath: string,
-): void {
-  const bindingPath = require.resolve("@utoo/pack/cjs/binding.js");
-  if (bindingPath !== expectedBindingPath) {
-    throw new Error(
-      `[evjs] Utoopack worker resolved a different native binding than its process scheduler (${bindingPath} !== ${expectedBindingPath}). Restart ev dev with a single @utoo/pack installation.`,
-    );
-  }
-  const binding = require(bindingPath) as UtoopackWorkerSchedulerBinding;
-  binding.registerWorkerScheduler = undefined;
 }
 
 function createSchedulerState(
@@ -147,10 +105,11 @@ function createSchedulerState(
 
 async function registerProcessWorkerScheduler(
   scheduler: UtoopackProcessWorkerSchedulerState,
+  providedBinding?: UtoopackWorkerSchedulerBinding,
 ): Promise<void> {
-  const binding = require(
-    scheduler.bindingPath,
-  ) as UtoopackWorkerSchedulerBinding;
+  const binding =
+    providedBinding ??
+    (require(scheduler.bindingPath) as UtoopackWorkerSchedulerBinding);
   if (typeof binding.registerWorkerScheduler !== "function") {
     const error = new Error(
       "[evjs] Utoopack's native worker scheduler was delegated before EVJS established process ownership. Restart the current command in a fresh process.",
@@ -164,8 +123,8 @@ async function registerProcessWorkerScheduler(
       (creation) => createLoaderWorker(scheduler, creation),
       (termination) => terminateLoaderWorker(scheduler, termination),
     );
-    // Adapter-owned host Projects must skip Utoopack's realm-local scheduler
-    // registration just like outer dev Session workers do.
+    // ProjectImpl runs in this same owner realm and must reuse this one
+    // process-global registration for every sequential Session.
     binding.registerWorkerScheduler = undefined;
   } catch (cause) {
     const error = new Error(
@@ -293,6 +252,17 @@ function assertMatchingScheduler(
 }
 
 export const __testing = {
+  createScheduler(bindingPath: string): UtoopackProcessWorkerScheduler {
+    return createSchedulerState(bindingPath);
+  },
+  async registerWorkerScheduler(
+    scheduler: UtoopackProcessWorkerScheduler,
+    binding: UtoopackWorkerSchedulerBinding,
+  ): Promise<void> {
+    const state = scheduler as UtoopackProcessWorkerSchedulerState;
+    state.registration = registerProcessWorkerScheduler(state, binding);
+    await state.registration;
+  },
   createLoaderWorker(
     scheduler: UtoopackProcessWorkerScheduler,
     options: { cwd: string; filename: string },

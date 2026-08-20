@@ -9,6 +9,10 @@
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$"]
     },
+    "@evjs/bundler-utoopack#test": {
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$"]
+    },
     "@evjs/ev#test": {
       "dependsOn": ["^build"],
       "inputs": [
