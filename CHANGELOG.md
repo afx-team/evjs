@@ -8,6 +8,28 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.15] — 2026-08-20
+
+### ✨ Features
+
+- **Client development middleware** — Plugins can install ordered asynchronous
+  middleware in front of the public development server with request-origin,
+  Session abort, and cleanup lifecycles. Utoopack and Webpack both support the
+  capability, including HTTP, HTTPS, and HMR/WebSocket forwarding.
+- **Application root wrappers** — Plugins can contribute stable, ordered
+  `application.wrapper` Framework IR around the complete CSR application root
+  without replacing framework-owned entry source.
+
+### ✨ Improvements
+
+- **Domain-oriented framework sources** — Reorganized Core, shared contracts,
+  bundler adapters, runtimes, CLI, scaffolding, and plugin implementations by
+  capability while preserving supported package entry points as thin façades.
+  Published package builds now clean compiled output first so removed physical
+  paths cannot remain in release tarballs.
+
+---
+
 ## [0.3.14] — 2026-08-18
 
 ### 🐛 Bug Fixes
