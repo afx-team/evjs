@@ -5,7 +5,7 @@ import {
   dedupeShortcuts,
   normalizeShortcutKey,
   resolveShortcut,
-} from "../src/_internal/build/cli-shortcuts.js";
+} from "../src/_internal/build/operations/cli-shortcuts.js";
 import type {
   PluginCliShortcut,
   PluginDevSession,

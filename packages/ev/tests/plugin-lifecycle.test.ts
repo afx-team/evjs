@@ -8,14 +8,14 @@ import {
   runAfterBuildHooks,
   runBeforeBuildHooks,
   runDevServerReadyHooks,
-} from "../src/_internal/build/plugin-lifecycle.js";
+} from "../src/_internal/build/plugins/lifecycle.js";
 import { resolveConfig } from "../src/config/index.js";
 import {
   createPluginApplicationSettingContext,
   definePlugin,
   pluginOptions,
   prepareDefinedPluginApplicationSetting,
-} from "../src/plugin/defined.js";
+} from "../src/plugin/definition.js";
 import type {
   BuildResult,
   Plugin,

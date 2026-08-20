@@ -2,14 +2,14 @@ import type { CoreGraph, CorePagePluginSetting } from "@evjs/shared/manifest";
 import { PAGE_ANCHOR_PROVIDER_ID } from "@evjs/shared/manifest";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, it } from "vitest";
-import type { ResolvedPageFileConfig } from "../src/_internal/build/page-config-module.js";
-import { runConfigureHooks } from "../src/_internal/build/plugin-lifecycle.js";
+import type { ResolvedPageFileConfig } from "../src/_internal/build/config-loading/page-config-module.js";
+import { runConfigureHooks } from "../src/_internal/build/plugins/lifecycle.js";
 import {
   applyPluginSettings,
   collectPluginSettingsRegistry,
   createPluginSettingsResolutionSession,
   resolvePluginSettingsState,
-} from "../src/_internal/build/plugin-settings.js";
+} from "../src/_internal/build/plugins/settings.js";
 import { type Config, resolveConfig } from "../src/config/index.js";
 import {
   type ResolvedPagePluginOptionsInput,

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   readServerStatsVersion,
   startUtoopackServerStatsMonitor,
-} from "../src/adapter/server-stats-monitor.js";
+} from "../src/adapter/development/server-stats-monitor.js";
 
 describe("Utoopack server stats monitor", () => {
   it("does not let a deferred older observation replace an advanced baseline", async () => {

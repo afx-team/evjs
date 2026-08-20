@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf esm && tsc && cp src/adapter/server-function-loader.cjs src/adapter/rsc-client-reference-loader.cjs esm/adapter/",
+    "build": "rm -rf esm && tsc && cp src/adapter/config/server-function-loader.cjs src/adapter/config/rsc-client-reference-loader.cjs esm/adapter/config/",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

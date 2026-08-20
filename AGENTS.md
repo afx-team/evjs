@@ -23,12 +23,12 @@ the implementation rather than preserving the mismatch.
 
 | Concern | Implementation source | Primary coverage |
 | --- | --- | --- |
-| Page files and URL segments | `packages/ev/src/_internal/build/page-route-conventions.ts` | `page-routes.ts`, `packages/ev/tests/build-tools-page-routes.test.ts` |
-| API route files and URL segments | `packages/ev/src/_internal/build/server-route-conventions.ts` | `server-routes.ts`, `packages/ev/tests/build-tools-server-routes.test.ts` |
-| Global and route middleware | `packages/ev/src/_internal/build/server-conventions.ts` | `packages/ev/tests/build-tools-server-routes.test.ts`, `packages/ev/tests/commands.test.ts` |
-| Public configuration and routing mode | `packages/ev/src/config/index.ts` | `packages/ev/tests/config.test.ts` |
+| Page files and URL segments | `packages/ev/src/_internal/build/conventions/page-route-conventions.ts` | `discovery/page-routes.ts`, `packages/ev/tests/build-tools-page-routes.test.ts` |
+| API route files and URL segments | `packages/ev/src/_internal/build/conventions/server-route-conventions.ts` | `discovery/server-routes.ts`, `packages/ev/tests/build-tools-server-routes.test.ts` |
+| Global and route middleware | `packages/ev/src/_internal/build/discovery/server-conventions.ts` | `packages/ev/tests/build-tools-server-routes.test.ts`, `packages/ev/tests/commands.test.ts` |
+| Public configuration and routing mode | `packages/ev/src/config/resolution.ts` through `packages/ev/src/config/index.ts` | `packages/ev/tests/config.test.ts` |
 | Graph and build planning | `packages/ev/src/_internal/build/graph/*`, `plan/*` | `packages/ev/tests/build-tools-graph-plan.test.ts` |
-| Plugin settings and generated Page types | `packages/ev/src/config/plugins.ts`, `_internal/build/plugin-settings.ts`, `plugin-types.ts` | `packages/ev/tests/plugin-settings.test.ts`, `plugin-types.test.ts` |
+| Plugin settings and generated Page types | `packages/ev/src/config/plugins.ts`, `_internal/build/plugins/settings.ts`, `typegen/plugin-types.ts` | `packages/ev/tests/plugin-settings.test.ts`, `plugin-types.test.ts` |
 | Shared output contracts | `packages/shared/src/manifest` | `packages/shared/tests/manifest.test.ts` |
 
 ## Working rules
@@ -63,6 +63,9 @@ the implementation rather than preserving the mismatch.
    should explain framework design and user workflows, not implementation call
    flow. Describe current behavior; keep release history in `CHANGELOG.md` and
    active gaps in `ROADMAP.md`.
+9. Keep package roots, public subpath entries, and executable entry files as
+   façades. Place implementation in capability-owned directories and use leaf
+   imports within a domain so barrels do not hide ownership or create cycles.
 
 ## Validation
 

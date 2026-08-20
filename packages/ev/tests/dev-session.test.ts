@@ -2,16 +2,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withActiveBundler } from "../src/_internal/build/bundler/config.js";
 import type {
   BundlerAdapter,
   BundlerDevContext,
   BundlerDevController,
-} from "../src/_internal/build/bundler.js";
-import { withActiveBundler } from "../src/_internal/build/bundler-config.js";
+} from "../src/_internal/build/bundler/contracts.js";
 import {
   formatDevPageUrls,
   startDevSession,
-} from "../src/_internal/build/dev-session.js";
+} from "../src/_internal/build/dev/session.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
 import { createBuildPlan } from "../src/_internal/build/plan/index.js";
 import { resolveConfig } from "../src/config/index.js";

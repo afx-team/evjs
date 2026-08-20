@@ -16,7 +16,7 @@ import {
   createRscPageBuildEntryName,
   GENERATED_PAGES_APP_BUILD_ENTRY,
   SERVER_RUNTIME_BUILD_ENTRY_NAME,
-} from "../src/_internal/build/build-entry-conventions.js";
+} from "../src/_internal/build/conventions/build-entry-conventions.js";
 import type {
   BuildPlanConfig,
   GraphConfig,

@@ -13,7 +13,7 @@ import type {
 } from "@evjs/shared/manifest";
 import { linkBuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
-import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
+import { UtoopackManifestGenerator } from "../src/adapter/output/manifest-generator.js";
 
 const tempDirs: string[] = [];
 

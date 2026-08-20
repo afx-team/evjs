@@ -7,8 +7,8 @@ import {
   mountReactPage,
   type ReactPageRuntimeOptions,
 } from "../../rsc/react.js";
-import type { AppModule } from "../shell/index.js";
-import { registerShellModule } from "../shell/index.js";
+import { registerShellModule } from "../shell/registry.js";
+import type { AppModule } from "../shell/types.js";
 
 export type {
   ReactPageMountOptions,
@@ -19,7 +19,7 @@ export {
   createReactPageModule,
   mountReactPage,
 } from "../../rsc/react.js";
-export { registerShellModule } from "../shell/index.js";
+export { registerShellModule } from "../shell/registry.js";
 
 type GeneratedReactPageEntryOptions = Omit<
   ReactPageRuntimeOptions,

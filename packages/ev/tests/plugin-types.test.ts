@@ -16,7 +16,7 @@ import {
   removeGeneratedPluginTypes,
   syncPluginTypes,
   writePluginTypesIfChanged,
-} from "../src/_internal/build/plugin-types.js";
+} from "../src/_internal/build/typegen/plugin-types.js";
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);

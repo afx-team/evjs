@@ -1,5 +1,5 @@
 import type { Module } from "@swc/core";
-import type { ServerFunctionExport } from "../../server-fns.js";
+import type { ServerFunctionExport } from "../../analysis/server-fns.js";
 import type { TransformOptions } from "../../types.js";
 import { makeFnId } from "../../utils.js";
 

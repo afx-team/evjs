@@ -24,7 +24,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "test": "vitest run",
     "check-types": "tsc --noEmit",
     "prepack": "node scripts/deref-templates.js",

@@ -4,7 +4,7 @@ import {
   installUtoopackGracefulShutdownBridge,
   type UtoopackDevWorkerCommand,
   type UtoopackDevWorkerLifecycleMessage,
-} from "../src/adapter/dev-worker-shutdown.js";
+} from "../src/adapter/development/dev-worker-shutdown.js";
 
 class TestShutdownPort extends EventEmitter {
   readonly postMessage =

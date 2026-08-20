@@ -14,7 +14,7 @@ import type {
 } from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
-import { createUtoopackConfig } from "../src/adapter/create-config.js";
+import { createUtoopackConfig } from "../src/adapter/config/create-config.js";
 
 const require = createRequire(import.meta.url);
 

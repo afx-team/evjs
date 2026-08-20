@@ -18,14 +18,14 @@ import {
   clonePageMetadata,
   PAGE_ANCHOR_PROVIDER_ID,
 } from "@evjs/shared/manifest";
-import type { ResolvedPageFileConfig } from "../page-config-module.js";
+import type { ResolvedPageFileConfig } from "../config-loading/page-config-module.js";
 import {
   createRouteHtmlDocumentOutput,
   createRouteIndexDocumentOutput,
-} from "../page-document-output.js";
-import { resolvePageRenderMode } from "../page-rendering-contract.js";
-import { CANONICAL_PAGE_ROUTE_ROOT } from "../page-route-conventions.js";
-import type { GraphConfig } from "./index.js";
+} from "../conventions/page-document-output.js";
+import { resolvePageRenderMode } from "../conventions/page-rendering-contract.js";
+import { CANONICAL_PAGE_ROUTE_ROOT } from "../conventions/page-route-conventions.js";
+import type { GraphConfig } from "./types.js";
 
 const PAGE_ANCHOR_PRODUCER = {
   kind: "provider",

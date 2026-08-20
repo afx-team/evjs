@@ -79,6 +79,9 @@ Release automation replaces them with the release version before publishing.
    a distributed package.
 9. Update English and Chinese docs together when behavior changes. Keep release
    history in `CHANGELOG.md` and active implementation gaps in `ROADMAP.md`.
+10. Keep package roots, public subpath `index.ts` files, and executable entry
+    modules as stable façades. Put implementation in a named capability domain,
+    and import focused leaf modules inside that domain instead of its barrel.
 
 ## Common Tasks
 
@@ -201,13 +204,13 @@ npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts
 
 | Change area | Primary implementation | Focused validation |
 | --- | --- | --- |
-| Pages, routes, graph, and build plan | `packages/ev/src/_internal/build/page-routes.ts`, `graph/*`, `plan/*` | `npx turbo run test --filter=@evjs/ev` |
-| API routes and middleware | `packages/ev/src/_internal/build/server-route-conventions.ts`, `server-routes.ts`, `server-conventions.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Pages, routes, graph, and build plan | `packages/ev/src/_internal/build/discovery/page-routes.ts`, `graph/*`, `plan/*` | `npx turbo run test --filter=@evjs/ev` |
+| API routes and middleware | `packages/ev/src/_internal/build/conventions/server-route-conventions.ts`, `discovery/server-routes.ts`, `discovery/server-conventions.ts` | `npx turbo run test --filter=@evjs/ev` |
 | Configuration and package exports | `packages/ev/src/config`, package manifests | `npx turbo run test --filter=@evjs/ev` |
 | Shared output contracts | `packages/shared/src/manifest` | `npx turbo run test --filter=@evjs/shared` |
-| Server functions | `packages/ev/src/_internal/build/server-fns.ts`, client and server runtimes | `npx turbo run test --filter=@evjs/client --filter=@evjs/server` |
+| Server functions | `packages/ev/src/_internal/build/analysis/server-fns.ts`, client and server runtimes | `npx turbo run test --filter=@evjs/client --filter=@evjs/server` |
 | SSR, SSG, PPR, and RSC | graph and plan code, client RSC, server rendering | `npx turbo run test --filter=@evjs/ev --filter=@evjs/client --filter=@evjs/server` |
-| Bundler mapping | `packages/bundler-*/src/adapter`, manifest generators | Test the affected bundler package. |
+| Bundler mapping | `packages/bundler-*/src/adapter/{config,development,execution,output}` | Test the affected bundler package. |
 | Documentation | `docs/docs`, Chinese translations, package and example READMEs | `npm run lint`, `npm --workspace evjs-docs run build`, `git diff --check` |
 
 ## Commands

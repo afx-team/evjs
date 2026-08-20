@@ -3,7 +3,7 @@ import type {
   FrameworkSlot,
   FrameworkSlotName,
   PluginEmitIRContext,
-} from "./index.js";
+} from "./contracts.js";
 
 /** @internal Build-local factory used to isolate per-Page contribution ids. */
 export const pluginEmitIRScopeFactory: unique symbol = Symbol.for(

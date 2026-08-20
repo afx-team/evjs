@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
-import { startUtoopackDevWorker } from "../src/adapter/dev-worker-client.js";
+import { startUtoopackDevWorker } from "../src/adapter/development/dev-worker-client.js";
 
 const fixtureUrl = new URL("./fixtures/dev-worker-client.mjs", import.meta.url);
 const require = createRequire(import.meta.url);

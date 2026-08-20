@@ -71,6 +71,18 @@ const expectedPublishedFiles = {
   "@evjs/shared": ["esm"],
 } as const satisfies Record<PackageName, readonly string[]>;
 
+const expectedCleanBuildOutput = {
+  "@evjs/ev": "esm",
+  "@evjs/client": "esm",
+  "@evjs/server": "esm",
+  "@evjs/cli": "dist",
+  "@evjs/create-app": "dist",
+  "@evjs/plugin-qiankun": "esm",
+  "@evjs/bundler-utoopack": "esm",
+  "@evjs/bundler-webpack": "esm",
+  "@evjs/shared": "esm",
+} as const satisfies Record<PackageName, string>;
+
 const expectedPrimaryPackageExports = {
   "@evjs/ev": {
     types: "./esm/index.d.ts",
@@ -400,6 +412,15 @@ describe("workspace package surface", () => {
     }
   });
 
+  it("cleans compiled package output before rebuilding", async () => {
+    for (const packageName of expectedPackageNames) {
+      const packageJson = await readPackageJsonByName(packageName);
+      expect(packageJson.scripts?.build).toContain(
+        `rm -rf ${expectedCleanBuildOutput[packageName]} &&`,
+      );
+    }
+  });
+
   it("keeps internal runtime package dependencies explicit and workspace-local", async () => {
     for (const packageName of expectedPackageNames) {
       const packageJson = await readPackageJsonByName(packageName);
@@ -582,7 +603,7 @@ describe("workspace package surface", () => {
 
     const pluginSource = (
       await Promise.all(
-        ["index.ts", "defined.ts"].map((file) =>
+        ["contracts.ts", "definition.ts"].map((file) =>
           fs.readFile(
             path.join(repoRoot, "packages/ev/src/plugin", file),
             "utf-8",
@@ -718,6 +739,132 @@ describe("workspace package surface", () => {
     expect(runtimeExports).not.toEqual(
       expect.arrayContaining([...privateBuildToolsRuntimeExports]),
     );
+  });
+
+  it("keeps internal build implementations grouped by capability", async () => {
+    const buildRoot = path.join(repoRoot, "packages/ev/src/_internal/build");
+    const entries = await fs.readdir(buildRoot, { withFileTypes: true });
+    const rootFiles = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+    const domainDirectories = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(rootFiles).toEqual([
+      "commands.ts",
+      "index.ts",
+      "types.ts",
+      "utils.ts",
+    ]);
+    expect(domainDirectories).toEqual([
+      "analysis",
+      "bundler",
+      "config-loading",
+      "conventions",
+      "dev",
+      "discovery",
+      "generated-ir",
+      "graph",
+      "operations",
+      "output",
+      "plan",
+      "plugins",
+      "transforms",
+      "typegen",
+    ]);
+
+    const commandFacade = await fs.readFile(
+      path.join(buildRoot, "commands.ts"),
+      "utf-8",
+    );
+    expect(commandFacade).toContain('from "./operations/commands.js"');
+    expect(commandFacade).not.toContain("function ");
+
+    for (const domain of ["graph", "plan", "transforms"]) {
+      const files = await fs.readdir(path.join(buildRoot, domain));
+      expect(files).toContain("index.ts");
+      expect(files).toContain("types.ts");
+      const facade = await fs.readFile(
+        path.join(buildRoot, domain, "index.ts"),
+        "utf-8",
+      );
+      expect(facade).not.toContain("function ");
+    }
+  });
+
+  it("keeps repository package entries as domain façades", async () => {
+    const sourceRootFiles = {
+      "bundler-utoopack": ["index.ts"],
+      "bundler-webpack": ["index.ts"],
+      cli: ["cli.ts", "index.ts"],
+      client: ["index.ts", "internal.ts", "react-server-dom-webpack.d.ts"],
+      "create-app": ["index.ts"],
+      ev: ["index.ts"],
+      "plugin-qiankun": ["index.ts", "runtime.ts"],
+      server: ["index.ts"],
+      shared: ["index.ts"],
+    } as const;
+
+    for (const [packageName, expectedFiles] of Object.entries(
+      sourceRootFiles,
+    )) {
+      const entries = await fs.readdir(
+        path.join(repoRoot, "packages", packageName, "src"),
+        { withFileTypes: true },
+      );
+      expect(
+        entries
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name)
+          .sort(),
+      ).toEqual([...expectedFiles].sort());
+    }
+
+    const facadeFiles = [
+      "packages/bundler-utoopack/src/index.ts",
+      "packages/bundler-utoopack/src/adapter/index.ts",
+      "packages/bundler-webpack/src/index.ts",
+      "packages/bundler-webpack/src/adapter/index.ts",
+      "packages/cli/src/cli.ts",
+      "packages/cli/src/index.ts",
+      "packages/client/src/index.ts",
+      "packages/client/src/internal.ts",
+      "packages/create-app/src/index.ts",
+      "packages/ev/src/index.ts",
+      "packages/ev/src/config/index.ts",
+      "packages/ev/src/deployment/index.ts",
+      "packages/ev/src/navigation/index.ts",
+      "packages/ev/src/plugin/index.ts",
+      "packages/ev/src/query/index.ts",
+      "packages/ev/src/route/index.ts",
+      "packages/ev/src/server-context/index.ts",
+      "packages/ev/src/transport/index.ts",
+      "packages/plugin-qiankun/src/index.ts",
+      "packages/plugin-qiankun/src/runtime.ts",
+      "packages/server/src/index.ts",
+      "packages/server/src/app/app.ts",
+      "packages/server/src/framework-rendering/framework.ts",
+      "packages/server/src/framework-rendering/react.ts",
+      "packages/server/src/runtimes/fetch.ts",
+      "packages/server/src/runtimes/node.ts",
+      "packages/shared/src/index.ts",
+      "packages/shared/src/_internal/static-json.ts",
+      "packages/shared/src/http/index.ts",
+      "packages/shared/src/manifest/index.ts",
+    ];
+
+    for (const relativeFile of facadeFiles) {
+      const source = await fs.readFile(
+        path.join(repoRoot, relativeFile),
+        "utf-8",
+      );
+      expect(source, relativeFile).not.toMatch(
+        /^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:class|const|function|let|var)\s/m,
+      );
+    }
   });
 
   it("keeps @evjs/ev/build-tools narrowed to config loading", () => {
@@ -1264,6 +1411,7 @@ type PackageJson = {
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   exports?: Record<string, unknown>;
+  scripts?: Record<string, string>;
 };
 
 async function readPackageJson(packageDir: string): Promise<PackageJson> {

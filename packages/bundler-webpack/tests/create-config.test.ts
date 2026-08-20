@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
   type WebpackConfigs,
-} from "../src/adapter/create-config.js";
+} from "../src/adapter/config/create-config.js";
 
 describe("createWebpackConfigs", () => {
   it("uses a generated pages app entry for framework-managed pages", async () => {

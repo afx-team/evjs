@@ -22,8 +22,8 @@ import {
 } from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
-import { createClientRuntime } from "../../ev/src/_internal/build/framework-runtime.js";
+import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/discovery/convention-config.js";
+import { createClientRuntime } from "../../ev/src/_internal/build/output/framework-runtime.js";
 import {
   utoopackAdapter,
   __testing as utoopackAdapterTesting,
@@ -194,11 +194,11 @@ const utoopackMock = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("../src/adapter/dev-worker-client.js", () => ({
+vi.mock("../src/adapter/development/dev-worker-client.js", () => ({
   startUtoopackDevWorker: utoopackMock.startUtoopackDevWorker,
 }));
 
-vi.mock("../src/adapter/dev-worker-scheduler.js", () => ({
+vi.mock("../src/adapter/development/dev-worker-scheduler.js", () => ({
   markUtoopackProcessForBuild: utoopackMock.markUtoopackProcessForBuild,
   ensureUtoopackProcessWorkerScheduler:
     utoopackMock.ensureUtoopackProcessWorkerScheduler,

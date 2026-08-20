@@ -11,31 +11,31 @@ import {
 } from "@evjs/shared/manifest";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createPageClientBuildEntryName,
-  createPageServerBuildEntryName,
-  createPprShellBuildEntryName,
-  createRscPageBuildEntryName,
-} from "../src/_internal/build/build-entry-conventions.js";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
   BundlerDevController,
-} from "../src/_internal/build/bundler.js";
+} from "../src/_internal/build/bundler/contracts.js";
 import {
   build,
   dev,
   prepareFrameworkBuild,
 } from "../src/_internal/build/commands.js";
 import {
+  createPageClientBuildEntryName,
+  createPageServerBuildEntryName,
+  createPprShellBuildEntryName,
+  createRscPageBuildEntryName,
+} from "../src/_internal/build/conventions/build-entry-conventions.js";
+import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/conventions/page-route-conventions.js";
+import {
   prepareFrameworkIR,
   publishFrameworkIR,
-} from "../src/_internal/build/generated-contributions.js";
-import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
+} from "../src/_internal/build/generated-ir/generated-contributions.js";
 import {
   PAGE_ROUTE_TYPES_MARKER,
   PAGE_ROUTE_TYPES_USAGE_HINT,
-} from "../src/_internal/build/page-route-types.js";
+} from "../src/_internal/build/typegen/page-route-types.js";
 import type { Config } from "../src/config/index.js";
 import type {
   BuildResult,

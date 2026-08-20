@@ -1,9 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { BundlerAdapter } from "../src/_internal/build/bundler.js";
+import type { BundlerAdapter } from "../src/_internal/build/bundler/contracts.js";
 import {
   createNoPageRoutesFoundMessage,
   withPageRoutingDefaults,
-} from "../src/_internal/build/convention-config.js";
+} from "../src/_internal/build/discovery/convention-config.js";
 import type {
   Config,
   ExtractInstalledPlugin,

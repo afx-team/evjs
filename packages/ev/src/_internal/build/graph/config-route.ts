@@ -25,20 +25,19 @@ import {
   isCoreRoutePatternPrefix,
 } from "@evjs/shared/manifest";
 import type { ResolvedConfigRoute } from "../../../config/index.js";
-import { DEFAULT_PAGE_RENDER_MODE } from "../page-rendering-contract.js";
+import {
+  formatParseErrorMessage,
+  hasDefaultExport,
+  parseRouteModuleWithError,
+} from "../analysis/route-module.js";
+import { DEFAULT_PAGE_RENDER_MODE } from "../conventions/page-rendering-contract.js";
 import {
   PAGE_CONFIG_FILES,
   PAGE_CONFIG_LABEL,
   PAGE_ENTRY_BASENAME,
   PAGE_ENTRY_LABEL,
-} from "../page-route-conventions.js";
-import {
-  formatParseErrorMessage,
-  hasDefaultExport,
-  parseRouteModuleWithError,
-} from "../routes/shared.js";
+} from "../conventions/page-route-conventions.js";
 import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "../utils.js";
-import type { GraphConfig } from "./index.js";
 import {
   isMissingSourcePathError,
   isProjectSourceModule,
@@ -46,6 +45,7 @@ import {
   registerProjectSourceDependencies,
   registerProjectSourceResolutionCandidates,
 } from "./source-resolution.js";
+import type { GraphConfig } from "./types.js";
 
 const CONFIG_ROUTE_PRODUCER = {
   kind: "provider",

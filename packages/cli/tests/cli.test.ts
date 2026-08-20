@@ -1,11 +1,11 @@
 import type { Config } from "@evjs/ev/config";
 import type { CliFlags } from "@evjs/ev/plugin";
 import { describe, expect, it, vi } from "vitest";
+import type { DefaultBundlerConfig } from "../src/index.js";
 import {
   type CliProgramDependencies,
   runCliProgram,
-} from "../src/cli-program.js";
-import type { DefaultBundlerConfig } from "../src/index.js";
+} from "../src/program/command-program.js";
 
 function createDependencies(overrides: Partial<CliProgramDependencies> = {}) {
   const stdout: string[] = [];
