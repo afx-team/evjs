@@ -480,6 +480,7 @@ describe("resolveConfig", () => {
     });
     expect(resolved.dev.proxy).toEqual([]);
     expect(resolved.dev.cliShortcuts).toBe(true);
+    expect(resolved.logging).toEqual({ browserToTerminal: "error" });
   });
 
   it("resolves dev.cliShortcuts as a boolean", () => {
@@ -498,6 +499,54 @@ describe("resolveConfig", () => {
         resolveConfig({ dev: { cliShortcuts } } as unknown as Config),
       ).toThrow("[evjs] dev.cliShortcuts must be a boolean when provided.");
     }
+  });
+
+  it("resolves logging.browserToTerminal with Next.js-compatible values", () => {
+    expect(resolveConfig({}).logging.browserToTerminal).toBe("error");
+    expect(
+      resolveConfig({ logging: { browserToTerminal: "error" } }).logging
+        .browserToTerminal,
+    ).toBe("error");
+    expect(
+      resolveConfig({ logging: { browserToTerminal: "warn" } }).logging
+        .browserToTerminal,
+    ).toBe("warn");
+    expect(
+      resolveConfig({ logging: { browserToTerminal: true } }).logging
+        .browserToTerminal,
+    ).toBe(true);
+    expect(
+      resolveConfig({ logging: { browserToTerminal: false } }).logging
+        .browserToTerminal,
+    ).toBe(false);
+    expect(resolveConfig({ logging: false }).logging.browserToTerminal).toBe(
+      false,
+    );
+  });
+
+  it("rejects invalid logging.browserToTerminal values", () => {
+    for (const browserToTerminal of ["verbose", 0, null, {}, []]) {
+      expect(() =>
+        resolveConfig({
+          logging: { browserToTerminal },
+        } as unknown as Config),
+      ).toThrow(
+        '[evjs] logging.browserToTerminal must be a boolean, "error", or "warn" when provided.',
+      );
+    }
+  });
+
+  it("strictly validates the logging config boundary", () => {
+    expect(() => resolveConfig({ logging: true } as unknown as Config)).toThrow(
+      "[evjs] logging must be a config object.",
+    );
+    expect(() =>
+      resolveConfig({
+        logging: { browserToTerminal: "error", unknown: true },
+      } as unknown as Config),
+    ).toThrow(
+      "[evjs] logging.unknown is not supported. Use browserToTerminal.",
+    );
   });
 
   it("accepts only plain config records at root and nested boundaries", () => {

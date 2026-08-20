@@ -21,6 +21,7 @@ page-plugin settings.
 | `routing` | Enable file-based pages and select SPA or MPA | Not enabled until declared |
 | `conventions` | Enable all framework file conventions | `true` |
 | `dev` | Browser development server | Port `3000` |
+| `logging` | Development logging, including browser-to-terminal forwarding | Browser errors forwarded |
 | `server` | Server runtime, build resolution, and development server | Base path `/__evjs`, dev port `3001` |
 | `transport` | Browser-to-server origin | Same origin |
 | `target` | Production Android and iOS compatibility target | Bundler default |
@@ -128,6 +129,22 @@ A proxy rule accepts `context`, `target`, optional `pathRewrite`,
 `changeOrigin`, and `secure`. The default Utoopack adapter supports boolean
 client HTTPS. Select the Webpack adapter when the client dev server requires a
 custom key/certificate pair.
+
+### `logging`
+
+`logging.browserToTerminal` follows the Next.js-compatible level contract and
+only affects `ev dev` with the Utoopack adapter:
+
+| Value | Browser output forwarded to the terminal |
+| --- | --- |
+| `"error"` | Errors and unhandled rejections (default) |
+| `"warn"` | Warnings plus errors |
+| `true` | All standard console levels |
+| `false` | Nothing |
+
+Set top-level `logging: false` to disable configurable logging. Essential CLI
+lifecycle output and fatal diagnostics remain enabled. The Webpack adapter does
+not currently implement browser log forwarding.
 
 ### `server.dev`
 

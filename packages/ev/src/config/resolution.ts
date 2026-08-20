@@ -65,6 +65,15 @@ export interface ResolvedDevConfig {
   cliShortcuts: boolean;
 }
 
+/** Browser log forwarding levels supported during development. */
+export type BrowserToTerminal = boolean | "error" | "warn";
+
+/** Resolved framework logging configuration (all defaults applied). */
+export interface ResolvedLoggingConfig {
+  /** Forward browser console output to the development terminal. */
+  browserToTerminal: BrowserToTerminal;
+}
+
 /** Proxy rule for the dev server. */
 export interface DevProxyRule {
   context: string[];
@@ -135,6 +144,8 @@ export interface ResolvedConfig<TBundlerCfg = unknown> {
   application?: ResolvedConfigRouteApplication;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
+  /** Framework logging options. */
+  logging: ResolvedLoggingConfig;
   /** Server configuration. */
   server: ResolvedServerConfig;
   /** Browser-to-server transport configuration. */
@@ -180,6 +191,12 @@ export interface Config<TBundlerCfg = unknown> {
 
   /** Client dev server options. */
   dev?: DevConfig;
+
+  /**
+   * Framework logging options. Set to `false` to disable configurable logging.
+   * Essential CLI lifecycle messages and fatal diagnostics are unaffected.
+   */
+  logging?: LoggingConfig | false;
 
   /** Server configuration. */
   server?: ServerConfig;
@@ -247,6 +264,19 @@ export interface DevConfig {
    * this option.
    */
   cliShortcuts?: boolean;
+}
+
+/** Framework logging options. */
+export interface LoggingConfig {
+  /**
+   * Forward browser console output to the terminal while `ev dev` runs.
+   *
+   * - `false`: disable browser log forwarding
+   * - `true`: forward all standard browser console levels
+   * - `"warn"`: forward warnings and errors
+   * - `"error"`: forward errors only (default)
+   */
+  browserToTerminal?: BrowserToTerminal;
 }
 
 /** Server configuration. */
@@ -549,6 +579,7 @@ export const CONFIG_DEFAULTS = {
   outputServerDir: "dist/server",
   pageRoot: CANONICAL_PAGE_ROUTE_ROOT,
   mount: "#app",
+  browserToTerminal: "error",
 } as const;
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "conventions",
@@ -556,6 +587,7 @@ const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "polyfill",
   "output",
   "dev",
+  "logging",
   "server",
   "transport",
   "routing",
@@ -591,6 +623,7 @@ const PUBLIC_DEV_CONFIG_KEYS = new Set([
   "proxy",
   "cliShortcuts",
 ]);
+const PUBLIC_LOGGING_CONFIG_KEYS = new Set(["browserToTerminal"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set([
   "basePath",
   "rsc",
@@ -673,6 +706,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
   const conventions = resolveConventionsConfig(config.conventions);
   const devConfig = resolveOptionalConfigRecord<DevConfig>(config.dev, "dev");
   validateDevConfigKeys(devConfig);
+  const loggingConfig = resolveLoggingConfig(config.logging);
   const serverConfig = resolveOptionalConfigRecord<ServerConfig>(
     config.server,
     "server",
@@ -767,6 +801,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
       proxy: resolveDevProxyRules(devConfig.proxy),
       cliShortcuts,
     },
+    logging: loggingConfig,
     server: {
       basePath: serverBasePath,
       runtime: {
@@ -1118,7 +1153,35 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     config,
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
-    "conventions, output, dev, server, transport, routing, application, bundler, or plugins",
+    "conventions, output, dev, logging, server, transport, routing, application, bundler, or plugins",
+  );
+}
+
+function resolveLoggingConfig(
+  logging: Config["logging"],
+): ResolvedLoggingConfig {
+  if (logging === false) {
+    return { browserToTerminal: false };
+  }
+  const loggingConfig = resolveOptionalConfigRecord<LoggingConfig>(
+    logging,
+    "logging",
+  );
+  validateLoggingConfigKeys(loggingConfig);
+  return {
+    browserToTerminal: resolveBrowserToTerminal(
+      loggingConfig.browserToTerminal,
+    ),
+  };
+}
+
+function resolveBrowserToTerminal(value: unknown): BrowserToTerminal {
+  if (value === undefined) return CONFIG_DEFAULTS.browserToTerminal;
+  if (typeof value === "boolean" || value === "error" || value === "warn") {
+    return value;
+  }
+  throw new Error(
+    '[evjs] logging.browserToTerminal must be a boolean, "error", or "warn" when provided.',
   );
 }
 
@@ -1698,6 +1761,15 @@ function validateDevConfigKeys(dev: DevConfig): void {
     PUBLIC_DEV_CONFIG_KEYS,
     "dev",
     "port, https, proxy, or cliShortcuts",
+  );
+}
+
+function validateLoggingConfigKeys(logging: LoggingConfig): void {
+  assertKnownConfigKeys(
+    logging,
+    PUBLIC_LOGGING_CONFIG_KEYS,
+    "logging",
+    "browserToTerminal",
   );
 }
 

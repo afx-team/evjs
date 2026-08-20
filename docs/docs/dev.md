@@ -42,6 +42,9 @@ the same project directory at a time; stop an existing `dev`, `prepare`, or
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
+  logging: {
+    browserToTerminal: "error",  // Browser errors -> terminal (default)
+  },
   dev: {
     port: 4000,
   },
@@ -171,6 +174,25 @@ ev dev --no-shortcuts
 evjs core does not reserve shortcut keys; installed plugins define the keys
 they use. Plugin authors can find the authoring contract in
 [Plugin Hooks](./plugin-hooks).
+
+## Browser logs in the terminal
+
+The Utoopack development server forwards browser errors to the terminal by
+default. Configure the Next.js-compatible forwarding level in `ev.config.ts`:
+
+```ts
+export default defineConfig({
+  logging: {
+    browserToTerminal: "warn",
+  },
+});
+```
+
+Use `"error"` for errors only (the default), `"warn"` for warnings and errors,
+`true` for all standard console levels, or `false` to disable forwarding.
+Forwarded lines use a `[browser]` prefix and include source-mapped application
+locations when available. This is development-only and is not a production log
+collector. The Webpack adapter does not currently implement this option.
 
 ## Test server paths directly
 

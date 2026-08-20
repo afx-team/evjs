@@ -20,7 +20,7 @@ import {
   resolveBuildOutputPaths,
   SERVER_FUNCTION_TRANSFORM_RUNTIME,
 } from "@evjs/ev/_internal/build";
-import type { ResolvedConfig } from "@evjs/ev/config";
+import type { BrowserToTerminal, ResolvedConfig } from "@evjs/ev/config";
 import type { ConfigureBundlerContext, PluginHooks } from "@evjs/ev/plugin";
 import { pageRoutePathToRegExp } from "@evjs/shared";
 import type { BuildPlan } from "@evjs/shared/manifest";
@@ -40,6 +40,12 @@ const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 const lessImplementation = require.resolve("less");
 const lessLoader = require.resolve("less-loader");
 const spaHistoryFallbackRuleIndexes = new WeakMap<ConfigComplete, number>();
+
+type UtoopackDevServerConfigWithBrowserLogs = NonNullable<
+  ConfigComplete["devServer"]
+> & {
+  browserToTerminal?: BrowserToTerminal;
+};
 
 export function getSpaHistoryFallbackRuleIndex(
   config: ConfigComplete,
@@ -117,6 +123,16 @@ export async function createUtoopackConfig(
 
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
+
+  const devServerConfig: UtoopackDevServerConfigWithBrowserLogs = {
+    hot: true,
+    port: config.dev.port,
+    https: config.dev.https !== false,
+    proxy: devProxy,
+    ...(!isProduction
+      ? { browserToTerminal: config.logging.browserToTerminal }
+      : {}),
+  };
 
   const utoopackConfig: ConfigComplete = {
     mode,
@@ -209,12 +225,7 @@ export async function createUtoopackConfig(
       : {}),
 
     // Dev server configuration
-    devServer: {
-      hot: true,
-      port: config.dev.port,
-      https: config.dev.https !== false,
-      proxy: devProxy,
-    },
+    devServer: devServerConfig,
   };
   const frameworkExpectation =
     snapshotUtoopackFrameworkExpectation(utoopackConfig);
