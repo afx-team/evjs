@@ -24,6 +24,7 @@ import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/discovery/convention-config.js";
 import { createClientRuntime } from "../../ev/src/_internal/build/output/framework-runtime.js";
+import { createUtoopackConfig } from "../src/adapter/config/create-config.js";
 import {
   utoopackAdapter,
   __testing as utoopackAdapterTesting,
@@ -456,6 +457,33 @@ describe("utoopackAdapter output safety", () => {
       '[evjs] output.server output directory "dist/linked-output/server" must not traverse symbolic link "dist/linked-output".',
     );
     await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe("keep");
+  });
+});
+
+describe("utoopackAdapter browser log forwarding config", () => {
+  it("maps the resolved level into development config only", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      logging: { browserToTerminal: "warn" },
+    });
+    const { plan } = await createBuildContext(config, cwd);
+
+    const development = await createUtoopackConfig(config, plan, cwd, []);
+    expect(Reflect.get(development.devServer ?? {}, "browserToTerminal")).toBe(
+      "warn",
+    );
+
+    const productionPlan = structuredClone(plan);
+    productionPlan.mode = "production";
+    const production = await createUtoopackConfig(
+      config,
+      productionPlan,
+      cwd,
+      [],
+    );
+    expect(Object.hasOwn(production.devServer ?? {}, "browserToTerminal")).toBe(
+      false,
+    );
   });
 });
 

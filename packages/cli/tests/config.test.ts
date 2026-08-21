@@ -46,6 +46,7 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
     expect(CONFIG_DEFAULTS.serverBasePath).toBe("/__evjs");
     expect(CONFIG_DEFAULTS.crossOriginLoading).toBe("anonymous");
+    expect(CONFIG_DEFAULTS.browserToTerminal).toBe("error");
   });
 
   it("is readonly", () => {
@@ -61,6 +62,7 @@ describe("CONFIG_DEFAULTS", () => {
       outputServerDir: "dist/server",
       pageRoot: "./src/pages",
       mount: "#app",
+      browserToTerminal: "error",
     });
   });
 });

@@ -37,6 +37,9 @@ flowchart LR
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
+  logging: {
+    browserToTerminal: "error",  // 浏览器错误 -> 终端（默认值）
+  },
   dev: {
     port: 4000,
   },
@@ -149,6 +152,20 @@ ev dev --no-shortcuts
 ```
 
 evjs 核心不占用任何按键，具体快捷键由已安装插件定义。插件作者可以在[插件生命周期钩子](./plugin-hooks)查看契约。
+
+## 在终端查看浏览器日志
+
+Utoopack 开发服务器默认会将浏览器错误转发到终端。在 `ev.config.ts` 中使用与 Next.js 兼容的选项配置转发级别：
+
+```ts
+export default defineConfig({
+  logging: {
+    browserToTerminal: "warn",
+  },
+});
+```
+
+`"error"` 仅转发错误（默认值），`"warn"` 转发警告与错误，`true` 转发全部标准 console 级别，`false` 关闭转发。转发行以 `[browser]` 为前缀，并在可用时包含 source map 还原后的应用源码位置。该能力仅用于开发，并非生产日志采集器。Webpack 适配器目前尚未实现此选项。
 
 ## 直接测试服务端路径
 

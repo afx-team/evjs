@@ -19,6 +19,7 @@ export default defineConfig({
 | `routing` | 启用文件页面并选择 SPA 或 MPA | 声明后才启用 |
 | `conventions` | 启用全部框架文件约定 | `true` |
 | `dev` | 浏览器开发服务器 | 端口 `3000` |
+| `logging` | 开发日志，包括浏览器到终端转发 | 默认转发浏览器错误 |
 | `server` | 服务端运行时、构建解析与开发服务器 | 基础路径 `/__evjs`，开发端口 `3001` |
 | `transport` | 浏览器到服务端的来源 | 同源 |
 | `target` | 生产 Android 与 iOS 兼容目标 | 构建器默认值 |
@@ -120,6 +121,20 @@ export default defineConfig({
 | `cliShortcuts` | `boolean` | `true` |
 
 代理规则支持 `context`、`target`，以及可选 `pathRewrite`、`changeOrigin` 和 `secure`。默认 Utoopack 适配器支持布尔形式的客户端 HTTPS；需要自定义客户端证书时选择 Webpack 适配器。
+
+### `logging`
+
+`logging.browserToTerminal` 使用与 Next.js 兼容的级别契约，仅影响采用
+Utoopack 适配器的 `ev dev`：
+
+| 值 | 转发到终端的浏览器输出 |
+| --- | --- |
+| `"error"` | 错误与未处理的 Promise rejection（默认值） |
+| `"warn"` | 警告与错误 |
+| `true` | 全部标准 console 级别 |
+| `false` | 不转发 |
+
+设置顶层 `logging: false` 可关闭可配置日志。必要的 CLI 生命周期输出与致命诊断仍会保留。Webpack 适配器目前尚未实现浏览器日志转发。
 
 ### `server.dev`
 

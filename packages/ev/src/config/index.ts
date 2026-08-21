@@ -1,4 +1,5 @@
 export {
+  type BrowserToTerminal,
   type ClientTarget,
   CONFIG_DEFAULTS,
   type Config,
@@ -14,6 +15,7 @@ export {
   definePageConfig,
   type ExtractInstalledPlugin,
   type InstalledPluginRegistry,
+  type LoggingConfig,
   merge,
   type OutputConfig,
   type PageAnchorMetadata,
@@ -32,6 +34,7 @@ export {
   type ResolvedConfigRouteApplicationDocument,
   type ResolvedDevConfig,
   type ResolvedFrameworkConfig,
+  type ResolvedLoggingConfig,
   type ResolvedOutputConfig,
   type ResolvedPageRoutingConfig,
   type ResolvedPolyfillConfig,

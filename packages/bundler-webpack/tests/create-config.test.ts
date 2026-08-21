@@ -1222,6 +1222,9 @@ function createResolvedConfig(
       proxy: [],
       cliShortcuts: true,
     },
+    logging: {
+      browserToTerminal: "error",
+    },
     output: {
       client: "dist/client",
       server: "dist/server",

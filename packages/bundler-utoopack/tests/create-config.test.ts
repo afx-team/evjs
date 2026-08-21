@@ -47,6 +47,9 @@ describe("createUtoopackConfig", () => {
         proxy: [],
         cliShortcuts: true,
       },
+      logging: {
+        browserToTerminal: "error",
+      },
       server: {
         basePath: "/__evjs",
         runtime: {
