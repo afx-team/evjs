@@ -28,7 +28,7 @@ jobs:
           package-manager-cache: false
 
       - name: Setup npm
-        run: npm install -g npm@11.6.2
+        run: npm install -g npm@11.19.0
 
       - name: Install Dependencies
         run: npm install
@@ -129,6 +129,25 @@ jobs:
           }
 
           if (process.env.OIDC_DIAGNOSTIC === "true") {
+            for (const packageName of trustedPublisherPackages) {
+              console.log(`Trusted publisher record for ${packageName}:`);
+              const trustResult = spawnSync(
+                "npm",
+                [
+                  "trust",
+                  "list",
+                  packageName,
+                  "--json",
+                  "--registry",
+                  registry,
+                ],
+                { stdio: "inherit", env: process.env },
+              );
+              console.log(
+                `${packageName}: npm trust list exited with ${trustResult.status}`,
+              );
+            }
+
             const claimsToken = await getGithubNpmIdToken();
             const claims = JSON.parse(
               Buffer.from(claimsToken.split(".")[1], "base64url").toString(
