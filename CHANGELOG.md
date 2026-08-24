@@ -6,6 +6,24 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.16] — 2026-08-24
+
+### ✨ Features
+
+- **Browser logs in the development terminal** — Applications can configure
+  `logging.browserToTerminal` as `"error"`, `"warn"`, `true`, or `false`.
+  Utoopack forwards browser console output with source-mapped locations during
+  `ev dev`, defaulting to errors only; Webpack remains unchanged.
+
+### ✨ Improvements
+
+- **TypeScript 7 toolchain** — The repository compiler baseline, published
+  workspace development toolchain, documentation, examples, and create-app
+  templates now consistently target TypeScript 7.0.2. Compiler-invoking tests
+  use the public TypeScript package surface.
+
 ### 🐛 Bug Fixes
 
 - **Single-realm Utoopack native ownership** — `ev dev` now keeps Utoopack's
