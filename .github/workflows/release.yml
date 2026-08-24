@@ -47,6 +47,7 @@ jobs:
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          OIDC_DIAGNOSTIC: "true"
           RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           node --input-type=module <<'NODE'
@@ -125,6 +126,62 @@ jobs:
               }
             }
             throw new Error(`Failed to retrieve GitHub OIDC token: ${lastError}`);
+          }
+
+          if (process.env.OIDC_DIAGNOSTIC === "true") {
+            const claimsToken = await getGithubNpmIdToken();
+            const claims = JSON.parse(
+              Buffer.from(claimsToken.split(".")[1], "base64url").toString(
+                "utf8",
+              ),
+            );
+            console.log(
+              "GitHub OIDC claims:",
+              JSON.stringify(
+                {
+                  audience: claims.aud,
+                  environment: claims.environment ?? null,
+                  eventName: claims.event_name,
+                  issuer: claims.iss,
+                  jobWorkflowRef: claims.job_workflow_ref,
+                  ref: claims.ref,
+                  repository: claims.repository,
+                  repositoryOwner: claims.repository_owner,
+                  runnerEnvironment: claims.runner_environment,
+                  subject: claims.sub,
+                  workflow: claims.workflow,
+                  workflowRef: claims.workflow_ref,
+                },
+                null,
+                2,
+              ),
+            );
+
+            for (const packageName of trustedPublisherPackages) {
+              const idToken = await getGithubNpmIdToken();
+              const escapedPackageName = packageName.replace("/", "%2f");
+              const response = await fetch(
+                new URL(
+                  `/-/npm/v1/oidc/token/exchange/package/${escapedPackageName}`,
+                  registry,
+                ),
+                {
+                  method: "POST",
+                  headers: {
+                    Accept: "application/json",
+                    Authorization: `Bearer ${idToken}`,
+                  },
+                },
+              );
+              const body = await response.json();
+              console.log(
+                `${packageName}: npm OIDC exchange ${response.status} ${
+                  response.ok ? "accepted" : (body.message ?? "rejected")
+                }`,
+              );
+            }
+
+            throw new Error("OIDC diagnostic completed without publishing.");
           }
 
           const workspacePackages = readdirSync("packages")
