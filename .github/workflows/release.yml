@@ -201,6 +201,7 @@ jobs:
             if (trustedPublisherPackages.has(name)) {
               delete publishEnv.NODE_AUTH_TOKEN;
               delete publishEnv.NPM_CONFIG_USERCONFIG;
+              publishEnv.NPM_CONFIG_LOGLEVEL = "verbose";
               publishEnv.NPM_ID_TOKEN = await getGithubNpmIdToken();
             }
             const publishResult = spawnSync(
