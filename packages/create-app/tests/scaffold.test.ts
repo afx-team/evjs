@@ -254,6 +254,19 @@ describe("create-app scaffolding", () => {
     }
   });
 
+  it("templates target the TypeScript 7 compiler", () => {
+    for (const template of listTemplateNames()) {
+      const pkg = JSON.parse(
+        fs.readFileSync(
+          path.join(templatesDir, template, "package.json"),
+          "utf-8",
+        ),
+      );
+
+      expect(pkg.devDependencies?.typescript).toMatch(/^\^7\./);
+    }
+  });
+
   it("template tsconfig enables the default source import alias", () => {
     const templates = listTemplateNames();
 

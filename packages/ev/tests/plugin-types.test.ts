@@ -415,8 +415,6 @@ describe("plugin type output", () => {
       `,
       "tsconfig.json": JSON.stringify({
         compilerOptions: {
-          baseUrl: ".",
-          ignoreDeprecations: "6.0",
           module: "ESNext",
           moduleResolution: "Bundler",
           noEmit: true,
@@ -432,7 +430,7 @@ describe("plugin type output", () => {
     });
     await syncPluginTypes({ cwd });
 
-    const tsc = require.resolve("typescript/bin/tsc");
+    const tsc = resolveTypeScriptCli();
     await expect(
       execFileAsync(process.execPath, [tsc, "--project", "tsconfig.json"], {
         cwd,
@@ -491,8 +489,6 @@ describe("plugin type output", () => {
       `,
         "tsconfig.json": JSON.stringify({
           compilerOptions: {
-            baseUrl: ".",
-            ignoreDeprecations: "6.0",
             module: "ESNext",
             moduleResolution: "Bundler",
             noEmit: true,
@@ -518,7 +514,7 @@ describe("plugin type output", () => {
       });
       await syncPluginTypes({ cwd });
 
-      const tsc = require.resolve("typescript/bin/tsc");
+      const tsc = resolveTypeScriptCli();
       await expect(
         execFileAsync(process.execPath, [tsc, "--project", "tsconfig.json"], {
           cwd,
@@ -549,8 +545,6 @@ describe("plugin type output", () => {
       `,
       "tsconfig.json": JSON.stringify({
         compilerOptions: {
-          baseUrl: ".",
-          ignoreDeprecations: "6.0",
           module: "ESNext",
           moduleResolution: "Bundler",
           noEmit: true,
@@ -566,7 +560,7 @@ describe("plugin type output", () => {
     });
     await syncPluginTypes({ cwd });
 
-    const tsc = require.resolve("typescript/bin/tsc");
+    const tsc = resolveTypeScriptCli();
     await expect(
       execFileAsync(process.execPath, [tsc, "--project", "tsconfig.json"], {
         cwd,
@@ -579,6 +573,14 @@ async function createTempDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ev-plugin-types-"));
   tempDirs.push(dir);
   return dir;
+}
+
+function resolveTypeScriptCli(): string {
+  return path.join(
+    path.dirname(require.resolve("typescript/package.json")),
+    "bin",
+    "tsc",
+  );
 }
 
 async function writeFixtureFiles(
