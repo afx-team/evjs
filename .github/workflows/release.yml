@@ -200,6 +200,41 @@ jobs:
               );
             }
 
+            const diagnosticWorkspaces = new Map([
+              ["@evjs/ev", "packages/ev"],
+              ["@evjs/server", "packages/server"],
+            ]);
+            for (const [packageName, workspace] of diagnosticWorkspaces) {
+              for (const command of ["publish", "stage publish"]) {
+                console.log(`${packageName}: npm ${command} --dry-run`);
+                const diagnosticEnv = { ...process.env };
+                delete diagnosticEnv.NODE_AUTH_TOKEN;
+                delete diagnosticEnv.NPM_CONFIG_USERCONFIG;
+                diagnosticEnv.NPM_CONFIG_LOGLEVEL = "verbose";
+                diagnosticEnv.NPM_ID_TOKEN = await getGithubNpmIdToken();
+                const commandArgs =
+                  command === "publish" ? ["publish"] : ["stage", "publish"];
+                const result = spawnSync(
+                  "npm",
+                  [
+                    ...commandArgs,
+                    "--workspace",
+                    workspace,
+                    "--access",
+                    "public",
+                    "--dry-run",
+                    "--ignore-scripts",
+                    "--registry",
+                    registry,
+                  ],
+                  { stdio: "inherit", env: diagnosticEnv },
+                );
+                console.log(
+                  `${packageName}: npm ${command} --dry-run exited with ${result.status}`,
+                );
+              }
+            }
+
             throw new Error("OIDC diagnostic completed without publishing.");
           }
 
