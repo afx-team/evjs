@@ -59,6 +59,10 @@ jobs:
             throw new Error("RELEASE_VERSION is required.");
           }
           const registry = "https://registry.npmjs.org";
+          const trustedPublisherPackages = new Set([
+            "@evjs/ev",
+            "@evjs/server",
+          ]);
 
           const prereleaseId = version.match(
             /^[^-]+-([0-9A-Za-z-]+)(?:[.+]|$)/,
@@ -194,7 +198,7 @@ jobs:
 
             console.log(`Publishing ${spec}...`);
             const publishEnv = { ...process.env };
-            if (name === "@evjs/ev") {
+            if (trustedPublisherPackages.has(name)) {
               delete publishEnv.NODE_AUTH_TOKEN;
               delete publishEnv.NPM_CONFIG_USERCONFIG;
               publishEnv.NPM_ID_TOKEN = await getGithubNpmIdToken();
