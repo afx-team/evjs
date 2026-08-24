@@ -49,7 +49,7 @@
     "@types/node": "^22.19.15",
     "@types/react": ">=18.0.0",
     "domparser-rs": "^0.1.0",
-    "typescript": "^6.0.2"
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "evjs",

@@ -49,7 +49,7 @@
     "@types/node": "^22.19.15",
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",
-    "typescript": "^6.0.2",
+    "typescript": "^7.0.2",
     "vitest": "^4.0.18"
   },
   "homepage": "https://github.com/afx-team/evjs#readme",

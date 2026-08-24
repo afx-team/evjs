@@ -21,7 +21,7 @@
     "@types/react": ">=18.0.0",
     "@types/react-dom": ">=18.0.0",
     "react-server-dom-webpack": "^19.2.5",
-    "typescript": "^6.0.2"
+    "typescript": "^7.0.2"
   },
   "homepage": "https://github.com/afx-team/evjs#readme",
   "bugs": {
