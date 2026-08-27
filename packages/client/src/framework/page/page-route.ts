@@ -33,12 +33,19 @@ import {
 import {
   type ComponentType,
   createElement,
+  type ReactElement,
   type ReactNode,
   useEffect,
+  useSyncExternalStore,
 } from "react";
 import { isReactComponentExport } from "../../rsc/react-component.js";
 import { isRecord } from "../../shared/validation.js";
-import { type App, createFrameworkApp } from "../../standalone/app.js";
+import {
+  type App,
+  type AppComponentHandle,
+  type AppComponentOptions,
+  createFrameworkApp,
+} from "../../standalone/app.js";
 import { PageProvider } from "./page-context.js";
 import { createPageMetadataController } from "./page-metadata.js";
 
@@ -160,6 +167,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   };
   let activeRuntime: ActivePagesAppRuntime | undefined;
   let mountedApp: MountedPagesApp | undefined;
+  let componentSession: PagesAppComponentSession | undefined;
   let runtimeUpdateQueue = Promise.resolve();
 
   const app: App<AnyRouter> = {
@@ -168,14 +176,53 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
     },
     queryClient,
     render(container, renderOptions = {}) {
+      if (componentSession) {
+        throw new Error(
+          "[evjs] PagesApp render() cannot create a DOM root while a component handle owns the Application. Dispose the component handle first.",
+        );
+      }
       const runtime = getActiveRuntime();
-      mountedApp = {
+      const mount = {
         container,
       };
-      return runtime.app.render(container, renderOptions);
+      mountedApp = mount;
+      try {
+        const result = runtime.app.render(container, renderOptions);
+        if (!result) return result;
+        return Promise.resolve(result).catch((error: unknown) => {
+          if (mountedApp === mount) mountedApp = undefined;
+          throw error;
+        });
+      } catch (error) {
+        if (mountedApp === mount) mountedApp = undefined;
+        throw error;
+      }
+    },
+    createComponent(componentOptions: AppComponentOptions = {}) {
+      if (mountedApp) {
+        throw new Error(
+          "[evjs] PagesApp createComponent() cannot acquire the Application after render() created a DOM root. Unmount the Application first.",
+        );
+      }
+      if (componentSession) {
+        throw new Error(
+          "[evjs] PagesApp createComponent() cannot acquire the Application more than once. Dispose the active component handle first.",
+        );
+      }
+      const session = createPagesAppComponentSession(
+        getActiveRuntime().app,
+        componentOptions,
+        () => {
+          if (componentSession === session) componentSession = undefined;
+        },
+      );
+      componentSession = session;
+      return session.handle;
     },
     unmount() {
       mountedApp = undefined;
+      componentSession?.dispose();
+      componentSession = undefined;
       activeRuntime?.app.unmount();
     },
   };
@@ -228,6 +275,11 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
     runtimeOptions: PagesAppRuntimeOptions,
   ): Promise<void> {
     assertPagesAppRuntimeOptions(runtimeOptions);
+    if (componentSession && runtimeOptions.history !== undefined) {
+      throw new Error(
+        "[evjs] PagesApp updateRuntime() cannot replace history while an external React host owns the Application. Configure history before createComponent().",
+      );
+    }
     const hasRouteUpdate = runtimeOptions.routes !== undefined;
     const nextRuntimeRoutes = hasRouteUpdate
       ? clonePageDefinitions(runtimeOptions.routes ?? [])
@@ -314,6 +366,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
         previousReleased = true;
         previousRuntime.history.history.destroy();
       }
+      componentSession?.replace(candidate.app);
     } catch (error) {
       let rollbackError: unknown;
       try {
@@ -351,6 +404,73 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   }
 
   return { app, updateRuntime };
+}
+
+interface PagesAppComponentSession {
+  handle: AppComponentHandle;
+  replace(app: App<AnyRouter>): void;
+  dispose(): void;
+}
+
+function createPagesAppComponentSession(
+  app: App<AnyRouter>,
+  options: AppComponentOptions,
+  onDispose: () => void,
+): PagesAppComponentSession {
+  let current = app.createComponent(options);
+  const retired: AppComponentHandle[] = [];
+  const listeners = new Set<() => void>();
+  let disposed = false;
+
+  const Component = function EvjsPagesApplicationComponent(): ReactElement {
+    const active = useSyncExternalStore(
+      (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      () => current,
+      () => current,
+    );
+    useEffect(() => {
+      const releasable = retired.splice(0);
+      for (const handle of releasable) {
+        if (handle !== active) handle.dispose();
+      }
+    }, [active]);
+    return active.element;
+  };
+
+  const abort = () => session.dispose();
+  const session: PagesAppComponentSession = {
+    handle: {
+      Component,
+      element: createElement(Component),
+      dispose: () => session.dispose(),
+    },
+    replace(nextApp) {
+      if (disposed) {
+        throw new Error(
+          "[evjs] PagesApp cannot replace a disposed component session.",
+        );
+      }
+      const next = nextApp.createComponent();
+      retired.push(current);
+      current = next;
+      for (const listener of listeners) listener();
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      options.signal?.removeEventListener("abort", abort);
+      current.dispose();
+      for (const handle of retired) handle.dispose();
+      retired.length = 0;
+      listeners.clear();
+      onDispose();
+    },
+  };
+  options.signal?.addEventListener("abort", abort, { once: true });
+  return session;
 }
 
 interface PagesAppRuntimeState {

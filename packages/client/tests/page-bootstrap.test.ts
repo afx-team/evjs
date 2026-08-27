@@ -71,6 +71,22 @@ describe("SPA page bootstrap", () => {
     expect(reactRootCalls).toEqual([]);
   });
 
+  it("releases render ownership when initial hydration loading fails", async () => {
+    const { app } = createTestPagesApp();
+    vi.spyOn(
+      app.router as unknown as { load(): Promise<void> },
+      "load",
+    ).mockRejectedValue(new Error("initial route failed"));
+
+    await expect(
+      app.render({} as HTMLElement, { hydrate: true }),
+    ).rejects.toThrow("initial route failed");
+
+    const component = app.createComponent();
+    component.dispose();
+    expect(reactRootCalls).toEqual([]);
+  });
+
   it("remounts a loaded replacement Router after runtime configuration changes", async () => {
     function Home() {
       return null;

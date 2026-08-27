@@ -38,6 +38,8 @@ export {
 } from "./server-functions/query.js";
 export type {
   App,
+  AppComponentHandle,
+  AppComponentOptions,
   AppRenderOptions,
   CreateAppOptions,
   CreateAppRouterOptions,

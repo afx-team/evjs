@@ -12,7 +12,12 @@ import {
   RouterProvider,
   stringifySearchWith,
 } from "@tanstack/react-router";
-import { type ComponentType, createElement, type ReactNode } from "react";
+import {
+  type ComponentType,
+  createElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createRoot, hydrateRoot } from "react-dom/client";
 import { formatErrorDetail } from "../shared/validation.js";
 import type { AppRouteContext } from "./context.js";
@@ -79,6 +84,27 @@ export interface AppRenderOptions {
   hydrate?: boolean;
 }
 
+/** Options for handing an Application tree to a framework-owned React root. */
+export interface AppComponentOptions {
+  /** Release the component handle when the owning mount session is aborted. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A rootless Application tree owned by an external React host.
+ *
+ * The host must stop rendering `element`/`Component` before calling `dispose()`.
+ * Creating this handle never calls ReactDOM `createRoot()` or `hydrateRoot()`.
+ */
+export interface AppComponentHandle {
+  /** Stable component for hosts that need a component type. */
+  readonly Component: ComponentType;
+  /** Ready-to-render element backed by the same router, QueryClient, and wrappers as `render()`. */
+  readonly element: ReactElement;
+  /** Release this Application's component-mode ownership. Idempotent. */
+  dispose(): void;
+}
+
 /**
  * An initialized standalone or framework-owned SPA runtime.
  */
@@ -96,6 +122,11 @@ export interface App<TRouter = unknown> {
     container: string | HTMLElement,
     options?: AppRenderOptions,
   ): void | Promise<void>;
+  /**
+   * Hand the complete Application React tree to an external root owner without
+   * creating a second DOM root.
+   */
+  createComponent(options?: AppComponentOptions): AppComponentHandle;
   /**
    * Unmount the application from the DOM.
    */
@@ -186,28 +217,51 @@ function createAppRuntime<
 
   let root: ReturnType<typeof createRoot> | undefined;
   let renderGeneration = 0;
+  let rootOwner: "dom" | symbol | undefined;
 
-  function render(
-    container: string | HTMLElement,
-    renderOptions: AppRenderOptions = {},
-  ): void | Promise<void> {
-    const el = resolveAppContainer(container);
-    assertAppRenderOptions(renderOptions);
-    const generation = ++renderGeneration;
-    const tree = rootWrappers.reduceRight<ReactNode>(
+  function createApplicationTree(): ReactElement {
+    return rootWrappers.reduceRight<ReactElement>(
       (children, RootWrapper) =>
         createElement(RootWrapper, undefined, children),
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>,
     );
+  }
+
+  function render(
+    container: string | HTMLElement,
+    renderOptions: AppRenderOptions = {},
+  ): void | Promise<void> {
+    if (typeof rootOwner === "symbol") {
+      throw new Error(
+        "[evjs] App render() cannot create a DOM root while a component handle owns the Application. Dispose the component handle first.",
+      );
+    }
+    const el = resolveAppContainer(container);
+    assertAppRenderOptions(renderOptions);
+    const generation = ++renderGeneration;
+    const tree = createApplicationTree();
+    rootOwner = "dom";
 
     if (renderOptions.hydrate) {
       return hydrateAfterRouterLoad(el, tree, generation);
     }
 
-    root = createRoot(el);
-    root.render(tree);
+    let nextRoot: ReturnType<typeof createRoot> | undefined;
+    try {
+      nextRoot = createRoot(el);
+      root = nextRoot;
+      nextRoot.render(tree);
+    } catch (error) {
+      try {
+        nextRoot?.unmount();
+      } finally {
+        if (root === nextRoot) root = undefined;
+        rootOwner = undefined;
+      }
+      throw error;
+    }
   }
 
   async function hydrateAfterRouterLoad(
@@ -215,18 +269,62 @@ function createAppRuntime<
     tree: ReactNode,
     generation: number,
   ): Promise<void> {
-    await router.load();
-    if (generation !== renderGeneration) return;
-    root = hydrateRoot(element, tree);
+    try {
+      await router.load();
+      if (generation !== renderGeneration) return;
+      root = hydrateRoot(element, tree);
+    } catch (error) {
+      if (generation === renderGeneration && !root) rootOwner = undefined;
+      throw error;
+    }
+  }
+
+  function createComponent(
+    componentOptions: AppComponentOptions = {},
+  ): AppComponentHandle {
+    assertAppComponentOptions(componentOptions);
+    if (rootOwner !== undefined) {
+      throw new Error(
+        rootOwner === "dom"
+          ? "[evjs] App createComponent() cannot acquire the Application after render() created a DOM root. Unmount the Application first."
+          : "[evjs] App createComponent() cannot acquire the Application more than once. Dispose the active component handle first.",
+      );
+    }
+    if (componentOptions.signal?.aborted) {
+      throw new Error(
+        "[evjs] App createComponent() cannot acquire the Application with an aborted signal.",
+      );
+    }
+
+    const token = Symbol("evjs-application-component-owner");
+    rootOwner = token;
+    let disposed = false;
+    const Component = function EvjsApplicationComponent(): ReactElement {
+      return createApplicationTree();
+    };
+    const abort = () => handle.dispose();
+    const handle: AppComponentHandle = {
+      Component,
+      element: createElement(Component),
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        componentOptions.signal?.removeEventListener("abort", abort);
+        if (rootOwner === token) rootOwner = undefined;
+      },
+    };
+    componentOptions.signal?.addEventListener("abort", abort, { once: true });
+    return handle;
   }
 
   function unmount(): void {
     renderGeneration += 1;
     root?.unmount();
     root = undefined;
+    if (rootOwner === "dom") rootOwner = undefined;
   }
 
-  return { router, queryClient, render, unmount };
+  return { router, queryClient, render, createComponent, unmount };
 }
 
 /** @internal */
@@ -267,6 +365,22 @@ function assertAppRenderOptions(options: AppRenderOptions): void {
   if (options.hydrate !== undefined && typeof options.hydrate !== "boolean") {
     throw new Error(
       "[evjs] App render options.hydrate must be a boolean when provided.",
+    );
+  }
+}
+
+function assertAppComponentOptions(options: AppComponentOptions): void {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("[evjs] App component options must be an object.");
+  }
+  if (
+    options.signal !== undefined &&
+    (!("aborted" in options.signal) ||
+      typeof options.signal.addEventListener !== "function" ||
+      typeof options.signal.removeEventListener !== "function")
+  ) {
+    throw new Error(
+      "[evjs] App component options.signal must be an AbortSignal when provided.",
     );
   }
 }
