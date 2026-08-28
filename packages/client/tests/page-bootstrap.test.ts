@@ -271,6 +271,9 @@ function createBootstrapApp(): App {
     router: {},
     queryClient: {} as App["queryClient"],
     render,
+    createComponent() {
+      throw new Error("not used by page bootstrap tests");
+    },
     unmount() {},
   };
 }

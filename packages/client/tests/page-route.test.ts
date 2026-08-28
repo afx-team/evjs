@@ -92,7 +92,7 @@ describe("createPagesApp", () => {
 
     expect(component.Component).toBeTypeOf("function");
     expect(isValidElement(component.element)).toBe(true);
-    await app.router.load();
+    await (app.router as { load(): Promise<void> }).load();
     expect(renderToStaticMarkup(component.element)).toContain(
       '<section data-application-wrapper="true"><p>component application</p></section>',
     );
