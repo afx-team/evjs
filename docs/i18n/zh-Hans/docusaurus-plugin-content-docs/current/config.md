@@ -37,6 +37,7 @@ export default defineConfig({
 export default defineConfig({
   routing: {
     mode: "spa",
+    basepath: "/next",
     html: "./index.html",
     mount: "#app",
   },
@@ -46,10 +47,12 @@ export default defineConfig({
 | 字段 | 类型 | 含义 |
 | --- | --- | --- |
 | `mode` | `"spa" \| "mpa"` | 必填的导航/文档模型 |
+| `basepath` | `string` | 可选的 SPA 专属浏览器路由前缀 |
 | `html` | `string` | 共享 HTML 模板，默认 `./index.html` |
 | `mount` | `string` | React 挂载选择器，默认 `#app` |
 
 页面根目录固定为 `src/pages`。SPA 与 MPA 读取相同页面文件，能力差异见[页面与路由](./client-routes)。
+`basepath` 只能用于 SPA。页面文件、类型化路由路径和导航目标仍使用应用内相对路径，浏览器、开发服务器、SSR 与部署路径会统一添加此前缀。SPA 挂载在域名根路径时省略该字段。其值必须是 `/next` 这类绝对、非根级的静态路径。
 
 ## 页面配置
 
@@ -150,7 +153,7 @@ Utoopack 适配器的 `ev dev`：
 ```ts
 export default defineConfig({
   server: {
-    basePath: "/__evjs",
+    basepath: "/__evjs",
     rsc: {
       endpoint: "/__evjs/rsc",
     },
@@ -168,13 +171,13 @@ export default defineConfig({
 
 | 字段 | 用途 |
 | --- | --- |
-| `basePath` | 服务端函数、PPR 和 RSC 端点使用的前缀 |
+| `basepath` | 服务端函数、PPR 和 RSC 端点使用的前缀 |
 | `rsc.endpoint` | 覆盖 RSC Flight 端点，本身不启用 RSC |
 | `resolve.alias` | 仅服务端构建入口使用的模块别名 |
 | `externals` | 仅服务端构建入口使用的外部模块请求 |
 | `dev` | 服务端开发端口与 HTTPS |
 
-`basePath` 默认 `/__evjs`。除非主机或反向代理占用它，否则保持默认。运行时路径必须是绝对静态 URL 路径，不能包含动态段、通配符、百分号转义或 `.`/`..` 段。
+`basepath` 默认 `/__evjs`。除非主机或反向代理占用它，否则保持默认。运行时路径必须是绝对静态 URL 路径，不能包含动态段、通配符、百分号转义或 `.`/`..` 段。
 
 RSC 在页面 `page.config.ts` 中启用，而不是通过 `server.rsc`。
 

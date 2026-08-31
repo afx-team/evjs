@@ -52,7 +52,7 @@ describe("inspect", () => {
 
     const result = await inspectFrameworkBuild(
       {
-        routing: { mode: "spa" },
+        routing: { mode: "spa", basepath: "/next" },
       },
       { cwd },
     );
@@ -62,6 +62,7 @@ describe("inspect", () => {
     expect(result).not.toHaveProperty("command");
     expect(result.routing).toMatchObject({
       routingMode: "spa",
+      basepath: "/next",
       pageRoot: "./src/pages",
     });
     expect(result.pageRoutes).toEqual([
@@ -107,12 +108,13 @@ describe("inspect", () => {
       }),
     ]);
     expect(result.runtime.server).toMatchObject({
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       ppr: "__evjs/ppr",
     });
     const text = formatInspectText(result);
     expect(text).toContain("Mode: production");
+    expect(text).toContain("basepath: /next");
     expect(text).toContain("config=./src/pages/page.config.ts");
     expect(text).toContain(
       'metadata={"title":"Home","meta":{"description":"Inspect metadata"}}',

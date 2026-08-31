@@ -39,6 +39,7 @@ Declaring `routing` enables the `src/pages/**/page.*` page tree:
 export default defineConfig({
   routing: {
     mode: "spa",
+    basepath: "/next",
     html: "./index.html",
     mount: "#app",
   },
@@ -48,11 +49,16 @@ export default defineConfig({
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `mode` | `"spa" \| "mpa"` | Required navigation/document model |
+| `basepath` | `string` | Optional SPA-only browser route prefix |
 | `html` | `string` | Shared HTML template; defaults to `./index.html` |
 | `mount` | `string` | React mount selector; defaults to `#app` |
 
 The page root is fixed at `src/pages`. SPA and MPA read the same page files.
 See [Pages and Routing](./client-routes) for their capability differences.
+`basepath` is valid only for SPA routing. Page files, typed route paths, and
+navigation targets remain application-relative, while browser, development,
+SSR, and deployment paths receive the prefix. Omit it for a root-mounted SPA.
+The value must be an absolute, non-root static pathname such as `/next`.
 
 ## Page configuration
 
@@ -161,7 +167,7 @@ The server requires an explicit key/certificate pair for HTTPS. See
 ```ts
 export default defineConfig({
   server: {
-    basePath: "/__evjs",
+    basepath: "/__evjs",
     rsc: {
       endpoint: "/__evjs/rsc",
     },
@@ -179,13 +185,13 @@ export default defineConfig({
 
 | Field | Purpose |
 | --- | --- |
-| `basePath` | Prefix used for framework server-function, PPR, and RSC endpoints |
+| `basepath` | Prefix used for framework server-function, PPR, and RSC endpoints |
 | `rsc.endpoint` | Override the RSC Flight endpoint; does not enable RSC by itself |
 | `resolve.alias` | Module aliases for server build entries only |
 | `externals` | External module requests for server build entries only |
 | `dev` | Server development port and HTTPS |
 
-`basePath` defaults to `/__evjs`. Keep the default unless a host or reverse
+`basepath` defaults to `/__evjs`. Keep the default unless a host or reverse
 proxy reserves it. Runtime paths must be absolute static URL paths; dynamic
 segments, wildcards, percent escapes, and `.`/`..` segments are invalid.
 

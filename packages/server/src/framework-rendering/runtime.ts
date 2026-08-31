@@ -54,7 +54,7 @@ export interface FrameworkRuntime {
 }
 
 export interface FrameworkRuntimeServer {
-  basePath: string;
+  basepath: string;
   fn: string;
   ppr?: string;
   rsc?: string;
@@ -496,13 +496,13 @@ export function assertFrameworkRuntime(
   assertObject(value.runtime, `${source}.runtime`);
   assertObject(value.runtime.server, `${source}.runtime.server`);
   assertRuntimePathname(
-    value.runtime.server.basePath,
-    `${source}.runtime.server.basePath`,
+    value.runtime.server.basepath,
+    `${source}.runtime.server.basepath`,
     true,
   );
   assertConcreteRuntimePathSegments(
-    value.runtime.server.basePath,
-    `${source}.runtime.server.basePath`,
+    value.runtime.server.basepath,
+    `${source}.runtime.server.basepath`,
   );
   assertRuntimeEndpoint(
     value.runtime.server.fn,
@@ -2296,7 +2296,7 @@ function matchPprRegion(
 ): PprRegionMatch | undefined {
   const endpoint = toRuntimePathname(
     runtime.runtime.server?.ppr ??
-      joinPath(runtime.runtime.server?.basePath ?? "/__evjs", "ppr"),
+      joinPath(runtime.runtime.server?.basepath ?? "/__evjs", "ppr"),
   );
   if (!pageRoutePathMatches(`${endpoint}/$pageId/$regionId`, pathname)) {
     return undefined;

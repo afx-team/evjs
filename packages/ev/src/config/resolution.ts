@@ -98,7 +98,7 @@ export interface ResolvedServerDevConfig {
 /** Resolved server configuration (all defaults applied). */
 export interface ResolvedServerConfig {
   /** Framework server runtime base path. */
-  basePath: string;
+  basepath: string;
   /** Derived framework server runtime paths. */
   runtime: ResolvedServerRuntimeConfig;
   /** RSC Flight endpoint configuration when enabled. */
@@ -120,7 +120,7 @@ export type ResolvedServerResolveConfig = ServerResolveConfig;
 export type ResolvedServerExternalsConfig = ServerExternalsConfig;
 
 export interface ResolvedServerRuntimeConfig {
-  basePath: string;
+  basepath: string;
   fn: string;
   ppr: string;
   rsc?: string;
@@ -286,7 +286,7 @@ export interface ServerConfig {
    *
    * Server function, PPR, and RSC endpoints are derived from this path.
    */
-  basePath?: string;
+  basepath?: string;
   /**
    * Optional RSC Flight endpoint override.
    *
@@ -394,6 +394,13 @@ export interface PageRoutingConfig {
    * application; `mpa` builds one independent document per Page.
    */
   mode: PageRoutingMode;
+  /**
+   * Browser route prefix for SPA Pages.
+   *
+   * Route declarations remain application-relative. This option is valid only
+   * with `mode: "spa"`; omit it when the SPA is served from the origin root.
+   */
+  basepath?: string;
   /** HTML template for generated page routes. Default: "./index.html". */
   html?: string;
   /** Mount selector for generated page routes. Default: "#app". */
@@ -548,6 +555,7 @@ export interface PageRouteDiscoveryMetadata {
 
 export interface ResolvedPageRoutingConfig {
   mode: PageRoutingMode;
+  basepath?: string;
   html: string;
   mount: string;
   routes: PageRouteNode[];
@@ -573,7 +581,7 @@ export const CONFIG_DEFAULTS = {
   html: "./index.html",
   port: 3000,
   serverPort: 3001,
-  serverBasePath: DEFAULT_SERVER_BASE_PATH,
+  serverBasepath: DEFAULT_SERVER_BASE_PATH,
   crossOriginLoading: "anonymous",
   outputClientDir: "dist/client",
   outputServerDir: "dist/server",
@@ -596,7 +604,12 @@ const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "plugins",
 ]);
 const PUBLIC_CLIENT_TARGET_KEYS = new Set(["android", "ios"]);
-const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set(["mode", "html", "mount"]);
+const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set([
+  "mode",
+  "basepath",
+  "html",
+  "mount",
+]);
 const PUBLIC_CONFIG_ROUTE_APPLICATION_KEYS = new Set([
   "pageRoot",
   "document",
@@ -625,7 +638,7 @@ const PUBLIC_DEV_CONFIG_KEYS = new Set([
 ]);
 const PUBLIC_LOGGING_CONFIG_KEYS = new Set(["browserToTerminal"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set([
-  "basePath",
+  "basepath",
   "rsc",
   "resolve",
   "externals",
@@ -676,8 +689,8 @@ function normalizePath(value: string): string {
     : withLeadingSlash;
 }
 
-function joinPath(basePath: string, segment: string): string {
-  return `${normalizePath(basePath)}/${segment.replace(/^\/+/, "")}`;
+function joinPath(basepath: string, segment: string): string {
+  return `${normalizePath(basepath)}/${segment.replace(/^\/+/, "")}`;
 }
 
 function toRuntimeEndpoint(endpoint: string): string {
@@ -768,13 +781,13 @@ export function resolveConfig<TBundlerCfg = unknown>(
     serverDevConfig.port === undefined
       ? CONFIG_DEFAULTS.serverPort
       : assertTcpPort(serverDevConfig.port, "server.dev.port");
-  const serverBasePath = normalizePath(
-    serverConfig.basePath === undefined
-      ? CONFIG_DEFAULTS.serverBasePath
-      : assertConcreteRuntimePath(serverConfig.basePath, "server.basePath"),
+  const serverBasepath = normalizePath(
+    serverConfig.basepath === undefined
+      ? CONFIG_DEFAULTS.serverBasepath
+      : assertConcreteRuntimePath(serverConfig.basepath, "server.basepath"),
   );
-  const serverEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "fn"));
-  const pprEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "ppr"));
+  const serverEndpoint = toRuntimeEndpoint(joinPath(serverBasepath, "fn"));
+  const pprEndpoint = toRuntimeEndpoint(joinPath(serverBasepath, "ppr"));
   const rscEndpoint = resolveRscEndpoint(serverRscConfig);
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
@@ -803,9 +816,9 @@ export function resolveConfig<TBundlerCfg = unknown>(
     },
     logging: loggingConfig,
     server: {
-      basePath: serverBasePath,
+      basepath: serverBasepath,
       runtime: {
-        basePath: serverBasePath,
+        basepath: serverBasepath,
         fn: serverEndpoint,
         ppr: pprEndpoint,
         ...(rscEndpoint ? { rsc: rscEndpoint } : {}),
@@ -1706,7 +1719,7 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "basePath, rsc, resolve, externals, or dev",
+    "basepath, rsc, resolve, externals, or dev",
   );
 }
 
@@ -1893,8 +1906,16 @@ function resolvePageRoutingConfig(
   );
   validatePageRoutingConfigKeys(options);
   const mode = resolvePageRoutingMode(options.mode);
+  if (mode === "mpa" && options.basepath !== undefined) {
+    throw new Error(
+      '[evjs] routing.basepath is only supported with routing.mode: "spa".',
+    );
+  }
   return {
     mode,
+    ...(options.basepath !== undefined
+      ? { basepath: assertPageRoutingBasepath(options.basepath) }
+      : {}),
     html:
       options.html === undefined
         ? defaultHtml
@@ -1912,7 +1933,7 @@ function validatePageRoutingConfigKeys(routing: Record<string, unknown>): void {
     routing,
     PUBLIC_PAGE_ROUTING_CONFIG_KEYS,
     "routing",
-    "mode, html, or mount",
+    "mode, basepath, html, or mount",
   );
 }
 
@@ -1924,6 +1945,10 @@ function resolvePageRoutingMode(mode: unknown): PageRoutingMode {
   }
   if (mode === "spa" || mode === "mpa") return mode;
   throw new Error('[evjs] routing.mode must be "spa" or "mpa".');
+}
+
+function assertPageRoutingBasepath(value: unknown): string {
+  return normalizePath(assertConcreteRuntimePath(value, "routing.basepath"));
 }
 
 function assertCrossOriginPolicy(

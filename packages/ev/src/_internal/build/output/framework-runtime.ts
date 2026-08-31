@@ -15,7 +15,7 @@ export interface ClientRuntimeOutputRuntime {
 
 export type ClientRuntimeTargetOutput = Pick<
   BuildOutput["apps"][string],
-  "mount"
+  "basepath" | "mount"
 > & {
   module?: BuildOutput["apps"][string]["module"];
 };
@@ -182,6 +182,7 @@ function createClientRuntimeApp(
   const app = output.apps.default ?? Object.values(output.apps)[0];
   if (!app) return undefined;
   return pruneUndefined({
+    basepath: app.basepath,
     mount: app.mount,
     module: app.module,
   });

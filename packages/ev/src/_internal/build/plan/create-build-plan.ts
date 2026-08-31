@@ -59,6 +59,7 @@ const DEFAULT_RESOLVE_ALIAS = {
 
 interface BuildApplicationFacts {
   id: string;
+  basepath?: string;
   documentId: string;
   html: string;
   documentOutput: string;
@@ -116,7 +117,10 @@ interface BuildPlanFacts {
  * concrete entries and Documents. This projection enforces materialization
  * constraints, but CoreGraph remains the source of semantic identity.
  */
-function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
+function deriveBuildPlanFacts(
+  graph: CoreGraph,
+  basepath?: string,
+): BuildPlanFacts {
   const apps: Record<string, BuildApplicationFacts> = {};
   const pages: Record<string, BuildPageFacts> = {};
   const routes: BuildRouteFacts[] = [];
@@ -172,6 +176,7 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     }
     apps[application.id] = {
       id: application.id,
+      ...(basepath ? { basepath } : {}),
       documentId: document.id,
       html: document.template,
       documentOutput: document.output,
@@ -311,8 +316,8 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     apps,
     pages,
     routes,
-    devClientRoutes: createDevClientRoutes(graph),
-    serverRenderedRoutePaths: createServerRenderedRoutePaths(graph),
+    devClientRoutes: createDevClientRoutes(graph, basepath),
+    serverRenderedRoutePaths: createServerRenderedRoutePaths(graph, basepath),
     serverFunctions: graph.serverFunctions,
     serverRoutes: graph.serverRoutes,
     ...(graph.clientReferences
@@ -378,6 +383,7 @@ function collectPageComposition(
 
 function createDevClientRoutes(
   graph: CoreGraph,
+  basepath?: string,
 ): BuildPlan["dev"]["clientRoutes"] {
   const routes: BuildPlan["dev"]["clientRoutes"] = [];
   const seen = new Set<string>();
@@ -399,7 +405,10 @@ function createDevClientRoutes(
       target = { kind: "app", appId: application.id };
     }
 
-    const pathname = formatCoreRoutePattern(route.pattern);
+    const pathname = withBasepath(
+      formatCoreRoutePattern(route.pattern),
+      application.routingMode === "spa" ? basepath : undefined,
+    );
     const key =
       target.kind === "page"
         ? `${pathname}:page:${target.pageId}`
@@ -412,7 +421,10 @@ function createDevClientRoutes(
   return routes;
 }
 
-function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
+function createServerRenderedRoutePaths(
+  graph: CoreGraph,
+  basepath?: string,
+): string[] {
   const paths = graph.routes.flatMap((route) => {
     if (route.target.kind !== "page") return [];
     const pageId = route.target.pageId;
@@ -423,7 +435,7 @@ function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
 
     const application = graph.applications[route.applicationId];
     if (application?.routingMode !== "mpa") {
-      return [formatCoreRoutePattern(route.pattern)];
+      return [withBasepath(formatCoreRoutePattern(route.pattern), basepath)];
     }
     const document = Object.values(graph.documents).find(
       (candidate) =>
@@ -452,7 +464,9 @@ export function createBuildPlan(
 ): BuildPlan {
   const distDir = options.distDir ?? "dist";
   assertFrameworkOutputOwnership(config.output, distDir);
-  const graph = deriveBuildPlanFacts(coreGraph);
+  const basepath =
+    config.routing?.mode === "spa" ? config.routing.basepath : undefined;
+  const graph = deriveBuildPlanFacts(coreGraph, basepath);
   const mode = options.mode ?? readBuildMode();
   const hasPpr = hasPprPages(graph);
   const hasRsc = hasRscPages(graph);
@@ -591,6 +605,7 @@ function createEntries(
       owner: { appId: app.id },
       metadata: {
         type: "pages-app",
+        ...(app.basepath ? { basepath: app.basepath } : {}),
         routes: createPagesAppRoutes(graph, app.id),
         mount: app.mount ?? "#app",
         ...(app.rootModule ? { rootModule: app.rootModule } : {}),
@@ -653,6 +668,11 @@ function createEntries(
   }
 
   return entries;
+}
+
+function withBasepath(pathname: string, basepath?: string): string {
+  if (!basepath) return pathname;
+  return pathname === "/" ? basepath : `${basepath}${pathname}`;
 }
 
 function createPagesAppRoutes(

@@ -6,6 +6,10 @@ import type {
 import type { DiscoveredServerRouteNode } from "../discovery/server-routes.js";
 
 export interface BuildPlanConfig {
+  routing?: {
+    mode: "spa" | "mpa";
+    basepath?: string;
+  };
   transport?: {
     baseUrl?: string;
   };
@@ -19,7 +23,7 @@ export interface BuildPlanConfig {
       globalMiddlewares: ServerMiddlewareNode[];
       routeMiddlewares: ServerMiddlewareNode[];
     };
-    basePath: string;
+    basepath: string;
     runtime: {
       fn: string;
       ppr?: string;

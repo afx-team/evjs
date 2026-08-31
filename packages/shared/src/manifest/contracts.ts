@@ -240,6 +240,8 @@ export interface ReactPageLayer {
 
 export interface PagesAppEntryMetadata {
   type: "pages-app";
+  /** Browser route prefix applied by the generated SPA router. */
+  basepath?: string;
   routes: PagesAppRouteNode[];
   mount: string;
   rootModule?: string;
@@ -438,7 +440,7 @@ export interface RuntimeOutput {
 }
 
 export interface RuntimeServerOutput {
-  basePath: string;
+  basepath: string;
   fn: string;
   ppr?: string;
   rsc?: string;
@@ -450,6 +452,8 @@ export interface TransportOutput {
 
 export interface AppOutput {
   assets: AssetGroup;
+  /** Browser route prefix for a framework-owned SPA Application. */
+  basepath?: string;
   document?: HtmlDocumentOutput;
   mount?: string;
   module?: RuntimeModuleOutput;
@@ -666,13 +670,13 @@ export function assertFrameworkManifestShape(
 
   assertObject(value.runtime.server, `${source}.runtime.server`);
   assertManifestPathname(
-    value.runtime.server.basePath,
-    `${source}.runtime.server.basePath`,
+    value.runtime.server.basepath,
+    `${source}.runtime.server.basepath`,
     true,
   );
   assertConcreteRuntimePathSegments(
-    value.runtime.server.basePath,
-    `${source}.runtime.server.basePath`,
+    value.runtime.server.basepath,
+    `${source}.runtime.server.basepath`,
   );
   assertManifestEndpoint(
     value.runtime.server.fn,
@@ -1133,6 +1137,10 @@ function assertAppOutputs(
 function assertAppOutput(value: unknown, source: string): void {
   assertObject(value, source);
   assertAssetGroup(value.assets, `${source}.assets`);
+  assertManifestPathname(value.basepath, `${source}.basepath`);
+  if (value.basepath !== undefined) {
+    assertConcreteRuntimePathSegments(value.basepath, `${source}.basepath`);
+  }
   assertHtmlDocumentOutput(value.document, `${source}.document`);
   assertRuntimeModuleOutput(value.module, `${source}.module`);
 }

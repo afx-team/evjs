@@ -52,6 +52,18 @@ src/pages/
 
 没有 `page.*` 的目录可以组织后代。`$...splat` 必须是最后一个路径段。动态参数与通配路径仅支持 SPA。
 
+## 将 SPA 挂载到 basepath
+
+当所有浏览器路由都必须位于同一个静态前缀下时，配置 `routing.basepath`：
+
+```ts title="ev.config.ts"
+export default defineConfig({
+  routing: { mode: "spa", basepath: "/next" },
+});
+```
+
+源码中的根页面仍是 `/`，`/about` 页面在 `Link`、`navigate`、重定向和生成的路由类型中也仍写作 `/about`；对应浏览器 URL 会变为 `/next` 与 `/next/about`。开发路由、服务端渲染和部署 fallback 同样使用带前缀的路径。MPA 不支持 `basepath`；SPA 挂载在域名根路径时省略该字段。
+
 ## 读取路径参数与查询参数
 
 使用 `@evjs/ev/route` 中的路由 Hook 函数：

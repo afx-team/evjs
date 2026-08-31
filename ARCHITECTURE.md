@@ -27,6 +27,9 @@ The semantic inputs are:
 - `routing: { mode: "spa" | "mpa" }` enables canonical Page discovery from
   `src/pages/**/page.*`. The containing directory owns the Page scope and
   determines its URL.
+- SPA-only `routing.basepath` is a delivery prefix rather than Page identity.
+  CoreGraph paths stay application-relative; BuildPlan entries, development
+  routing, linked output routes, and deployment fallbacks project the prefix.
 - `config.plugins` installs typed plugin factories and supplies each plugin's
   independent Application configuration.
 - adjacent `page.config.ts` modules provide static title, named metadata,

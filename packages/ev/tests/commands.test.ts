@@ -1464,7 +1464,7 @@ describe("prepareFrameworkBuild", () => {
       server: {},
       runtime: {
         publicPath: "auto",
-        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+        server: { basepath: "/__evjs", fn: "__evjs/fn" },
       },
       dev: {
         clientRoutes: [],
@@ -2879,7 +2879,7 @@ describe("prepareFrameworkBuild", () => {
       {
         target: { android: 5, ios: 8 },
         polyfill: {},
-        routing: { mode: "spa" },
+        routing: { mode: "spa", basepath: "/next" },
         output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
       },
@@ -2905,6 +2905,7 @@ describe("prepareFrameworkBuild", () => {
 
     expect(originalEntry).toContain("createPagesApp");
     expect(originalEntry).toContain("export const pagesApp = createPagesApp");
+    expect(originalEntry).toContain('basepath: "/next"');
     expect(originalEntry).toContain("startPagesApp");
     expect(originalEntry).toContain("../../src/pages/page");
     expect(
@@ -2912,6 +2913,7 @@ describe("prepareFrameworkBuild", () => {
     ).toBeLessThan(originalEntry.indexOf("createPagesApp"));
     expect(deferredEntry).toContain("createPagesApp");
     expect(deferredEntry).toContain("export const pagesApp = createPagesApp");
+    expect(deferredEntry).toContain('basepath: "/next"');
     expect(deferredEntry).toContain("export const start =");
     expect(deferredEntry).not.toContain('startPagesApp(app, "#app");');
     expect(
@@ -6933,7 +6935,7 @@ describe("build", () => {
         events.push(`config:${ctx.mode}`);
         config.server = {
           ...(typeof config.server === "object" ? config.server : {}),
-          basePath: "/api",
+          basepath: "/api",
         };
         return config;
       },
@@ -7892,7 +7894,7 @@ describe("build", () => {
       build(
         {
           server: {
-            basePath: "api",
+            basepath: "api",
           },
         },
         {
@@ -7900,7 +7902,7 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow('[evjs] server.basePath must start with "/".');
+    ).rejects.toThrow('[evjs] server.basepath must start with "/".');
     expect(events).not.toContain("bundler.build");
   });
 

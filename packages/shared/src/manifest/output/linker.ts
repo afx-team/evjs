@@ -68,6 +68,7 @@ const REMOVED_SERVER_LINK_INPUT_FIELDS = [
  */
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   assertBuildOutputLinkInputContract(input);
+  const basepathByAppId = createApplicationBasepathById(input.plan);
   assertBuildOutputLinkInputServerArtifacts(input);
   const serverEntryAssets = input.serverEntryAssets ?? {};
   const resolvedClientEntryAssets = resolveClientEntryAssets(
@@ -162,6 +163,9 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           id,
           {
             assets,
+            ...(basepathByAppId.has(id)
+              ? { basepath: basepathByAppId.get(id) }
+              : {}),
             document: cloneHtmlDocument(htmlDocuments.apps.get(id)),
             mount: document?.mount,
             module: entry
@@ -239,7 +243,12 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
             document: cloneHtmlDocument(htmlDocuments.pages.get(id)),
             render: page.render,
             rendering: derivePageRendering(page),
-            path: route ? formatCoreRoutePattern(route.pattern) : undefined,
+            path: route
+              ? withBasepath(
+                  formatCoreRoutePattern(route.pattern),
+                  basepathByAppId.get(page.applicationId),
+                )
+              : undefined,
             routeId: route?.id,
             componentModel: page.componentModel,
             hydrate: effectivePageHydrate(page),
@@ -320,7 +329,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     assets: entryAssets,
     apps,
     pages,
-    routes: createBuildOutputRoutes(input.graph, apps, pages),
+    routes: createBuildOutputRoutes(input.graph, apps, pages, basepathByAppId),
     server: {
       entry: serverEntry,
       assets: serverAssets,
@@ -482,6 +491,7 @@ function createBuildOutputRoutes(
   graph: CoreGraph,
   apps: BuildOutput["apps"],
   pages: Record<string, PageOutput>,
+  basepathByAppId: ReadonlyMap<string, string>,
 ): BuildOutput["routes"] {
   const emittedShapes = new Set<string>();
   const routes: BuildOutput["routes"] = [];
@@ -489,7 +499,10 @@ function createBuildOutputRoutes(
   for (const route of graph.routes) {
     if (route.target.kind === "group") continue;
 
-    const pathname = formatCoreRoutePattern(route.pattern);
+    const pathname = withBasepath(
+      formatCoreRoutePattern(route.pattern),
+      basepathByAppId.get(route.applicationId),
+    );
     const shape = pageRoutePathShapeFromPath(pathname);
     if (emittedShapes.has(shape)) continue;
     emittedShapes.add(shape);
@@ -510,6 +523,28 @@ function createBuildOutputRoutes(
   }
 
   return routes;
+}
+
+function createApplicationBasepathById(
+  plan: BuildPlan,
+): ReadonlyMap<string, string> {
+  const basepaths = new Map<string, string>();
+  for (const entry of plan.entries) {
+    if (
+      !entry.owner?.appId ||
+      entry.metadata?.type !== "pages-app" ||
+      !entry.metadata.basepath
+    ) {
+      continue;
+    }
+    basepaths.set(entry.owner.appId, entry.metadata.basepath);
+  }
+  return basepaths;
+}
+
+function withBasepath(pathname: string, basepath?: string): string {
+  if (!basepath) return pathname;
+  return pathname === "/" ? basepath : `${basepath}${pathname}`;
 }
 
 function formatCoreRoutePattern(

@@ -1231,9 +1231,9 @@ function createResolvedConfig(
       crossOriginLoading: "anonymous",
     },
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       runtime: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         ppr: "__evjs/ppr",
       },

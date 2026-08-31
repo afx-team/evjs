@@ -276,7 +276,7 @@ export interface Plugin<TBundlerCfg = unknown> {
   /**
    * Modify the raw user config before defaults are resolved.
    *
-   * Use this for framework-level config such as `server.basePath` that must
+   * Use this for framework-level config such as `server.basepath` that must
    * be visible to dev proxy setup and build-time runtime defines. Plugin
    * installation is application-owned and cannot be changed from this hook.
    */

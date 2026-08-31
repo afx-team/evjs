@@ -145,9 +145,9 @@ function createResolvedConfig(): Parameters<typeof createUtoopackConfig>[0] {
       browserToTerminal: "error",
     },
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       runtime: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         ppr: "__evjs/ppr",
       },
@@ -227,7 +227,7 @@ function createPlan(): BuildPlan {
     runtime: {
       publicPath: "auto",
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

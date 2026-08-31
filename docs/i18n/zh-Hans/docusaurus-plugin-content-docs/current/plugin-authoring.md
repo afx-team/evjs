@@ -185,15 +185,15 @@ import { defineConfig } from "@evjs/ev";
 import { merge } from "@evjs/ev/config";
 import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
-const serverBasePath = definePlugin({
+const serverBasepath = definePlugin({
   id: "server-base-path",
   application: pluginOptions({
-    defaults: { basePath: "/_framework" },
+    defaults: { basepath: "/_framework" },
   }),
   configure(config, ctx) {
     merge(config, {
       server: {
-        basePath: ctx.options.basePath,
+        basepath: ctx.options.basepath,
       },
     });
     return config;
@@ -201,12 +201,12 @@ const serverBasePath = definePlugin({
 });
 
 export default defineConfig({
-  plugins: [serverBasePath({ basePath: "/_internal" })],
+  plugins: [serverBasepath({ basepath: "/_internal" })],
 });
 ```
 
 不要用 `configureBundler()` 修改框架协议路径。服务端函数、PPR 和 RSC 端点
-都从 `server.basePath` 派生。
+都从 `server.basepath` 派生。
 
 `configure()` 完成后，后续阶段的 `ctx.config` 在类型上都是最终框架配置的深度只读
 视图。`configureBundler()` 只能修改显式传入的构建器配置。插件作者应把框架配置变更

@@ -2,6 +2,7 @@ import vm from "node:vm";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
 import {
+  createClientRuntime,
   createFrameworkRuntime,
   serializeFrameworkRuntimeExpression,
 } from "../src/_internal/build/output/framework-runtime.js";
@@ -29,6 +30,17 @@ describe("createFrameworkRuntime", () => {
     });
     expect("pages" in runtime).toBe(false);
     expect("routes" in runtime).toBe(false);
+  });
+
+  it("projects an SPA basepath into the client runtime", () => {
+    const output = createOutput(true);
+    const app = output.apps.default;
+    if (!app) throw new Error("Expected an SPA application fixture.");
+    app.basepath = "/next";
+
+    expect(createClientRuntime(output).app).toMatchObject({
+      basepath: "/next",
+    });
   });
 
   it("keeps MPA Pages inside the same routing union", () => {
@@ -162,7 +174,7 @@ function createOutput(spa: boolean): BuildOutput {
     publicPath: "/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

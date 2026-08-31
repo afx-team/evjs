@@ -231,7 +231,7 @@ function createFrameworkManifest(): SpaFrameworkRuntime {
     publicPath: "/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         rsc: "__evjs/rsc",
       },
