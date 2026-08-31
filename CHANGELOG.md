@@ -6,6 +6,12 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Strict SPA basepath mounts** — Browser locations outside
+  `routing.basepath` now remain unchanged and resolve through the application's
+  not-found boundary instead of being normalized into the mounted SPA.
+
 ---
 
 ## [0.3.17] — 2026-08-31
