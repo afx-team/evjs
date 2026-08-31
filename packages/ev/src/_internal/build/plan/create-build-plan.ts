@@ -126,6 +126,16 @@ function deriveBuildPlanFacts(
   const routes: BuildRouteFacts[] = [];
   const clientRoutes = graph.routes;
   const routeById = new Map(clientRoutes.map((route) => [route.id, route]));
+  // A Page colocated with a layout materializes as an index Route. Its
+  // descendants must stay attached to the layout because index Routes cannot
+  // own children in the client router.
+  const splitLayoutIdByRouteId = new Map(
+    clientRoutes.flatMap((route) =>
+      typeof route.facets.layout === "string" && route.target.kind === "page"
+        ? [[route.id, `${route.id}:layout`] as const]
+        : [],
+    ),
+  );
   const routesByPageId = new Map<string, CoreClientRouteNode[]>();
   const pageDocumentByPageId = new Map<
     string,
@@ -241,6 +251,9 @@ function deriveBuildPlanFacts(
 
   for (const route of clientRoutes) {
     const path = formatCoreRoutePattern(route.pattern);
+    const parentId = route.parentId
+      ? (splitLayoutIdByRouteId.get(route.parentId) ?? route.parentId)
+      : undefined;
     const page =
       route.target.kind === "page"
         ? graph.pages[route.target.pageId]
@@ -263,11 +276,16 @@ function deriveBuildPlanFacts(
     const layoutModule =
       typeof route.facets.layout === "string" ? route.facets.layout : undefined;
     if (layoutModule && route.target.kind === "page") {
-      const layoutId = `${route.id}:layout`;
+      const layoutId = splitLayoutIdByRouteId.get(route.id);
+      if (!layoutId) {
+        throw new Error(
+          `[evjs] Route "${route.id}" is missing its planned layout Route.`,
+        );
+      }
       routes.push({
         id: layoutId,
         path,
-        ...(route.parentId ? { parentId: route.parentId } : {}),
+        ...(parentId ? { parentId } : {}),
         kind: "layout",
         appId: route.applicationId,
         module: layoutModule,
@@ -291,7 +309,7 @@ function deriveBuildPlanFacts(
     routes.push({
       id: route.id,
       path,
-      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(parentId ? { parentId } : {}),
       ...(layoutModule ? { kind: "layout" as const } : {}),
       appId: route.applicationId,
       ...(route.target.kind === "page"
