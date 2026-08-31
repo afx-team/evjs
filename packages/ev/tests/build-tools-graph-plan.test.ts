@@ -474,8 +474,21 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         type: "pages-app",
         routes: expect.arrayContaining([
           expect.objectContaining({
+            id: "users:layout",
+            path: "/users",
+            kind: "layout",
+            module: "./src/pages/users/layout.tsx",
+          }),
+          expect.objectContaining({
+            id: "users",
+            path: "/users",
+            parentId: "users:layout",
+            module: "./src/pages/users/page.tsx",
+          }),
+          expect.objectContaining({
             id: "users_userId",
             path: "/users/$userId",
+            parentId: "users:layout",
             module: "./src/pages/users/$userId/page.tsx",
           }),
         ]),

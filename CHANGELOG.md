@@ -6,6 +6,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Nested Pages below directory index Pages** — SPA Pages nested below a
+  directory that owns both `layout.tsx` and `page.tsx` now remain children of
+  the layout Route, so deep URLs match instead of falling through to the
+  application's not-found boundary.
+
 ---
 
 ## [0.3.18] — 2026-08-31
