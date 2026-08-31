@@ -176,7 +176,7 @@ cookies, and credentials for the cross-origin boundary explicitly.
 
 ## Runtime paths
 
-Framework server paths derive from `server.basePath`, which defaults to
+Framework server paths derive from `server.basepath`, which defaults to
 `/__evjs`:
 
 ```text

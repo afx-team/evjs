@@ -274,7 +274,7 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    basePath: "/__evjs", // derives /__evjs/fn for server functions
+    basepath: "/__evjs", // derives /__evjs/fn for server functions
   },
 });
 ```

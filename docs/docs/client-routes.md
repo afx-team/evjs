@@ -56,6 +56,24 @@ src/pages/
 A directory without `page.*` can group descendants. `$...splat` must be the
 last segment. Dynamic parameters and splats are SPA-only.
 
+## Mount an SPA below a basepath
+
+Set `routing.basepath` when every browser route must live below one static
+prefix:
+
+```ts title="ev.config.ts"
+export default defineConfig({
+  routing: { mode: "spa", basepath: "/next" },
+});
+```
+
+The authored root Page is still `/`, and an authored `/about` Page is still
+addressed as `/about` by `Link`, `navigate`, redirects, and generated route
+types. Their browser URLs become `/next` and `/next/about`. The framework also
+uses those prefixed paths for development routing, server rendering, and
+deployment fallbacks. `basepath` is not supported by MPA routing; omit it for
+an SPA mounted at the origin root.
+
 ## Read path and search parameters
 
 Use route hooks from `@evjs/ev/route`:

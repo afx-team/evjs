@@ -51,9 +51,9 @@ describe("createUtoopackConfig", () => {
         browserToTerminal: "error",
       },
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },
@@ -429,9 +429,9 @@ describe("createUtoopackConfig", () => {
         crossOriginLoading: "anonymous",
       },
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },
@@ -602,9 +602,9 @@ describe("createUtoopackConfig", () => {
   it("keeps SPA history fallback away from BuildPlan runtime paths", async () => {
     const config = createResolvedConfig({
       server: {
-        basePath: "/rpc",
+        basepath: "/rpc",
         runtime: {
-          basePath: "/rpc",
+          basepath: "/rpc",
           fn: "rpc/fn",
           ppr: "/rpc/ppr",
           rsc: "/rpc/rsc",
@@ -1557,9 +1557,9 @@ describe("createUtoopackConfig", () => {
   it("maps server-runtime and page-server entries to named Utoopack server entries", async () => {
     const config = createResolvedConfig({
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },
@@ -1619,9 +1619,9 @@ describe("createUtoopackConfig", () => {
   it("continues to reject unsupported RSC and PPR server entries", async () => {
     const config = createResolvedConfig({
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },

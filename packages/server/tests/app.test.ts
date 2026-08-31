@@ -135,7 +135,7 @@ describe("createApp", () => {
     registerServerFunction(async () => "ok", "fn1");
     const manifest = createManifest();
     manifest.runtime.server = {
-      basePath: "/framework",
+      basepath: "/framework",
       fn: "framework/fn",
     };
 
@@ -380,7 +380,7 @@ describe("createApp", () => {
   it("returns 405 for non-POST server function RPC requests before framework rendering", async () => {
     const manifest = createManifest();
     manifest.runtime.server = {
-      basePath: "/api",
+      basepath: "/api",
       fn: "api/rpc",
     };
     manifest.routing.routes.push({
@@ -611,7 +611,7 @@ describe("createApp", () => {
         } as never,
       }),
     ).toThrow(
-      "[evjs] createApp() framework.runtime.runtime.server.basePath must be a non-empty pathname.",
+      "[evjs] createApp() framework.runtime.runtime.server.basepath must be a non-empty pathname.",
     );
     expect(() =>
       createApp({
@@ -620,7 +620,7 @@ describe("createApp", () => {
             ...manifest,
             runtime: {
               server: {
-                basePath: "/__evjs",
+                basepath: "/__evjs",
                 fn: "__evjs/fn?debug=1",
               },
             },
@@ -637,7 +637,7 @@ describe("createApp", () => {
             ...manifest,
             runtime: {
               server: {
-                basePath: "/__evjs",
+                basepath: "/__evjs",
                 fn: "__evjs/fn",
                 ppr: " /__evjs/ppr ",
               },
@@ -655,7 +655,7 @@ describe("createApp", () => {
             ...manifest,
             runtime: {
               server: {
-                basePath: "/__evjs",
+                basepath: "/__evjs",
                 fn: "__evjs/fn",
                 rsc: "__evjs/rsc?flight=1",
               },
@@ -823,11 +823,11 @@ describe("createApp", () => {
 
   it("rejects ambiguous runtime path encodings before mounting handlers", () => {
     const unicodeBasePath = createManifest();
-    unicodeBasePath.runtime.server.basePath = "/运行时";
+    unicodeBasePath.runtime.server.basepath = "/运行时";
     expect(() =>
       createApp({ framework: { runtime: unicodeBasePath } }),
     ).toThrow(
-      "framework.runtime.runtime.server.basePath must use non-empty ASCII URL-safe segments",
+      "framework.runtime.runtime.server.basepath must use non-empty ASCII URL-safe segments",
     );
 
     const encodedEndpoint = createManifest();
@@ -4931,7 +4931,7 @@ function createManifest(): SpaFrameworkRuntime {
     publicPath: "/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         rsc: "__evjs/rsc",
       },

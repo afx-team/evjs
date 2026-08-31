@@ -6,7 +6,7 @@ describe("merge", () => {
   it("merges nested config sections", () => {
     const config: Config = {
       server: {
-        basePath: "/api",
+        basepath: "/api",
         dev: { port: 3001 },
       },
     };
@@ -19,7 +19,7 @@ describe("merge", () => {
 
     expect(config).toEqual({
       server: {
-        basePath: "/api",
+        basepath: "/api",
         dev: { port: 3001, https: false },
       },
     });
@@ -76,16 +76,16 @@ describe("merge", () => {
   });
 
   it("only reads own data properties while merging", () => {
-    const inherited = { server: { basePath: "/inherited" } };
+    const inherited = { server: { basepath: "/inherited" } };
     const inheritedTarget = Object.create(inherited) as {
-      server: { basePath?: string; dev?: { port: number } };
+      server: { basepath?: string; dev?: { port: number } };
     };
 
     merge(inheritedTarget, {
       server: { dev: { port: 3001 } },
     });
 
-    expect(inherited.server).toEqual({ basePath: "/inherited" });
+    expect(inherited.server).toEqual({ basepath: "/inherited" });
     expect(Object.hasOwn(inheritedTarget, "server")).toBe(true);
     expect(inheritedTarget.server).toEqual({ dev: { port: 3001 } });
 
@@ -130,7 +130,7 @@ describe("merge", () => {
 
     merge(config, {
       server: {
-        basePath: "/api",
+        basepath: "/api",
       },
     });
 

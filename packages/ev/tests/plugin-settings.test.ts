@@ -263,7 +263,7 @@ describe("definePlugin and pluginOptions", () => {
         return {
           configureBundler(_config, bundlerCtx) {
             // @ts-expect-error The framework config view stays read-only here.
-            bundlerCtx.config.server.basePath = "/other";
+            bundlerCtx.config.server.basepath = "/other";
           },
           devServerReady(readyCtx) {
             const mode: "development" = readyCtx.mode;
@@ -1147,7 +1147,7 @@ describe("definePlugin and pluginOptions", () => {
     const plugin: Plugin = {
       id: "isolated-config-hook",
       configure(config) {
-        config.server = { ...config.server, basePath: "/candidate" };
+        config.server = { ...config.server, basepath: "/candidate" };
       },
     };
     const input: Config = { plugins: [plugin] };
@@ -1158,7 +1158,7 @@ describe("definePlugin and pluginOptions", () => {
     });
 
     expect(configured).not.toBe(input);
-    expect(configured?.server).toEqual({ basePath: "/candidate" });
+    expect(configured?.server).toEqual({ basepath: "/candidate" });
     expect(input.server).toBeUndefined();
   });
 
@@ -1235,7 +1235,7 @@ describe("definePlugin and pluginOptions", () => {
       id: "second-plugin",
       configure(config) {
         events.push("second:configure");
-        config.server = { basePath: "/api" };
+        config.server = { basepath: "/api" };
       },
     };
 
@@ -1260,7 +1260,7 @@ describe("definePlugin and pluginOptions", () => {
       resolveConfig(configured).plugins.map((plugin) => plugin.id),
     ).toEqual(["first-plugin", "second-plugin"]);
     expect(configured?.routing).toEqual({ mode: "mpa" });
-    expect(configured?.server).toEqual({ basePath: "/api" });
+    expect(configured?.server).toEqual({ basepath: "/api" });
   });
 
   it("isolates the Application plugin installation from raw config aliases", async () => {
@@ -1433,11 +1433,11 @@ describe("definePlugin and pluginOptions", () => {
     const serverBase = definePlugin({
       id: "server-base",
       application: pluginOptions<{
-        basePath: string;
+        basepath: string;
         headers: { trace: boolean; region: string };
       }>({
         defaults: {
-          basePath: "/_framework",
+          basepath: "/_framework",
           headers: { trace: false, region: "global" },
         },
       }),
@@ -1445,7 +1445,7 @@ describe("definePlugin and pluginOptions", () => {
         seen.push(context.options);
         config.server = {
           ...config.server,
-          basePath: context.options.basePath,
+          basepath: context.options.basepath,
         };
         return config;
       },
@@ -1460,10 +1460,10 @@ describe("definePlugin and pluginOptions", () => {
       },
     );
 
-    expect(result).toMatchObject({ server: { basePath: "/_framework" } });
+    expect(result).toMatchObject({ server: { basepath: "/_framework" } });
     expect(seen).toEqual([
       {
-        basePath: "/_framework",
+        basepath: "/_framework",
         headers: { trace: true, region: "global" },
       },
     ]);

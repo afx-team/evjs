@@ -6,6 +6,20 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Consistent basepath spelling** — Framework server configuration, resolved
+  config, runtime manifests, and RSC bootstrap data now use `basepath` instead
+  of `basePath`. The removed spelling is rejected rather than aliased.
+
+### ✨ Features
+
+- **SPA route basepaths** — `routing.basepath` mounts a file-convention SPA
+  below one static browser prefix while keeping Page files, typed paths,
+  navigation targets, and CoreGraph route identity application-relative.
+  Generated router entries, development and SSR routing, linked output paths,
+  and deployment fallbacks receive the prefix. MPA configuration rejects it.
+
 ---
 
 ## [0.3.16] — 2026-08-24

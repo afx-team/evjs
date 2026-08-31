@@ -235,7 +235,7 @@ export function createApp(options?: CreateAppOptions): Hono {
   if (framework?.render) {
     const pprPath = toRuntimePathname(
       framework.runtime.runtime.server.ppr ??
-        joinPath(framework.runtime.runtime.server.basePath, "ppr"),
+        joinPath(framework.runtime.runtime.server.basepath, "ppr"),
     );
     app.on(["GET", "HEAD"], [`${pprPath}/*`], async (c, next) => {
       const response = await handlePprRegionRequest(framework, c.req.raw);

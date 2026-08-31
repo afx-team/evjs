@@ -103,7 +103,7 @@ function createPrototypeEntryPlan(
     server: environment === "server" ? { entry: "./src/server.ts" } : {},
     runtime: {
       publicPath: "/",
-      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      server: { basepath: "/__evjs", fn: "__evjs/fn" },
     },
     dev: {
       clientRoutes: [],
@@ -1286,7 +1286,7 @@ function createPlan(
     runtime: {
       publicPath: "/",
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

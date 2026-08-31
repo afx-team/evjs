@@ -101,7 +101,7 @@ test.describe("deployment-adapters", () => {
       app: true,
       pages: [],
       rscPages: [],
-      serverBasePath: "/__evjs",
+      serverBasepath: "/__evjs",
     });
 
     const deployArtifact = JSON.parse(

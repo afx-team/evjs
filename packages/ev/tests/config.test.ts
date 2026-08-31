@@ -467,7 +467,7 @@ describe("resolveConfig", () => {
     expect(resolved.routing).toBeUndefined();
     expect(resolved.conventions).toBe(true);
     expect(resolved.server.runtime).toEqual({
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       ppr: "__evjs/ppr",
     });
@@ -704,6 +704,52 @@ describe("resolveConfig", () => {
     });
     expect(resolved.routing).not.toHaveProperty("sourceReader");
     expect(resolved.routing).not.toHaveProperty("entry");
+  });
+
+  it("resolves a concrete SPA basepath and rejects it for MPA", () => {
+    expect(
+      resolveConfig({
+        routing: { mode: "spa", basepath: "/next" },
+      }).routing,
+    ).toEqual({
+      mode: "spa",
+      basepath: "/next",
+      html: "./index.html",
+      mount: "#app",
+      routes: [],
+    });
+
+    expect(() =>
+      resolveConfig({
+        routing: { mode: "mpa", basepath: "/next" },
+      }),
+    ).toThrow(
+      '[evjs] routing.basepath is only supported with routing.mode: "spa".',
+    );
+  });
+
+  it.each([
+    "next",
+    "/next/",
+    "/next?tab=1",
+    "/next#hash",
+    "/next/$id",
+    "/",
+  ])("rejects invalid SPA basepath %s", (basepath) => {
+    expect(() => resolveConfig({ routing: { mode: "spa", basepath } })).toThrow(
+      "routing.basepath",
+    );
+  });
+
+  it("rejects the removed basePath spelling", () => {
+    expect(() =>
+      resolveConfig({
+        routing: { mode: "spa", basePath: "/next" },
+      } as never),
+    ).toThrow("routing.basePath is not supported");
+    expect(() =>
+      resolveConfig({ server: { basePath: "/__evjs" } } as never),
+    ).toThrow("server.basePath is not supported");
   });
 
   it("normalizes one explicit SPA route-tree profile", () => {
@@ -1114,7 +1160,7 @@ describe("resolveConfig", () => {
         proxy: [{ context: ["/api"], target: "https://api.example.com" }],
       },
       server: {
-        basePath: "/_ev",
+        basepath: "/_ev",
         resolve: {
           alias: { "server-sdk": "./src/server/sdk.ts" },
         },
@@ -1145,9 +1191,9 @@ describe("resolveConfig", () => {
       context: ["/api"],
       target: "https://api.example.com",
     });
-    expect(resolved.server.basePath).toBe("/_ev");
+    expect(resolved.server.basepath).toBe("/_ev");
     expect(resolved.server.runtime).toEqual({
-      basePath: "/_ev",
+      basepath: "/_ev",
       fn: "_ev/fn",
       ppr: "_ev/ppr",
     });
@@ -1240,7 +1286,7 @@ describe("resolveConfig", () => {
 
     const resolved = resolveConfig({
       server: {
-        basePath: "/_ev",
+        basepath: "/_ev",
         rsc: { endpoint: "/flight" },
       },
     });
@@ -1260,9 +1306,9 @@ describe("resolveConfig", () => {
       "/runtime/../fn",
       "/",
     ] as const;
-    for (const basePath of invalidPaths) {
-      expect(() => resolveConfig({ server: { basePath } })).toThrow(
-        "[evjs] server.basePath must use non-empty ASCII URL-safe segments",
+    for (const basepath of invalidPaths) {
+      expect(() => resolveConfig({ server: { basepath } })).toThrow(
+        "[evjs] server.basepath must use non-empty ASCII URL-safe segments",
       );
     }
     for (const endpoint of invalidPaths) {

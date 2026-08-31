@@ -695,7 +695,7 @@ function createRscBootstrap(
       buildId: string;
       pageId: string;
       endpoint: string;
-      basePath?: string;
+      basepath?: string;
       publicPath: FrameworkRuntime["publicPath"];
       mount: string;
       page: {
@@ -714,7 +714,7 @@ function createRscBootstrap(
     buildId: ctx.runtime.buildId,
     pageId: ctx.pageId,
     endpoint,
-    basePath: ctx.runtime.runtime.server?.basePath,
+    basepath: ctx.runtime.runtime.server?.basepath,
     publicPath: ctx.runtime.publicPath,
     mount:
       mount.attribute === "id"
