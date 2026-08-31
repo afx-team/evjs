@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.19] — 2026-08-31
+
 ### 🐛 Bug Fixes
 
 - **Nested Pages below directory index Pages** — SPA Pages nested below a
