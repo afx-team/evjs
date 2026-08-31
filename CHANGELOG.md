@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.17] — 2026-08-31
+
 ### ⚠️ Breaking Changes
 
 - **Consistent basepath spelling** — Framework server configuration, resolved
