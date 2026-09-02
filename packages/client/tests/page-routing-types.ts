@@ -9,6 +9,7 @@ import {
   usePageLoaderData,
   usePageParams,
   usePageSearch,
+  useRouteParams,
 } from "@evjs/client";
 import { useLinkProps as useTanStackLinkProps } from "@tanstack/react-router";
 import type { CreatePageRouteRegister } from "../src/framework/page/route-types";
@@ -59,6 +60,7 @@ export function PageRouteLinkTypeTests() {
   const docsParams = usePageParams("/docs/$");
   docsParams._splat.toUpperCase();
   usePageParams<{ postId?: string }>().postId?.toUpperCase();
+  useRouteParams<{ postId?: string }>().postId?.toUpperCase();
 
   const search = usePageSearch("/search");
   search.page.toFixed();

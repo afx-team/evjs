@@ -102,14 +102,15 @@ export const validateSearch = (search: Record<string, string>) => ({
 });
 ```
 
-In an SPA, `usePageParams()` reads the merged parameters of the active route
-branch, so the same API works in pages, nested layouts, and the root layout:
+`usePageParams()` is Page-scoped and works consistently across SPA, MPA, and
+RSC rendering. In an SPA, root and nested layouts read the merged parameters
+of the active route branch with `useRouteParams()`:
 
 ```tsx title="src/pages/layout.tsx"
-import { usePageParams } from "@evjs/ev/route";
+import { useRouteParams } from "@evjs/ev/route";
 
 export default function RootLayout({ children }: React.PropsWithChildren) {
-  const { teamId } = usePageParams<{ teamId?: string }>();
+  const { teamId } = useRouteParams<{ teamId?: string }>();
   return <main data-team-id={teamId}>{children}</main>;
 }
 ```

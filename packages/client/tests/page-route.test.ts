@@ -9,8 +9,9 @@ import {
   usePageLoaderData,
   usePageParams,
   usePageSearch,
+  useRouteParams,
 } from "../src/index";
-import { createPagesApp } from "../src/internal";
+import { createPagesApp, PageProvider } from "../src/internal";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -22,6 +23,30 @@ describe("page route hooks", () => {
     expect(usePageParams).toBeTypeOf("function");
     expect(usePageSearch).toBeTypeOf("function");
     expect(usePageLoaderData).toBeTypeOf("function");
+    expect(useRouteParams).toBeTypeOf("function");
+  });
+
+  it("reads Page params without requiring a SPA RouterProvider", () => {
+    function Page() {
+      const params = usePageParams<{ postId: string }>();
+      return createElement("p", undefined, params.postId);
+    }
+
+    const html = renderToStaticMarkup(
+      createElement(
+        PageProvider,
+        {
+          value: {
+            params: { postId: "p1" },
+            search: {},
+            loaderData: undefined,
+          },
+        },
+        createElement(Page),
+      ),
+    );
+
+    expect(html).toBe("<p>p1</p>");
   });
 
   it("exposes standalone CSR APIs without exposing generated bootstrap internals", () => {
@@ -264,7 +289,7 @@ describe("createPagesApp", () => {
 
   it("exposes active route params and public hrefs to root layouts", async () => {
     function RootLayout({ children }: { children?: ReactNode }) {
-      const params = client.usePageParams<{ deptId?: string }>();
+      const params = client.useRouteParams<{ deptId?: string }>();
       const consoleHref = client.useHref({ to: "/console" });
       const resolveHref = client.useHrefResolver();
       const teamHref = resolveHref({

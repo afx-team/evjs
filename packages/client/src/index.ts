@@ -29,6 +29,7 @@ export {
   usePageParams,
   usePageSearch,
 } from "./framework/page/page-context.js";
+export { useRouteParams } from "./framework/page/route-context.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,

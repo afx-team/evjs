@@ -1,5 +1,4 @@
 import type { PageSearchParams } from "@evjs/shared";
-import { useMatches } from "@tanstack/react-router";
 import {
   createContext,
   createElement,
@@ -67,14 +66,7 @@ export function usePageParams<
   TParams extends Record<string, string | undefined> = Record<string, string>,
 >(): TParams;
 export function usePageParams(_path?: string): Record<string, string> {
-  return useMatches({
-    select: (matches) => {
-      const params: Record<string, string> = {};
-      for (const match of matches) Object.assign(params, match.params);
-      return params;
-    },
-    structuralSharing: true,
-  });
+  return usePageContext().params;
 }
 
 export function usePageSearch<const TPath extends PageRoutePath>(

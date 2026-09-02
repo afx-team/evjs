@@ -91,13 +91,13 @@ export const validateSearch = (search: Record<string, string>) => ({
 });
 ```
 
-SPA 中的 `usePageParams()` 会读取当前激活路由分支合并后的参数，因此页面、嵌套布局和根布局使用同一个 API：
+`usePageParams()` 是 Page 作用域 API，在 SPA、MPA 和 RSC 渲染中语义一致。SPA 的根布局和嵌套布局使用 `useRouteParams()` 读取当前激活路由分支合并后的参数：
 
 ```tsx title="src/pages/layout.tsx"
-import { usePageParams } from "@evjs/ev/route";
+import { useRouteParams } from "@evjs/ev/route";
 
 export default function RootLayout({ children }: React.PropsWithChildren) {
-  const { teamId } = usePageParams<{ teamId?: string }>();
+  const { teamId } = useRouteParams<{ teamId?: string }>();
   return <main data-team-id={teamId}>{children}</main>;
 }
 ```

@@ -3,6 +3,7 @@ import {
   usePageLoaderData as useClientPageLoaderData,
   usePageParams as useClientPageParams,
   usePageSearch as useClientPageSearch,
+  useRouteParams as useClientRouteParams,
 } from "@evjs/client";
 import type { PageSearchParams } from "@evjs/shared";
 import type {
@@ -46,6 +47,12 @@ export function usePageParams<
 >(): TParams;
 export function usePageParams(_path?: string): Record<string, string> {
   return useClientPageParams();
+}
+
+export function useRouteParams<
+  TParams extends Record<string, string | undefined> = Record<string, string>,
+>(): TParams {
+  return useClientRouteParams<TParams>();
 }
 
 export function usePageSearch<const TPath extends PageRoutePath>(

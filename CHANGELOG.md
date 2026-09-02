@@ -11,9 +11,9 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 - **Application-aware browser hrefs** — `useHref()` and `useHrefResolver()`
   resolve typed application-relative navigation targets to public browser URLs,
   including an SPA's configured `routing.basepath`.
-- **Layout-safe Page params** — SPA layouts and Page descendants can use the
-  existing `usePageParams()` API to read the merged params of the active route
-  branch without a second layout-specific hook.
+- **Layout route params** — SPA root and route layouts can use the new
+  `useRouteParams()` API to read merged params from the active route branch
+  without changing the render-mode-neutral semantics of Page data hooks.
 
 ### 🐛 Bug Fixes
 
