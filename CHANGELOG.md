@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.20] — 2026-09-02
+
 ### ✨ Features
 
 - **Application-aware browser hrefs** — `useHref()` and `useHrefResolver()`
