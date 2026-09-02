@@ -42,7 +42,7 @@ export function usePageParams<const TPath extends PageRoutePath>(
   path: TPath,
 ): PageRouteParams<TPath>;
 export function usePageParams<
-  TParams extends Record<string, string> = Record<string, string>,
+  TParams extends Record<string, string | undefined> = Record<string, string>,
 >(): TParams;
 export function usePageParams(_path?: string): Record<string, string> {
   return useClientPageParams();

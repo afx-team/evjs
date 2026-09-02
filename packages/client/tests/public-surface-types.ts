@@ -5,6 +5,9 @@ export type PublicPageHookExports = [
   typeof Client.usePageParams,
   typeof Client.usePageSearch,
   typeof Client.usePageLoaderData,
+  typeof Client.useHref,
+  typeof Client.useHrefResolver,
+  Client.HrefResolver,
 ];
 
 export type PublicRscExports = [

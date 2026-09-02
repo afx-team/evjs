@@ -108,6 +108,7 @@ describe("createPagesApp", () => {
   });
 
   it("keeps locations outside the SPA basepath unmatched and unchanged", async () => {
+    const beforeLoad = vi.fn();
     function Console() {
       return createElement("p", undefined, "console");
     }
@@ -126,6 +127,7 @@ describe("createPagesApp", () => {
           module: {
             default: Console,
             notFoundComponent: NotFound,
+            beforeLoad,
           },
         },
         { path: "/console", module: { default: Console } },
@@ -183,6 +185,7 @@ describe("createPagesApp", () => {
       }).publicHref,
     ).toBe(initialUrl);
     await expect(router.load()).resolves.toBeUndefined();
+    expect(beforeLoad).not.toHaveBeenCalled();
     expect(history.location.href).toBe(initialUrl);
     expect(router.stores.matches.get()).toEqual([
       expect.objectContaining({ routeId: "__root__", status: "success" }),
@@ -257,6 +260,60 @@ describe("createPagesApp", () => {
         ),
       ),
     ).toContain("console");
+  });
+
+  it("exposes active route params and public hrefs to root layouts", async () => {
+    function RootLayout({ children }: { children?: ReactNode }) {
+      const params = client.usePageParams<{ deptId?: string }>();
+      const consoleHref = client.useHref({ to: "/console" });
+      const resolveHref = client.useHrefResolver();
+      const teamHref = resolveHref({
+        to: "/teams/$deptId",
+        params: { deptId: "runtime" },
+      });
+      const currentHref = resolveHref({ to: "." });
+      return createElement(
+        "main",
+        {
+          "data-current-href": currentHref,
+          "data-dept-id": params.deptId,
+          "data-team-href": teamHref,
+        },
+        createElement("a", { href: consoleHref }, "console"),
+        children,
+      );
+    }
+    function Page() {
+      return createElement("p", undefined, "team");
+    }
+
+    const history = client.createMemoryHistory({
+      initialEntries: ["/next/teams/platform"],
+    });
+    const { app } = createPagesApp({
+      rootModule: { default: RootLayout },
+      routes: [
+        { path: "/console", module: { default: Page } },
+        { path: "/teams/$deptId", module: { default: Page } },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as client.AnyRouter;
+    await router.load();
+
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: app.queryClient },
+        createElement(client.RouterProvider, { router }),
+      ),
+    );
+
+    expect(html).toContain('data-dept-id="platform"');
+    expect(html).toContain('data-current-href="/next/teams/platform"');
+    expect(html).toContain('href="/next/console"');
+    expect(html).toContain('data-team-href="/next/teams/runtime"');
   });
 
   it("replaces runtime Route overlays without removing generated Routes", async () => {

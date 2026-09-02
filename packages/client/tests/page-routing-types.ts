@@ -2,6 +2,8 @@ import {
   Link,
   Navigate,
   redirect,
+  useHref,
+  useHrefResolver,
   useLinkProps,
   usePageContext,
   usePageLoaderData,
@@ -42,6 +44,9 @@ declare module "@evjs/client" {
 
 export function PageRouteLinkTypeTests() {
   useLinkProps({ to: "/" });
+  useHref({ to: "/" }).toUpperCase();
+  const resolveHref = useHrefResolver();
+  resolveHref({ to: "/posts/$postId", params: { postId: "p1" } }).toUpperCase();
   useLinkProps({ to: "/docs/$", params: { _splat: "guides/install" } });
   useLinkProps({ to: "/posts/$postId", params: { postId: "p1" } });
   useLinkProps({ to: "/search", search: { q: "router", page: 1 } });
@@ -53,6 +58,7 @@ export function PageRouteLinkTypeTests() {
   postParams.postId.toUpperCase();
   const docsParams = usePageParams("/docs/$");
   docsParams._splat.toUpperCase();
+  usePageParams<{ postId?: string }>().postId?.toUpperCase();
 
   const search = usePageSearch("/search");
   search.page.toFixed();
@@ -66,6 +72,12 @@ export function PageRouteLinkTypeTests() {
 
   // @ts-expect-error unknown page route paths are rejected.
   useLinkProps({ to: "/missing" });
+
+  // @ts-expect-error href resolution uses the generated route path list.
+  useHref({ to: "/missing" });
+
+  // @ts-expect-error dynamic href resolution uses the generated route path list.
+  resolveHref({ to: "/missing" });
 
   // @ts-expect-error page data hooks use the generated route path list.
   usePageParams("/missing");

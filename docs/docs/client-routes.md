@@ -102,6 +102,42 @@ export const validateSearch = (search: Record<string, string>) => ({
 });
 ```
 
+In an SPA, `usePageParams()` reads the merged parameters of the active route
+branch, so the same API works in pages, nested layouts, and the root layout:
+
+```tsx title="src/pages/layout.tsx"
+import { usePageParams } from "@evjs/ev/route";
+
+export default function RootLayout({ children }: React.PropsWithChildren) {
+  const { teamId } = usePageParams<{ teamId?: string }>();
+  return <main data-team-id={teamId}>{children}</main>;
+}
+```
+
+## Resolve browser hrefs
+
+`Link`, `useNavigate()`, and `redirect()` accept application-relative routes
+and apply `routing.basepath` automatically. Native anchors and browser APIs
+such as `window.open()` need a public browser href. Use `useHref()` for one
+target, or `useHrefResolver()` when targets are created in callbacks:
+
+```tsx
+import { useHref, useHrefResolver } from "@evjs/ev/navigation";
+
+export function NativeLinks() {
+  const settingsHref = useHref({ to: "/settings" });
+  const resolveHref = useHrefResolver();
+  return (
+    <>
+      <a href={settingsHref}>Settings</a>
+      <button onClick={() => window.open(resolveHref({ to: "/reports/$reportId", params: { reportId: "42" } }))}>
+        Open report
+      </button>
+    </>
+  );
+}
+```
+
 ## Render child pages
 
 In SPA mode, a parent page renders its active child with `Outlet`:

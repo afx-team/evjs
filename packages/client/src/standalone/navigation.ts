@@ -17,11 +17,17 @@ import {
   Link as RouterLink,
   Navigate as RouterNavigate,
   redirect as routerRedirect,
+  useRouter as useRegisteredRouter,
   useLinkProps as useRouterLinkProps,
   useLocation as useRouterLocation,
   useNavigate as useRouterNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
-import type { ComponentPropsWithRef, ReactElement } from "react";
+import {
+  type ComponentPropsWithRef,
+  type ReactElement,
+  useCallback,
+} from "react";
 import type { Register } from "../index.js";
 
 type RegisteredAppRouter = Register extends {
@@ -101,6 +107,15 @@ export type Redirect<
   TMaskTo extends string = ".",
 > = RouterRedirect<RegisteredAppRouter, TFrom, TTo, TMaskFrom, TMaskTo>;
 
+export type HrefResolver = <
+  const TFrom extends string = string,
+  const TTo extends string | undefined = undefined,
+  const TMaskFrom extends string = TFrom,
+  const TMaskTo extends string = "",
+>(
+  options: UseLinkPropsOptions<TFrom, TTo, TMaskFrom, TMaskTo>,
+) => string;
+
 type LinkComponentProps<
   TComp = "a",
   TFrom extends string = string,
@@ -153,6 +168,39 @@ export function useLinkProps<
     TMaskFrom,
     TMaskTo
   >(options);
+}
+
+/** Resolve typed navigation options to the browser href for the active app. */
+export function useHref<
+  const TFrom extends string = string,
+  const TTo extends string | undefined = undefined,
+  const TMaskFrom extends string = TFrom,
+  const TMaskTo extends string = "",
+>(options: UseLinkPropsOptions<TFrom, TTo, TMaskFrom, TMaskTo>): string {
+  const href = useLinkProps(options).href;
+  if (typeof href !== "string") {
+    throw new Error("[evjs] Could not resolve navigation options to an href.");
+  }
+  return href;
+}
+
+/** Return a stable resolver for dynamic browser hrefs used in callbacks and renderers. */
+export function useHrefResolver(): HrefResolver {
+  const router = useRegisteredRouter<RegisteredAppRouter>();
+  const currentLocation = useRouterState({
+    router,
+    select: (state) => state.location,
+  });
+  return useCallback(
+    ((options: UseLinkPropsOptions) => {
+      const location = router.buildLocation({
+        _fromLocation: currentLocation,
+        ...options,
+      } as never);
+      return location.maskedLocation?.publicHref ?? location.publicHref;
+    }) as HrefResolver,
+    [currentLocation, router],
+  );
 }
 
 export function useNavigate<TDefaultFrom extends string = string>(

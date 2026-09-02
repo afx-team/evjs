@@ -78,6 +78,11 @@ export default function UserPage() {
 }
 ```
 
+In an SPA, layouts use the same `usePageParams()` API to read the merged
+params of the active route branch. Native anchors and browser APIs can resolve application
+routes, including `routing.basepath`, with `useHref()` or
+`useHrefResolver()` from `@evjs/ev/navigation`.
+
 Use the page hooks for route data in both SPA and MPA output. They are the
 zero-annotation path for page code; `params`, `search`, and `loaderData` are
 not passed as page component props.
@@ -136,8 +141,10 @@ Standalone/manual clients can import the same query hooks directly from
 ## API
 
 ### Routing
-- `usePageParams`, `usePageSearch`, and `usePageLoaderData`: Read framework-managed route data from page components.
+- `usePageParams`: Read merged params from the active SPA route branch in pages or layouts.
+- `usePageSearch` and `usePageLoaderData`: Read framework-managed route data from page components.
 - `Link`, `Navigate`, `useNavigate`, and `redirect`: Navigation helpers for page components and route lifecycle exports.
+- `useHref` and `useHrefResolver`: Resolve application-relative routes to public browser hrefs for native anchors and browser APIs.
 
 ### Query
 - `useQuery(fn, ...args)` and `useSuspenseQuery(fn, ...args)`: Call compiler-generated server function stubs with inferred argument and result types.
