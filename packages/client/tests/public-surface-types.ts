@@ -3,8 +3,12 @@ import type * as ClientTransport from "../src/server-functions/transport";
 
 export type PublicPageHookExports = [
   typeof Client.usePageParams,
+  typeof Client.useRouteParams,
   typeof Client.usePageSearch,
   typeof Client.usePageLoaderData,
+  typeof Client.useHref,
+  typeof Client.useHrefResolver,
+  Client.HrefResolver,
 ];
 
 export type PublicRscExports = [

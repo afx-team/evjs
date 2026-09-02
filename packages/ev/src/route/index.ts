@@ -8,6 +8,7 @@ export {
   usePageLoaderData,
   usePageParams,
   usePageSearch,
+  useRouteParams,
 } from "./context.js";
 // biome-ignore lint/suspicious/noEmptyInterface: Generated page route types augment this interface.
 export interface Register {}

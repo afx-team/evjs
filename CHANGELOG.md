@@ -6,6 +6,21 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ✨ Features
+
+- **Application-aware browser hrefs** — `useHref()` and `useHrefResolver()`
+  resolve typed application-relative navigation targets to public browser URLs,
+  including an SPA's configured `routing.basepath`.
+- **Layout route params** — SPA root and route layouts can use the new
+  `useRouteParams()` API to read merged params from the active route branch
+  without changing the render-mode-neutral semantics of Page data hooks.
+
+### 🐛 Bug Fixes
+
+- **Outside-basepath route lifecycles** — Locations outside an SPA's strict
+  `routing.basepath` no longer execute generated root Page `beforeLoad`
+  callbacks before reaching the not-found boundary.
+
 ---
 
 ## [0.3.19] — 2026-08-31

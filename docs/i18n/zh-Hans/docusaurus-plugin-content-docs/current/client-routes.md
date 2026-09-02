@@ -91,6 +91,38 @@ export const validateSearch = (search: Record<string, string>) => ({
 });
 ```
 
+`usePageParams()` 是 Page 作用域 API，在 SPA、MPA 和 RSC 渲染中语义一致。SPA 的根布局和嵌套布局使用 `useRouteParams()` 读取当前激活路由分支合并后的参数：
+
+```tsx title="src/pages/layout.tsx"
+import { useRouteParams } from "@evjs/ev/route";
+
+export default function RootLayout({ children }: React.PropsWithChildren) {
+  const { teamId } = useRouteParams<{ teamId?: string }>();
+  return <main data-team-id={teamId}>{children}</main>;
+}
+```
+
+## 解析浏览器 href
+
+`Link`、`useNavigate()` 与 `redirect()` 接收应用相对路由，并自动应用 `routing.basepath`。原生 `<a>` 和 `window.open()` 等浏览器 API 需要公开浏览器 URL：固定目标使用 `useHref()`，回调中动态生成目标时使用 `useHrefResolver()`。
+
+```tsx
+import { useHref, useHrefResolver } from "@evjs/ev/navigation";
+
+export function NativeLinks() {
+  const settingsHref = useHref({ to: "/settings" });
+  const resolveHref = useHrefResolver();
+  return (
+    <>
+      <a href={settingsHref}>设置</a>
+      <button onClick={() => window.open(resolveHref({ to: "/reports/$reportId", params: { reportId: "42" } }))}>
+        打开报告
+      </button>
+    </>
+  );
+}
+```
+
 ## 渲染子页面
 
 SPA 模式下，父页面通过 `Outlet` 渲染当前子页面：
