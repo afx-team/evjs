@@ -47,8 +47,7 @@ npx biome check --write
 9. 框架语义放在 `@evjs/ev` 的构建内部模块中，标准化契约放在
    `@evjs/shared/manifest`；构建器适配器只消费 `BuildPlan` 并返回构建结果。
 10. `.ev`、`dist`、`.turbo`、`node_modules` 与路由类型声明都是生成产物。
-11. 中间件列表字段和参数统一命名为 `middlewares`，与 `createApp()`、
-    `createRoute()` 及 `withMiddlewares(handler, middlewares)` 对齐。
+11. 中间件集合字段和参数使用 `middlewares`。
     单个函数类型使用 `MiddlewareHandler`，有序链类型使用 `MiddlewareChain`。
     能力、钩子和模块名称使用单数：`server.request.middleware`、
     `clientDevMiddleware` 和 `middleware.*`。具体中间件工厂按行为命名，

@@ -54,11 +54,10 @@ npx biome check --write
    return facts.
 10. `.ev`, `dist`, `.turbo`, `node_modules`, and route-type declarations are
     generated output.
-11. Name middleware list fields and arguments `middlewares`, matching
-    `createApp()`, `createRoute()`, and `withMiddlewares(handler, middlewares)`.
+11. Use `middlewares` for middleware collection fields and arguments.
     Use `MiddlewareHandler` for one function and `MiddlewareChain` for an
-    ordered chain. Capability, hook, and module names stay singular:
-    `server.request.middleware`, `clientDevMiddleware`, and `middleware.*`.
+    ordered chain. Use singular middleware names for capabilities, hooks, and
+    modules: `server.request.middleware`, `clientDevMiddleware`, and `middleware.*`.
     Name concrete middleware factories by behavior, such as `requestLogger()`.
 
 ## Common tasks

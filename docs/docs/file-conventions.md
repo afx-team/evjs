@@ -314,7 +314,7 @@ directory. Use flat arrays; reuse chains with spread. Explicit empty array
 exports, holes, non-functions, generators, and runtime named exports are rejected.
 Computed global chains may resolve to `[]` when disabled.
 
-Middleware files are not routes. An `api.*` still exports only uppercase HTTP
+Middleware files are not routes. An `api.*` exports only uppercase HTTP
 methods: use `withMiddlewares(handler, middlewares)` from `@evjs/ev/api` to compose
 a method's policies without applying them to child routes. See
 [API Routes and Middleware](./server-routes).

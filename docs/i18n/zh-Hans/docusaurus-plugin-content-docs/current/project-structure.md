@@ -178,8 +178,7 @@ export default [tracing, authentication] satisfies MiddlewareChain;
 
 单个 HTTP 方法使用 `@evjs/ev/api` 的 `withMiddlewares(handler, [auth, validate])`。
 这些链不继承到后代；显式 HEAD 使用自己的链，自动 HEAD 使用 GET 的链。
-请求上下文辅助接口仍属于 `@evjs/ev/server-context`，该入口也继续导出中间件类型和
-请求日志接口。完整方法行为和编写规则见
+请求上下文辅助接口从 `@evjs/ev/server-context` 导入。完整方法行为和编写规则见
 [API 路由与中间件](./server-routes)。
 
 ## SPA 与 MPA 结构

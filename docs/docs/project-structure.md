@@ -196,9 +196,8 @@ API routes in its own directory and descendants, including automatic OPTIONS.
 
 Use `withMiddlewares(handler, [auth, validate])` from `@evjs/ev/api` for one
 HTTP method. These chains do not inherit into descendants. Explicit HEAD uses
-its own chain; automatic HEAD uses GET's chain. Request context helpers remain
-under `@evjs/ev/server-context`, which also continues to export middleware types
-and request logging. See [API Routes and Middleware](./server-routes)
+its own chain; automatic HEAD uses GET's chain. Import request context helpers
+from `@evjs/ev/server-context`. See [API Routes and Middleware](./server-routes)
 for method behavior and the complete authoring contract.
 
 ## SPA and MPA structure

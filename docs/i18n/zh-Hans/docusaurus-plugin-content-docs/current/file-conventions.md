@@ -286,7 +286,7 @@ src/
 数组必须扁平，复用链时使用展开语法；禁止显式空数组导出、数组空槽、非函数、生成器和
 运行时命名导出。动态计算的全局链可以在禁用时返回 `[]`。
 
-中间件文件不是路由。`api.*` 仍只导出大写 HTTP 方法，可使用 `@evjs/ev/api` 的
+中间件文件不是路由。`api.*` 只导出大写 HTTP 方法，可使用 `@evjs/ev/api` 的
 `withMiddlewares(handler, middlewares)` 组合单个方法的策略，不影响子路由。
 详见[API 路由与中间件](./server-routes)。
 

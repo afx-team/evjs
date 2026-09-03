@@ -95,9 +95,6 @@ Import HTTP authoring APIs from `@evjs/ev/api`: `withMiddlewares`,
 `MiddlewareHandler`, `MiddlewareChain`, `RouteHandlerFn`, and `requestLogger`
 (with `RequestLoggerOptions` and `RequestLogEntry`). Request, cookie, and
 server-function error helpers belong to `@evjs/ev/server-context`.
-`MiddlewareHandler`, `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`,
-and `RequestLogEntry` are also supported from `@evjs/ev/server-context`;
-existing imports do not need to change.
 
 Choose where a policy applies:
 
@@ -133,11 +130,11 @@ to reuse a chain: `[...shared, audit]`. Nested arrays, holes, and non-functions
 are invalid. Explicit array exports and method chains must be non-empty.
 Computed global chains may resolve to `[]` when disabled. Repeated functions
 run each time they are listed.
-evjs checks statically known values during discovery, then validates every
-resolved export before composing the server, including factory results and
-imported arrays. Runtime errors identify the source module and, for an invalid
-array entry, its zero-based index. Loaded chains are copied so later array
-mutations do not change the registered pipeline.
+
+Imported middleware and factory results follow the same rules. Invalid exports
+prevent server startup; diagnostics identify the source module and, for an
+invalid array entry, its zero-based index. Changing an exported array after
+registration does not change the registered chain.
 
 ### Directory inheritance
 
@@ -156,14 +153,14 @@ children cannot remove an ancestor's middleware.
 
 For separate public and protected APIs, put their anchors in sibling
 `(public)` and `(protected)` groups and place authentication under
-`(protected)`. Middleware at `src/apis/middleware.*` still applies to both.
+`(protected)`. Middleware at `src/apis/middleware.*` applies to both groups.
 These scopes affect API routes only, including when a server-function module
 is colocated in the same directory.
 
 ### Method composition
 
-Keep uppercase method exports and wrap only the methods that need an extra
-policy:
+Use `withMiddlewares` on an exported HTTP method handler to apply policies to
+that method:
 
 ```ts title="src/apis/api/posts/api.ts"
 import { withMiddlewares } from "@evjs/ev/api";
@@ -174,23 +171,22 @@ export const GET = listPosts;
 export const POST = withMiddlewares(createPost, [requireUser, validatePost]);
 ```
 
-The name `withMiddlewares` follows the `middlewares` option on the
-programmatic `createApp()` and `createRoute()` APIs from `@evjs/server`.
+`withMiddlewares(handler, middlewares)` returns a callable HTTP method handler.
+The `handler` argument uses the
+`(request, ctx) => Response | Promise<Response>` signature. The `middlewares`
+argument accepts one middleware or a non-empty ordered array.
 
-The first argument is the `(request, ctx) => Response | Promise<Response>`
-handler. The second accepts one middleware or a non-empty array. The returned
-value remains a callable handler with the same Request/Context signature.
 To share policy across several methods of one endpoint, reuse the same chain
 in those method exports. Method chains never inherit into child routes.
 Nested `withMiddlewares` calls run the outer chain first.
 
-`MiddlewareHandler<Env, Path, Input>`, `MiddlewareChain<Env, Path, Input>`, and
-`RouteHandlerFn<Path, Env, Input>` retain Hono context, parameter, and validated
-input types. `withMiddlewares` infers the first argument's context from the
-second argument's middleware. When using generic middleware factories such as
-Hono's `validator`, create the middleware before calling `withMiddlewares`.
-An inline factory in the second argument can leave the first callback's context
-under-inferred because of TypeScript's inference order:
+Use `MiddlewareHandler<Env, Path, Input>` for individual middleware,
+`MiddlewareChain<Env, Path, Input>` for ordered chains, and
+`RouteHandlerFn<Path, Env, Input>` for HTTP method handlers. These types describe
+the Hono environment, route parameters, and validated input.
+`withMiddlewares` infers the handler's context from typed middleware. Assign
+generic factory results, such as Hono's `validator()`, to variables before
+composing the handler:
 
 ```ts
 import { withMiddlewares } from "@evjs/ev/api";
@@ -206,11 +202,11 @@ export const POST = withMiddlewares(
 );
 ```
 
-Use an application Hono `ContextVariableMap` declaration or an explicit environment
-type for shared variables; directory discovery does not infer types across
-files. When middleware reads a request body, use `ctx.req.json()` and the same
-Hono body cache in the handler, or pass validated data through `ctx.req.valid()`
-or context variables. Reading the raw `Request` body twice consumes its stream.
+Declare shared context variables with an application Hono `ContextVariableMap`
+or an explicit environment type. When middleware reads a request body, use
+`ctx.req.json()` and the same Hono body cache in the handler, or pass validated
+data through `ctx.req.valid()` or context variables. The raw `Request` body
+stream can only be consumed once.
 
 ### Execution order
 
@@ -241,7 +237,7 @@ export default requireAuth;
 
 API directory and method middleware can read resolved params through
 `ctx.req.param()`. After `await next()`, use `ctx.header()` or `ctx.res` to
-modify the response. Mounted method chains use Hono's error handling:
+modify the response. Method middleware uses Hono's error handling:
 exceptions become error responses, with the error available through `ctx.error`
 as middleware unwinds.
 

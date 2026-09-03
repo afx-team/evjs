@@ -85,8 +85,6 @@ export const GET = async (_req, ctx) => {
 `MiddlewareChain`、`RouteHandlerFn` 和 `requestLogger`，以及日志类型
 `RequestLoggerOptions`、`RequestLogEntry`。请求、Cookie 和服务端函数错误辅助接口
 属于 `@evjs/ev/server-context`。
-`@evjs/ev/server-context` 同时继续提供 `MiddlewareHandler`、`MiddlewareChain`、
-`requestLogger`、`RequestLoggerOptions` 和 `RequestLogEntry`，现有导入无需修改。
 
 按策略作用范围选择声明位置：
 
@@ -119,9 +117,9 @@ export default [requestLogger(), tracing] satisfies MiddlewareChain;
 JavaScript 使用相同的数组，无需类型标注。通过展开数组复用链，例如
 `[...shared, audit]`。禁止嵌套数组、数组空槽和非函数值。显式数组导出和方法链必须非空；
 动态计算的全局链可以在禁用时返回 `[]`。重复列出的函数会重复执行。
-evjs 在发现约定时检查静态可确定的值，并在组合服务端应用前校验所有求值后的
-导出，包括工厂返回值和导入的数组。运行时错误会标明来源模块，以及无效数组项从零开始的
-下标。加载后的链会保存副本，后续修改原数组不会改变已注册的执行链。
+
+导入的中间件和工厂返回值遵循相同规则。无效导出会阻止服务端启动，诊断信息会标明
+来源模块，以及无效数组项从零开始的下标。注册后修改导出的数组不会改变已注册的链。
 
 ### 目录继承
 
@@ -132,17 +130,17 @@ src/apis/api/admin/middleware.ts  -> /api/admin 及其后代路由
 src/apis/(admin)/middleware.ts    -> 分组及其后代路由
 ```
 
-继承沿源码目录树展开。中间件也作用于同目录的 `api.*`；目录没有 API 入口时，仍可
+继承沿源码目录树展开。中间件也作用于同目录的 `api.*`；没有 API 入口的目录也可以
 为后代限定作用域。`(group)` 目录参与继承，但不增加 URL 段。父目录策略始终在子目录
 策略之前执行，子目录不能移除祖先中间件。
 
 要分开公开与受保护的 API，可把入口放进同级 `(public)` 和 `(protected)` 分组，
-鉴权中间件放在 `(protected)` 下。`src/apis/middleware.*` 仍作用于两组。
+鉴权中间件放在 `(protected)` 下。`src/apis/middleware.*` 作用于两个分组。
 这些作用域只影响 API 路由，即使服务端函数模块与它们放在同一目录也不会继承。
 
 ### 方法组合
 
-保留大写方法导出，只包装需要额外策略的方法：
+使用 `withMiddlewares` 为导出的 HTTP 方法处理器组合该方法的策略：
 
 ```ts title="src/apis/api/posts/api.ts"
 import { withMiddlewares } from "@evjs/ev/api";
@@ -153,21 +151,18 @@ export const GET = listPosts;
 export const POST = withMiddlewares(createPost, [requireUser, validatePost]);
 ```
 
-`withMiddlewares` 的命名与 `@evjs/server` 中程序化 API `createApp()` 和
-`createRoute()` 的 `middlewares` 选项保持一致。
+`withMiddlewares(handler, middlewares)` 返回一个可调用的 HTTP 方法处理器。
+`handler` 参数使用 `(request, ctx) => Response | Promise<Response>` 签名；
+`middlewares` 参数接受单个中间件或有序非空数组。
 
-第一个参数是 `(request, ctx) => Response | Promise<Response>` 处理器，第二个
-参数接受单个中间件或非空数组。返回值仍是具有相同 Request/Context 签名的可调用处理器。
-一个端点的多个方法需要
-共享策略时，在这些方法导出中复用同一条链。方法链不会继承到子路由；嵌套调用
-`withMiddlewares` 时，外层链先执行。
+一个端点的多个方法需要共享策略时，在这些方法导出中复用同一条链。
+方法链不会继承到子路由；嵌套调用 `withMiddlewares` 时，外层链先执行。
 
-`MiddlewareHandler<Env, Path, Input>`、`MiddlewareChain<Env, Path, Input>` 和
-`RouteHandlerFn<Path, Env, Input>` 保留 Hono 的上下文、参数和已校验输入类型。
-`withMiddlewares` 会根据第二个参数的中间件，推导第一个参数的处理器上下文类型。
-使用 Hono `validator` 等泛型中间件工厂时，应先创建中间件，再调用 `withMiddlewares`。
-由于 TypeScript 的推导顺序，在第二个参数中内联创建泛型中间件可能导致第一个回调的
-上下文类型推导不完整：
+单个中间件使用 `MiddlewareHandler<Env, Path, Input>`，有序链使用
+`MiddlewareChain<Env, Path, Input>`，HTTP 方法处理器使用
+`RouteHandlerFn<Path, Env, Input>`。这些类型描述 Hono 环境、路由参数和已校验输入。
+`withMiddlewares` 从带类型的中间件推导处理器的上下文。使用 Hono `validator()` 等
+泛型工厂时，先将结果赋给变量，再组合处理器：
 
 ```ts
 import { withMiddlewares } from "@evjs/ev/api";
@@ -183,10 +178,10 @@ export const POST = withMiddlewares(
 );
 ```
 
-共享变量可使用应用级 Hono `ContextVariableMap` 声明或显式环境类型；目录发现不会跨文件推导类型。
+共享上下文变量使用应用级 Hono `ContextVariableMap` 声明或显式环境类型。
 中间件读取请求体时，使用 `ctx.req.json()` 并在处理器中复用同一份 Hono 请求体缓存，
-或通过 `ctx.req.valid()`、上下文变量传递校验后的数据。对原始 `Request` 重复读取请求体
-会消耗其流。
+或通过 `ctx.req.valid()`、上下文变量传递校验后的数据。原始 `Request` 的请求体流
+只能读取一次。
 
 ### 执行顺序
 
@@ -215,7 +210,7 @@ export default requireAuth;
 ```
 
 API 目录和方法中间件可通过 `ctx.req.param()` 读取解析后的路由参数。
-`await next()` 之后，可用 `ctx.header()` 或 `ctx.res` 修改响应。挂载的方法链遵循
+`await next()` 之后，可用 `ctx.header()` 或 `ctx.res` 修改响应。方法中间件遵循
 Hono 的错误处理行为：异常转成错误响应，中间件退出时可通过 `ctx.error` 读取错误。
 
 ## HTTP 方法行为
