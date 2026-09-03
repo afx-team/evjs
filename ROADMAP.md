@@ -10,8 +10,8 @@ active architecture boundaries that are enforced by the current code.
 - Adjacent `page.config.ts` owns static metadata, rendering settings, and the
   generated Page-level `plugins` map. Plugins derive Route and Document
   behavior from the normalized Page graph rather than separate owner configs.
-- Positive `src/apis/**/api.*` anchors own request Routes and
-  filesystem-scoped middleware.
+- Positive `src/apis/**/api.*` anchors own request Routes with explicit method
+  middleware composition. `src/middlewares/middleware.*` supplies global middleware.
 - `BuildPlan` drives generated `.ev` entries, bundler adapters, dev routing,
   output ownership, and deployment linking.
 - `BuildOutput` is the complete in-memory result;

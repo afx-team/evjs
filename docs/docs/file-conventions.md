@@ -13,10 +13,9 @@ For the complete matrix, see [Project Structure](./project-structure).
 | `src/pages` | File-based pages and client routes. |
 | `src/apis` | File-based API routes. |
 | `src/middlewares/middleware.*` | Entry for explicitly ordered global middleware. |
-| `src/apis/**/middleware.*` | Middleware for API routes in the same directory and its descendants. |
 | Imported source modules | Server functions that begin with `"use server";`. |
 
-Page files, API route files, and both middleware locations are enabled or
+Page files, API route files, and the global middleware anchor are enabled or
 disabled together. Top-level `conventions: false` turns off all of them; there
 are no separate switches. It cannot be combined with a `routing` declaration.
 When conventions are enabled, pages stay under `src/pages` and API routes stay
@@ -233,7 +232,7 @@ src/apis/
 The `api.*` filename contributes no URL segment. Catch-all, optional, and
 bracket directory syntaxes are not supported. Static directory segments must
 start with a lowercase letter or number. Invalid segments are diagnosed only
-when their tree contains an `api.*` file or API route middleware.
+when their tree contains an `api.*` file.
 
 ### Route handler exports
 
@@ -282,21 +281,13 @@ double-encoded text remains distinct.
 
 ## Server middleware
 
-Two middleware conventions exist:
+Global middleware is declared in one composition anchor:
 
 ```text
-src/
-├── middlewares/
-│   ├── middleware.ts
-│   ├── tracing.ts
-│   └── authentication.ts
-└── apis/
-    ├── middleware.ts
-    └── admin/
-        ├── middleware.ts
-        ├── api.ts
-        └── users/
-            └── api.ts
+src/middlewares/
+├── middleware.ts
+├── tracing.ts
+└── authentication.ts
 ```
 
 - `src/middlewares/middleware.*` default-exports one global middleware or an
@@ -304,20 +295,17 @@ src/
   `satisfies MiddlewareChain`.
 - Other files in `src/middlewares` are ordinary modules imported by
   `middleware.*` and are not ordered by filename.
-- `src/apis/**/middleware.*` wraps same-directory and descendant server file
-  routes by filesystem scope and default-exports one middleware or an ordered
-  non-empty list, including for automatic OPTIONS. Unsupported methods return
-  405 through global middleware only.
 
-Both anchors allow `.ts`, `.tsx`, `.js`, or `.jsx`, with one variant per
-directory. Use flat arrays; reuse chains with spread. Explicit empty array
+The anchor allows `.ts`, `.tsx`, `.js`, or `.jsx`, with exactly one variant in
+`src/middlewares`. Use flat arrays; reuse chains with spread. Explicit empty array
 exports, holes, non-functions, generators, and runtime named exports are rejected.
 Computed global chains may resolve to `[]` when disabled.
 
-Middleware files are not routes. An `api.*` exports only uppercase HTTP
-methods: use `withMiddlewares(handler, middlewares)` from `@evjs/ev/api` to compose
-a method's policies without applying them to child routes. See
-[API Routes and Middleware](./server-routes).
+An `api.*` exports only uppercase HTTP methods. Use
+`withMiddlewares(handler, middlewares)` from `@evjs/ev/api` to compose each
+method's policies, importing shared chains from ordinary modules. Automatic
+HEAD uses GET's chain; automatic OPTIONS and 405 responses run global middleware.
+See [API Routes and Middleware](./server-routes).
 
 ## Generated files
 

@@ -18,7 +18,6 @@ import {
 } from "../typegen/page-route-types.js";
 import { discoverPageRoutes, type PageRouteDiscovery } from "./page-routes.js";
 import {
-  applyRouteScopedMiddlewares,
   CANONICAL_SERVER_MIDDLEWARE_FILE,
   discoverServerConventions,
   type ServerConventionDiscovery,
@@ -194,27 +193,19 @@ export async function withServerConventionDefaults<TBundlerCfg>(
 
   const discovery = await discoverServerConventions(cwd, {
     globalFile: CANONICAL_SERVER_MIDDLEWARE_FILE,
-    routingDir: CANONICAL_SERVER_ROUTE_ROOT,
   });
   options.onDiscovery?.(discovery);
   if (options.reportDiagnostics !== false) {
     reportServerConventionDiagnostics(discovery.diagnostics);
   }
 
-  const routes = applyRouteScopedMiddlewares(
-    config.server.routes ?? [],
-    discovery.routeMiddlewares,
-  );
-
   return {
     ...config,
     server: {
       ...config.server,
-      routes,
       conventions: {
         ...conventions,
         globalMiddlewares: discovery.globalMiddlewares,
-        routeMiddlewares: discovery.routeMiddlewares,
       },
     },
   };

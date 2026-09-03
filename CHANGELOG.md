@@ -6,6 +6,16 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Explicit API middleware policies** — Stop discovering and inheriting
+  `src/apis/**/middleware.*`. These files are ordinary source modules. Import
+  shared policies and compose each target HTTP method with
+  `withMiddlewares(handler, middlewares)`. Move policies that must cover
+  automatic OPTIONS or 405 responses to `src/middlewares/middleware.*`.
+  Existing applications must explicitly register any authentication or other
+  policy previously applied by directory inheritance.
+
 ### ✨ Features
 
 - **Rootless Application component mode** — `@evjs/client` applications can
@@ -13,16 +23,15 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   external React root through `app.createComponent()`. DOM-root and component
   ownership are mutually exclusive, AbortSignal disposal is supported, and
   framework-managed route overlays keep the external host mounted.
-- **API middleware composition** — Scoped `middleware.*` anchors accept the
-  same ordered non-empty arrays as global anchors. `withMiddlewares(handler,
-  middlewares)` composes a single HTTP method with the handler first, preserving
+- **API middleware composition** — `withMiddlewares(handler, middlewares)`
+  composes a single HTTP method with the handler first, preserving
   Hono context and validation input types.
   `@evjs/ev/api` also exports `RouteHandlerFn`; standalone applications can use
   `withMiddlewares` from `@evjs/server`.
 - **Additive HTTP authoring entry** — Add `@evjs/ev/api` while preserving
   `MiddlewareHandler`, `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`,
   and `RequestLogEntry` under `@evjs/ev/server-context`. Existing imports and
-  single-function middleware remain supported. Automatic methods on
+  single-function global middleware remain supported. Automatic methods on
   `createRoute().methods`, mutable programmatic middleware arrays, empty
   conditional global chains, and the global-only middleware scope for 405
   responses remain unchanged.

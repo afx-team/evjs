@@ -61,7 +61,6 @@ export interface GraphConfig {
     routes?: DiscoveredServerRouteNode[];
     conventions?: {
       globalMiddlewares: ServerMiddlewareNode[];
-      routeMiddlewares: ServerMiddlewareNode[];
     };
   };
 }

@@ -112,8 +112,7 @@ Release automation replaces them with the release version before publishing.
 1. Create the URL directory below `src/apis`.
 2. Add one `api.ts`, `api.tsx`, `api.js`, or `api.jsx` anchor.
 3. Export uppercase HTTP method handlers.
-4. Put helpers in other colocated modules and scoped middleware in
-   `middleware.*`, exporting one handler or an ordered non-empty array.
+4. Put helpers and shared middleware chains in ordinary colocated modules.
 5. Compose individual methods with `withMiddlewares(handler, middlewares)`
    from `@evjs/ev/api`.
    That entry also exports handler and middleware types and `requestLogger`.

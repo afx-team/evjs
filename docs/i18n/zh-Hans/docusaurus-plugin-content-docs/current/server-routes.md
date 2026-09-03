@@ -91,21 +91,11 @@ export const GET = async (_req, ctx) => {
 | 声明 | 作用范围 |
 | --- | --- |
 | `src/middlewares/middleware.*` | 所有服务端运行时请求，包括 API 路由、服务端函数、SSR、PPR 和 RSC |
-| `src/apis/**/middleware.*` | 同目录及其后代的 API 路由 |
 | `api.*` 方法导出中的 `withMiddlewares(handler, middlewares)` | 仅该 HTTP 方法 |
 
-两种中间件入口均默认导出一个兼容 Hono 的函数，或显式排序的非空数组。每个目录只允许
-一种 `middleware.{ts,tsx,js,jsx}` 变体。禁止运行时命名导出，允许仅类型导出；其他文件名
-都是普通源码模块。
-
-```ts title="src/apis/api/admin/middleware.ts"
-import type { MiddlewareChain } from "@evjs/ev/api";
-import { audit, requireAdmin, requireSession } from "./policies";
-
-export default [requireSession, requireAdmin, audit] satisfies MiddlewareChain;
-```
-
-全局中间件使用同样的数组约定：
+全局入口默认导出一个兼容 Hono 的函数，或显式排序的非空数组。`src/middlewares` 中
+只允许一种 `middleware.{ts,tsx,js,jsx}` 变体。禁止运行时命名导出，允许仅类型导出；
+其他文件名都是普通源码模块。
 
 ```ts title="src/middlewares/middleware.ts"
 import { type MiddlewareChain, requestLogger } from "@evjs/ev/api";
@@ -120,23 +110,6 @@ JavaScript 使用相同的数组，无需类型标注。通过展开数组复用
 
 导入的中间件和工厂返回值遵循相同规则。无效导出会阻止服务端启动，诊断信息会标明
 来源模块，以及无效数组项从零开始的下标。注册后修改导出的数组不会改变已注册的链。
-
-### 目录继承
-
-```text
-src/apis/middleware.ts            -> 所有 API 路由
-src/apis/api/middleware.ts        -> /api 及其后代路由
-src/apis/api/admin/middleware.ts  -> /api/admin 及其后代路由
-src/apis/(admin)/middleware.ts    -> 分组及其后代路由
-```
-
-继承沿源码目录树展开。中间件也作用于同目录的 `api.*`；没有 API 入口的目录也可以
-为后代限定作用域。`(group)` 目录参与继承，但不增加 URL 段。父目录策略始终在子目录
-策略之前执行，子目录不能移除祖先中间件。
-
-要分开公开与受保护的 API，可把入口放进同级 `(public)` 和 `(protected)` 分组，
-鉴权中间件放在 `(protected)` 下。`src/apis/middleware.*` 作用于两个分组。
-这些作用域只影响 API 路由，即使服务端函数模块与它们放在同一目录也不会继承。
 
 ### 方法组合
 
@@ -155,8 +128,8 @@ export const POST = withMiddlewares(createPost, [requireUser, validatePost]);
 `handler` 参数使用 `(request, ctx) => Response | Promise<Response>` 签名；
 `middlewares` 参数接受单个中间件或有序非空数组。
 
-一个端点的多个方法需要共享策略时，在这些方法导出中复用同一条链。
-方法链不会继承到子路由；嵌套调用 `withMiddlewares` 时，外层链先执行。
+要让多个端点或 HTTP 方法共享策略，可导入同一条链，并在每个目标方法导出中显式组合。
+策略链只作用于显式组合的位置。嵌套调用 `withMiddlewares` 时，外层链先执行。
 
 单个中间件使用 `MiddlewareHandler<Env, Path, Input>`，有序链使用
 `MiddlewareChain<Env, Path, Input>`，HTTP 方法处理器使用
@@ -188,8 +161,7 @@ export const POST = withMiddlewares(
 请求按以下顺序进入：
 
 ```text
-插件中间件 -> 应用全局中间件 -> API 根目录
--> 祖先目录 -> 当前目录 -> 方法链 -> 处理器
+插件中间件 -> 应用全局中间件 -> 方法链 -> 处理器
 ```
 
 插件贡献按 slot 顺序执行，数组从左到右执行；`await next()` 之后的代码按相反顺序退出。
@@ -209,14 +181,13 @@ const requireAuth: MiddlewareHandler = async (ctx, next) => {
 export default requireAuth;
 ```
 
-API 目录和方法中间件可通过 `ctx.req.param()` 读取解析后的路由参数。
+方法中间件可通过 `ctx.req.param()` 读取解析后的路由参数。
 `await next()` 之后，可用 `ctx.header()` 或 `ctx.res` 修改响应。方法中间件遵循
 Hono 的错误处理行为：异常转成错误响应，中间件退出时可通过 `ctx.error` 读取错误。
 
 ## HTTP 方法行为
 
-匹配 API 路径后，全局中间件包裹所有响应。目录中间件包裹支持的方法，包括自动
-HEAD 和 OPTIONS：
+匹配 API 路径后，全局中间件包裹所有响应。显式组合的策略链作用于对应的 HTTP 方法：
 
 | 请求 | 方法链与响应 |
 | --- | --- |
@@ -224,13 +195,12 @@ HEAD 和 OPTIONS：
 | 显式 `HEAD` | `HEAD` 链与处理器，最终移除响应体 |
 | 只声明 `GET` 时的 `HEAD` | `GET` 链与处理器，最终移除响应体 |
 | 自动 `OPTIONS` | 不执行方法链，返回 204 和 `Allow` |
-| 不支持的方法 | 仅执行全局中间件，返回 405 和 `Allow`，不执行目录或方法中间件 |
-| 未匹配 API 路径 | 不执行 API 目录或方法中间件，继续框架的正常路由处理 |
+| 不支持的方法 | 仅执行全局中间件，返回 405 和 `Allow` |
+| 未匹配 API 路径 | 不执行方法链，继续框架的正常路由处理 |
 
 显式 `OPTIONS` 导出执行自己的方法链。`Allow` 包含支持的显式及自动方法。
 更具体的 API 路径拥有自己的 405 响应，不会继续匹配另一个 API 的方法处理器。
 
-目录中间件可以提前结束自动 `OPTIONS` 请求。需要同时覆盖 405 响应的策略应放在
-全局中间件中。如果希望 CORS 直接响应预检，
-将它放在鉴权之前；框架不会为 `OPTIONS` 静默绕过鉴权。方法中间件也可以提前结束
-由 `GET` 派生的 `HEAD`，最终响应始终没有响应体。
+需要覆盖自动 `OPTIONS` 和 405 响应的策略应放在全局中间件中。全局鉴权也会执行于
+`OPTIONS`；如果希望 CORS 直接响应预检，将它放在全局鉴权之前。方法中间件可以提前
+结束由 `GET` 派生的 `HEAD`，最终响应始终没有响应体。

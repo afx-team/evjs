@@ -2,9 +2,9 @@
 
 Most applications should use the standard file conventions:
 `src/pages/**/page.*` creates pages, `src/apis/**/api.*` creates API routes,
-and their directories determine the URL. Global and route-level middleware
-come from `src/middlewares/middleware.*` and
-`src/apis/**/middleware.*`.
+and their directories determine the URL. Global middleware comes from
+`src/middlewares/middleware.*`; HTTP method policies use
+`withMiddlewares(handler, middlewares)` from `@evjs/ev/api`.
 
 Use the alternatives on this page only when an application deliberately
 disables file discovery, maintains a programmatic SPA route tree, or uses the
@@ -27,8 +27,7 @@ export default defineConfig({
 
 - `page.*` files and client routes under `src/pages`;
 - `api.*` files and API routes under `src/apis`;
-- global `src/middlewares/middleware.*` and route-level
-  `src/apis/**/middleware.*`.
+- global `src/middlewares/middleware.*`.
 
 There are no separate switches for pages, API routes, or middleware. Do not
 combine `conventions: false` with a `routing` declaration. When file

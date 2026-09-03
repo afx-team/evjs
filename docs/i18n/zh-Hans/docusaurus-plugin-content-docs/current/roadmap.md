@@ -7,7 +7,8 @@
 - `routing.mode`、`src/pages/**/page.*` 与相邻 `page.config.ts` 会为 SPA 和 MPA
   生成同一份应用、页面、路由与文档语义图（`CoreGraph`）。
 - `application.routes` 是写入同一语义图的显式 SPA 配置。
-- `src/apis/**/api.*` 提供 API 路由，以及按文件目录划分作用范围的中间件。
+- `src/apis/**/api.*` 提供 API 路由，通过显式组合应用方法中间件。
+  `src/middlewares/middleware.*` 提供全局中间件。
 - `BuildPlan` 驱动 `.ev` 生成入口、构建器适配器、开发路由、输出归属与部署连接。
 - `BuildOutput` 只保留在内存中；`dist/deployment-metadata.json` 是供部署工具使用的
   序列化部署元数据。

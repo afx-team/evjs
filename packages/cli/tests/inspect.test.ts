@@ -133,8 +133,6 @@ describe("inspect", () => {
         "export default function UserDetail() { return null; }",
       "src/middlewares/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
-      "src/apis/middleware.ts":
-        "export default async function middleware(_ctx, next) { await next(); }",
       "src/apis/health/api.ts":
         "export const GET = async () => Response.json({ ok: true });",
     });

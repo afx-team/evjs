@@ -3,7 +3,7 @@ import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/api";
 const blockRequest: MiddlewareHandler = async (ctx, next) => {
   if (ctx.req.header("x-block-api") === "true") {
     return Response.json(
-      { error: "blocked by route middleware" },
+      { error: "blocked by API middleware" },
       { status: 403 },
     );
   }
@@ -12,7 +12,10 @@ const blockRequest: MiddlewareHandler = async (ctx, next) => {
 
 const apiMetadata: MiddlewareHandler = async (ctx, next) => {
   await next();
-  ctx.header("x-api-scope", "api");
+  ctx.header("x-api-policy", "applied");
 };
 
-export default [blockRequest, apiMetadata] satisfies MiddlewareChain;
+export const apiPolicies = [
+  blockRequest,
+  apiMetadata,
+] satisfies MiddlewareChain;

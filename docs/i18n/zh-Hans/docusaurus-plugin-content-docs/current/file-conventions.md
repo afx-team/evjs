@@ -12,10 +12,9 @@ evjs 只使用少量明确的文件标记。`page.*` 文件创建页面和客户
 | `src/pages` | 文件页面与客户端路由。 |
 | `src/apis` | 文件式 API 路由。 |
 | `src/middlewares/middleware.*` | 显式排列全局中间件的入口。 |
-| `src/apis/**/middleware.*` | 作用于同目录及其后代 API 路由的中间件。 |
 | 被应用引用的源码模块 | 以 `"use server";` 开头的服务端函数模块。 |
 
-页面文件、API 路由文件和两类中间件位置会一起启用或关闭。顶层
+页面文件、API 路由文件和全局中间件入口会一起启用或关闭。顶层
 `conventions: false` 会关闭全部文件发现，不能分别控制，也不能与 `routing` 同时
 配置。启用约定时，页面固定放在 `src/pages`，API 路由固定放在 `src/apis`。
 
@@ -215,7 +214,7 @@ src/apis/
 | 普通安全名称 | 静态 URL 段。 |
 
 `api.*` 文件名不增加 URL 段。不支持通配、可选或方括号形式的目录语法。静态目录段
-必须以小写字母或数字开头；只有目录树中存在 `api.*` 或路由中间件时，框架才会检查并
+必须以小写字母或数字开头；只有目录树中存在 `api.*` 时，框架才会检查并
 报告无效路径段。
 
 ### 路由处理器导出
@@ -258,36 +257,27 @@ export async function POST(request: Request) {
 
 ## 服务端中间件
 
-存在两种中间件约定：
+全局中间件通过一个组合入口声明：
 
 ```text
-src/
-├── middlewares/
-│   ├── middleware.ts
-│   ├── tracing.ts
-│   └── authentication.ts
-└── apis/
-    ├── middleware.ts
-    └── admin/
-        ├── middleware.ts
-        ├── api.ts
-        └── users/
-            └── api.ts
+src/middlewares/
+├── middleware.ts
+├── tracing.ts
+└── authentication.ts
 ```
 
 - `src/middlewares/middleware.*` 默认导出一个全局中间件，或显式排序的
   非空列表；TypeScript 列表应使用 `satisfies MiddlewareChain`；
 - `src/middlewares` 下的其他文件都是由 `middleware.*` 显式导入的普通模块，不会按文件名
-  排序；
-- `src/apis/**/middleware.*` 作用于同目录及后代 API 路由，包括自动 OPTIONS；
-  默认导出一个中间件或有序非空列表。不支持的方法返回 405，仅执行全局中间件。
+  排序。
 
-两种入口均允许 `.ts`、`.tsx`、`.js` 或 `.jsx`，每个目录只能有一种变体。
+入口允许 `.ts`、`.tsx`、`.js` 或 `.jsx`，`src/middlewares` 中只能有一种变体。
 数组必须扁平，复用链时使用展开语法；禁止显式空数组导出、数组空槽、非函数、生成器和
 运行时命名导出。动态计算的全局链可以在禁用时返回 `[]`。
 
-中间件文件不是路由。`api.*` 只导出大写 HTTP 方法，可使用 `@evjs/ev/api` 的
-`withMiddlewares(handler, middlewares)` 组合单个方法的策略，不影响子路由。
+`api.*` 只导出大写 HTTP 方法。使用 `@evjs/ev/api` 的
+`withMiddlewares(handler, middlewares)` 组合各方法的策略，从普通模块导入共享链。
+自动 HEAD 使用 GET 的链；自动 OPTIONS 和 405 响应执行全局中间件。
 详见[API 路由与中间件](./server-routes)。
 
 ## 生成文件

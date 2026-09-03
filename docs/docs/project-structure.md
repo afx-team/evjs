@@ -93,7 +93,6 @@ Paths are relative to the project root unless stated otherwise.
 | Other files inside an API route directory | Route-owned source | Helpers and `index.*` do not create endpoints. |
 | `src/middlewares/middleware.*` | Global middleware composition | Default-export one middleware or an explicitly ordered non-empty list. Computed global chains may resolve to `[]` when disabled. |
 | Other files in `src/middlewares` | Middleware implementation modules | Imported explicitly; filenames do not define order. |
-| `src/apis/**/middleware.*` | Middleware scoped to an API subtree | Default-export one middleware or an ordered non-empty list. Exactly one source variant per directory. It is not a route. |
 | `public/**` | Static files | Copied to browser output according to output configuration. |
 | `.ev/**`, `dist/**`, `src/route-types.d.ts`, `src/plugin-types.d.ts` | Generated output | Ignore and never edit or scaffold these files. |
 
@@ -188,14 +187,12 @@ export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
 The complete order is plugin contributions, application global middleware,
-API directories from root to leaf, the method chain, and the handler. Arrays
-run left to right; work after `await next()` unwinds in reverse.
-`src/apis/**/middleware.*` accepts the same function-or-array export and wraps
-API routes in its own directory and descendants, including automatic OPTIONS.
-405 responses run only global middleware. Pathless groups participate in inheritance.
+the method chain, and the handler. Arrays run left to right; work after
+`await next()` unwinds in reverse. Automatic OPTIONS and 405 responses run
+only global middleware.
 
 Use `withMiddlewares(handler, [auth, validate])` from `@evjs/ev/api` for one
-HTTP method. These chains do not inherit into descendants. Explicit HEAD uses
+HTTP method. Import shared chains into each method that needs them. Explicit HEAD uses
 its own chain; automatic HEAD uses GET's chain. Import request context helpers
 from `@evjs/ev/server-context`. See [API Routes and Middleware](./server-routes)
 for method behavior and the complete authoring contract.

@@ -76,10 +76,9 @@ npx biome check --write
 1. 在 `src/apis` 下创建 URL 对应目录并添加 `api.ts` 文件。
 2. 从该文件导出 `GET`、`POST` 等大写 HTTP 方法处理器。
 3. 辅助代码放在同目录的普通非 `api.*` 模块中。
-4. 在 `src/middlewares/middleware.ts` 中组合有序的全局中间件；只作用于一组 API
-   路由时，使用 `src/apis/**/middleware.*`。
-   两者均接受单个函数或非空数组。方法专属策略使用 `@evjs/ev/api` 的
-   `withMiddlewares(handler, middlewares)` 组合。
+4. 在 `src/middlewares/middleware.ts` 中组合有序的全局中间件，默认导出单个函数或非空数组。
+5. 使用 `@evjs/ev/api` 的 `withMiddlewares(handler, middlewares)` 组合各方法的策略，
+   通过普通模块导入复用共享链。
 
 ### 添加示例
 

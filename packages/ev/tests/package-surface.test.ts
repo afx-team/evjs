@@ -256,7 +256,6 @@ const expectedBuildToolsRuntimeExports = [
   "analyzePageComponentExports",
   "applyHtmlTagContributions",
   "applyPluginSettings",
-  "applyRouteScopedMiddlewares",
   "assertBundlerEmittedFiles",
   "assertPortableRelativeArtifactPath",
   "assertPortableRelativeBrowserArtifactPath",
@@ -948,7 +947,10 @@ describe("workspace package surface", () => {
     expect(agentInstructions).toContain("`@evjs/ev/_internal/*`");
     expect(agentInstructions).toContain("`src/pages/**/page.*`");
     expect(agentInstructions).toContain("`src/apis/**/api.*`");
-    expect(agentInstructions).toContain("`src/apis/**/middleware.*`");
+    expect(agentInstructions).toContain("`src/middlewares/middleware.*`");
+    expect(agentInstructions).toContain(
+      "withMiddlewares(handler, middlewares)",
+    );
     expect(agentInstructions).toContain("English and Chinese documentation");
     expect(agentInstructions).not.toContain("## Package Map");
     expect(agentInstructions).not.toContain("## Common Mistakes");

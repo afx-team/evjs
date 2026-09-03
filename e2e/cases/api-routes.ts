@@ -128,21 +128,24 @@ test.describe("api-routes", () => {
     );
   });
 
-  test("applies API route middleware", async ({ request, apiURL }) => {
+  test("applies explicitly composed API middleware", async ({
+    request,
+    apiURL,
+  }) => {
     const response = await request.get(`${apiURL}/api/health`);
     expect(response.status()).toBe(200);
-    expect(response.headers()["x-api-scope"]).toBe("api");
+    expect(response.headers()["x-api-policy"]).toBe("applied");
 
     const blockedResponse = await request.get(`${apiURL}/api/health`, {
       headers: { "x-block-api": "true" },
     });
     expect(blockedResponse.status()).toBe(403);
     await expect(blockedResponse.json()).resolves.toEqual({
-      error: "blocked by route middleware",
+      error: "blocked by API middleware",
     });
   });
 
-  test("isolates method middleware while retaining scoped automatic responses", async ({
+  test("isolates method middleware and applies only global policies to automatic OPTIONS and 405", async ({
     request,
     apiURL,
   }) => {
@@ -151,14 +154,14 @@ test.describe("api-routes", () => {
     });
     expect(created.status()).toBe(201);
     expect(created.headers()["x-post-validated"]).toBe("true");
-    expect(created.headers()["x-api-scope"]).toBe("api");
+    expect(created.headers()["x-api-policy"]).toBe("applied");
     expect(created.headers()["x-example-server"]).toBe("api-routes");
     const { id } = await created.json();
     await request.delete(`${apiURL}/api/posts/${id}`);
 
     const invalid = await request.post(`${apiURL}/api/posts`, { data: {} });
     expect(invalid.status()).toBe(400);
-    expect(invalid.headers()["x-api-scope"]).toBe("api");
+    expect(invalid.headers()["x-api-policy"]).toBe("applied");
 
     for (const [method, status] of [
       ["GET", 200],
@@ -168,8 +171,8 @@ test.describe("api-routes", () => {
     ] as const) {
       const response = await request.fetch(`${apiURL}/api/posts`, { method });
       expect(response.status()).toBe(status);
-      expect(response.headers()["x-api-scope"]).toBe(
-        method === "PATCH" ? undefined : "api",
+      expect(response.headers()["x-api-policy"]).toBe(
+        method === "GET" || method === "HEAD" ? "applied" : undefined,
       );
       expect(response.headers()["x-example-server"]).toBe("api-routes");
       expect(response.headers()["x-post-validated"]).toBeUndefined();
@@ -180,6 +183,13 @@ test.describe("api-routes", () => {
       headers: { "x-block-api": "true" },
     });
     expect(blocked.status()).toBe(405);
+
+    const options = await request.fetch(`${apiURL}/api/posts`, {
+      method: "OPTIONS",
+      headers: { "x-block-api": "true" },
+    });
+    expect(options.status()).toBe(204);
+    expect(options.headers()["x-api-policy"]).toBeUndefined();
   });
 
   test("runs an explicit HEAD handler instead of GET", async ({
@@ -189,8 +199,14 @@ test.describe("api-routes", () => {
     const response = await request.head(`${apiURL}/api/health`);
     expect(response.status()).toBe(204);
     expect(response.headers()["x-health-probe"]).toBe("head");
-    expect(response.headers()["x-api-scope"]).toBe("api");
+    expect(response.headers()["x-api-policy"]).toBe("applied");
     expect(await response.text()).toBe("");
+
+    const blocked = await request.head(`${apiURL}/api/health`, {
+      headers: { "x-block-api": "true" },
+    });
+    expect(blocked.status()).toBe(403);
+    expect(await blocked.text()).toBe("");
   });
 
   test("calls server function", async ({ page, baseURL }) => {

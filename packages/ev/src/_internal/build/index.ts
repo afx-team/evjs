@@ -78,10 +78,7 @@ export type {
   ServerConventionDiagnostic,
   ServerConventionDiscovery,
 } from "./discovery/server-conventions.js";
-export {
-  applyRouteScopedMiddlewares,
-  discoverServerConventions,
-} from "./discovery/server-conventions.js";
+export { discoverServerConventions } from "./discovery/server-conventions.js";
 export type {
   DiscoverServerRoutesOptions,
   ServerRouteDiscovery,

@@ -87,7 +87,6 @@ src/pages/orders/$orderId/
 | API 路由目录中的其他文件 | 路由拥有的源码 | 辅助文件和 `index.*` 不创建端点。 |
 | `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表；动态计算的全局链可以在禁用时返回 `[]`。 |
 | `src/middlewares` 中的其他文件 | 中间件实现模块 | 显式导入，文件名不决定顺序。 |
-| `src/apis/**/middleware.*` | API 子树范围中间件 | 默认导出一个中间件或有序非空列表；每个目录一种源码变体，本身不是路由。 |
 | `public/**` | 静态文件 | 按输出配置复制到浏览器产物。 |
 | `.ev/**`、`dist/**`、`src/route-types.d.ts`、`src/plugin-types.d.ts` | 生成产物 | 忽略，不要编辑或复制进脚手架。 |
 
@@ -171,13 +170,12 @@ import tracing from "./tracing";
 export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
-完整顺序是插件贡献、应用全局中间件、从根到叶的 API 目录中间件、方法链，最后是处理器。
+完整顺序是插件贡献、应用全局中间件、方法链，最后是处理器。
 数组从左到右执行，`await next()` 之后的工作反向退出。
-`src/apis/**/middleware.*` 同样接受函数或数组导出，包裹同目录及后代 API 路由，
-包括自动 OPTIONS。405 响应仅执行全局中间件。无路径分组也参与继承。
+自动 OPTIONS 和 405 响应仅执行全局中间件。
 
 单个 HTTP 方法使用 `@evjs/ev/api` 的 `withMiddlewares(handler, [auth, validate])`。
-这些链不继承到后代；显式 HEAD 使用自己的链，自动 HEAD 使用 GET 的链。
+需要共享策略时，在各个目标方法中导入并组合链。显式 HEAD 使用自己的链，自动 HEAD 使用 GET 的链。
 请求上下文辅助接口从 `@evjs/ev/server-context` 导入。完整方法行为和编写规则见
 [API 路由与中间件](./server-routes)。
 

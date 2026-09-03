@@ -101,22 +101,12 @@ Choose where a policy applies:
 | Declaration | Scope |
 | --- | --- |
 | `src/middlewares/middleware.*` | Every server runtime request, including API routes, server functions, SSR, PPR, and RSC |
-| `src/apis/**/middleware.*` | API routes in the same directory and its descendants |
 | `withMiddlewares(handler, middlewares)` in an `api.*` method export | Only that HTTP method |
 
-Both middleware anchors default-export one Hono-compatible function or a
-non-empty, ordered array. Each directory allows exactly one
+The global anchor default-exports one Hono-compatible function or a non-empty,
+ordered array. `src/middlewares` allows exactly one
 `middleware.{ts,tsx,js,jsx}` variant. Runtime named exports are rejected;
 type-only exports are allowed. Other filenames are ordinary source modules.
-
-```ts title="src/apis/api/admin/middleware.ts"
-import type { MiddlewareChain } from "@evjs/ev/api";
-import { audit, requireAdmin, requireSession } from "./policies";
-
-export default [requireSession, requireAdmin, audit] satisfies MiddlewareChain;
-```
-
-The same array convention applies to global middleware:
 
 ```ts title="src/middlewares/middleware.ts"
 import { type MiddlewareChain, requestLogger } from "@evjs/ev/api";
@@ -135,27 +125,6 @@ Imported middleware and factory results follow the same rules. Invalid exports
 prevent server startup; diagnostics identify the source module and, for an
 invalid array entry, its zero-based index. Changing an exported array after
 registration does not change the registered chain.
-
-### Directory inheritance
-
-```text
-src/apis/middleware.ts            -> every API route
-src/apis/api/middleware.ts        -> /api and descendants
-src/apis/api/admin/middleware.ts  -> /api/admin and descendants
-src/apis/(admin)/middleware.ts    -> the group and its descendants
-```
-
-Inheritance follows the source directory tree. An anchor also applies to its
-own directory's `api.*`, and the directory need not have an API anchor to scope
-its descendants. `(group)` directories participate in inheritance without
-adding URL segments. Parent policies always run before child policies;
-children cannot remove an ancestor's middleware.
-
-For separate public and protected APIs, put their anchors in sibling
-`(public)` and `(protected)` groups and place authentication under
-`(protected)`. Middleware at `src/apis/middleware.*` applies to both groups.
-These scopes affect API routes only, including when a server-function module
-is colocated in the same directory.
 
 ### Method composition
 
@@ -176,8 +145,9 @@ The `handler` argument uses the
 `(request, ctx) => Response | Promise<Response>` signature. The `middlewares`
 argument accepts one middleware or a non-empty ordered array.
 
-To share policy across several methods of one endpoint, reuse the same chain
-in those method exports. Method chains never inherit into child routes.
+To share policy across endpoints or HTTP methods, import the same chain and
+compose it in each target method export. A chain applies only where it is
+explicitly composed.
 Nested `withMiddlewares` calls run the outer chain first.
 
 Use `MiddlewareHandler<Env, Path, Input>` for individual middleware,
@@ -213,8 +183,7 @@ stream can only be consumed once.
 Requests enter in this order:
 
 ```text
-plugin middleware -> application global middleware -> API root
--> ancestor directories -> current directory -> method chain -> handler
+plugin middleware -> application global middleware -> method chain -> handler
 ```
 
 Plugin contributions run in slot order. Arrays run left to right, and code
@@ -235,7 +204,7 @@ const requireAuth: MiddlewareHandler = async (ctx, next) => {
 export default requireAuth;
 ```
 
-API directory and method middleware can read resolved params through
+Method middleware can read resolved params through
 `ctx.req.param()`. After `await next()`, use `ctx.header()` or `ctx.res` to
 modify the response. Method middleware uses Hono's error handling:
 exceptions become error responses, with the error available through `ctx.error`
@@ -243,8 +212,8 @@ as middleware unwinds.
 
 ## HTTP method behavior
 
-For a matching API path, global middleware wraps every response. Directory
-middleware wraps supported methods, including automatic HEAD and OPTIONS:
+For a matching API path, global middleware wraps every response. Each
+explicitly composed chain applies to its HTTP method:
 
 | Request | Method chain and response |
 | --- | --- |
@@ -252,15 +221,14 @@ middleware wraps supported methods, including automatic HEAD and OPTIONS:
 | Explicit `HEAD` | The `HEAD` chain and handler; the final body is removed |
 | `HEAD` with only `GET` declared | The `GET` chain and handler; the final body is removed |
 | Automatic `OPTIONS` | No method chain; returns 204 with `Allow` |
-| Unsupported method | Only global middleware; returns 405 with `Allow`, without directory or method middleware |
-| No matching API path | No API directory or method middleware; normal framework routing continues |
+| Unsupported method | Only global middleware; returns 405 with `Allow` |
+| No matching API path | No method chain; normal framework routing continues |
 
 An explicit `OPTIONS` export runs its own method chain. `Allow` includes the
 supported explicit and automatic methods. A more specific API path owns its
 405 response; it cannot fall through to another API's method handler.
 
-Directory middleware can short-circuit automatic `OPTIONS`. Put policy that
-must also apply to 405 responses in global middleware. Place CORS
-before authentication when it should answer preflight requests; the framework
-does not silently bypass authentication for `OPTIONS`. Method middleware can
-also short-circuit derived `HEAD`, whose final response is always bodyless.
+Put policies that must cover automatic `OPTIONS` and 405 responses in global
+middleware. Global authentication also runs for `OPTIONS`; place CORS before
+it when CORS should answer preflight requests. Method middleware can
+short-circuit derived `HEAD`, whose final response is always bodyless.

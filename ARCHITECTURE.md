@@ -42,10 +42,9 @@ The semantic inputs are:
 - `src/middlewares/middleware.*` is the explicitly ordered global framework
   middleware composition anchor; other files in `src/middlewares` are ordinary
   modules.
-- `src/apis/**/middleware.*` composes one middleware or an ordered non-empty
-  array for same-directory and descendant API routes. Method exports can use
-  `withMiddlewares(handler, middlewares)` from `@evjs/ev/api` for non-inherited
-  method policies.
+- API method exports use `withMiddlewares(handler, middlewares)` from
+  `@evjs/ev/api` to compose one middleware or an ordered non-empty array.
+  Shared policies are ordinary modules imported by each method that uses them.
 - reachable modules beginning with `"use server";` define server functions.
 
 `routing.mode` changes materialization, not Page identity. SPA normally owns
@@ -122,13 +121,13 @@ Programmatic `createApp()`, client route trees, and server `createRoute()`
 declarations are runtime primitives; framework convention discovery does not
 scan them.
 
-Core owns directory discovery and inheritance, and generated entries validate
-each middleware export before flattening its chain. The server runtime owns
-method composition and dispatch. It mounts shared and selected method
-middleware into one Hono chain, including shared policy for OPTIONS. Unsupported
-methods return 405 through global middleware, bypassing directory and method
-middleware. `createRoute()` retains callable automatic HEAD/OPTIONS handlers
-and the mutable middleware array supplied by programmatic consumers.
+Core discovers the global middleware anchor, and generated entries validate
+its export before flattening the chain. The server runtime owns method
+composition and dispatch. Global and selected method middleware use one Hono
+context. Automatic OPTIONS and unsupported methods run global middleware;
+unsupported methods return 405. Programmatic `createRoute()` supports explicit
+route middleware arrays, including for OPTIONS, and callable automatic
+HEAD/OPTIONS handlers. The supplied middleware array remains mutable.
 Explicit HEAD takes precedence over GET; automatic HEAD uses GET's pipeline.
 
 ## Internal Build Layout

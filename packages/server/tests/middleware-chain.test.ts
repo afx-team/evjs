@@ -43,9 +43,12 @@ describe("MiddlewareChain", () => {
     ].map((value) => [value]),
   )("rejects invalid resolved exports (%s)", (value) => {
     expect(() =>
-      normalizeMiddleware(value, "src/apis/middleware.ts default export"),
+      normalizeMiddleware(
+        value,
+        "src/middlewares/middleware.ts default export",
+      ),
     ).toThrow(
-      "src/apis/middleware.ts default export must be a middleware function or a non-empty array",
+      "src/middlewares/middleware.ts default export must be a middleware function or a non-empty array",
     );
     expect(() => withMiddlewares(() => new Response(), value as never)).toThrow(
       "withMiddlewares() middlewares must be a middleware function or a non-empty array",
@@ -60,9 +63,12 @@ describe("MiddlewareChain", () => {
     ].map((value) => [value]),
   )("reports the source and zero-based index of invalid entries", (value) => {
     expect(() =>
-      normalizeMiddleware(value, "src/apis/middleware.ts default export"),
+      normalizeMiddleware(
+        value,
+        "src/middlewares/middleware.ts default export",
+      ),
     ).toThrow(
-      "src/apis/middleware.ts default export[1] must be a middleware function.",
+      "src/middlewares/middleware.ts default export[1] must be a middleware function.",
     );
   });
 

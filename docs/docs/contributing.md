@@ -85,10 +85,10 @@ npx biome check --write
 1. Create the URL directory under `src/apis` and add its `api.ts` file.
 2. Export uppercase HTTP handlers such as `GET` or `POST` from that file.
 3. Keep helpers in ordinary colocated non-`api.*` modules.
-4. Compose ordered global middleware in `src/middlewares/middleware.ts`, or
-   use `src/apis/**/middleware.*` for middleware limited to an API route tree.
-   Both accept one function or a non-empty array. Compose a method's policies
-   with `withMiddlewares(handler, middlewares)` from `@evjs/ev/api`.
+4. Compose ordered global middleware in `src/middlewares/middleware.ts`,
+   default-exporting one function or a non-empty array.
+5. Compose each method's policies with `withMiddlewares(handler, middlewares)`
+   from `@evjs/ev/api`. Reuse shared chains through ordinary imports.
 
 ### Add an example
 
