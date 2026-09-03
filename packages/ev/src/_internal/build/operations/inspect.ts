@@ -107,6 +107,8 @@ export interface InspectFrameworkBuildResult {
   routing?: {
     /** Route and Document materialization mode. */
     routingMode: "spa" | "mpa";
+    /** Browser route prefix for SPA delivery. */
+    basepath?: string;
     /** Canonical Page root. */
     pageRoot: string;
     document: {
@@ -400,6 +402,7 @@ function createInspectRouting<TBundlerCfg>(
   if (config.routing) {
     return {
       routingMode: config.routing.mode,
+      ...(config.routing.basepath ? { basepath: config.routing.basepath } : {}),
       pageRoot: CANONICAL_PAGE_ROUTE_ROOT,
       document: {
         template: config.routing.html,

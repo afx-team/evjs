@@ -70,7 +70,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "auto",
       runtime: {
         server: {
-          basePath: "/framework",
+          basepath: "/framework",
           fn: "/framework/fn",
           ppr: "/framework/ppr",
           rsc: "/framework/rsc",
@@ -211,7 +211,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "/",
       runtime: {
         server: {
-          basePath: "/framework",
+          basepath: "/framework",
           fn: "/framework/fn",
           rsc: "/framework/rsc",
         },
@@ -647,7 +647,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "/",
       runtime: {
         server: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
         },
       },
@@ -718,6 +718,42 @@ describe("createDeploymentArtifact", () => {
         "/* /index.html 200",
         "",
       ].join("\n"),
+    );
+  });
+
+  it("scopes SPA deployment fallbacks to the configured basepath", () => {
+    const output = createServerDeploymentOutput({
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    });
+    const app = output.apps.default;
+    if (!app) throw new Error("Expected an application fixture.");
+    app.basepath = "/next";
+    app.document = { fileName: "index.html" };
+    output.server.routes = [];
+    for (const route of output.routes) {
+      route.path = route.path === "/" ? "/next" : `/next${route.path}`;
+    }
+
+    const staticFiles = createStaticDeploymentFiles(output);
+    const nodeFiles = createNodeDeploymentFiles(output);
+    const edgeFiles = createEdgeDeploymentFiles(output);
+
+    expect(staticFiles.redirects).toContain("/next /index.html 200");
+    expect(staticFiles.redirects).toContain("/next/* /index.html 200");
+    expect(staticFiles.redirects).not.toContain("\n/* /index.html 200");
+    expect(nodeFiles.serverModule).toContain(
+      'const staticFallbackBasepath = "/next";',
+    );
+    expect(nodeFiles.serverModule).toContain(
+      "staticFallback && isStaticFallbackPath(url.pathname)",
+    );
+    expect(edgeFiles.workerModule).toContain(
+      'const staticFallbackBasepath = "/next";',
+    );
+    expect(edgeFiles.workerModule).toContain(
+      "staticFallback && isStaticFallbackPath(url.pathname)",
     );
   });
 
@@ -847,7 +883,7 @@ describe("createDeploymentArtifact", () => {
       serverDir: "dist/server",
     });
     output.runtime.server = {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       ppr: "__evjs/ppr",
       rsc: "/flight",
@@ -953,7 +989,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "/",
       runtime: {
         server: {
-          basePath: "/framework",
+          basepath: "/framework",
           fn: "/framework/fn",
           ppr: "/framework/ppr",
           rsc: "/framework/rsc",
@@ -1093,7 +1129,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "/",
       runtime: {
         server: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
         },
       },
@@ -1152,7 +1188,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "/",
       runtime: {
         server: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
         },
       },
@@ -1215,7 +1251,7 @@ describe("createDeploymentArtifact", () => {
       publicPath: "/",
       runtime: {
         server: {
-          basePath: "/framework",
+          basepath: "/framework",
           fn: "/framework/fn",
           rsc: "/framework/rsc",
         },
@@ -1721,7 +1757,7 @@ function extractGeneratedRouteMatcher(source: string): string {
 
 interface GeneratedRouteMatcher {
   routePathMatches(routePath: string, pathname: string): boolean;
-  pathIsAtOrBelow(pathname: string, basePath: string): boolean;
+  pathIsAtOrBelow(pathname: string, basepath: string): boolean;
 }
 
 function evaluateGeneratedRouteMatcher(source: string): GeneratedRouteMatcher {
@@ -1794,7 +1830,7 @@ function createMpaStaticDeploymentOutput(): BuildOutput {
     publicPath: "/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },
@@ -1881,7 +1917,7 @@ function createServerDeploymentOutput(paths: {
     publicPath: "/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

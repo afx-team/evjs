@@ -9,8 +9,9 @@ import {
   usePageLoaderData,
   usePageParams,
   usePageSearch,
+  useRouteParams,
 } from "../src/index";
-import { createPagesApp } from "../src/internal";
+import { createPagesApp, PageProvider } from "../src/internal";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -22,6 +23,30 @@ describe("page route hooks", () => {
     expect(usePageParams).toBeTypeOf("function");
     expect(usePageSearch).toBeTypeOf("function");
     expect(usePageLoaderData).toBeTypeOf("function");
+    expect(useRouteParams).toBeTypeOf("function");
+  });
+
+  it("reads Page params without requiring a SPA RouterProvider", () => {
+    function Page() {
+      const params = usePageParams<{ postId: string }>();
+      return createElement("p", undefined, params.postId);
+    }
+
+    const html = renderToStaticMarkup(
+      createElement(
+        PageProvider,
+        {
+          value: {
+            params: { postId: "p1" },
+            search: {},
+            loaderData: undefined,
+          },
+        },
+        createElement(Page),
+      ),
+    );
+
+    expect(html).toBe("<p>p1</p>");
   });
 
   it("exposes standalone CSR APIs without exposing generated bootstrap internals", () => {
@@ -187,6 +212,215 @@ describe("createPagesApp", () => {
     );
     expect(router.latestLocation.pathname).toBe("/home");
     expect(history.location.href).toBe(initialUrl);
+  });
+
+  it("keeps locations outside the SPA basepath unmatched and unchanged", async () => {
+    const beforeLoad = vi.fn();
+    function Console() {
+      return createElement("p", undefined, "console");
+    }
+    function NotFound() {
+      return createElement("h1", undefined, "not found");
+    }
+
+    const initialUrl = "/console?tab=recent#activity";
+    const history = client.createMemoryHistory({
+      initialEntries: [initialUrl],
+    });
+    const { app } = createPagesApp({
+      routes: [
+        {
+          path: "/",
+          module: {
+            default: Console,
+            notFoundComponent: NotFound,
+            beforeLoad,
+          },
+        },
+        { path: "/console", module: { default: Console } },
+        {
+          path: "/$productName/$applicationName",
+          kind: "redirect",
+          redirect: {
+            kind: "path",
+            path: "/$productName/$applicationName/sprints",
+          },
+        },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as {
+      basepath: string;
+      latestLocation: {
+        pathname: string;
+        publicHref: string;
+      };
+      matchRoutes(location: unknown): Array<{
+        routeId: string;
+        globalNotFound?: boolean;
+      }>;
+      buildLocation(options: unknown): { publicHref: string };
+      routeTree: { options: { notFoundComponent?: unknown } };
+      load(): Promise<void>;
+      stores: {
+        matches: {
+          get(): Array<{
+            routeId: string;
+            status: string;
+            globalNotFound?: boolean;
+          }>;
+        };
+      };
+    };
+
+    expect(router.basepath).toBe("/next");
+    expect(router.latestLocation.publicHref).toBe(initialUrl);
+    expect(history.location.href).toBe(initialUrl);
+    expect(router.routeTree.options.notFoundComponent).toBe(NotFound);
+    expect(router.matchRoutes(router.latestLocation)).toEqual([
+      expect.objectContaining({ routeId: "__root__" }),
+      expect.objectContaining({
+        routeId: expect.stringContaining("__evjs_outside_basepath__"),
+      }),
+    ]);
+    expect(
+      router.buildLocation({
+        to: router.latestLocation.pathname,
+        search: true,
+        hash: true,
+      }).publicHref,
+    ).toBe(initialUrl);
+    await expect(router.load()).resolves.toBeUndefined();
+    expect(beforeLoad).not.toHaveBeenCalled();
+    expect(history.location.href).toBe(initialUrl);
+    expect(router.stores.matches.get()).toEqual([
+      expect.objectContaining({ routeId: "__root__", status: "success" }),
+      expect.objectContaining({ status: "notFound" }),
+    ]);
+    expect(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: app.queryClient },
+          createElement(client.RouterProvider, {
+            router: router as client.AnyRouter,
+          }),
+        ),
+      ),
+    ).toContain("not found");
+  });
+
+  it("loads and prefixes application-relative navigation under a strict SPA basepath", async () => {
+    function Console() {
+      return createElement("p", undefined, "console");
+    }
+
+    const history = client.createMemoryHistory({
+      initialEntries: ["/next/console"],
+    });
+    const { app } = createPagesApp({
+      routes: [
+        { path: "/", module: { default: Console } },
+        { path: "/console", module: { default: Console } },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as {
+      latestLocation: { pathname: string; publicHref: string };
+      buildLocation(options: unknown): {
+        pathname: string;
+        publicHref: string;
+      };
+      load(): Promise<void>;
+      stores: {
+        matches: {
+          get(): Array<{ routeId: string; status: string }>;
+        };
+      };
+    };
+
+    expect(router.latestLocation).toMatchObject({
+      pathname: "/console",
+      publicHref: "/next/console",
+    });
+    expect(
+      router.buildLocation({ to: "/console", search: { tab: "recent" } }),
+    ).toMatchObject({
+      pathname: "/console",
+      publicHref: "/next/console?tab=recent",
+    });
+    await expect(router.load()).resolves.toBeUndefined();
+    expect(router.stores.matches.get()).toEqual([
+      expect.objectContaining({ routeId: "__root__", status: "success" }),
+      expect.objectContaining({ routeId: "/console", status: "success" }),
+    ]);
+    expect(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: app.queryClient },
+          createElement(client.RouterProvider, {
+            router: router as client.AnyRouter,
+          }),
+        ),
+      ),
+    ).toContain("console");
+  });
+
+  it("exposes active route params and public hrefs to root layouts", async () => {
+    function RootLayout({ children }: { children?: ReactNode }) {
+      const params = client.useRouteParams<{ deptId?: string }>();
+      const consoleHref = client.useHref({ to: "/console" });
+      const resolveHref = client.useHrefResolver();
+      const teamHref = resolveHref({
+        to: "/teams/$deptId",
+        params: { deptId: "runtime" },
+      });
+      const currentHref = resolveHref({ to: "." });
+      return createElement(
+        "main",
+        {
+          "data-current-href": currentHref,
+          "data-dept-id": params.deptId,
+          "data-team-href": teamHref,
+        },
+        createElement("a", { href: consoleHref }, "console"),
+        children,
+      );
+    }
+    function Page() {
+      return createElement("p", undefined, "team");
+    }
+
+    const history = client.createMemoryHistory({
+      initialEntries: ["/next/teams/platform"],
+    });
+    const { app } = createPagesApp({
+      rootModule: { default: RootLayout },
+      routes: [
+        { path: "/console", module: { default: Page } },
+        { path: "/teams/$deptId", module: { default: Page } },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as client.AnyRouter;
+    await router.load();
+
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: app.queryClient },
+        createElement(client.RouterProvider, { router }),
+      ),
+    );
+
+    expect(html).toContain('data-dept-id="platform"');
+    expect(html).toContain('data-current-href="/next/teams/platform"');
+    expect(html).toContain('href="/next/console"');
+    expect(html).toContain('data-team-href="/next/teams/runtime"');
   });
 
   it("replaces runtime Route overlays without removing generated Routes", async () => {

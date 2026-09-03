@@ -536,7 +536,7 @@ test.describe("render-modes", () => {
     expect("rsc" in deploymentMetadata).toBe(false);
     expect(frameworkRuntime.runtime.server).toEqual(
       expect.objectContaining({
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         ppr: "__evjs/ppr",
         rsc: "__evjs/rsc",

@@ -21,6 +21,9 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
   lines.push("Routing");
   if (result.routing) {
     lines.push(`  routingMode: ${result.routing.routingMode}`);
+    if (result.routing.basepath) {
+      lines.push(`  basepath: ${result.routing.basepath}`);
+    }
     lines.push(`  pageRoot: ${result.routing.pageRoot}`);
     lines.push(`  document.template: ${result.routing.document.template}`);
     lines.push(`  document.mount: ${result.routing.document.mount}`);
@@ -131,7 +134,7 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
       lines.push(`  bundler.gap: ${gap.capability} (${gap.reason})`);
     }
   }
-  lines.push(`  server.basePath: ${result.runtime.server.basePath}`);
+  lines.push(`  server.basepath: ${result.runtime.server.basepath}`);
   lines.push(`  server.fn: ${result.runtime.server.fn}`);
   lines.push(`  server.ppr: ${result.runtime.server.ppr}`);
   if (result.runtime.server.rsc) {

@@ -119,6 +119,9 @@ export function createPagesAppEntryMainSource(
     ...imports,
     "",
     "export const pagesApp = createPagesApp({",
+    metadata.basepath
+      ? `  basepath: ${JSON.stringify(metadata.basepath)},`
+      : "",
     metadata.rootModule ? "  rootModule," : "",
     metadata.wrappers && metadata.wrappers.length > 0
       ? `  wrappers: [${metadata.wrappers

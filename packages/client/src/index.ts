@@ -29,6 +29,7 @@ export {
   usePageParams,
   usePageSearch,
 } from "./framework/page/page-context.js";
+export { useRouteParams } from "./framework/page/route-context.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,
@@ -49,6 +50,7 @@ export type { AppRouteContext } from "./standalone/context.js";
 export { createAppRootRoute } from "./standalone/context.js";
 export type {
   ActiveLinkOptions,
+  HrefResolver,
   LinkOptions,
   LinkProps,
   NavigateOptions,
@@ -64,6 +66,8 @@ export {
   Navigate,
   notFound,
   redirect,
+  useHref,
+  useHrefResolver,
   useLinkProps,
   useLocation,
   useNavigate,

@@ -272,20 +272,20 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       createBuildPlan(
         {
           ...config,
-          server: { ...config.server, basePath: "/运行" },
+          server: { ...config.server, basepath: "/运行" },
         },
         analysis.graph,
       ),
-    ).toThrow("runtime.server.basePath must use non-empty ASCII URL-safe");
+    ).toThrow("runtime.server.basepath must use non-empty ASCII URL-safe");
     expect(() =>
       createBuildPlan(
         {
           ...config,
-          server: { ...config.server, basePath: "__evjs" },
+          server: { ...config.server, basepath: "__evjs" },
         },
         analysis.graph,
       ),
-    ).toThrow('runtime.server.basePath must start with "/"');
+    ).toThrow('runtime.server.basepath must start with "/"');
     expect(() =>
       createBuildPlan(
         {
@@ -474,8 +474,21 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         type: "pages-app",
         routes: expect.arrayContaining([
           expect.objectContaining({
+            id: "users:layout",
+            path: "/users",
+            kind: "layout",
+            module: "./src/pages/users/layout.tsx",
+          }),
+          expect.objectContaining({
+            id: "users",
+            path: "/users",
+            parentId: "users:layout",
+            module: "./src/pages/users/page.tsx",
+          }),
+          expect.objectContaining({
             id: "users_userId",
             path: "/users/$userId",
+            parentId: "users:layout",
             module: "./src/pages/users/$userId/page.tsx",
           }),
         ]),
@@ -566,6 +579,37 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     ).toThrow(
       'Application "default" owns more than one Application Document: "index" and "alternate".',
     );
+  });
+
+  it("projects an SPA basepath into router metadata and dev delivery paths", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/pages/orders/page.tsx":
+        "export default function Orders() { return null; }",
+      "src/pages/orders/page.config.ts": 'export default { render: "ssr" };',
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    if (!config.routing) throw new Error("missing routing config");
+    config.routing.basepath = "/next";
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+    const appEntry = plan.entries.find((entry) => entry.kind === "app-client");
+
+    expect(appEntry?.metadata).toMatchObject({
+      type: "pages-app",
+      basepath: "/next",
+      routes: expect.arrayContaining([
+        expect.objectContaining({ id: "index", path: "/" }),
+        expect.objectContaining({ id: "orders", path: "/orders" }),
+      ]),
+    });
+    expect(plan.dev.clientRoutes).toEqual([
+      { path: "/next", target: { kind: "app", appId: "default" } },
+    ]);
+    expect(plan.dev.serverRenderedPagePaths).toEqual(["/next/orders"]);
   });
 
   it("materializes the same semantic Pages and client Routes as SPA or MPA", async () => {
@@ -2619,7 +2663,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
 
     const plan = createBuildPlan(config, graph);
     expect(plan.runtime.server).toEqual({
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
     });
   });
@@ -2804,7 +2848,7 @@ async function createCanonicalConfig(
       server: "dist/server",
     },
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       runtime: {
         fn: "__evjs/fn",
         ppr: "__evjs/ppr",

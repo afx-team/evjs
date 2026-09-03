@@ -56,6 +56,24 @@ src/pages/
 A directory without `page.*` can group descendants. `$...splat` must be the
 last segment. Dynamic parameters and splats are SPA-only.
 
+## Mount an SPA below a basepath
+
+Set `routing.basepath` when every browser route must live below one static
+prefix:
+
+```ts title="ev.config.ts"
+export default defineConfig({
+  routing: { mode: "spa", basepath: "/next" },
+});
+```
+
+The authored root Page is still `/`, and an authored `/about` Page is still
+addressed as `/about` by `Link`, `navigate`, redirects, and generated route
+types. Their browser URLs become `/next` and `/next/about`. The framework also
+uses those prefixed paths for development routing, server rendering, and
+deployment fallbacks. `basepath` is not supported by MPA routing; omit it for
+an SPA mounted at the origin root.
+
 ## Read path and search parameters
 
 Use route hooks from `@evjs/ev/route`:
@@ -82,6 +100,43 @@ convert or default them:
 export const validateSearch = (search: Record<string, string>) => ({
   tab: typeof search.tab === "string" ? search.tab : "overview",
 });
+```
+
+`usePageParams()` is Page-scoped and works consistently across SPA, MPA, and
+RSC rendering. In an SPA, root and nested layouts read the merged parameters
+of the active route branch with `useRouteParams()`:
+
+```tsx title="src/pages/layout.tsx"
+import { useRouteParams } from "@evjs/ev/route";
+
+export default function RootLayout({ children }: React.PropsWithChildren) {
+  const { teamId } = useRouteParams<{ teamId?: string }>();
+  return <main data-team-id={teamId}>{children}</main>;
+}
+```
+
+## Resolve browser hrefs
+
+`Link`, `useNavigate()`, and `redirect()` accept application-relative routes
+and apply `routing.basepath` automatically. Native anchors and browser APIs
+such as `window.open()` need a public browser href. Use `useHref()` for one
+target, or `useHrefResolver()` when targets are created in callbacks:
+
+```tsx
+import { useHref, useHrefResolver } from "@evjs/ev/navigation";
+
+export function NativeLinks() {
+  const settingsHref = useHref({ to: "/settings" });
+  const resolveHref = useHrefResolver();
+  return (
+    <>
+      <a href={settingsHref}>Settings</a>
+      <button onClick={() => window.open(resolveHref({ to: "/reports/$reportId", params: { reportId: "42" } }))}>
+        Open report
+      </button>
+    </>
+  );
+}
 ```
 
 ## Render child pages

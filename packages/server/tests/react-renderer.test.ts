@@ -803,7 +803,7 @@ describe("createReactServerRenderAdapter", () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
     manifest.runtime.server = {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       rsc: "__evjs/rsc",
     };
@@ -1028,7 +1028,7 @@ describe("createReactRscFlightAdapter", () => {
   it("returns the matched RSC page renderer Flight response", async () => {
     const manifest = createManifest();
     manifest.runtime.server = {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       rsc: "__evjs/rsc",
     };
@@ -1093,7 +1093,7 @@ describe("createReactRscFlightAdapter", () => {
   it("returns 501 when no Flight renderer is configured", async () => {
     const manifest = createManifest();
     manifest.runtime.server = {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       rsc: "__evjs/rsc",
     };
@@ -1147,7 +1147,7 @@ describe("createReactRscFlightAdapter", () => {
   it("rejects successful non-Flight responses from custom renderers", async () => {
     const manifest = createManifest();
     manifest.runtime.server = {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       rsc: "__evjs/rsc",
     };
@@ -1459,7 +1459,7 @@ function createManifest(): SpaFrameworkRuntime {
     publicPath: "/assets/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

@@ -233,7 +233,7 @@ describe("collectPluginHooks", () => {
           (ctx.config.plugins as Plugin[]).splice(0, 1);
         }).toThrow(TypeError);
         expect(() => {
-          (ctx.config.server as { basePath: string }).basePath = "/mutated";
+          (ctx.config.server as { basepath: string }).basepath = "/mutated";
         }).toThrow(TypeError);
         return {
           beforeBuild(buildContext) {
@@ -250,7 +250,7 @@ describe("collectPluginHooks", () => {
     const dependency: Plugin = { id: "dependency" };
     const config = resolveConfig({
       plugins: [dependency, plugin],
-      server: { basePath: "/api" },
+      server: { basepath: "/api" },
       dev: {
         proxy: [
           {
@@ -276,7 +276,7 @@ describe("collectPluginHooks", () => {
     expect(observedConfigs).toHaveLength(3);
     expect(new Set(observedConfigs).size).toBe(1);
     expect(observedConfigs[0]).not.toBe(config);
-    expect(config.server.basePath).toBe("/api");
+    expect(config.server.basepath).toBe("/api");
     expect(config.plugins.map((installed) => installed.id)).toEqual([
       "dependency",
       "immutable-context",
@@ -373,7 +373,7 @@ describe("collectPluginHooks", () => {
 
   it("rejects accessors in a resolved plugin config snapshot", () => {
     const config = resolveConfig();
-    Object.defineProperty(config.server, "basePath", {
+    Object.defineProperty(config.server, "basepath", {
       configurable: true,
       enumerable: true,
       get() {
@@ -382,7 +382,7 @@ describe("collectPluginHooks", () => {
     });
 
     expect(() => createPluginConfigView(config)).toThrow(
-      "[evjs] Resolved plugin context config.server.basePath must be a data property, not an accessor.",
+      "[evjs] Resolved plugin context config.server.basepath must be a data property, not an accessor.",
     );
   });
 });

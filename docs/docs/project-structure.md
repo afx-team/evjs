@@ -204,7 +204,8 @@ export default defineConfig({
 ```
 
 - SPA supports dynamic segments, catch-alls, layouts, boundaries, and
-  client-side navigation.
+  client-side navigation. An optional `routing.basepath` prefixes deployed
+  browser paths without changing the Page tree or authored route paths.
 - MPA uses static page paths only and creates an independent HTML document for
   each page. Layouts still compose around pages.
 

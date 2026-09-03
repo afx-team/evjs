@@ -252,7 +252,7 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    basePath: "/__evjs", // 服务端函数使用 /__evjs/fn
+    basepath: "/__evjs", // 服务端函数使用 /__evjs/fn
   },
 });
 ```

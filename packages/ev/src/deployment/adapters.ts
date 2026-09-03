@@ -894,7 +894,7 @@ function createNodeServerModule(
   options: NodeDeploymentAdapterOptions,
 ): string {
   const serverEntry = output.server.entry;
-  const staticFallback = getStaticFallbackHtml(output);
+  const staticFallback = getStaticFallback(output);
   const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
     path: toNodeRoutePath(route.path),
     file: route.fileName,
@@ -939,7 +939,8 @@ const frameworkExactEndpointPaths = ${JSON.stringify(frameworkExactEndpointPaths
 const frameworkSubtreeEndpointPaths = ${JSON.stringify(frameworkSubtreeEndpointPaths, null, 2)};
 const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
 const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};
-const staticFallback = ${JSON.stringify(staticFallback ?? "")};
+const staticFallback = ${JSON.stringify(staticFallback?.fileName ?? "")};
+const staticFallbackBasepath = ${JSON.stringify(staticFallback?.basepath ?? "")};
 const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};
 globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${serializeFrameworkRuntimeExpression(frameworkRuntime)};
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
@@ -971,7 +972,7 @@ const app = {
       if (staticRouteResponse) return staticRouteResponse;
     }
 
-    if (staticFallback) {
+    if (staticFallback && isStaticFallbackPath(url.pathname)) {
       const fallbackResponse = await serveFile(path.join(clientRoot, staticFallback));
       if (fallbackResponse) return fallbackResponse;
     }
@@ -996,6 +997,10 @@ function isFrameworkRequest(pathname) {
 
 function findStaticRoute(pathname) {
   return staticRoutes.find((route) => routePathMatches(route.path, pathname));
+}
+
+function isStaticFallbackPath(pathname) {
+  return !staticFallbackBasepath || pathIsAtOrBelow(pathname, staticFallbackBasepath);
 }
 
 ${createGeneratedRouteMatcherModule()}
@@ -1128,9 +1133,9 @@ function createEdgeWorkerModule(
   options: EdgeDeploymentAdapterOptions,
 ): string {
   const serverEntry = output.server.entry;
-  const staticFallback = getStaticFallbackHtml(output);
+  const staticFallback = getStaticFallback(output);
   const staticFallbackUrl = staticFallback
-    ? encodeArtifactUrlPath(staticFallback)
+    ? encodeArtifactUrlPath(staticFallback.fileName)
     : undefined;
   const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
     path: toNodeRoutePath(route.path),
@@ -1178,6 +1183,7 @@ function createEdgeWorkerModule(
     `const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};`,
     `const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};`,
     `const staticFallback = ${JSON.stringify(staticFallbackUrl ?? "")};`,
+    `const staticFallbackBasepath = ${JSON.stringify(staticFallback?.basepath ?? "")};`,
     `const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};`,
     `const assetsBinding = ${JSON.stringify(assetsBinding)};`,
     "",
@@ -1198,7 +1204,7 @@ function createEdgeWorkerModule(
     "      if (staticRouteResponse && staticRouteResponse.status !== 404) return staticRouteResponse;",
     "    }",
     "",
-    "    if (staticFallback) {",
+    "    if (staticFallback && isStaticFallbackPath(url.pathname)) {",
     '      const fallbackUrl = new URL("/" + staticFallback, request.url);',
     "      const fallbackResponse = await fetchAsset(new Request(fallbackUrl, request), env);",
     "      if (fallbackResponse && fallbackResponse.status !== 404) return fallbackResponse;",
@@ -1222,6 +1228,10 @@ function createEdgeWorkerModule(
     "",
     "function findStaticRoute(pathname) {",
     "  return staticRoutes.find((route) => routePathMatches(route.path, pathname));",
+    "}",
+    "",
+    "function isStaticFallbackPath(pathname) {",
+    "  return !staticFallbackBasepath || pathIsAtOrBelow(pathname, staticFallbackBasepath);",
     "}",
     "",
     createGeneratedRouteMatcherModule(),
@@ -1301,9 +1311,9 @@ function createGeneratedRouteMatcherModule(): string {
     "  });",
     "}",
     "",
-    "function pathIsAtOrBelow(pathname, basePath) {",
+    "function pathIsAtOrBelow(pathname, basepath) {",
     "  const pathSegments = splitPath(pathname);",
-    "  const baseSegments = splitPath(basePath);",
+    "  const baseSegments = splitPath(basepath);",
     '  if (pathSegments.some((segment) => segment === "")) return false;',
     "  if (baseSegments.length > pathSegments.length) return false;",
     "  return baseSegments.every((segment, index) =>",
@@ -1411,9 +1421,15 @@ function createStaticRedirects(
     }
   }
 
-  const fallback = getStaticFallbackHtml(output);
+  const fallback = getStaticFallback(output);
   if (fallback && compatibility.complete) {
-    lines.add(`/* /${encodeArtifactUrlPath(fallback)} 200`);
+    const target = `/${encodeArtifactUrlPath(fallback.fileName)} 200`;
+    if (fallback.basepath) {
+      lines.add(`${toStaticRoutePath(fallback.basepath)} ${target}`);
+      lines.add(`${toStaticRoutePath(`${fallback.basepath}/*`)} ${target}`);
+    } else {
+      lines.add(`/* ${target}`);
+    }
   }
 
   return `${[...lines].join("\n")}\n`;
@@ -1453,12 +1469,25 @@ function getStaticDocumentRoute(
   return undefined;
 }
 
-function getStaticFallbackHtml(output: BuildOutput): string | undefined {
+function getStaticFallback(
+  output: BuildOutput,
+): { fileName: string; basepath?: string } | undefined {
   if (output.apps.default?.document?.fileName) {
-    return output.apps.default.document.fileName;
+    return {
+      fileName: output.apps.default.document.fileName,
+      ...(output.apps.default.basepath
+        ? { basepath: output.apps.default.basepath }
+        : {}),
+    };
   }
   const firstAppId = Object.keys(output.apps)[0];
-  if (firstAppId) return output.apps[firstAppId]?.document?.fileName;
+  const app = firstAppId ? output.apps[firstAppId] : undefined;
+  if (app?.document?.fileName) {
+    return {
+      fileName: app.document.fileName,
+      ...(app.basepath ? { basepath: app.basepath } : {}),
+    };
+  }
   return undefined;
 }
 

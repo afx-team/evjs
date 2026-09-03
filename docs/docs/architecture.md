@@ -61,7 +61,8 @@ flowchart LR
 ```
 
 - **SPA** supports nested routes, dynamic parameters, catch-alls, layouts, and
-  client-side navigation.
+  client-side navigation. An optional `routing.basepath` prefixes delivered
+  browser paths without changing Page identity.
 - **MPA** creates an independent document for each static page and does not
   require a browser router.
 

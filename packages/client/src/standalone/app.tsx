@@ -8,9 +8,12 @@ import type {
   TrailingSlashOption,
 } from "@tanstack/react-router";
 import {
+  composeRewrites,
   createRouter,
+  type LocationRewrite,
   RouterProvider,
   stringifySearchWith,
+  trimPath,
 } from "@tanstack/react-router";
 import {
   type ComponentType,
@@ -23,6 +26,7 @@ import { formatErrorDetail } from "../shared/validation.js";
 import type { AppRouteContext } from "./context.js";
 
 const stringifyRawSearch = stringifySearchWith(String);
+const OUTSIDE_BASEPATH_MARKER = "/__evjs_outside_basepath__";
 
 /**
  * Router options available to standalone CSR applications.
@@ -197,6 +201,13 @@ function createAppRuntime<
     history,
     router: routerOptions,
   } = options;
+  const configuredBasepath = routerOptions?.basepath ?? basepath;
+  const basepathRewrite = createStrictBasepathRewrite(configuredBasepath);
+  const rewrite = basepathRewrite
+    ? routerOptions?.rewrite
+      ? composeRewrites([basepathRewrite, routerOptions.rewrite])
+      : basepathRewrite
+    : routerOptions?.rewrite;
 
   const router = createRouter<
     TRouteTree,
@@ -207,13 +218,25 @@ function createAppRuntime<
   >({
     ...routerOptions,
     routeTree,
-    basepath: routerOptions?.basepath ?? basepath,
+    // TanStack Router's built-in basepath rewrite treats paths outside the
+    // mount as application-relative paths. EVJS supplies a strict rewrite and
+    // keeps the Router's internal basepath at root to avoid composing both.
+    basepath: basepathRewrite ? "/" : configuredBasepath,
+    rewrite,
     history: routerOptions?.history ?? history,
     defaultPreload: routerOptions?.defaultPreload ?? "intent",
     parseSearch: routerOptions?.parseSearch ?? parsePageSearch,
     stringifySearch: routerOptions?.stringifySearch ?? stringifyRawSearch,
     context: { queryClient } as AppRouteContext,
   });
+
+  if (basepathRewrite && configuredBasepath) {
+    // Preserve the configured public metadata for consumers such as Link while
+    // the Router continues to use the strict rewrite assembled above.
+    router.basepath = configuredBasepath;
+    router.options.basepath = configuredBasepath;
+    installStrictBasepathMatchBoundary(router);
+  }
 
   let root: ReturnType<typeof createRoot> | undefined;
   let renderGeneration = 0;
@@ -325,6 +348,93 @@ function createAppRuntime<
   }
 
   return { router, queryClient, render, createComponent, unmount };
+}
+
+function installStrictBasepathMatchBoundary(router: AnyRouter): void {
+  if (!router.routeTree.options.notFoundComponent) {
+    const rootPageNotFoundComponent = Object.values(router.routesById).find(
+      (route) =>
+        route !== router.routeTree &&
+        route.fullPath === "/" &&
+        route.options.notFoundComponent,
+    )?.options.notFoundComponent;
+    if (rootPageNotFoundComponent) {
+      router.routeTree.options.notFoundComponent = rootPageNotFoundComponent;
+    }
+  }
+
+  const matchRoutes = router.matchRoutes;
+  router.matchRoutes = ((...args: unknown[]) => {
+    const matches = Reflect.apply(matchRoutes, router, args) as ReturnType<
+      AnyRouter["matchRoutes"]
+    >;
+    const location = args[0];
+    const pathname =
+      typeof location === "string"
+        ? location
+        : location && typeof location === "object"
+          ? Reflect.get(location, "pathname")
+          : undefined;
+    if (
+      typeof pathname !== "string" ||
+      (pathname !== OUTSIDE_BASEPATH_MARKER &&
+        !pathname.startsWith(`${OUTSIDE_BASEPATH_MARKER}/`))
+    ) {
+      return matches;
+    }
+    const boundaryMatch = matches.find((match) => {
+      const route = router.routesById[match.routeId];
+      return Reflect.get(
+        route?.options.staticData ?? {},
+        "__evjsOutsideBasepath",
+      );
+    });
+    if (boundaryMatch) return matches;
+    const rootMatch = matches[0];
+    return rootMatch ? [{ ...rootMatch, globalNotFound: true }] : matches;
+  }) as unknown as AnyRouter["matchRoutes"];
+}
+
+function createStrictBasepathRewrite(
+  basepath: string | undefined,
+): LocationRewrite | undefined {
+  if (!basepath) return undefined;
+  const trimmedBasepath = trimPath(basepath);
+  if (!trimmedBasepath || trimmedBasepath === "/") return undefined;
+  const normalizedBasepath = `/${trimmedBasepath}`;
+  const normalizedBasepathWithSlash = `${normalizedBasepath}/`;
+  const checkBasepath = normalizedBasepath.toLowerCase();
+  const checkBasepathWithSlash = normalizedBasepathWithSlash.toLowerCase();
+
+  return {
+    input: ({ url }) => {
+      const pathname = url.pathname.toLowerCase();
+      if (pathname === checkBasepath) {
+        url.pathname = "/";
+      } else if (pathname.startsWith(checkBasepathWithSlash)) {
+        url.pathname = url.pathname.slice(normalizedBasepath.length);
+      } else {
+        url.pathname =
+          url.pathname === "/"
+            ? OUTSIDE_BASEPATH_MARKER
+            : `${OUTSIDE_BASEPATH_MARKER}${url.pathname}`;
+      }
+      return url;
+    },
+    output: ({ url }) => {
+      if (url.pathname === OUTSIDE_BASEPATH_MARKER) {
+        url.pathname = "/";
+      } else if (url.pathname.startsWith(`${OUTSIDE_BASEPATH_MARKER}/`)) {
+        url.pathname = url.pathname.slice(OUTSIDE_BASEPATH_MARKER.length);
+      } else {
+        url.pathname =
+          url.pathname === "/"
+            ? normalizedBasepath
+            : `${normalizedBasepath}${url.pathname}`;
+      }
+      return url;
+    },
+  };
 }
 
 /** @internal */

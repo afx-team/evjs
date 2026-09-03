@@ -59,6 +59,7 @@ const DEFAULT_RESOLVE_ALIAS = {
 
 interface BuildApplicationFacts {
   id: string;
+  basepath?: string;
   documentId: string;
   html: string;
   documentOutput: string;
@@ -116,12 +117,25 @@ interface BuildPlanFacts {
  * concrete entries and Documents. This projection enforces materialization
  * constraints, but CoreGraph remains the source of semantic identity.
  */
-function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
+function deriveBuildPlanFacts(
+  graph: CoreGraph,
+  basepath?: string,
+): BuildPlanFacts {
   const apps: Record<string, BuildApplicationFacts> = {};
   const pages: Record<string, BuildPageFacts> = {};
   const routes: BuildRouteFacts[] = [];
   const clientRoutes = graph.routes;
   const routeById = new Map(clientRoutes.map((route) => [route.id, route]));
+  // A Page colocated with a layout materializes as an index Route. Its
+  // descendants must stay attached to the layout because index Routes cannot
+  // own children in the client router.
+  const splitLayoutIdByRouteId = new Map(
+    clientRoutes.flatMap((route) =>
+      typeof route.facets.layout === "string" && route.target.kind === "page"
+        ? [[route.id, `${route.id}:layout`] as const]
+        : [],
+    ),
+  );
   const routesByPageId = new Map<string, CoreClientRouteNode[]>();
   const pageDocumentByPageId = new Map<
     string,
@@ -172,6 +186,7 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     }
     apps[application.id] = {
       id: application.id,
+      ...(basepath ? { basepath } : {}),
       documentId: document.id,
       html: document.template,
       documentOutput: document.output,
@@ -236,6 +251,9 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
 
   for (const route of clientRoutes) {
     const path = formatCoreRoutePattern(route.pattern);
+    const parentId = route.parentId
+      ? (splitLayoutIdByRouteId.get(route.parentId) ?? route.parentId)
+      : undefined;
     const page =
       route.target.kind === "page"
         ? graph.pages[route.target.pageId]
@@ -258,11 +276,16 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     const layoutModule =
       typeof route.facets.layout === "string" ? route.facets.layout : undefined;
     if (layoutModule && route.target.kind === "page") {
-      const layoutId = `${route.id}:layout`;
+      const layoutId = splitLayoutIdByRouteId.get(route.id);
+      if (!layoutId) {
+        throw new Error(
+          `[evjs] Route "${route.id}" is missing its planned layout Route.`,
+        );
+      }
       routes.push({
         id: layoutId,
         path,
-        ...(route.parentId ? { parentId: route.parentId } : {}),
+        ...(parentId ? { parentId } : {}),
         kind: "layout",
         appId: route.applicationId,
         module: layoutModule,
@@ -286,7 +309,7 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     routes.push({
       id: route.id,
       path,
-      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(parentId ? { parentId } : {}),
       ...(layoutModule ? { kind: "layout" as const } : {}),
       appId: route.applicationId,
       ...(route.target.kind === "page"
@@ -311,8 +334,8 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     apps,
     pages,
     routes,
-    devClientRoutes: createDevClientRoutes(graph),
-    serverRenderedRoutePaths: createServerRenderedRoutePaths(graph),
+    devClientRoutes: createDevClientRoutes(graph, basepath),
+    serverRenderedRoutePaths: createServerRenderedRoutePaths(graph, basepath),
     serverFunctions: graph.serverFunctions,
     serverRoutes: graph.serverRoutes,
     ...(graph.clientReferences
@@ -378,6 +401,7 @@ function collectPageComposition(
 
 function createDevClientRoutes(
   graph: CoreGraph,
+  basepath?: string,
 ): BuildPlan["dev"]["clientRoutes"] {
   const routes: BuildPlan["dev"]["clientRoutes"] = [];
   const seen = new Set<string>();
@@ -399,7 +423,10 @@ function createDevClientRoutes(
       target = { kind: "app", appId: application.id };
     }
 
-    const pathname = formatCoreRoutePattern(route.pattern);
+    const pathname = withBasepath(
+      formatCoreRoutePattern(route.pattern),
+      application.routingMode === "spa" ? basepath : undefined,
+    );
     const key =
       target.kind === "page"
         ? `${pathname}:page:${target.pageId}`
@@ -412,7 +439,10 @@ function createDevClientRoutes(
   return routes;
 }
 
-function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
+function createServerRenderedRoutePaths(
+  graph: CoreGraph,
+  basepath?: string,
+): string[] {
   const paths = graph.routes.flatMap((route) => {
     if (route.target.kind !== "page") return [];
     const pageId = route.target.pageId;
@@ -423,7 +453,7 @@ function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
 
     const application = graph.applications[route.applicationId];
     if (application?.routingMode !== "mpa") {
-      return [formatCoreRoutePattern(route.pattern)];
+      return [withBasepath(formatCoreRoutePattern(route.pattern), basepath)];
     }
     const document = Object.values(graph.documents).find(
       (candidate) =>
@@ -452,7 +482,9 @@ export function createBuildPlan(
 ): BuildPlan {
   const distDir = options.distDir ?? "dist";
   assertFrameworkOutputOwnership(config.output, distDir);
-  const graph = deriveBuildPlanFacts(coreGraph);
+  const basepath =
+    config.routing?.mode === "spa" ? config.routing.basepath : undefined;
+  const graph = deriveBuildPlanFacts(coreGraph, basepath);
   const mode = options.mode ?? readBuildMode();
   const hasPpr = hasPprPages(graph);
   const hasRsc = hasRscPages(graph);
@@ -591,6 +623,7 @@ function createEntries(
       owner: { appId: app.id },
       metadata: {
         type: "pages-app",
+        ...(app.basepath ? { basepath: app.basepath } : {}),
         routes: createPagesAppRoutes(graph, app.id),
         mount: app.mount ?? "#app",
         ...(app.rootModule ? { rootModule: app.rootModule } : {}),
@@ -653,6 +686,11 @@ function createEntries(
   }
 
   return entries;
+}
+
+function withBasepath(pathname: string, basepath?: string): string {
+  if (!basepath) return pathname;
+  return pathname === "/" ? basepath : `${basepath}${pathname}`;
 }
 
 function createPagesAppRoutes(

@@ -37,7 +37,7 @@ function createMinimalBuildOutput(): BuildOutput {
     publicPath: "/",
     runtime: {
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },
@@ -118,7 +118,7 @@ function createRuntimePlan(
   return {
     publicPath: "/",
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       ...server,
     },
@@ -557,11 +557,11 @@ describe("assertFrameworkManifestShape", () => {
 
   it("rejects ambiguous runtime path encodings at the manifest boundary", () => {
     const unicodeBasePath = createMinimalBuildOutput();
-    unicodeBasePath.runtime.server.basePath = "/运行时";
+    unicodeBasePath.runtime.server.basepath = "/运行时";
     expect(() =>
       assertFrameworkManifestShape(unicodeBasePath, "manifest"),
     ).toThrow(
-      "[evjs] manifest.runtime.server.basePath must use non-empty ASCII URL-safe segments",
+      "[evjs] manifest.runtime.server.basepath must use non-empty ASCII URL-safe segments",
     );
 
     const encodedEndpoint = createMinimalBuildOutput();
@@ -1656,7 +1656,7 @@ describe("assertFrameworkManifestShape", () => {
         "manifest",
       ),
     ).toThrow(
-      "[evjs] manifest.runtime.server.basePath must be a non-empty pathname.",
+      "[evjs] manifest.runtime.server.basepath must be a non-empty pathname.",
     );
 
     expect(() =>
@@ -2642,7 +2642,7 @@ describe("assertFrameworkManifestShape", () => {
           ...createMinimalBuildOutput(),
           runtime: {
             server: {
-              basePath: "/__evjs",
+              basepath: "/__evjs",
               fn: "__evjs/fn?debug=1",
             },
           },
@@ -2659,7 +2659,7 @@ describe("assertFrameworkManifestShape", () => {
           ...createMinimalBuildOutput(),
           runtime: {
             server: {
-              basePath: "/__evjs",
+              basepath: "/__evjs",
               fn: "__evjs/fn",
               ppr: " /__evjs/ppr ",
             },
@@ -2677,7 +2677,7 @@ describe("assertFrameworkManifestShape", () => {
           ...createMinimalBuildOutput(),
           runtime: {
             server: {
-              basePath: "/__evjs",
+              basepath: "/__evjs",
               fn: "__evjs/fn",
             },
             transport: [],
@@ -2693,7 +2693,7 @@ describe("assertFrameworkManifestShape", () => {
           ...createMinimalBuildOutput(),
           runtime: {
             server: {
-              basePath: "/__evjs",
+              basepath: "/__evjs",
               fn: "__evjs/fn",
             },
             transport: { baseUrl: "" },
@@ -2711,7 +2711,7 @@ describe("assertFrameworkManifestShape", () => {
           ...createMinimalBuildOutput(),
           runtime: {
             server: {
-              basePath: "/__evjs",
+              basepath: "/__evjs",
               fn: "__evjs/fn",
             },
             transport: { baseUrl: "https://api.example.com " },
@@ -2729,7 +2729,7 @@ describe("assertFrameworkManifestShape", () => {
           ...createMinimalBuildOutput(),
           runtime: {
             server: {
-              basePath: "/__evjs",
+              basepath: "/__evjs",
               fn: "__evjs/fn",
             },
             transport: { baseUrl: "http://[::1" },
@@ -3170,7 +3170,7 @@ describe("linkBuildOutput", () => {
     });
   });
 
-  it("keeps route-derived CSR pages out of the v1 runtime manifest", () => {
+  it("projects an SPA basepath while keeping route-derived CSR pages compact", () => {
     const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
@@ -3217,6 +3217,18 @@ describe("linkBuildOutput", () => {
           runtime: "browser",
           kind: "app-client",
           owner: { appId: "default" },
+          metadata: {
+            type: "pages-app",
+            basepath: "/next",
+            routes: [
+              {
+                id: "index",
+                path: "/",
+                module: "./src/pages/index.tsx",
+              },
+            ],
+            mount: "#app",
+          },
         },
       ],
       html: [
@@ -3240,8 +3252,9 @@ describe("linkBuildOutput", () => {
     });
 
     expect(output.pages).toEqual({});
+    expect(output.apps.default.basepath).toBe("/next");
     expect(output.routes).toEqual([
-      { id: "index", path: "/", appId: "default" },
+      { id: "index", path: "/next", appId: "default" },
     ]);
     expect(() =>
       assertFrameworkManifestShape(output, "manifest"),
@@ -4835,7 +4848,7 @@ describe("createDeploymentMetadata", () => {
       publicPath: "/assets/",
       runtime: {
         server: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
           rsc: "__evjs/rsc",
@@ -5432,7 +5445,7 @@ describe("server deployment metadata", () => {
       ...createMinimalBuildOutput(),
       runtime: {
         server: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
           rsc: "__evjs/rsc",

@@ -161,7 +161,7 @@ export default defineConfig({
 
 ## 运行时路径
 
-框架服务端路径来自 `server.basePath`，默认 `/__evjs`：
+框架服务端路径来自 `server.basepath`，默认 `/__evjs`：
 
 ```text
 /__evjs/fn       服务端函数

@@ -25,6 +25,7 @@ import {
   createHashHistory,
   createMemoryHistory,
   createRootRouteWithContext,
+  notFound as createRouterNotFound,
   redirect as createRouterRedirect,
   createRoute as createTanStackRoute,
   Outlet,
@@ -56,11 +57,14 @@ interface PageRouteContext {
 const EV_BYPASS_ROOT_LAYOUT_STATIC_DATA = "__evjsBypassRootLayout";
 const EV_PAGE_METADATA_OWNER_STATIC_DATA = "__evjsPageMetadataOwner";
 const EV_PAGE_METADATA_STATIC_DATA = "__evjsPageMetadata";
+const EV_OUTSIDE_BASEPATH_STATIC_DATA = "__evjsOutsideBasepath";
+const OUTSIDE_BASEPATH_MARKER = "/__evjs_outside_basepath__";
 
 interface EvRouteStaticData {
   __evjsBypassRootLayout?: boolean;
   __evjsPageMetadataOwner?: true;
   __evjsPageMetadata?: PageMetadata;
+  __evjsOutsideBasepath?: true;
 }
 
 const createPageRootRoute = createRootRouteWithContext<PageRouteContext>();
@@ -243,6 +247,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
     const routeTree = createGeneratedRouteTree({
       routes: composePageDefinitions(canonicalRoutes, state.routes),
       ...(rootModule ? { rootModule } : {}),
+      ...(state.basepath ? { basepath: state.basepath } : {}),
     });
     const runtimeApp = createFrameworkApp(
       {
@@ -731,7 +736,40 @@ function createGeneratedRouteTree(options: CreatePagesAppOptions): AnyRoute {
     ),
   );
 
+  if (options.basepath) {
+    routes.unshift(
+      ...createOutsideBasepathBoundaryRoutes(rootRoute, definitions),
+    );
+  }
+
   return rootRoute.addChildren(routes);
+}
+
+function createOutsideBasepathBoundaryRoutes(
+  rootRoute: AnyRoute,
+  definitions: NormalizedPageDefinition[],
+): AnyRoute[] {
+  const notFoundComponent = definitions.find(
+    (definition) =>
+      normalizeGeneratedRoutePath(definition.path) === "/" &&
+      definition.module?.notFoundComponent,
+  )?.module?.notFoundComponent;
+
+  return [OUTSIDE_BASEPATH_MARKER, `${OUTSIDE_BASEPATH_MARKER}/$`].map(
+    (path) => {
+      let route: AnyRoute;
+      route = createTanStackRoute({
+        getParentRoute: () => rootRoute,
+        path,
+        staticData: { [EV_OUTSIDE_BASEPATH_STATIC_DATA]: true },
+        ...(notFoundComponent ? { notFoundComponent } : {}),
+        beforeLoad() {
+          throw createRouterNotFound({ routeId: route.id });
+        },
+      });
+      return route;
+    },
+  );
 }
 
 function createGeneratedRoute<TRootRoute extends AnyRoute>(

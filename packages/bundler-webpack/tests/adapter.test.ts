@@ -559,7 +559,7 @@ function createPrototypeEntryPlan(
     server: environment === "server" ? { entry: "./src/server.ts" } : {},
     runtime: {
       publicPath: "/",
-      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      server: { basepath: "/__evjs", fn: "__evjs/fn" },
     },
     dev: {
       clientRoutes: [],
@@ -622,7 +622,7 @@ describe("webpack stats ownership", () => {
   it("bypasses only BuildPlan-owned routes and runtime endpoints", () => {
     const config = resolveConfig<WebpackConfigs>({
       server: {
-        basePath: "/_ev",
+        basepath: "/_ev",
         rsc: {
           endpoint: "/flight",
         },
@@ -643,7 +643,7 @@ describe("webpack stats ownership", () => {
       runtime: {
         publicPath: "/",
         server: {
-          basePath: config.server.basePath,
+          basepath: config.server.basepath,
           fn: config.server.runtime.fn,
           ppr: "_ev/ppr",
           rsc: config.server.runtime.rsc,
@@ -765,7 +765,7 @@ describe("webpack stats ownership", () => {
       runtime: {
         publicPath: "/",
         server: {
-          basePath: config.server.basePath,
+          basepath: config.server.basepath,
           fn: config.server.runtime.fn,
         },
       },
@@ -802,7 +802,7 @@ describe("webpack stats ownership", () => {
       runtime: {
         publicPath: "/",
         server: {
-          basePath: config.server.basePath,
+          basepath: config.server.basepath,
           fn: config.server.runtime.fn,
         },
       },
@@ -886,7 +886,7 @@ describe("webpack stats ownership", () => {
       server: { entry: "./src/server.ts" },
       runtime: {
         publicPath: "/",
-        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+        server: { basepath: "/__evjs", fn: "__evjs/fn" },
       },
       dev: {
         clientRoutes: [],
@@ -1125,7 +1125,7 @@ describe("webpack stats ownership", () => {
       server: { entry: "./src/server.ts" },
       runtime: {
         publicPath: "/",
-        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+        server: { basepath: "/__evjs", fn: "__evjs/fn" },
       },
       dev: {
         clientRoutes: [],
@@ -1914,7 +1914,7 @@ describe("webpack build-only memory modules", () => {
         server: {},
         runtime: {
           publicPath: "/",
-          server: { basePath: "/__evjs", fn: "__evjs/fn" },
+          server: { basepath: "/__evjs", fn: "__evjs/fn" },
         },
         dev: {
           clientRoutes: [],

@@ -219,15 +219,15 @@ import { defineConfig } from "@evjs/ev";
 import { merge } from "@evjs/ev/config";
 import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
-const serverBasePath = definePlugin({
+const serverBasepath = definePlugin({
   id: "server-base-path",
   application: pluginOptions({
-    defaults: { basePath: "/_framework" },
+    defaults: { basepath: "/_framework" },
   }),
   configure(config, ctx) {
     merge(config, {
       server: {
-        basePath: ctx.options.basePath,
+        basepath: ctx.options.basepath,
       },
     });
     return config;
@@ -235,12 +235,12 @@ const serverBasePath = definePlugin({
 });
 
 export default defineConfig({
-  plugins: [serverBasePath({ basePath: "/_internal" })],
+  plugins: [serverBasepath({ basepath: "/_internal" })],
 });
 ```
 
 Do not use `configureBundler()` for framework protocol paths. Server functions,
-PPR, and RSC endpoints are derived from `server.basePath`.
+PPR, and RSC endpoints are derived from `server.basepath`.
 
 After `configure()` finishes, every later `ctx.config` is typed as a deeply
 read-only view of the resolved framework config. `configureBundler()` may mutate

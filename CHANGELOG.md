@@ -16,6 +16,64 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.20] — 2026-09-02
+
+### ✨ Features
+
+- **Application-aware browser hrefs** — `useHref()` and `useHrefResolver()`
+  resolve typed application-relative navigation targets to public browser URLs,
+  including an SPA's configured `routing.basepath`.
+- **Layout route params** — SPA root and route layouts can use the new
+  `useRouteParams()` API to read merged params from the active route branch
+  without changing the render-mode-neutral semantics of Page data hooks.
+
+### 🐛 Bug Fixes
+
+- **Outside-basepath route lifecycles** — Locations outside an SPA's strict
+  `routing.basepath` no longer execute generated root Page `beforeLoad`
+  callbacks before reaching the not-found boundary.
+
+---
+
+## [0.3.19] — 2026-08-31
+
+### 🐛 Bug Fixes
+
+- **Nested Pages below directory index Pages** — SPA Pages nested below a
+  directory that owns both `layout.tsx` and `page.tsx` now remain children of
+  the layout Route, so deep URLs match instead of falling through to the
+  application's not-found boundary.
+
+---
+
+## [0.3.18] — 2026-08-31
+
+### 🐛 Bug Fixes
+
+- **Strict SPA basepath mounts** — Browser locations outside
+  `routing.basepath` now remain unchanged and resolve through the application's
+  not-found boundary instead of being normalized into the mounted SPA.
+
+---
+
+## [0.3.17] — 2026-08-31
+
+### ⚠️ Breaking Changes
+
+- **Consistent basepath spelling** — Framework server configuration, resolved
+  config, runtime manifests, and RSC bootstrap data now use `basepath` instead
+  of `basePath`. The removed spelling is rejected rather than aliased.
+
+### ✨ Features
+
+- **SPA route basepaths** — `routing.basepath` mounts a file-convention SPA
+  below one static browser prefix while keeping Page files, typed paths,
+  navigation targets, and CoreGraph route identity application-relative.
+  Generated router entries, development and SSR routing, linked output paths,
+  and deployment fallbacks receive the prefix. MPA configuration rejects it.
+
+---
+
 ## [0.3.16] — 2026-08-24
 
 ### ✨ Features

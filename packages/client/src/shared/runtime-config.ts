@@ -58,6 +58,7 @@ declare global {
 }
 
 export interface ClientRuntimeApp {
+  basepath?: string;
   mount?: string;
   module?: ClientRuntimeModule;
 }
@@ -234,6 +235,9 @@ function assertRuntimeRouting(
 
 function assertApp(value: unknown, source: string): void {
   assertObject(value, source);
+  if (value.basepath !== undefined) {
+    assertRuntimeBasepath(value.basepath, `${source}.basepath`);
+  }
   if (value.module !== undefined) {
     assertRuntimeModule(value.module, `${source}.module`);
   }
@@ -456,6 +460,18 @@ function assertRuntimePathname(
   const error = getPathPatternValidationError(value);
   if (error) {
     throw new Error(`[evjs] ${source} ${formatRuntimePathnameError(error)}`);
+  }
+}
+
+function assertRuntimeBasepath(value: unknown, source: string): void {
+  assertRuntimePathname(value, source, true);
+  const segmentError = getConcreteRuntimePathSegmentValidationError(
+    value as string,
+  );
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${source} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
   }
 }
 
