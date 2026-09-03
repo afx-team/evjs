@@ -105,11 +105,37 @@ const SUPPORTED_DEFINITION_KEYS = `${HTTP_METHOD_LIST_DESCRIPTION} or "middlewar
  */
 export function createRoute<
   const T extends string,
-  E extends HonoEnv = HonoEnv,
-  I extends Input = BlankInput,
+  GetEnv extends HonoEnv = HonoEnv,
+  GetInput extends Input = BlankInput,
+  PostEnv extends HonoEnv = HonoEnv,
+  PostInput extends Input = BlankInput,
+  PutEnv extends HonoEnv = HonoEnv,
+  PutInput extends Input = BlankInput,
+  PatchEnv extends HonoEnv = HonoEnv,
+  PatchInput extends Input = BlankInput,
+  DeleteEnv extends HonoEnv = HonoEnv,
+  DeleteInput extends Input = BlankInput,
+  HeadEnv extends HonoEnv = HonoEnv,
+  HeadInput extends Input = BlankInput,
+  OptionsEnv extends HonoEnv = HonoEnv,
+  OptionsInput extends Input = BlankInput,
 >(
   path: T & (string extends T ? never : T),
-  definition: RouteHandlerDefinition<NoInfer<T>, E, I>,
+  // Infer each method independently: one method's middleware cannot provide
+  // variables or validated input to another method on the same route.
+  definition: {
+    GET?: RouteHandlerFn<NoInfer<T>, GetEnv, GetInput>;
+    POST?: RouteHandlerFn<NoInfer<T>, PostEnv, PostInput>;
+    PUT?: RouteHandlerFn<NoInfer<T>, PutEnv, PutInput>;
+    PATCH?: RouteHandlerFn<NoInfer<T>, PatchEnv, PatchInput>;
+    DELETE?: RouteHandlerFn<NoInfer<T>, DeleteEnv, DeleteInput>;
+    HEAD?: RouteHandlerFn<NoInfer<T>, HeadEnv, HeadInput>;
+    OPTIONS?: RouteHandlerFn<NoInfer<T>, OptionsEnv, OptionsInput>;
+  } & Pick<RouteHandlerDefinition<T>, "middlewares">,
+): RouteHandler;
+export function createRoute(
+  path: string,
+  definition: RouteHandlerDefinition,
 ): RouteHandler {
   const pathError = getCreateRoutePathError(path);
   if (pathError) {

@@ -5,6 +5,7 @@ import type {
   IfAnyThenEmptyObject,
   UnionToIntersection,
 } from "hono/utils/types";
+import { invokeWithErrorHandler } from "../middleware/error-handler.js";
 import { normalizeMiddleware } from "../middleware/middleware-chain.js";
 import { invokeRouteHandler } from "./invoke-handler.js";
 import type { RouteHandlerFn } from "./route-handler.js";
@@ -71,16 +72,24 @@ export function withMiddlewares<
     middlewares: Object.freeze([...chain, ...inner.middlewares]),
     handler: inner.handler,
   });
-  const composed = every(...pipeline.middlewares);
+  const composed = every(
+    ...pipeline.middlewares.map(
+      (middleware): MiddlewareHandler =>
+        (context, next) =>
+          invokeWithErrorHandler(context, () => middleware(context, next)),
+    ),
+  );
   const wrapped: RouteHandlerFn<P, E, I> = async (request, context) => {
     // Direct calls use Hono's composition helper, which retains route params.
     // Mounted routes expand the metadata into the application's native chain.
     await composed(context, async () => {
-      context.res = await invokeRouteHandler(
-        pipeline.handler,
-        request,
-        context,
-        "withMiddlewares() handler",
+      context.res = await invokeWithErrorHandler(context, () =>
+        invokeRouteHandler(
+          pipeline.handler,
+          request,
+          context,
+          "withMiddlewares() handler",
+        ),
       );
     });
     if (!context.finalized) {

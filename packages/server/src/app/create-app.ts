@@ -34,6 +34,7 @@ import {
   handlePprRegionRequest,
   handleRscFlightRequest,
 } from "../framework-rendering/runtime.js";
+import { createErrorHandlerMiddleware } from "../middleware/error-handler.js";
 import { assertMiddlewareArray } from "../middleware/middleware-chain.js";
 import { mountRoute } from "../routes/mount-route.js";
 import type { RouteHandler } from "../routes/route-handler.js";
@@ -99,6 +100,7 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   // Initialize Hono's native context storage
   app.use(contextStorage());
+  app.use(createErrorHandlerMiddleware(app));
 
   // Mount global middleware
   for (const mw of middlewares) {

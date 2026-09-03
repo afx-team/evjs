@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareFrameworkBuild } from "../src/_internal/build/commands.js";
 import type { Plugin } from "../src/plugin/index.js";
 
@@ -180,6 +180,48 @@ describe("generated server middleware", () => {
     ).rejects.toThrow(
       "withMiddlewares() middlewares must be a middleware function or a non-empty array",
     );
+  });
+
+  it("unwinds directly called method middleware after errors in generated routes", async () => {
+    const server = await loadServer({
+      "src/middlewares/middleware.ts": `
+        export default async (ctx, next) => {
+          ctx.set('order', ['global']);
+          await next();
+          ctx.header('x-order', ctx.get('order').join(','));
+        };
+      `,
+      "src/apis/items/$id/api.ts": `
+        import { withMiddlewares } from '@evjs/ev/api';
+        const wrapped = withMiddlewares(() => { throw new Error('boom'); }, async (ctx, next) => {
+          const order = ctx.get('order');
+          order.push('method');
+          await next();
+          order.push('after:' + ctx.error?.message);
+          ctx.header('x-item', ctx.req.param('id'));
+        });
+        export const GET = (request, context) => wrapped(request, context);
+      `,
+    });
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await server.fetch(
+          new Request("http://localhost/items/42", { method }),
+        );
+        expect(response.status).toBe(500);
+        expect(response.headers.get("x-order")).toBe(
+          "global,method,after:boom",
+        );
+        expect(response.headers.get("x-item")).toBe("42");
+        expect(await response.text()).toBe(
+          method === "HEAD" ? "" : "Internal Server Error",
+        );
+      }
+      expect(logError).toHaveBeenCalledTimes(2);
+    } finally {
+      logError.mockRestore();
+    }
   });
 
   it("reports the source and invalid index of a factory-produced global chain", async () => {
