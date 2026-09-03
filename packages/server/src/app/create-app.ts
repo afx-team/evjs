@@ -34,6 +34,12 @@ import {
   handlePprRegionRequest,
   handleRscFlightRequest,
 } from "../framework-rendering/runtime.js";
+import {
+  createErrorHandlerMiddleware,
+  getRequestPath,
+} from "../middleware/error-handler.js";
+import { assertMiddlewareArray } from "../middleware/middleware-chain.js";
+import { mountRoute } from "../routes/mount-route.js";
 import type { RouteHandler } from "../routes/route-handler.js";
 import {
   createServerFunctionRegistry,
@@ -93,10 +99,11 @@ export function createApp(options?: CreateAppOptions): Hono {
   );
   const maxServerFunctionBodySize = 1024 * 1024;
 
-  const app = new Hono();
+  const app = new Hono({ getPath: getRequestPath });
 
   // Initialize Hono's native context storage
   app.use(contextStorage());
+  app.use(createErrorHandlerMiddleware());
 
   // Mount global middleware
   for (const mw of middlewares) {
@@ -118,28 +125,7 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   // Mount route handlers (before server function endpoint for priority)
   for (const { handler, routeIndex } of orderedRoutes) {
-    const allowedMethods = Object.entries(handler.methods)
-      .filter(([, routeHandlerFn]) => typeof routeHandlerFn === "function")
-      .map(([method]) => method)
-      .join(", ");
-    for (const [method, routeHandlerFn] of Object.entries(handler.methods)) {
-      if (!routeHandlerFn) continue;
-      const source = `routes[${routeIndex}].methods.${method}`;
-
-      app.on([method], [handler.path], ...handler.middlewares, async (c) =>
-        invokeRouteHandler(
-          routeHandlerFn,
-          c as HonoContext<HonoEnv, string>,
-          source,
-        ),
-      );
-    }
-    // 405 Method Not Allowed for any unregistered methods.
-    app.all(handler.path, () => {
-      return textResponse("Method Not Allowed", 405, {
-        Allow: allowedMethods,
-      });
-    });
+    mountRoute(app, handler, routeIndex);
   }
 
   // Mount server function endpoint. Request size policy can move to
@@ -261,50 +247,6 @@ export function createApp(options?: CreateAppOptions): Hono {
   return app;
 }
 
-async function invokeRouteHandler(
-  routeHandlerFn: (
-    request: Request,
-    context: HonoContext<HonoEnv, string>,
-  ) => Response | Promise<Response>,
-  context: HonoContext<HonoEnv, string>,
-  source: string,
-): Promise<Response> {
-  const response = await routeHandlerFn(context.req.raw, context);
-  if (isResponseLike(response)) {
-    return response;
-  }
-
-  return textResponse(
-    `[evjs] createApp() ${source} must return a Response.`,
-    500,
-  );
-}
-
-function isResponseLike(value: unknown): value is Response {
-  if (value instanceof Response) return true;
-  if (!isRecord(value)) return false;
-
-  const response = value as {
-    arrayBuffer?: unknown;
-    clone?: unknown;
-    headers?: unknown;
-    status?: unknown;
-  };
-  return (
-    Object.prototype.toString.call(value) === "[object Response]" &&
-    typeof response.status === "number" &&
-    typeof response.arrayBuffer === "function" &&
-    typeof response.clone === "function" &&
-    isHeadersLike(response.headers)
-  );
-}
-
-function isHeadersLike(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  const headers = value as { get?: unknown; has?: unknown };
-  return typeof headers.get === "function" && typeof headers.has === "function";
-}
-
 function createInvalidServerFunctionRequest(): DispatchError {
   return {
     error: "Missing or invalid 'fnId' in request body",
@@ -400,7 +342,7 @@ function assertCreateAppOptions(
   }
 
   if (options.middlewares !== undefined) {
-    assertMiddlewareArray(options.middlewares, "middlewares");
+    assertMiddlewareArray(options.middlewares, "createApp() middlewares");
   }
 
   if (options.framework !== undefined) {
@@ -561,7 +503,7 @@ function assertRouteHandler(route: RouteHandler, index: number): void {
     );
   }
 
-  assertMiddlewareArray(route.middlewares, `${name}.middlewares`);
+  assertMiddlewareArray(route.middlewares, `createApp() ${name}.middlewares`);
 }
 
 function toRuntimePathname(endpoint: string): string {
@@ -641,17 +583,6 @@ function toCanonicalSpecificityPath(routePath: string): string {
       return segment;
     })
     .join("/");
-}
-
-function assertMiddlewareArray(value: unknown, name: string): void {
-  if (
-    !Array.isArray(value) ||
-    value.some((middleware) => typeof middleware !== "function")
-  ) {
-    throw new Error(
-      `[evjs] createApp() ${name} must be an array of middleware functions.`,
-    );
-  }
 }
 
 function joinPath(base: string, segment: string): string {

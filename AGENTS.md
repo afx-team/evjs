@@ -25,7 +25,8 @@ the implementation rather than preserving the mismatch.
 | --- | --- | --- |
 | Page files and URL segments | `packages/ev/src/_internal/build/conventions/page-route-conventions.ts` | `discovery/page-routes.ts`, `packages/ev/tests/build-tools-page-routes.test.ts` |
 | API route files and URL segments | `packages/ev/src/_internal/build/conventions/server-route-conventions.ts` | `discovery/server-routes.ts`, `packages/ev/tests/build-tools-server-routes.test.ts` |
-| Global and route middleware | `packages/ev/src/_internal/build/discovery/server-conventions.ts` | `packages/ev/tests/build-tools-server-routes.test.ts`, `packages/ev/tests/commands.test.ts` |
+| Global middleware discovery | `packages/ev/src/_internal/build/discovery/server-conventions.ts` | `packages/ev/tests/build-tools-server-routes.test.ts`, `packages/ev/tests/commands.test.ts` |
+| HTTP method middleware composition | `packages/server/src/routes/api-handler.ts` | `packages/server/tests/api-handler.test.ts`, `packages/ev/tests/server-middleware-runtime.test.ts` |
 | Public configuration and routing mode | `packages/ev/src/config/resolution.ts` through `packages/ev/src/config/index.ts` | `packages/ev/tests/config.test.ts` |
 | Graph and build planning | `packages/ev/src/_internal/build/graph/*`, `plan/*` | `packages/ev/tests/build-tools-graph-plan.test.ts` |
 | Plugin settings and generated Page types | `packages/ev/src/config/plugins.ts`, `_internal/build/plugins/settings.ts`, `typegen/plugin-types.ts` | `packages/ev/tests/plugin-settings.test.ts`, `plugin-types.test.ts` |
@@ -44,9 +45,13 @@ the implementation rather than preserving the mismatch.
    uses `routes` for nesting.
 3. Publish API routes only with `src/apis/**/api.*`, and keep exactly one
    supported `api.*` file in each route directory. Export uppercase HTTP
-   methods, put global middleware in
-   `src/middlewares/middleware.*` and route-specific middleware in
-   `src/apis/**/middleware.ts`.
+   methods and put global middleware in `src/middlewares/middleware.*`,
+   default-exporting one handler or an ordered non-empty array. Compose HTTP
+   method policies with `withMiddlewares(handler, middlewares)` from
+   `@evjs/ev/api`; share chains through ordinary imports. `RouteHandlerFn`
+   also lives in `@evjs/ev/api`. Import middleware types and request logging
+   from `@evjs/ev/middleware`, and request context helpers from
+   `@evjs/ev/server-context`.
 4. Server-function modules begin with `"use server";` and export supported named
    values. Adjacent `page.config.ts` owns static metadata, rendering choices,
    and page-level plugin options.

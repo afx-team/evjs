@@ -426,7 +426,7 @@ describe("createApp", () => {
       "[evjs] createApp() routes must be an array of route handlers.",
     );
     expect(() => createApp({ middlewares: [null as never] })).toThrow(
-      "[evjs] createApp() middlewares must be an array of middleware functions.",
+      "[evjs] createApp() middlewares[0] must be a middleware function.",
     );
     expect(() => createServerApp({ serverFunctions: {} as never })).toThrow(
       "[evjs] createApp() serverFunctions must be created by createServerFunctionRegistry().",
@@ -987,7 +987,7 @@ describe("createApp", () => {
         ],
       }),
     ).toThrow(
-      "[evjs] createApp() routes[0].middlewares must be an array of middleware functions.",
+      "[evjs] createApp() routes[0].middlewares[0] must be a middleware function.",
     );
     expect(() =>
       createApp({

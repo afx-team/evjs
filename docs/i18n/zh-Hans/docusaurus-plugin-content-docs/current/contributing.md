@@ -42,11 +42,16 @@ npx biome check --write
    `application.routes` 只放在专门的配置路由测试用例中。
 7. 服务端函数以 `"use server";` 开头，只使用命名函数导出。
 8. 配置和构建代码从 `@evjs/ev` 导入；应用源码使用
-   `@evjs/ev/route`、`/navigation`、`/query`、`/server-context`、
+   `@evjs/ev/api`、`/middleware`、`/route`、`/navigation`、`/query`、`/server-context`、
    `/transport`。直接使用运行时的应用从 `@evjs/client` 或 `@evjs/server` 导入。
 9. 框架语义放在 `@evjs/ev` 的构建内部模块中，标准化契约放在
    `@evjs/shared/manifest`；构建器适配器只消费 `BuildPlan` 并返回构建结果。
 10. `.ev`、`dist`、`.turbo`、`node_modules` 与路由类型声明都是生成产物。
+11. 中间件集合字段和参数使用 `middlewares`。
+    单个函数类型使用 `MiddlewareHandler`，有序链类型使用 `MiddlewareChain`。
+    能力、钩子和模块名称使用单数：`server.request.middleware`、
+    `clientDevMiddleware` 和 `middleware.*`。具体中间件工厂按行为命名，
+    例如 `requestLogger()`。
 
 ## 常见任务
 
@@ -71,8 +76,10 @@ npx biome check --write
 1. 在 `src/apis` 下创建 URL 对应目录并添加 `api.ts` 文件。
 2. 从该文件导出 `GET`、`POST` 等大写 HTTP 方法处理器。
 3. 辅助代码放在同目录的普通非 `api.*` 模块中。
-4. 在 `src/middlewares/middleware.ts` 中组合有序的全局中间件；只作用于一组 API
-   路由时，使用 `src/apis/**/middleware.ts`。
+4. 在 `src/middlewares/middleware.ts` 中组合有序的全局中间件，默认导出单个函数或非空数组。
+   中间件类型和 `requestLogger` 从 `@evjs/ev/middleware` 导入。
+5. 使用 `@evjs/ev/api` 的 `withMiddlewares(handler, middlewares)` 组合各方法的策略，
+   通过普通模块导入复用共享链。
 
 ### 添加示例
 

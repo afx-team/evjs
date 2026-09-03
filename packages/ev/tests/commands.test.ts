@@ -3503,7 +3503,7 @@ describe("prepareFrameworkBuild", () => {
     );
     expect(serverEntry).not.toContain('from "src/apis/hello/api.ts"');
     expect(serverEntry).toContain(
-      "const middlewares = [contributedMiddleware0];",
+      "const middlewares = [...contributedMiddleware0Chain];",
     );
     expect(serverEntry).toContain(
       ["const routeDefinition0 = {", "  GET: routeModule0.GET,", "};"].join(
@@ -5819,11 +5819,6 @@ describe("build", () => {
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "src/apis/admin/middleware.ts"),
-      "export default async function middleware(_ctx, next) { await next(); }",
-      "utf-8",
-    );
-    await writeFile(
       path.join(cwd, "src/apis/admin/health/api.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
@@ -7906,7 +7901,7 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
-  it("discovers default server routes and middleware conventions", async () => {
+  it("discovers API anchors and global middleware without inheriting API helper files", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/apis/api"), {
       recursive: true,
@@ -7914,7 +7909,7 @@ describe("build", () => {
     await writeFile(
       path.join(cwd, "src/middlewares/middleware.ts"),
       [
-        'import type { MiddlewareChain } from "@evjs/ev/server-context";',
+        'import type { MiddlewareChain } from "@evjs/ev/middleware";',
         "const tracing = async (_ctx, next) => next();",
         "const authentication = async (_ctx, next) => next();",
         "export default [tracing, authentication] satisfies MiddlewareChain;",
@@ -7968,14 +7963,6 @@ describe("build", () => {
               path: "/api/health",
               methods: ["GET"],
               moduleSegments: ["api", "health"],
-              middlewares: [
-                {
-                  id: "src/apis/api/middleware.ts:route-middleware",
-                  module: "src/apis/api/middleware.ts",
-                  scope: "route",
-                  scopeSegments: ["api"],
-                },
-              ],
             },
           ],
         },
@@ -7983,9 +7970,10 @@ describe("build", () => {
     );
     await expect(
       fs.promises.readFile(path.join(cwd, ".ev/entries/server.ts"), "utf-8"),
-    ).resolves.toContain(
-      "const middlewares = [...(Array.isArray(middleware0) ? middleware0 : [middleware0])];",
-    );
+    ).resolves.toContain("const middlewares = [...middleware0Chain];");
+    await expect(
+      fs.promises.readFile(path.join(cwd, ".ev/entries/server.ts"), "utf-8"),
+    ).resolves.not.toContain("apis/api/middleware");
   });
 
   it("fails on invalid default api anchors before running the bundler", async () => {

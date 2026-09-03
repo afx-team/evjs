@@ -316,7 +316,6 @@ export interface ResolvedServerRscConfig {
 
 export interface ResolvedServerConventionsConfig {
   globalMiddlewares: ServerMiddlewareNode[];
-  routeMiddlewares: ServerMiddlewareNode[];
 }
 
 export interface TransportConfig {
@@ -770,7 +769,6 @@ export function resolveConfig<TBundlerCfg = unknown>(
   const resolvedServerConventions = conventions
     ? {
         globalMiddlewares: [],
-        routeMiddlewares: [],
       }
     : undefined;
   const clientPort =

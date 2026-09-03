@@ -249,7 +249,7 @@ async function analyzeServerRouteFile(
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message: `Server file routes must not export "${exportName}". Move middleware logic to a middleware.ts file in the route tree.`,
+      message: `Server file routes must not export "${exportName}". Compose HTTP method handlers with withMiddlewares(handler, middlewares) from @evjs/ev/api.`,
     });
   }
 

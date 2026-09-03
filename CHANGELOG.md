@@ -6,6 +6,23 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Explicit API middleware policies** — Stop discovering and inheriting
+  `src/apis/**/middleware.*`. These files are ordinary source modules. Import
+  shared policies and compose each target HTTP method with
+  `withMiddlewares(handler, middlewares)`. Move policies that must cover
+  automatic OPTIONS or 405 responses to `src/middlewares/middleware.*`.
+  Existing applications must explicitly register any authentication or other
+  policy previously applied by directory inheritance.
+- **Dedicated middleware authoring entry** — Import `MiddlewareHandler`,
+  `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`, and `RequestLogEntry`
+  from `@evjs/ev/middleware`. These exports are no longer available from
+  `@evjs/ev/server-context` or `@evjs/ev/api`; no compatibility re-exports remain.
+  `@evjs/ev/api` exports `withMiddlewares` and `RouteHandlerFn`, while
+  `@evjs/ev/server-context` exports request, cookie, and server-function error
+  helpers. Standalone `@evjs/server` imports are unchanged.
+
 ### ✨ Features
 
 - **Rootless Application component mode** — `@evjs/client` applications can
@@ -13,6 +30,18 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   external React root through `app.createComponent()`. DOM-root and component
   ownership are mutually exclusive, AbortSignal disposal is supported, and
   framework-managed route overlays keep the external host mounted.
+- **API middleware composition** — `withMiddlewares(handler, middlewares)`
+  composes a single HTTP method with the handler first, preserving
+  Hono context and validation input types.
+  `@evjs/ev/api` also exports `RouteHandlerFn`; standalone applications can use
+  `withMiddlewares` from `@evjs/server`.
+
+### 🐛 Bug Fixes
+
+- **Explicit HEAD handlers** — Honor declared HEAD handlers and their method
+  middleware, with GET fallback when HEAD is absent and no final response body.
+- **Middleware diagnostics** — Report malformed resolved exports with their
+  source module and zero-based array index before server startup.
 
 ---
 

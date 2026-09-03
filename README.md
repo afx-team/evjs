@@ -113,9 +113,9 @@ them.
 | [`examples/`](./examples) | Runnable examples for common application patterns and integrations. |
 
 Most applications start with `@evjs/ev`. The focused authoring imports
-`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`,
-`@evjs/ev/server-context`, and `@evjs/ev/transport` are available when those
-capabilities are needed.
+`@evjs/ev/api`, `@evjs/ev/middleware`, `@evjs/ev/route`, `@evjs/ev/navigation`,
+`@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport` are
+available when those capabilities are needed.
 
 ## Contributing
 

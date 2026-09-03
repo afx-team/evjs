@@ -10,11 +10,8 @@ import {
 import {
   isRouteSourceModuleFile,
   normalizeRouteConventionPath,
-  type RouteSegmentConventionViolation,
 } from "../conventions/route-conventions.js";
-import { findServerRouteSegmentConventionViolation } from "../conventions/server-route-conventions.js";
 import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "../utils.js";
-import type { DiscoveredServerRouteNode } from "./server-routes.js";
 
 /** Fixed global middleware composition anchor for framework conventions. */
 export const CANONICAL_SERVER_MIDDLEWARE_FILE =
@@ -22,7 +19,6 @@ export const CANONICAL_SERVER_MIDDLEWARE_FILE =
 
 export interface DiscoverServerConventionsOptions {
   globalFile: string;
-  routingDir?: string;
 }
 
 export interface ServerConventionDiagnostic {
@@ -33,7 +29,6 @@ export interface ServerConventionDiagnostic {
 
 export interface ServerConventionDiscovery {
   globalMiddlewares: ServerMiddlewareNode[];
-  routeMiddlewares: ServerMiddlewareNode[];
   files: string[];
   diagnostics: ServerConventionDiagnostic[];
 }
@@ -51,14 +46,8 @@ export async function discoverServerConventions(
   );
   files.push(...globalMiddlewares.files);
 
-  const routeMiddlewares = options.routingDir
-    ? await discoverRouteMiddlewares(cwd, options.routingDir, diagnostics)
-    : { middlewares: [], files: [] };
-  files.push(...routeMiddlewares.files);
-
   return {
     globalMiddlewares: globalMiddlewares.middlewares,
-    routeMiddlewares: routeMiddlewares.middlewares,
     files: files.sort(),
     diagnostics,
   };
@@ -73,23 +62,6 @@ export function isServerMiddlewareConventionFileName(
     return false;
   }
   return normalized.slice(0, -extension.length) === "middleware";
-}
-
-export function applyRouteScopedMiddlewares(
-  routes: DiscoveredServerRouteNode[],
-  routeMiddlewares: ServerMiddlewareNode[],
-): DiscoveredServerRouteNode[] {
-  if (routeMiddlewares.length === 0) return routes;
-
-  const orderedMiddlewares = [...routeMiddlewares].sort(compareMiddlewares);
-  return routes.map((route) => {
-    const routeSegments = route.moduleSegments ?? [];
-    const middlewares = orderedMiddlewares.filter((middleware) =>
-      isScopePrefix(middleware.scopeSegments ?? [], routeSegments),
-    );
-    if (middlewares.length === 0) return route;
-    return { ...route, middlewares };
-  });
 }
 
 async function discoverGlobalMiddlewares(
@@ -145,11 +117,7 @@ async function discoverGlobalMiddlewares(
   const [file] = files;
   if (!file) return { middlewares: [], files: [] };
   const sourceRel = toDiagnosticPath(toPosixPath(path.relative(cwd, file)));
-  diagnostics.push(
-    ...(await analyzeMiddlewareModule(file, sourceRel, {
-      allowOrderedList: true,
-    })),
-  );
+  diagnostics.push(...(await analyzeMiddlewareModule(file, sourceRel)));
   return {
     files,
     middlewares: [
@@ -160,88 +128,6 @@ async function discoverGlobalMiddlewares(
         scopeSegments: [],
       },
     ],
-  };
-}
-
-async function discoverRouteMiddlewares(
-  cwd: string,
-  routingDir: string,
-  diagnostics: ServerConventionDiagnostic[],
-): Promise<{ middlewares: ServerMiddlewareNode[]; files: string[] }> {
-  const absoluteRoutingDir = path.resolve(cwd, routingDir);
-  if (!isInsideCwd(cwd, absoluteRoutingDir)) {
-    diagnostics.push({
-      level: "error",
-      file: toDiagnosticPath(
-        toPosixPath(path.relative(cwd, absoluteRoutingDir)),
-      ),
-      message:
-        "Server route middleware directory must be inside the project root.",
-    });
-    return { middlewares: [], files: [] };
-  }
-
-  try {
-    if (!(await isRealPathInsideCwd(cwd, absoluteRoutingDir))) {
-      return { middlewares: [], files: [] };
-    }
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "ENOTDIR") {
-      return { middlewares: [], files: [] };
-    }
-    throw error;
-  }
-
-  const files = await collectMiddlewareFilesInTree(cwd, absoluteRoutingDir);
-  const middlewares: ServerMiddlewareNode[] = [];
-  const middlewareByScope = new Map<string, string>();
-
-  for (const file of files) {
-    const sourceRel = toDiagnosticPath(toPosixPath(path.relative(cwd, file)));
-    const routeRel = toPosixPath(path.relative(absoluteRoutingDir, file));
-    const convention = parseRouteMiddlewareFile(routeRel);
-    if (!convention) continue;
-
-    const segmentViolation = findServerRouteSegmentConventionViolation(
-      convention.scopeSegments,
-    );
-    if (segmentViolation) {
-      diagnostics.push({
-        level: "error",
-        file: sourceRel,
-        message:
-          formatServerMiddlewareSegmentConventionViolation(segmentViolation),
-      });
-      continue;
-    }
-
-    const scopeKey = convention.scopeSegments.join("/");
-    const previous = middlewareByScope.get(scopeKey);
-    if (previous) {
-      diagnostics.push({
-        level: "error",
-        file: sourceRel,
-        message: `Duplicate route-scoped server middleware for "${formatScopeLabel(
-          convention.scopeSegments,
-        )}" also declared by ${previous}.`,
-      });
-      continue;
-    }
-    middlewareByScope.set(scopeKey, sourceRel);
-
-    diagnostics.push(...(await analyzeMiddlewareModule(file, sourceRel)));
-    middlewares.push({
-      id: `${sourceRel}:route-middleware`,
-      module: sourceRel,
-      scope: "route",
-      scopeSegments: convention.scopeSegments,
-    });
-  }
-
-  return {
-    files,
-    middlewares: middlewares.sort(compareMiddlewares),
   };
 }
 
@@ -268,66 +154,9 @@ async function collectMiddlewareFilesInDirectory(
     .sort();
 }
 
-async function collectMiddlewareFilesInTree(
-  cwd: string,
-  root: string,
-): Promise<string[]> {
-  const files: string[] = [];
-
-  async function visit(current: string) {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(current, { withFileTypes: true });
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "ENOTDIR") return;
-      throw err;
-    }
-
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue;
-
-      const absolute = path.join(current, entry.name);
-      if (!isInsideCwd(cwd, absolute)) continue;
-
-      if (entry.isDirectory()) {
-        await visit(absolute);
-        continue;
-      }
-
-      if (entry.isFile() && isServerMiddlewareConventionFileName(entry.name)) {
-        files.push(absolute);
-      }
-    }
-  }
-
-  await visit(root);
-  return files.sort();
-}
-
-interface RouteMiddlewareFileConvention {
-  scopeSegments: string[];
-}
-
-function parseRouteMiddlewareFile(
-  routeRel: string,
-): RouteMiddlewareFileConvention | undefined {
-  const normalizedRouteRel = normalizeRouteConventionPath(routeRel);
-  const basename = path.posix.basename(normalizedRouteRel);
-  if (!isServerMiddlewareConventionFileName(basename)) return undefined;
-
-  const extension = path.posix.extname(normalizedRouteRel);
-  const withoutExt = normalizedRouteRel.slice(0, -extension.length);
-  const segments = withoutExt.split("/").filter(Boolean);
-  if (segments.length === 0) return undefined;
-  const scopeSegments = segments.slice(0, -1);
-  return { scopeSegments };
-}
-
 async function analyzeMiddlewareModule(
   absolute: string,
   diagnosticFile: string,
-  options: { allowOrderedList?: boolean } = {},
 ): Promise<ServerConventionDiagnostic[]> {
   const source = await fs.readFile(absolute, "utf-8");
   const { ast, error } = parseRouteModuleWithError(source);
@@ -350,9 +179,8 @@ async function analyzeMiddlewareModule(
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message: options.allowOrderedList
-        ? "Global server middleware must default-export a Hono-compatible middleware function or an ordered middleware list."
-        : "Server middleware modules must default-export a Hono-compatible middleware function.",
+      message:
+        "Server middleware modules must default-export a Hono-compatible middleware function or a non-empty ordered middleware list.",
     });
   }
 
@@ -365,10 +193,7 @@ async function analyzeMiddlewareModule(
     });
   }
 
-  const defaultExportError = validateDefaultMiddlewareExport(
-    ast.body,
-    options.allowOrderedList === true,
-  );
+  const defaultExportError = validateDefaultMiddlewareExport(ast.body);
   if (defaultExportError) {
     diagnostics.push({
       level: "error",
@@ -382,7 +207,6 @@ async function analyzeMiddlewareModule(
 
 function validateDefaultMiddlewareExport(
   body: ModuleItem[],
-  allowOrderedList: boolean,
 ): string | undefined {
   const localValues = collectLocalVariableValues(body);
   const value = getDefaultExportValue(body);
@@ -391,7 +215,7 @@ function validateDefaultMiddlewareExport(
     value,
     localValues,
     new Set(),
-    allowOrderedList,
+    true,
   );
 }
 
@@ -402,6 +226,20 @@ function collectLocalVariableValues(
   for (const item of body) {
     const declaration =
       item.type === "ExportDeclaration" ? item.declaration : item;
+    if (declaration.type === "FunctionDeclaration") {
+      values.set(declaration.identifier.value, {
+        ...declaration,
+        type: "FunctionExpression",
+      });
+      continue;
+    }
+    if (declaration.type === "ClassDeclaration") {
+      values.set(declaration.identifier.value, {
+        ...declaration,
+        type: "ClassExpression",
+      });
+      continue;
+    }
     if (declaration.type !== "VariableDeclaration" || declaration.declare) {
       continue;
     }
@@ -421,6 +259,22 @@ function getDefaultExportValue(body: ModuleItem[]): Expression | undefined {
     if (item.type === "ExportDefaultExpression") {
       return item.expression;
     }
+    if (
+      item.type === "ExportNamedDeclaration" &&
+      !item.source &&
+      !item.typeOnly
+    ) {
+      for (const specifier of item.specifiers) {
+        if (
+          specifier.type === "ExportSpecifier" &&
+          !specifier.isTypeOnly &&
+          specifier.exported?.value === "default" &&
+          specifier.orig.type === "Identifier"
+        ) {
+          return specifier.orig;
+        }
+      }
+    }
   }
   return undefined;
 }
@@ -438,7 +292,7 @@ function validateDefaultMiddlewareExpression(
     const localValue = localValues.get(expression.value);
     if (!localValue) {
       return allowOrderedList
-        ? "Global server middleware default export must resolve to a function or an ordered middleware list."
+        ? "Server middleware default export must resolve to a function or a non-empty ordered middleware list."
         : "Server middleware default export must resolve to a function.";
     }
     return validateDefaultMiddlewareExpression(
@@ -451,13 +305,16 @@ function validateDefaultMiddlewareExpression(
 
   if (expression.type === "ArrayExpression") {
     if (!allowOrderedList) {
-      return "Route-scoped server middleware default export must resolve to a function.";
+      return "Server middleware list items must resolve to functions, not nested lists.";
     }
     if (expression.elements.length === 0) {
-      return "Global server middleware default export must contain at least one middleware function.";
+      return "Server middleware default export must contain at least one middleware function.";
     }
     for (const [index, element] of expression.elements.entries()) {
-      if (!element || element.spread) continue;
+      if (!element) {
+        return `Server middleware default export[${index}] must resolve to a middleware function.`;
+      }
+      if (element.spread) continue;
       const elementError = validateDefaultMiddlewareExpression(
         element.expression,
         localValues,
@@ -465,10 +322,14 @@ function validateDefaultMiddlewareExpression(
         false,
       );
       if (elementError) {
-        return `Global server middleware default export item ${index + 1} must resolve to a function.`;
+        return `Server middleware default export[${index}] must resolve to a middleware function.`;
       }
     }
     return undefined;
+  }
+
+  if (expression.type === "FunctionExpression" && expression.generator) {
+    return "Server middleware must be a regular or async function, not a generator.";
   }
 
   if (
@@ -488,7 +349,7 @@ function validateDefaultMiddlewareExpression(
     expression.type === "ClassExpression"
   ) {
     return allowOrderedList
-      ? "Global server middleware default export must resolve to a function or an ordered middleware list."
+      ? "Server middleware default export must resolve to a function or a non-empty ordered middleware list."
       : "Server middleware default export must resolve to a function.";
   }
 
@@ -507,64 +368,6 @@ function unwrapExpression(expression: Expression): Expression {
     current = current.expression;
   }
   return current;
-}
-
-function compareMiddlewares(
-  left: ServerMiddlewareNode,
-  right: ServerMiddlewareNode,
-): number {
-  const leftDepth = left.scopeSegments?.length ?? 0;
-  const rightDepth = right.scopeSegments?.length ?? 0;
-  if (leftDepth !== rightDepth) return leftDepth - rightDepth;
-  return left.module.localeCompare(right.module);
-}
-
-function isScopePrefix(scope: string[], routeSegments: string[]): boolean {
-  if (scope.length > routeSegments.length) return false;
-  return scope.every((segment, index) => routeSegments[index] === segment);
-}
-
-function formatScopeLabel(scopeSegments: string[]): string {
-  if (scopeSegments.length === 0) return "/";
-  return scopeSegments.join("/");
-}
-
-function formatServerMiddlewareSegmentConventionViolation(
-  violation: RouteSegmentConventionViolation,
-): string {
-  if (violation.kind === "route-group") {
-    return `Server middleware route group segment "${violation.segment}" must wrap a non-empty group name in parentheses, such as "(internal)".`;
-  }
-  if (violation.kind === "bracket") {
-    const name = violation.segment.replace(/^\[+/, "").replace(/\]+$/, "");
-    const suggestion =
-      name && !name.startsWith("...")
-        ? ` Rename the directory to "$${name}" for a dynamic segment.`
-        : " Split it into explicit file-route directories.";
-    return `Dynamic server middleware scope segments must use $param directories. Bracket segment "${violation.segment}" is not supported.${suggestion}`;
-  }
-  if (violation.kind === "unsupported-dynamic") {
-    if (violation.segment === "$") {
-      return 'Dynamic server middleware scope segments must include a name after "$". Segment "$" is not supported.';
-    }
-    if (violation.segment.startsWith("$...")) {
-      return `Catch-all server middleware scope segments are not supported. Split wildcard handling into explicit file-route directories instead of "${violation.segment}".`;
-    }
-    if (violation.segment.endsWith("?")) {
-      return `Optional server middleware scope segments are not supported. Split the route tree instead of "${violation.segment}".`;
-    }
-    return `Unsupported dynamic server middleware scope segment "${violation.segment}".`;
-  }
-  if (violation.kind === "dynamic") {
-    return `Dynamic server middleware scope segment "${violation.segment}" must use a JavaScript identifier after "$", such as "$userId".`;
-  }
-  if (violation.kind === "reserved-dynamic") {
-    return `Dynamic server middleware scope segment "${violation.segment}" uses a reserved param name. Use a safe application-specific name such as "$userId".`;
-  }
-  if (violation.kind === "duplicate-dynamic") {
-    return `Dynamic server middleware scope segment "${violation.segment}" repeats a param name. Use unique dynamic param directories within one route path.`;
-  }
-  return `Static server middleware scope segment "${violation.segment}" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".`;
 }
 
 function toDiagnosticPath(projectPath: string): string {

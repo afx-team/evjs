@@ -21,7 +21,6 @@ export interface BuildPlanConfig {
     routes?: DiscoveredServerRouteNode[];
     conventions?: {
       globalMiddlewares: ServerMiddlewareNode[];
-      routeMiddlewares: ServerMiddlewareNode[];
     };
     basepath: string;
     runtime: {

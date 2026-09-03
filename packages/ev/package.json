@@ -23,6 +23,16 @@
       "import": "./esm/plugin/index.js",
       "default": "./esm/plugin/index.js"
     },
+    "./api": {
+      "types": "./esm/api/index.d.ts",
+      "import": "./esm/api/index.js",
+      "default": "./esm/api/index.js"
+    },
+    "./middleware": {
+      "types": "./esm/middleware/index.d.ts",
+      "import": "./esm/middleware/index.js",
+      "default": "./esm/middleware/index.js"
+    },
     "./route": {
       "types": "./esm/route/index.d.ts",
       "import": "./esm/route/index.js",

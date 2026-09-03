@@ -4,11 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import * as serverRuntime from "@evjs/server";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import * as buildTools from "../src/_internal/build/index.js";
+import * as apiAuthoring from "../src/api/index.js";
 import * as publicBuildTools from "../src/build-tools/index.js";
 import * as evRoot from "../src/index.js";
+import * as middlewareAuthoring from "../src/middleware/index.js";
 import * as pluginAuthoring from "../src/plugin/index.js";
+import * as serverContext from "../src/server-context/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -254,7 +258,6 @@ const expectedBuildToolsRuntimeExports = [
   "analyzePageComponentExports",
   "applyHtmlTagContributions",
   "applyPluginSettings",
-  "applyRouteScopedMiddlewares",
   "assertBundlerEmittedFiles",
   "assertPortableRelativeArtifactPath",
   "assertPortableRelativeBrowserArtifactPath",
@@ -349,9 +352,11 @@ const expectedPackageExportSubpaths = {
     "./_internal/server/node",
     "./_internal/server/react",
     "./_internal/server/server-reference",
+    "./api",
     "./build-tools",
     "./config",
     "./deployment",
+    "./middleware",
     "./navigation",
     "./plugin",
     "./query",
@@ -536,6 +541,16 @@ describe("workspace package surface", () => {
       "defineConfig",
       "definePageConfig",
     ]);
+    expect(evPackageJson.exports?.["./api"]).toEqual({
+      types: "./esm/api/index.d.ts",
+      import: "./esm/api/index.js",
+      default: "./esm/api/index.js",
+    });
+    expect(evPackageJson.exports?.["./middleware"]).toEqual({
+      types: "./esm/middleware/index.d.ts",
+      import: "./esm/middleware/index.js",
+      default: "./esm/middleware/index.js",
+    });
     expect(evPackageJson.exports?.["./route"]).toEqual({
       types: "./esm/route/index.d.ts",
       import: "./esm/route/index.js",
@@ -834,8 +849,10 @@ describe("workspace package surface", () => {
       "packages/client/src/internal.ts",
       "packages/create-app/src/index.ts",
       "packages/ev/src/index.ts",
+      "packages/ev/src/api/index.ts",
       "packages/ev/src/config/index.ts",
       "packages/ev/src/deployment/index.ts",
+      "packages/ev/src/middleware/index.ts",
       "packages/ev/src/navigation/index.ts",
       "packages/ev/src/plugin/index.ts",
       "packages/ev/src/query/index.ts",
@@ -869,6 +886,37 @@ describe("workspace package surface", () => {
 
   it("keeps @evjs/ev/build-tools narrowed to config loading", () => {
     expect(Object.keys(publicBuildTools).sort()).toEqual(["loadConfigFile"]);
+  });
+
+  it("separates HTTP handlers, middleware, and request context exports", () => {
+    expect(Object.keys(apiAuthoring)).toEqual(["withMiddlewares"]);
+    expect(apiAuthoring.withMiddlewares).toBe(serverRuntime.withMiddlewares);
+    expectTypeOf<apiAuthoring.RouteHandlerFn>().toEqualTypeOf<serverRuntime.RouteHandlerFn>();
+
+    expect(Object.keys(middlewareAuthoring)).toEqual(["requestLogger"]);
+    expect(middlewareAuthoring.requestLogger).toBe(serverRuntime.requestLogger);
+    expectTypeOf<middlewareAuthoring.MiddlewareHandler>().toEqualTypeOf<serverRuntime.MiddlewareHandler>();
+    expectTypeOf<middlewareAuthoring.MiddlewareChain>().toEqualTypeOf<serverRuntime.MiddlewareChain>();
+    expectTypeOf<middlewareAuthoring.RequestLoggerOptions>().toEqualTypeOf<serverRuntime.RequestLoggerOptions>();
+    expectTypeOf<middlewareAuthoring.RequestLogEntry>().toEqualTypeOf<serverRuntime.RequestLogEntry>();
+    expect(serverContext).not.toHaveProperty("requestLogger");
+
+    // @ts-expect-error MiddlewareHandler belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.MiddlewareHandler>();
+    // @ts-expect-error MiddlewareChain belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.MiddlewareChain>();
+    // @ts-expect-error RequestLoggerOptions belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.RequestLoggerOptions>();
+    // @ts-expect-error RequestLogEntry belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.RequestLogEntry>();
+    // @ts-expect-error MiddlewareHandler belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.MiddlewareHandler>();
+    // @ts-expect-error MiddlewareChain belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.MiddlewareChain>();
+    // @ts-expect-error RequestLoggerOptions belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.RequestLoggerOptions>();
+    // @ts-expect-error RequestLogEntry belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.RequestLogEntry>();
   });
 
   it("keeps @evjs/ev/build-tools load-time imports out of React runtimes", async () => {
@@ -930,7 +978,10 @@ describe("workspace package surface", () => {
     expect(agentInstructions).toContain("`@evjs/ev/_internal/*`");
     expect(agentInstructions).toContain("`src/pages/**/page.*`");
     expect(agentInstructions).toContain("`src/apis/**/api.*`");
-    expect(agentInstructions).toContain("`src/apis/**/middleware.ts`");
+    expect(agentInstructions).toContain("`src/middlewares/middleware.*`");
+    expect(agentInstructions).toContain(
+      "withMiddlewares(handler, middlewares)",
+    );
     expect(agentInstructions).toContain("English and Chinese documentation");
     expect(agentInstructions).not.toContain("## Package Map");
     expect(agentInstructions).not.toContain("## Common Mistakes");

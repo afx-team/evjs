@@ -46,14 +46,19 @@ npx biome check --write
    Keep explicit `application.routes` cases in focused config-route fixtures.
 7. Server functions begin with `"use server";` and export named callables.
 8. Config/build imports stay on `@evjs/ev`; app source uses
-   `@evjs/ev/route`, `/navigation`, `/query`, `/server-context`, and
-   `/transport`. Applications that use a runtime directly import
+   `@evjs/ev/api`, `/middleware`, `/route`, `/navigation`, `/query`,
+   `/server-context`, and `/transport`. Applications that use a runtime directly import
    `@evjs/client` or `@evjs/server`.
 9. Keep framework semantics in `@evjs/ev` build internals and normalized
    contracts in `@evjs/shared/manifest`. Bundler adapters consume BuildPlan and
    return facts.
 10. `.ev`, `dist`, `.turbo`, `node_modules`, and route-type declarations are
     generated output.
+11. Use `middlewares` for middleware collection fields and arguments.
+    Use `MiddlewareHandler` for one function and `MiddlewareChain` for an
+    ordered chain. Use singular middleware names for capabilities, hooks, and
+    modules: `server.request.middleware`, `clientDevMiddleware`, and `middleware.*`.
+    Name concrete middleware factories by behavior, such as `requestLogger()`.
 
 ## Common tasks
 
@@ -80,8 +85,11 @@ npx biome check --write
 1. Create the URL directory under `src/apis` and add its `api.ts` file.
 2. Export uppercase HTTP handlers such as `GET` or `POST` from that file.
 3. Keep helpers in ordinary colocated non-`api.*` modules.
-4. Compose ordered global middleware in `src/middlewares/middleware.ts`, or
-   use `src/apis/**/middleware.ts` for middleware limited to an API route tree.
+4. Compose ordered global middleware in `src/middlewares/middleware.ts`,
+   default-exporting one function or a non-empty array. Import middleware types
+   and `requestLogger` from `@evjs/ev/middleware`.
+5. Compose each method's policies with `withMiddlewares(handler, middlewares)`
+   from `@evjs/ev/api`. Reuse shared chains through ordinary imports.
 
 ### Add an example
 

@@ -1959,12 +1959,6 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       scope: "global" as const,
       scopeSegments: [],
     };
-    const userMiddleware = {
-      id: "src/apis/users/middleware.ts:route-middleware",
-      module: "src/apis/users/middleware.ts",
-      scope: "route" as const,
-      scopeSegments: ["users"],
-    };
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",
       "src/apis/health/api.ts":
@@ -1997,12 +1991,10 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           path: "/users/:userId",
           methods: ["POST"],
           moduleSegments: ["users", "$userId"],
-          middlewares: [userMiddleware],
         },
       ],
       serverConventions: {
         globalMiddlewares: [globalMiddleware],
-        routeMiddlewares: [userMiddleware],
       },
     });
     const analysis = await createCoreGraph(config, cwd);
@@ -2011,6 +2003,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
 
     expect(analysis.diagnostics).toEqual([]);
+    expect(analysis.fileDependencies).not.toContain(
+      path.join(cwd, "src/apis/users/middleware.ts"),
+    );
     expect(analysis.graph.serverRoutes).toEqual([
       {
         id: "src/apis/health/api.ts:/health:GET",
@@ -2054,7 +2049,6 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
             path: "/users/:userId",
             methods: ["POST"],
             moduleSegments: ["users", "$userId"],
-            middlewares: [userMiddleware],
           },
         ],
         middlewares: [globalMiddleware],

@@ -5,30 +5,30 @@
  * - Multiple HTTP methods on one api.ts anchor
  * - JSON request/response
  * - Custom status codes
+ * - Method-specific middleware with a shared request body cache
  */
 
+import { withMiddlewares } from "@evjs/ev/api";
+import { apiPolicies } from "../policies";
 import { createPost, posts } from "./posts-store";
+import validatePost from "./validate-post";
 
 /** List posts. */
-export const GET = async (req: Request) => {
+export const GET = withMiddlewares(async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || posts.length;
   return Response.json(posts.slice(0, limit));
-};
+}, apiPolicies);
 
 /** Create a post. */
-export const POST = async (req: Request) => {
-  const { title, body } = (await req.json()) as {
-    title: string;
-    body: string;
-  };
+export const POST = withMiddlewares(
+  async (_req, ctx) => {
+    const { title, body } = await ctx.req.json<{
+      title: string;
+      body: string;
+    }>();
 
-  if (!title || !body) {
-    return Response.json(
-      { error: "title and body are required" },
-      { status: 400 },
-    );
-  }
-
-  return Response.json(createPost({ title, body }), { status: 201 });
-};
+    return Response.json(createPost({ title, body }), { status: 201 });
+  },
+  [...apiPolicies, validatePost],
+);

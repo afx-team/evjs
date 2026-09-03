@@ -89,11 +89,10 @@ Paths are relative to the project root unless stated otherwise.
 | `<page>/index.html` | HTML template for one MPA page | Does not create a page or client entry. |
 | `index.html` or `routing.html` | Shared application HTML template | `index.html` is the default. |
 | Imported module starting with `"use server";` | Server-function module | Named callable exports only; no required directory. |
-| `src/apis/**/api.{ts,tsx,js,jsx}` | Public HTTP route | Exactly one variant per directory. Export uppercase HTTP method handlers. |
+| `src/apis/**/api.{ts,tsx,js,jsx}` | Public HTTP route | Exactly one variant per directory. Export uppercase handlers; use `withMiddlewares(handler, middlewares)` for method-only policies. |
 | Other files inside an API route directory | Route-owned source | Helpers and `index.*` do not create endpoints. |
-| `src/middlewares/middleware.*` | Global middleware composition | Default-export one middleware or an explicitly ordered non-empty list. |
+| `src/middlewares/middleware.*` | Global middleware composition | Default-export one middleware or an explicitly ordered non-empty list. Computed global chains may resolve to `[]` when disabled. |
 | Other files in `src/middlewares` | Middleware implementation modules | Imported explicitly; filenames do not define order. |
-| `src/apis/**/middleware.*` | Middleware scoped to a route subtree | Default-export one middleware. It is not a route. |
 | `public/**` | Static files | Copied to browser output according to output configuration. |
 | `.ev/**`, `dist/**`, `src/route-types.d.ts`, `src/plugin-types.d.ts` | Generated output | Ignore and never edit or scaffold these files. |
 
@@ -180,16 +179,24 @@ share the request pathname space, so conflicting patterns fail validation.
 Make global order explicit in `src/middlewares/middleware.ts`:
 
 ```ts title="src/middlewares/middleware.ts"
-import type { MiddlewareChain } from "@evjs/ev/server-context";
+import type { MiddlewareChain } from "@evjs/ev/middleware";
 import authentication from "./authentication";
 import tracing from "./tracing";
 
 export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
-Requests enter from left to right; work after `await next()` unwinds from right
-to left. `src/apis/**/middleware.*` wraps API routes in the same directory and
-its descendants.
+The complete order is plugin contributions, application global middleware,
+the method chain, and the handler. Arrays run left to right; work after
+`await next()` unwinds in reverse. Automatic OPTIONS and 405 responses run
+only global middleware.
+
+Import middleware types and `requestLogger` from `@evjs/ev/middleware`.
+Use `withMiddlewares(handler, [auth, validate])` from `@evjs/ev/api` for one
+HTTP method. Import shared chains into each method that needs them. Explicit HEAD uses
+its own chain; automatic HEAD uses GET's chain. Import request context helpers
+from `@evjs/ev/server-context`. See [API Routes and Middleware](./server-routes)
+for method behavior and the complete authoring contract.
 
 ## SPA and MPA structure
 

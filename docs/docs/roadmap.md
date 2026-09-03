@@ -9,8 +9,8 @@ architecture boundaries enforced by the current implementation.
   normalize into one Application/Page/Route/Document CoreGraph for SPA and
   MPA.
 - `application.routes` is an explicit SPA-only input into that same graph.
-- `src/apis/**/api.*` supplies request Routes with
-  filesystem-scoped middleware.
+- `src/apis/**/api.*` supplies request Routes with explicit method middleware
+  composition. `src/middlewares/middleware.*` supplies global middleware.
 - `BuildPlan` drives generated `.ev` entries, bundler adapters, dev routing,
   output ownership, and deployment linking.
 - `BuildOutput` remains in memory; `dist/deployment-metadata.json` is the

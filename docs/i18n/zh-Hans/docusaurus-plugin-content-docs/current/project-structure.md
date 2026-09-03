@@ -83,11 +83,10 @@ src/pages/orders/$orderId/
 | `<页面>/index.html` | 单个 MPA 页面的 HTML 模板 | 不创建页面或客户端入口。 |
 | `index.html` 或 `routing.html` | 共享应用 HTML 模板 | 默认使用 `index.html`。 |
 | 以 `"use server";` 开头且被应用导入的模块 | 服务端函数模块 | 只能命名导出可调用值，不要求固定目录。 |
-| `src/apis/**/api.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一种变体，导出大写 HTTP 方法处理器。 |
+| `src/apis/**/api.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一种变体，导出大写方法处理器；单方法策略使用 `withMiddlewares(handler, middlewares)`。 |
 | API 路由目录中的其他文件 | 路由拥有的源码 | 辅助文件和 `index.*` 不创建端点。 |
-| `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表。 |
+| `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表；动态计算的全局链可以在禁用时返回 `[]`。 |
 | `src/middlewares` 中的其他文件 | 中间件实现模块 | 显式导入，文件名不决定顺序。 |
-| `src/apis/**/middleware.*` | 路由子树范围中间件 | 默认导出一个中间件，本身不是路由。 |
 | `public/**` | 静态文件 | 按输出配置复制到浏览器产物。 |
 | `.ev/**`、`dist/**`、`src/route-types.d.ts`、`src/plugin-types.d.ts` | 生成产物 | 忽略，不要编辑或复制进脚手架。 |
 
@@ -164,15 +163,22 @@ src/apis/
 在 `src/middlewares/middleware.ts` 中显式声明全局顺序：
 
 ```ts title="src/middlewares/middleware.ts"
-import type { MiddlewareChain } from "@evjs/ev/server-context";
+import type { MiddlewareChain } from "@evjs/ev/middleware";
 import authentication from "./authentication";
 import tracing from "./tracing";
 
 export default [tracing, authentication] satisfies MiddlewareChain;
 ```
 
-请求从左到右进入，`await next()` 之后的工作从右到左退出。
-`src/apis/**/middleware.*` 包裹同目录及其后代 API 路由。
+完整顺序是插件贡献、应用全局中间件、方法链，最后是处理器。
+数组从左到右执行，`await next()` 之后的工作反向退出。
+自动 OPTIONS 和 405 响应仅执行全局中间件。
+
+中间件类型和 `requestLogger` 从 `@evjs/ev/middleware` 导入。
+单个 HTTP 方法使用 `@evjs/ev/api` 的 `withMiddlewares(handler, [auth, validate])`。
+需要共享策略时，在各个目标方法中导入并组合链。显式 HEAD 使用自己的链，自动 HEAD 使用 GET 的链。
+请求上下文辅助接口从 `@evjs/ev/server-context` 导入。完整方法行为和编写规则见
+[API 路由与中间件](./server-routes)。
 
 ## SPA 与 MPA 结构
 

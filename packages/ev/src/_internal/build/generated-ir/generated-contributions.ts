@@ -1856,7 +1856,7 @@ function createServerAppEntrySource(
   );
 
   const imports = [
-    `import { createApp, createRoute, createServerFunctionRegistry } from "@evjs/ev/_internal/server";`,
+    `import { createApp, createRoute, createServerFunctionRegistry, normalizeMiddleware } from "@evjs/ev/_internal/server";`,
     `import { createReactFrameworkServer } from "@evjs/ev/_internal/server/react";`,
     ...(serverFunctionModules.length > 0
       ? [
@@ -1888,6 +1888,16 @@ function createServerAppEntrySource(
         )};`,
     ),
   ];
+  const middlewareDefinitions = [
+    ...contributionMiddlewares.map(
+      (middleware) =>
+        `const ${middleware.importName}Chain = normalizeMiddleware(${middleware.importName}, ${JSON.stringify(`Plugin middleware "${middleware.id}" (${middleware.module}) default export`)});`,
+    ),
+    ...middlewareModules.map(
+      (middleware, index) =>
+        `const middleware${index}Chain = normalizeMiddleware(middleware${index}, ${JSON.stringify(`${middleware.module} default export`)}${middleware.scope === "global" ? ", { allowEmpty: true }" : ""});`,
+    ),
+  ];
   const routeDefinitions = metadata.routes.flatMap((route, index) => {
     const properties = [
       ...(toMiddlewares(route.middlewares).length > 0
@@ -1916,8 +1926,10 @@ function createServerAppEntrySource(
       `createRoute(${JSON.stringify(route.path)}, routeDefinition${index})`,
   );
   const middlewareReferences = [
-    ...contributionMiddlewares.map((middleware) => middleware.importName),
-    ...toApplicationMiddlewareReferences(middlewares, middlewareImportNames),
+    ...contributionMiddlewares.map(
+      (middleware) => `...${middleware.importName}Chain`,
+    ),
+    ...toMiddlewareReferences(middlewares, middlewareImportNames),
   ];
   const serverFunctionRegistrations = (metadata.serverFunctions ?? []).flatMap(
     (serverFunction, index) => {
@@ -1947,6 +1959,7 @@ function createServerAppEntrySource(
   return [
     ...imports,
     "",
+    ...middlewareDefinitions,
     ...routeDefinitions,
     "",
     "const framework = createReactFrameworkServer();",
@@ -2380,17 +2393,8 @@ function toMiddlewareReferences(
 ): string[] {
   return toMiddlewares(value)
     .map((middleware) => importNames.get(middleware.module))
-    .filter((value): value is string => Boolean(value));
-}
-
-function toApplicationMiddlewareReferences(
-  value: ServerMiddlewareNode[] | undefined,
-  importNames: Map<string, string>,
-): string[] {
-  return toMiddlewareReferences(value, importNames).map(
-    (importName) =>
-      `...(Array.isArray(${importName}) ? ${importName} : [${importName}])`,
-  );
+    .filter((value): value is string => Boolean(value))
+    .map((importName) => `...${importName}Chain`);
 }
 
 function cloneJson<T>(value: T): T {

@@ -164,10 +164,7 @@ export async function createCoreGraph(
       fileDependencies.add(dir);
     }
   }
-  for (const middleware of [
-    ...(config.server.conventions?.globalMiddlewares ?? []),
-    ...(config.server.conventions?.routeMiddlewares ?? []),
-  ]) {
+  for (const middleware of config.server.conventions?.globalMiddlewares ?? []) {
     fileDependencies.add(path.resolve(cwd, middleware.module));
   }
   const serverRoutes = new Map<string, ServerRouteNode>();
@@ -179,10 +176,9 @@ export async function createCoreGraph(
     ),
   );
   const serverConventionModules = new Set(
-    [
-      ...(config.server.conventions?.globalMiddlewares ?? []),
-      ...(config.server.conventions?.routeMiddlewares ?? []),
-    ].map((middleware) => path.resolve(cwd, middleware.module)),
+    (config.server.conventions?.globalMiddlewares ?? []).map((middleware) =>
+      path.resolve(cwd, middleware.module),
+    ),
   );
   const serverFunctions: ServerFunctionNode[] = [];
   const clientReferences = new Map<string, ClientReferenceNode>();
@@ -1013,10 +1009,7 @@ async function collectFrameworkSourceFiles(
       onSourceDependency,
     );
   }
-  for (const middleware of [
-    ...(config.server.conventions?.globalMiddlewares ?? []),
-    ...(config.server.conventions?.routeMiddlewares ?? []),
-  ]) {
+  for (const middleware of config.server.conventions?.globalMiddlewares ?? []) {
     await addConfiguredSource(
       roots,
       cwd,
