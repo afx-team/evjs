@@ -115,15 +115,16 @@ Release automation replaces them with the release version before publishing.
 4. Put helpers and shared middleware chains in ordinary colocated modules.
 5. Compose individual methods with `withMiddlewares(handler, middlewares)`
    from `@evjs/ev/api`.
-   That entry also exports handler and middleware types and `requestLogger`.
-   Existing middleware and logging imports from `/server-context` stay supported.
+   That entry also exports `RouteHandlerFn`. Import middleware types and
+   `requestLogger` from `@evjs/ev/middleware`, and request context helpers
+   from `@evjs/ev/server-context`.
 
 ### Add global server middleware
 
 1. Put individual middleware modules in `src/middlewares`.
 2. Default-export one handler or an ordered non-empty list from
    `src/middlewares/middleware.ts`; use `satisfies MiddlewareChain` to type a
-   list in TypeScript, imported from `@evjs/ev/api`.
+   list in TypeScript, imported from `@evjs/ev/middleware`.
 3. Keep ordering explicit in that anchor; `index.*` and other sibling modules
    are ordinary source and are not auto-discovered.
 

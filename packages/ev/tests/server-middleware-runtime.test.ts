@@ -50,6 +50,9 @@ async function loadServer(
       "@evjs/ev/api": fileURLToPath(
         new URL("../src/api/index.ts", import.meta.url),
       ),
+      "@evjs/ev/middleware": fileURLToPath(
+        new URL("../src/middleware/index.ts", import.meta.url),
+      ),
       "@evjs/ev/server-context": fileURLToPath(
         new URL("../src/server-context/index.ts", import.meta.url),
       ),
@@ -142,18 +145,18 @@ describe("generated server middleware", () => {
     expect(child.headers.get("x-order")).toBe("plugin,global-1,global-2");
   });
 
-  it("supports existing server-context imports and a disabled global factory", async () => {
+  it("supports the middleware authoring entry and a disabled global factory", async () => {
     const server = await loadServer({
       "src/middlewares/middleware.ts": `
-        import { requestLogger } from '@evjs/ev/server-context';
+        import { requestLogger } from '@evjs/ev/middleware';
         const factory = (enabled) => enabled ? [requestLogger()] : [];
         export default factory(false);
       `,
       "src/apis/items/policy.ts": `
-        import type { MiddlewareHandler } from '@evjs/ev/server-context';
+        import type { MiddlewareHandler } from '@evjs/ev/middleware';
         const middleware: MiddlewareHandler = async (ctx, next) => {
           await next();
-          ctx.header('x-existing-middleware', 'true');
+          ctx.header('x-policy', 'true');
         };
         export default middleware;
       `,
@@ -165,7 +168,7 @@ describe("generated server middleware", () => {
     });
     const response = await server.fetch(new Request("http://localhost/items"));
     expect(response.status).toBe(200);
-    expect(response.headers.get("x-existing-middleware")).toBe("true");
+    expect(response.headers.get("x-policy")).toBe("true");
   });
 
   it("rejects empty method chains before serving requests", async () => {

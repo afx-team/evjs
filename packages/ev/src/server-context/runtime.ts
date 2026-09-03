@@ -2,12 +2,6 @@
  * Request-scoped server APIs for evjs file-convention applications.
  */
 
-export type {
-  MiddlewareChain,
-  MiddlewareHandler,
-  RequestLogEntry,
-  RequestLoggerOptions,
-} from "@evjs/server";
 export {
   deleteCookie,
   generateCookie,
@@ -17,7 +11,6 @@ export {
   getSignedCookie,
   headers,
   request,
-  requestLogger,
   setCookie,
   setSignedCookie,
   waitUntil,

@@ -91,10 +91,13 @@ export const GET = async (_req, ctx) => {
 
 ## Middleware
 
-Import HTTP authoring APIs from `@evjs/ev/api`: `withMiddlewares`,
-`MiddlewareHandler`, `MiddlewareChain`, `RouteHandlerFn`, and `requestLogger`
-(with `RequestLoggerOptions` and `RequestLogEntry`). Request, cookie, and
-server-function error helpers belong to `@evjs/ev/server-context`.
+Use the public entry for the capability you are authoring:
+
+| Import | Exports |
+| --- | --- |
+| `@evjs/ev/middleware` | `MiddlewareHandler`, `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`, and `RequestLogEntry` |
+| `@evjs/ev/api` | `withMiddlewares` and `RouteHandlerFn` for HTTP method handlers |
+| `@evjs/ev/server-context` | Request, cookie, and server-function error helpers |
 
 Choose where a policy applies:
 
@@ -109,7 +112,7 @@ ordered array. `src/middlewares` allows exactly one
 type-only exports are allowed. Other filenames are ordinary source modules.
 
 ```ts title="src/middlewares/middleware.ts"
-import { type MiddlewareChain, requestLogger } from "@evjs/ev/api";
+import { type MiddlewareChain, requestLogger } from "@evjs/ev/middleware";
 import tracing from "./tracing";
 
 export default [requestLogger(), tracing] satisfies MiddlewareChain;
@@ -191,7 +194,7 @@ after `await next()` unwinds in reverse. All layers use the same Hono context.
 Returning a `Response` without calling `next()` short-circuits the request.
 
 ```ts
-import type { MiddlewareHandler } from "@evjs/ev/api";
+import type { MiddlewareHandler } from "@evjs/ev/middleware";
 
 const requireAuth: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

@@ -46,8 +46,8 @@ npx biome check --write
    Keep explicit `application.routes` cases in focused config-route fixtures.
 7. Server functions begin with `"use server";` and export named callables.
 8. Config/build imports stay on `@evjs/ev`; app source uses
-   `@evjs/ev/api`, `/route`, `/navigation`, `/query`, `/server-context`, and
-   `/transport`. Applications that use a runtime directly import
+   `@evjs/ev/api`, `/middleware`, `/route`, `/navigation`, `/query`,
+   `/server-context`, and `/transport`. Applications that use a runtime directly import
    `@evjs/client` or `@evjs/server`.
 9. Keep framework semantics in `@evjs/ev` build internals and normalized
    contracts in `@evjs/shared/manifest`. Bundler adapters consume BuildPlan and
@@ -86,7 +86,8 @@ npx biome check --write
 2. Export uppercase HTTP handlers such as `GET` or `POST` from that file.
 3. Keep helpers in ordinary colocated non-`api.*` modules.
 4. Compose ordered global middleware in `src/middlewares/middleware.ts`,
-   default-exporting one function or a non-empty array.
+   default-exporting one function or a non-empty array. Import middleware types
+   and `requestLogger` from `@evjs/ev/middleware`.
 5. Compose each method's policies with `withMiddlewares(handler, middlewares)`
    from `@evjs/ev/api`. Reuse shared chains through ordinary imports.
 

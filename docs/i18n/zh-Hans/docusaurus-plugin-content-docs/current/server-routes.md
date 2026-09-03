@@ -81,10 +81,13 @@ export const GET = async (_req, ctx) => {
 
 ## 中间件
 
-从 `@evjs/ev/api` 导入 HTTP 编写接口：`withMiddlewares`、`MiddlewareHandler`、
-`MiddlewareChain`、`RouteHandlerFn` 和 `requestLogger`，以及日志类型
-`RequestLoggerOptions`、`RequestLogEntry`。请求、Cookie 和服务端函数错误辅助接口
-属于 `@evjs/ev/server-context`。
+根据要编写的能力选择公共入口：
+
+| 导入路径 | 导出 |
+| --- | --- |
+| `@evjs/ev/middleware` | `MiddlewareHandler`、`MiddlewareChain`、`requestLogger`、`RequestLoggerOptions` 和 `RequestLogEntry` |
+| `@evjs/ev/api` | HTTP 方法处理器使用的 `withMiddlewares` 和 `RouteHandlerFn` |
+| `@evjs/ev/server-context` | 请求、Cookie 和服务端函数错误辅助接口 |
 
 按策略作用范围选择声明位置：
 
@@ -98,7 +101,7 @@ export const GET = async (_req, ctx) => {
 其他文件名都是普通源码模块。
 
 ```ts title="src/middlewares/middleware.ts"
-import { type MiddlewareChain, requestLogger } from "@evjs/ev/api";
+import { type MiddlewareChain, requestLogger } from "@evjs/ev/middleware";
 import tracing from "./tracing";
 
 export default [requestLogger(), tracing] satisfies MiddlewareChain;
@@ -168,7 +171,7 @@ export const POST = withMiddlewares(
 所有层使用同一个 Hono 上下文。不调用 `next()` 并返回 `Response` 会提前结束请求。
 
 ```ts
-import type { MiddlewareHandler } from "@evjs/ev/api";
+import type { MiddlewareHandler } from "@evjs/ev/middleware";
 
 const requireAuth: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

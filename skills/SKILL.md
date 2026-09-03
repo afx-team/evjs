@@ -39,7 +39,8 @@ description: Develop, migrate, review, document, or debug evjs applications and 
   `src/middlewares/middleware.{ts,tsx,js,jsx}`, exporting one function or an
   ordered non-empty array. Compose HTTP method policies with
   `withMiddlewares(handler, middlewares)` from `@evjs/ev/api`, and reuse shared
-  chains through ordinary imports.
+  chains through ordinary imports. Import middleware types and `requestLogger`
+  from `@evjs/ev/middleware`.
 - `application.routes` is an advanced, explicit SPA alternative to file-based
   routing. Do not combine it with `routing`; nested declarations use `routes`.
 - Install plugins through `config.plugins`, normally as
@@ -49,8 +50,8 @@ description: Develop, migrate, review, document, or debug evjs applications and 
 ## Public imports
 
 - Use `@evjs/ev` for `defineConfig()` and `definePageConfig()`.
-- Use `@evjs/ev/api`, `/route`, `/navigation`, `/query`, `/server-context`, and
-  `/transport` in applications that use the file conventions.
+- Use `@evjs/ev/api`, `/middleware`, `/route`, `/navigation`, `/query`,
+  `/server-context`, and `/transport` in applications that use the file conventions.
 - Use `@evjs/ev/plugin` for plugin authoring and `@evjs/ev/deployment` for
   deployment helpers.
 - Use `@evjs/client` or `@evjs/server` when an application deliberately manages

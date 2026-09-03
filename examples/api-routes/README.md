@@ -32,7 +32,7 @@ npm run dev
 - Custom status codes (201, 204, 404)
 - Auto `HEAD` runs the GET chain; auto `OPTIONS` and `405 Method Not Allowed` run global middleware
 - An explicit `HEAD` health probe
-- Explicitly ordered global middleware composition with `MiddlewareChain`
+- Explicitly ordered global middleware composition with `MiddlewareChain` and `requestLogger` from `@evjs/ev/middleware`
 - Shared policy arrays reused through ordinary imports
 - Method-only middleware with `withMiddlewares(handler, middlewares)` from `@evjs/ev/api`
 - Colocated private helpers that are not named `api.ts`

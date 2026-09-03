@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from "@evjs/ev/api";
+import type { MiddlewareHandler } from "@evjs/ev/middleware";
 
 const validatePost: MiddlewareHandler = async (ctx, next) => {
   let value: unknown;

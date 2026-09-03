@@ -7909,7 +7909,7 @@ describe("build", () => {
     await writeFile(
       path.join(cwd, "src/middlewares/middleware.ts"),
       [
-        'import type { MiddlewareChain } from "@evjs/ev/api";',
+        'import type { MiddlewareChain } from "@evjs/ev/middleware";',
         "const tracing = async (_ctx, next) => next();",
         "const authentication = async (_ctx, next) => next();",
         "export default [tracing, authentication] satisfies MiddlewareChain;",

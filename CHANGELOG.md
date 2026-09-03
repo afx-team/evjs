@@ -15,6 +15,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   automatic OPTIONS or 405 responses to `src/middlewares/middleware.*`.
   Existing applications must explicitly register any authentication or other
   policy previously applied by directory inheritance.
+- **Dedicated middleware authoring entry** — Import `MiddlewareHandler`,
+  `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`, and `RequestLogEntry`
+  from `@evjs/ev/middleware`. These exports are no longer available from
+  `@evjs/ev/server-context` or `@evjs/ev/api`; no compatibility re-exports remain.
+  `@evjs/ev/api` exports `withMiddlewares` and `RouteHandlerFn`, while
+  `@evjs/ev/server-context` exports request, cookie, and server-function error
+  helpers. Standalone `@evjs/server` imports are unchanged.
 
 ### ✨ Features
 
@@ -28,13 +35,6 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   Hono context and validation input types.
   `@evjs/ev/api` also exports `RouteHandlerFn`; standalone applications can use
   `withMiddlewares` from `@evjs/server`.
-- **Additive HTTP authoring entry** — Add `@evjs/ev/api` while preserving
-  `MiddlewareHandler`, `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`,
-  and `RequestLogEntry` under `@evjs/ev/server-context`. Existing imports and
-  single-function global middleware remain supported. Automatic methods on
-  `createRoute().methods`, mutable programmatic middleware arrays, empty
-  conditional global chains, and the global-only middleware scope for 405
-  responses remain unchanged.
 
 ### 🐛 Bug Fixes
 

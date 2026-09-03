@@ -292,7 +292,7 @@ src/middlewares/
 
 - `src/middlewares/middleware.*` default-exports one global middleware or an
   explicitly ordered non-empty list; TypeScript lists should use
-  `satisfies MiddlewareChain`.
+  `satisfies MiddlewareChain`, importing the type from `@evjs/ev/middleware`.
 - Other files in `src/middlewares` are ordinary modules imported by
   `middleware.*` and are not ordered by filename.
 

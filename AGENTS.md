@@ -48,11 +48,10 @@ the implementation rather than preserving the mismatch.
    methods and put global middleware in `src/middlewares/middleware.*`,
    default-exporting one handler or an ordered non-empty array. Compose HTTP
    method policies with `withMiddlewares(handler, middlewares)` from
-   `@evjs/ev/api`; share chains through ordinary imports. HTTP handler types,
-   middleware types, and request logging live in
-   `@evjs/ev/api`; request context helpers stay in `@evjs/ev/server-context`.
-   Keep existing middleware and logging exports from `/server-context`
-   supported as well.
+   `@evjs/ev/api`; share chains through ordinary imports. `RouteHandlerFn`
+   also lives in `@evjs/ev/api`. Import middleware types and request logging
+   from `@evjs/ev/middleware`, and request context helpers from
+   `@evjs/ev/server-context`.
 4. Server-function modules begin with `"use server";` and export supported named
    values. Adjacent `page.config.ts` owns static metadata, rendering choices,
    and page-level plugin options.

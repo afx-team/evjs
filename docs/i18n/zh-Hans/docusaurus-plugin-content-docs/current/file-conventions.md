@@ -267,7 +267,8 @@ src/middlewares/
 ```
 
 - `src/middlewares/middleware.*` 默认导出一个全局中间件，或显式排序的
-  非空列表；TypeScript 列表应使用 `satisfies MiddlewareChain`；
+  非空列表；TypeScript 列表应使用 `satisfies MiddlewareChain`，类型从
+  `@evjs/ev/middleware` 导入；
 - `src/middlewares` 下的其他文件都是由 `middleware.*` 显式导入的普通模块，不会按文件名
   排序。
 

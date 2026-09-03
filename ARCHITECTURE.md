@@ -81,7 +81,7 @@ ownership visible and avoids barrel-induced cycles.
 
 | Package | Implementation domains |
 | --- | --- |
-| `@evjs/ev` | Public authoring domains under `config`, `plugin`, `api`, `route`, `navigation`, `query`, `server-context`, `transport`, and `deployment`; generated compatibility entries under `_internal/generated`; framework build ownership under `_internal/build`. |
+| `@evjs/ev` | Public authoring domains under `config`, `plugin`, `api`, `middleware`, `route`, `navigation`, `query`, `server-context`, `transport`, and `deployment`; generated compatibility entries under `_internal/generated`; framework build ownership under `_internal/build`. |
 | `@evjs/shared` | `assets`, `build`, `http`, `routing`, `rsc`, `runtime`, `serialization`, `server-functions`, and `urls`; control-plane contracts are further divided into `manifest/graph`, `manifest/page`, and `manifest/output`. |
 | `@evjs/client` | `standalone`, framework `page` and `shell`, `rsc`, `server-functions`, and client-only shared support. |
 | `@evjs/server` | Application assembly, framework rendering, middleware, request context, routes, runtimes, server functions, and server-only shared support. |
@@ -107,14 +107,12 @@ use explicit subpaths:
 | `@evjs/ev/config` | Advanced config utilities and resolved config types. |
 | `@evjs/ev/plugin` | Plugin declarations, typed setting contracts, hooks, and the read-only framework view. |
 | `@evjs/ev/deployment` | Built-in deployment adapters and artifact helpers. |
-| `@evjs/ev/api` | HTTP method composition, handler and middleware types, and request logging middleware. |
+| `@evjs/ev/api` | HTTP method composition with `withMiddlewares` and the `RouteHandlerFn` type. |
+| `@evjs/ev/middleware` | Middleware types and request logging middleware for global and method policies. |
 | `@evjs/ev/route`, `/navigation`, `/query` | File-convention Page data, navigation, and query APIs. |
 | `@evjs/ev/server-context`, `/transport` | Framework request context and browser-to-server transport APIs. |
 | `@evjs/ev/build-tools` | Config loading for downstream tooling. |
 | `@evjs/ev/_internal/*` | CLI, bundler adapters, and generated framework code only. |
-
-`@evjs/ev/api` is additive. Existing middleware types and logging exports
-remain supported under `@evjs/ev/server-context`.
 
 Standalone applications may use `@evjs/client` and `@evjs/server` directly.
 Programmatic `createApp()`, client route trees, and server `createRoute()`

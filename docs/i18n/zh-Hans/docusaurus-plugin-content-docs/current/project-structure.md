@@ -163,7 +163,7 @@ src/apis/
 在 `src/middlewares/middleware.ts` 中显式声明全局顺序：
 
 ```ts title="src/middlewares/middleware.ts"
-import type { MiddlewareChain } from "@evjs/ev/api";
+import type { MiddlewareChain } from "@evjs/ev/middleware";
 import authentication from "./authentication";
 import tracing from "./tracing";
 
@@ -174,6 +174,7 @@ export default [tracing, authentication] satisfies MiddlewareChain;
 数组从左到右执行，`await next()` 之后的工作反向退出。
 自动 OPTIONS 和 405 响应仅执行全局中间件。
 
+中间件类型和 `requestLogger` 从 `@evjs/ev/middleware` 导入。
 单个 HTTP 方法使用 `@evjs/ev/api` 的 `withMiddlewares(handler, [auth, validate])`。
 需要共享策略时，在各个目标方法中导入并组合链。显式 HEAD 使用自己的链，自动 HEAD 使用 GET 的链。
 请求上下文辅助接口从 `@evjs/ev/server-context` 导入。完整方法行为和编写规则见

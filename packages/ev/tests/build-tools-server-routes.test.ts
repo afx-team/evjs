@@ -699,7 +699,7 @@ describe("discoverServerConventions", () => {
   it("discovers the ordered global composition anchor", async () => {
     const cwd = await createFixture({
       "src/middlewares/middleware.ts": `
-        import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/api";
+        import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/middleware";
         const first: MiddlewareHandler = async (_ctx, next) => next();
         const second: MiddlewareHandler = async (_ctx, next) => next();
         export default [first, second] satisfies MiddlewareChain;

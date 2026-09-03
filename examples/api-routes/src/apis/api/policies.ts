@@ -1,4 +1,4 @@
-import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/api";
+import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/middleware";
 
 const blockRequest: MiddlewareHandler = async (ctx, next) => {
   if (ctx.req.header("x-block-api") === "true") {

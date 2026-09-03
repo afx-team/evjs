@@ -1,4 +1,4 @@
-import { type MiddlewareChain, requestLogger } from "@evjs/ev/api";
+import { type MiddlewareChain, requestLogger } from "@evjs/ev/middleware";
 import responseMetadata from "./response-metadata";
 
 export default [

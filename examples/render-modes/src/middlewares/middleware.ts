@@ -1,3 +1,3 @@
-import { requestLogger } from "@evjs/ev/api";
+import { requestLogger } from "@evjs/ev/middleware";
 
 export default requestLogger({ includeSearch: true });

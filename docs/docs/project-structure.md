@@ -179,7 +179,7 @@ share the request pathname space, so conflicting patterns fail validation.
 Make global order explicit in `src/middlewares/middleware.ts`:
 
 ```ts title="src/middlewares/middleware.ts"
-import type { MiddlewareChain } from "@evjs/ev/api";
+import type { MiddlewareChain } from "@evjs/ev/middleware";
 import authentication from "./authentication";
 import tracing from "./tracing";
 
@@ -191,6 +191,7 @@ the method chain, and the handler. Arrays run left to right; work after
 `await next()` unwinds in reverse. Automatic OPTIONS and 405 responses run
 only global middleware.
 
+Import middleware types and `requestLogger` from `@evjs/ev/middleware`.
 Use `withMiddlewares(handler, [auth, validate])` from `@evjs/ev/api` for one
 HTTP method. Import shared chains into each method that needs them. Explicit HEAD uses
 its own chain; automatic HEAD uses GET's chain. Import request context helpers
