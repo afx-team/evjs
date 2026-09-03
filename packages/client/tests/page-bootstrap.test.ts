@@ -39,6 +39,23 @@ afterEach(() => {
 });
 
 describe("SPA page bootstrap", () => {
+  it.each([
+    null,
+    1,
+    "signal",
+    false,
+    {},
+    { aborted: "false" },
+  ])("diagnoses malformed component signals without acquiring ownership: %j", (signal) => {
+    const { app } = createTestPagesApp();
+    expect(() => app.createComponent({ signal } as never)).toThrow(
+      "[evjs] App component options.signal must be an AbortSignal when provided.",
+    );
+    const handle = app.createComponent();
+    handle.dispose();
+    expect(reactRootCalls).toEqual([]);
+  });
+
   it("hydrates only after the router finishes its initial load", async () => {
     const { app } = createTestPagesApp();
     const load = createDeferred<void>();
@@ -68,6 +85,22 @@ describe("SPA page bootstrap", () => {
     load.resolve();
     await render;
 
+    expect(reactRootCalls).toEqual([]);
+  });
+
+  it("releases render ownership when initial hydration loading fails", async () => {
+    const { app } = createTestPagesApp();
+    vi.spyOn(
+      app.router as unknown as { load(): Promise<void> },
+      "load",
+    ).mockRejectedValue(new Error("initial route failed"));
+
+    await expect(
+      app.render({} as HTMLElement, { hydrate: true }),
+    ).rejects.toThrow("initial route failed");
+
+    const component = app.createComponent();
+    component.dispose();
     expect(reactRootCalls).toEqual([]);
   });
 
@@ -255,6 +288,9 @@ function createBootstrapApp(): App {
     router: {},
     queryClient: {} as App["queryClient"],
     render,
+    createComponent() {
+      throw new Error("not used by page bootstrap tests");
+    },
     unmount() {},
   };
 }

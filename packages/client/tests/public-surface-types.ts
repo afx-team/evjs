@@ -26,6 +26,8 @@ export type PublicRscExports = [
 export type PublicStandaloneCsrExports = [
   typeof Client.createApp,
   Client.App<unknown>,
+  Client.AppComponentHandle,
+  Client.AppComponentOptions,
   Client.CreateAppOptions<Client.AnyRoute>,
   Client.CreateAppRouterOptions<Client.AnyRoute>,
   Client.AppRouteContext,

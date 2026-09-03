@@ -8,6 +8,11 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### ✨ Features
 
+- **Rootless Application component mode** — `@evjs/client` applications can
+  hand their complete Router, QueryClient, and Application-wrapper tree to one
+  external React root through `app.createComponent()`. DOM-root and component
+  ownership are mutually exclusive, AbortSignal disposal is supported, and
+  framework-managed route overlays keep the external host mounted.
 - **API middleware composition** — Scoped `middleware.*` anchors accept the
   same ordered non-empty arrays as global anchors. `withMiddlewares(handler,
   middlewares)` composes a single HTTP method with the handler first, preserving
