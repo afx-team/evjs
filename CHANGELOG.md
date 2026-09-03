@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.21] — 2026-09-03
+
 ### ⚠️ Breaking Changes
 
 - **Explicit API middleware policies** — Stop discovering and inheriting
