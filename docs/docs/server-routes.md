@@ -213,6 +213,11 @@ modify the response. Method middleware uses Hono's error handling:
 exceptions become error responses, with the error available through `ctx.error`
 as middleware unwinds.
 
+When directly calling a composed handler from an external Hono application,
+errors that escape the call are handled by the host's error boundary. Register
+logging or response-header work that must observe those error responses as
+native middleware on that host.
+
 ## HTTP method behavior
 
 For a matching API path, global middleware wraps every response. Each

@@ -12,6 +12,7 @@ import type { RouteHandlerFn } from "./route-handler.js";
 
 // Symbol metadata survives a separately bundled copy of the authoring helper.
 const pipelineKey = Symbol.for("@evjs/server/route-handler-pipeline");
+const headPipelineKey = Symbol.for("@evjs/server/head-handler-pipeline");
 
 type MiddlewareDetails<T> = T extends readonly MiddlewareHandler[]
   ? MiddlewareDetails<T[number]>
@@ -107,7 +108,19 @@ export function getRouteHandlerPipeline<
   P extends string,
   E extends Env,
   I extends Input,
->(handler: RouteHandlerFn<P, E, I>): RouteHandlerPipeline<P, E, I> {
+>(
+  handler: RouteHandlerFn<P, E, I>,
+  method?: string,
+): RouteHandlerPipeline<P, E, I> {
+  // Only a mounted HEAD request can delegate final body removal to Hono.
+  // Ordinary composition must keep the callable HEAD wrapper intact.
+  if (method === "HEAD") {
+    const headPipeline = Object.getOwnPropertyDescriptor(
+      handler,
+      headPipelineKey,
+    )?.value as RouteHandlerPipeline<P, E, I> | undefined;
+    if (headPipeline) return headPipeline;
+  }
   return (
     (Object.getOwnPropertyDescriptor(handler, pipelineKey)?.value as
       | RouteHandlerPipeline<P, E, I>
@@ -126,13 +139,14 @@ export function createHeadHandler<
 >(get: RouteHandlerFn<P, E, I>): RouteHandlerFn<P, E, I> {
   const head: RouteHandlerFn<P, E, I> = async (request, context) => {
     const response = await get(request, context);
-    return new Response(null, {
+    context.res = new Response(null, {
       status: response.status,
       headers: response.headers,
     });
+    return context.res;
   };
   // Mounted requests use GET's native pipeline; Hono strips the final body.
-  Object.defineProperty(head, pipelineKey, {
+  Object.defineProperty(head, headPipelineKey, {
     value: Object.freeze(getRouteHandlerPipeline(get)),
   });
   return head;

@@ -1,4 +1,4 @@
-import type { Context } from "hono";
+import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -144,6 +144,56 @@ describe("withMiddlewares", () => {
       "head:after",
       "options:before",
       "options:after",
+    ]);
+  });
+
+  it.each([
+    "direct",
+    "mounted",
+  ] as const)("preserves automatic HEAD semantics when composing it again in %s calls", async (mode) => {
+    const events: string[] = [];
+    const route = createRoute("/api/items/:id", {
+      GET: withMiddlewares(
+        (_request, context) => {
+          expect(context.req.param("id")).toBe("42");
+          return new Response("GET body", {
+            status: 202,
+            headers: { "x-get": "true" },
+          });
+        },
+        trace("get", events),
+      ),
+    });
+    const HEAD = route.methods.HEAD;
+    if (!HEAD) throw new Error("Missing automatic HEAD");
+    const wrapped = withMiddlewares(HEAD, async (context, next) => {
+      events.push("outer:before");
+      await next();
+      expect(await context.res.clone().text()).toBe("");
+      context.header("x-head", "true");
+      events.push("outer:after");
+    });
+    const app = createApp({
+      routes: [
+        createRoute("/api/items/:id", {
+          GET: (request, context) =>
+            wrapped(new Request(request, { method: "HEAD" }), context),
+          HEAD: wrapped,
+        }),
+      ],
+    });
+    const response = await app.request("/api/items/42", {
+      method: mode === "direct" ? "GET" : "HEAD",
+    });
+    expect(response.status).toBe(202);
+    expect(response.headers.get("x-get")).toBe("true");
+    expect(response.headers.get("x-head")).toBe("true");
+    expect(await response.text()).toBe("");
+    expect(events).toEqual([
+      "outer:before",
+      "get:before",
+      "get:after",
+      "outer:after",
     ]);
   });
 
@@ -309,6 +359,130 @@ describe("withMiddlewares", () => {
     const updated = await first.request("/api/items");
     expect(updated.status).toBe(502);
     expect(await updated.text()).toBe("updated");
+    expect(updated.headers.get("x-recovered")).toBe("boom");
+  });
+
+  it.each([
+    "hono",
+    "evjs",
+  ] as const)("inherits a %s parent's error policy when a sub-application calls a chain directly", async (parentRuntime) => {
+    const events: string[] = [];
+    const wrapped = withMiddlewares(
+      () => {
+        throw new Error("boom");
+      },
+      async (context, next) => {
+        expect(context.req.param("id")).toBe("42");
+        await next();
+      },
+    );
+    const child = createApp({
+      middlewares: [trace("child", events)],
+      routes: [
+        createRoute("/items/:id", {
+          GET: (request, context) => wrapped(request, context),
+        }),
+      ],
+    });
+    const parent = parentRuntime === "hono" ? new Hono() : createApp();
+    parent.use(trace("parent", events));
+    parent.onError((error, context) => {
+      events.push(`parent-error:${error.message}`);
+      expect(getContext()).toBe(context);
+      return context.json({ handled: "parent" }, 503);
+    });
+    parent.route("/api", child);
+
+    const response = await parent.request("/api/items/42");
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ handled: "parent" });
+    expect(response.headers.get("x-child")).toBe("true");
+    expect(response.headers.get("x-parent")).toBe("true");
+    expect(events).toEqual([
+      "parent:before",
+      "child:before",
+      "parent-error:boom",
+      "child:after",
+      "parent:after",
+    ]);
+
+    parent.onError((_error, context) => context.text("updated parent", 502));
+    const updated = await parent.request("/api/items/42");
+    expect(updated.status).toBe(502);
+    expect(await updated.text()).toBe("updated parent");
+  });
+
+  it.each([
+    "original",
+    "cloned",
+  ] as const)("preserves an %s sub-application's explicit error policy", async (mode) => {
+    const wrapped = withMiddlewares(
+      () => {
+        throw new Error("boom");
+      },
+      async (context, next) => {
+        await next();
+        expect(context.req.param("id")).toBe("42");
+        context.header("x-recovered", context.error?.message);
+      },
+    );
+    const child = createApp({
+      routes: [
+        createRoute("/items/:id", {
+          GET: (request, context) => wrapped(request, context),
+        }),
+      ],
+    });
+    child.onError((_error, context) => context.text("child", 409));
+    const mounted = mode === "cloned" ? child.basePath("/unused") : child;
+    if (mode === "cloned") {
+      mounted.onError((_error, context) => context.text("cloned child", 410));
+    }
+    const parent = new Hono();
+    parent.onError((_error, context) => context.text("parent", 503));
+    parent.route("/api", mounted);
+    const response = await parent.request("/api/items/42");
+    expect(response.status).toBe(mode === "cloned" ? 410 : 409);
+    expect(await response.text()).toBe(
+      mode === "cloned" ? "cloned child" : "child",
+    );
+    expect(response.headers.get("x-recovered")).toBe("boom");
+  });
+
+  it("uses a basePath clone's current error handler without changing the original", async () => {
+    const wrapped = withMiddlewares(
+      () => {
+        throw new Error("boom");
+      },
+      async (context, next) => {
+        await next();
+        expect(context.req.param("id")).toBe("42");
+        context.header("x-recovered", context.error?.message);
+      },
+    );
+    const original = createApp();
+    original.onError((_error, context) => context.text("original", 500));
+    const cloned = original.basePath("/api");
+    cloned.onError((_error, context) => context.text("cloned", 503));
+    cloned.get("/items/:id", (context) => wrapped(context.req.raw, context));
+
+    const request = new Request("http://localhost/api/items/42");
+    const responses = await Promise.all([
+      original.fetch(request),
+      cloned.fetch(request),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([500, 503]);
+    expect(
+      await Promise.all(responses.map((response) => response.text())),
+    ).toEqual(["original", "cloned"]);
+    expect(
+      responses.map((response) => response.headers.get("x-recovered")),
+    ).toEqual(["boom", "boom"]);
+
+    cloned.onError((_error, context) => context.text("updated clone", 502));
+    const updated = await cloned.request("/api/items/42");
+    expect(updated.status).toBe(502);
+    expect(await updated.text()).toBe("updated clone");
     expect(updated.headers.get("x-recovered")).toBe("boom");
   });
 

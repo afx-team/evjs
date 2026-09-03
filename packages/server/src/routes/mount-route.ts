@@ -20,7 +20,7 @@ export function mountRoute(
   for (const [method, handler] of Object.entries(route.methods)) {
     if (!handler || !isHttpMethod(method)) continue;
     methods.set(method, {
-      ...getRouteHandlerPipeline(handler),
+      ...getRouteHandlerPipeline(handler, method),
       source: `createApp() routes[${routeIndex}].methods.${method}`,
     });
   }
