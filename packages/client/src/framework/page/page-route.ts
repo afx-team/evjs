@@ -173,6 +173,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   let mountedApp: MountedPagesApp | undefined;
   let componentSession: PagesAppComponentSession | undefined;
   let runtimeUpdateQueue = Promise.resolve();
+  let pendingHistoryUpdates = 0;
 
   const app: App<AnyRouter> = {
     get router() {
@@ -203,6 +204,11 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       }
     },
     createComponent(componentOptions: AppComponentOptions = {}) {
+      if (pendingHistoryUpdates > 0) {
+        throw new Error(
+          "[evjs] PagesApp createComponent() cannot acquire the Application while a history update is queued or pending. Await updateRuntime() first.",
+        );
+      }
       if (mountedApp) {
         throw new Error(
           "[evjs] PagesApp createComponent() cannot acquire the Application after render() created a DOM root. Unmount the Application first.",
@@ -269,9 +275,18 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   function updateRuntime(
     runtimeOptions: PagesAppRuntimeOptions,
   ): Promise<void> {
-    const update = runtimeUpdateQueue.then(() =>
-      applyRuntimeUpdate(runtimeOptions),
-    );
+    // Reserve synchronously: even a queued update must exclude external owners,
+    // not only the period after applyRuntimeUpdate() starts loading its Router.
+    const reservesHistory =
+      runtimeOptions !== null &&
+      typeof runtimeOptions === "object" &&
+      runtimeOptions.history !== undefined;
+    if (reservesHistory) pendingHistoryUpdates += 1;
+    const update = runtimeUpdateQueue
+      .then(() => applyRuntimeUpdate(runtimeOptions))
+      .finally(() => {
+        if (reservesHistory) pendingHistoryUpdates -= 1;
+      });
     runtimeUpdateQueue = update.catch(() => {});
     return update;
   }

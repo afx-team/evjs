@@ -39,6 +39,23 @@ afterEach(() => {
 });
 
 describe("SPA page bootstrap", () => {
+  it.each([
+    null,
+    1,
+    "signal",
+    false,
+    {},
+    { aborted: "false" },
+  ])("diagnoses malformed component signals without acquiring ownership: %j", (signal) => {
+    const { app } = createTestPagesApp();
+    expect(() => app.createComponent({ signal } as never)).toThrow(
+      "[evjs] App component options.signal must be an AbortSignal when provided.",
+    );
+    const handle = app.createComponent();
+    handle.dispose();
+    expect(reactRootCalls).toEqual([]);
+  });
+
   it("hydrates only after the router finishes its initial load", async () => {
     const { app } = createTestPagesApp();
     const load = createDeferred<void>();

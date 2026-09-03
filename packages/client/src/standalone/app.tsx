@@ -485,7 +485,9 @@ function assertAppComponentOptions(options: AppComponentOptions): void {
   }
   if (
     options.signal !== undefined &&
-    (!("aborted" in options.signal) ||
+    (!options.signal ||
+      typeof options.signal !== "object" ||
+      typeof options.signal.aborted !== "boolean" ||
       typeof options.signal.addEventListener !== "function" ||
       typeof options.signal.removeEventListener !== "function")
   ) {

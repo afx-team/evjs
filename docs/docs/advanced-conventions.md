@@ -88,6 +88,40 @@ app.render("#app");
 
 This approach is independent of the framework's file-based page model.
 
+### Embed an Application in an existing React tree
+
+Use `app.createComponent()` instead of `app.render()` when another React host
+owns the DOM root. The handle contains a stable `Component`, its `element`, and
+an idempotent `dispose()` function. The component renders the complete
+Application, including its Router, QueryClientProvider, and configured wrappers;
+creating the handle does not render or create a DOM root.
+
+```tsx
+import { flushSync } from "react-dom";
+
+const controller = new AbortController();
+const application = app.createComponent({ signal: controller.signal });
+
+// hostRoot is owned by the integrating application.
+hostRoot.render(application.element);
+
+// Remove the Application from the host tree before releasing its ownership.
+flushSync(() => hostRoot.render(null));
+application.dispose(); // controller.abort() also releases the handle.
+```
+
+Only one rendering owner is allowed. Call `app.unmount()` before switching from
+DOM rendering to component mode, and remove the component and dispose its handle
+before calling `app.render()` again. Disposing a handle or aborting its signal
+does not unmount the external host's React tree. An already aborted signal is
+rejected. The host and embedded Application must use the same React renderer.
+
+Framework integrations using `pagesApp.updateRuntime()` must configure and await
+history changes before acquiring a component handle. Queued or pending history
+updates block acquisition, and an active component owner blocks history updates.
+Route-only updates keep the outer component stable and retire the previous
+Application handle after the replacement tree commits.
+
 ## Programmatic server apps
 
 Programmatic server apps use `@evjs/server` directly. They are runtime

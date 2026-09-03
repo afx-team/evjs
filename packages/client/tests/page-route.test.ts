@@ -178,6 +178,103 @@ describe("createPagesApp", () => {
     component.dispose();
   });
 
+  it("reserves component ownership while a history update is queued and loading", async () => {
+    let releaseLoad = () => {};
+    let enteredLoad = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredLoad = resolve;
+    });
+    const pagesApp = createPagesApp({
+      routes: [
+        {
+          path: "/",
+          module: {
+            default: () => null,
+            beforeLoad: async () => {
+              enteredLoad();
+              await gate;
+            },
+          },
+        },
+      ],
+      history: { type: "memory", initialEntries: ["/before"] },
+    });
+    const previousRouter = pagesApp.app.router;
+    const update = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    await entered;
+    expect(pagesApp.app.router).toBe(previousRouter);
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    releaseLoad();
+    await update;
+    expect(pagesApp.app.router).not.toBe(previousRouter);
+    pagesApp.app.createComponent().dispose();
+  });
+
+  it("retains the reservation until every queued history update finishes", async () => {
+    let releaseLoad = () => {};
+    let enteredLoad = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredLoad = resolve;
+    });
+    const pagesApp = createPagesApp({
+      routes: [
+        { path: "/", module: { default: () => null } },
+        {
+          path: "/next",
+          module: {
+            default: () => null,
+            beforeLoad: async () => {
+              enteredLoad();
+              await gate;
+            },
+          },
+        },
+      ],
+      history: { type: "memory" },
+    });
+    void pagesApp.app.router;
+    const first = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    const second = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/next"] },
+    });
+    await first;
+    await entered;
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    releaseLoad();
+    await second;
+    pagesApp.app.createComponent().dispose();
+  });
+
+  it("releases a history reservation after validation rejects the update", async () => {
+    const pagesApp = createPagesApp({
+      routes: [{ path: "/", module: { default: () => null } }],
+      history: { type: "memory" },
+    });
+    await expect(
+      pagesApp.updateRuntime({ history: { type: "invalid" } } as never),
+    ).rejects.toThrow();
+    pagesApp.app.createComponent().dispose();
+    await pagesApp.updateRuntime({ history: { type: "memory" } });
+    pagesApp.app.createComponent().dispose();
+  });
+
   it("keeps generated SPA search params as raw strings", () => {
     function Home() {
       return null;

@@ -81,6 +81,37 @@ app.render("#app");
 
 这种方式与框架的文件页面模型相互独立。
 
+### 在已有 React 树中嵌入 Application
+
+当 DOM root 由其他 React 宿主管理时，使用 `app.createComponent()`，不要调用
+`app.render()`。返回的句柄包含稳定的 `Component`、对应的 `element` 和幂等的
+`dispose()`。组件会渲染完整 Application，包括 Router、QueryClientProvider 和已配置的
+wrappers；创建句柄本身不会渲染，也不会创建 DOM root。
+
+```tsx
+import { flushSync } from "react-dom";
+
+const controller = new AbortController();
+const application = app.createComponent({ signal: controller.signal });
+
+// hostRoot 由集成方应用拥有。
+hostRoot.render(application.element);
+
+// 先从宿主树中移除 Application，再释放它的所有权。
+flushSync(() => hostRoot.render(null));
+application.dispose(); // controller.abort() 也会释放句柄。
+```
+
+同一时间只允许一个渲染所有者。从 DOM 渲染切换到组件模式前，先调用 `app.unmount()`；
+再次调用 `app.render()` 前，先移除组件并 dispose 句柄。dispose 或 signal abort 不会替
+外部宿主卸载 React 树。已 abort 的 signal 会被拒绝。宿主和嵌入的 Application 必须使用
+同一个 React renderer。
+
+通过 `pagesApp.updateRuntime()` 集成框架时，必须先配置并等待 history 更新完成，
+再取得组件句柄。排队中或尚未完成的 history 更新会阻止取得句柄；已有组件所有者时也
+不能更新 history。仅修改路由的更新会保持外层组件稳定，在替换后的树提交后释放旧
+Application 句柄。
+
 ## 程序化服务端应用
 
 程序化服务端应用直接使用 `@evjs/server`。这些路由由应用代码显式创建，不属于框架的
