@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createElement, memo, type ReactNode } from "react";
+import { createElement, isValidElement, memo, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPageMetadataController } from "../src/framework/page/page-metadata.js";
@@ -94,6 +94,185 @@ describe("createPagesApp", () => {
     expect(app.render).toBeTypeOf("function");
     expect(app.unmount).toBeTypeOf("function");
     expect(app.queryClient).toBeDefined();
+  });
+
+  it("hands the complete Application tree to one external React root owner", async () => {
+    function Home() {
+      return createElement("p", undefined, "component application");
+    }
+    function ApplicationWrapper({ children }: { children?: ReactNode }) {
+      return createElement(
+        "section",
+        { "data-application-wrapper": true },
+        children,
+      );
+    }
+
+    const { app } = createPagesApp({
+      routes: [{ path: "/", module: { default: Home } }],
+      history: { type: "memory" },
+      wrappers: [{ default: ApplicationWrapper }],
+    });
+    const component = app.createComponent();
+
+    expect(component.Component).toBeTypeOf("function");
+    expect(isValidElement(component.element)).toBe(true);
+    await (app.router as { load(): Promise<void> }).load();
+    expect(renderToStaticMarkup(component.element)).toContain(
+      '<section data-application-wrapper="true"><p>component application</p></section>',
+    );
+    expect(() => app.createComponent()).toThrow(
+      "PagesApp createComponent() cannot acquire the Application more than once",
+    );
+    expect(() => app.render("#app")).toThrow(
+      "PagesApp render() cannot create a DOM root while a component handle owns the Application",
+    );
+
+    component.dispose();
+    const remounted = app.createComponent();
+    remounted.dispose();
+  });
+
+  it("releases component-mode ownership when its mount session aborts", () => {
+    function Home() {
+      return null;
+    }
+
+    const { app } = createPagesApp({
+      routes: [{ path: "/", module: { default: Home } }],
+      history: { type: "memory" },
+    });
+    const controller = new AbortController();
+    app.createComponent({ signal: controller.signal });
+    controller.abort();
+
+    const next = app.createComponent();
+    next.dispose();
+    expect(() => app.createComponent({ signal: controller.signal })).toThrow(
+      "cannot acquire the Application with an aborted signal",
+    );
+  });
+
+  it("keeps a component host active while replacing runtime Route overlays", async () => {
+    function Home() {
+      return null;
+    }
+
+    const pagesApp = createPagesApp({
+      routes: [{ id: "home", path: "/", module: { default: Home } }],
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    const component = pagesApp.app.createComponent();
+    const previousRouter = pagesApp.app.router;
+
+    await pagesApp.updateRuntime({
+      routes: [{ id: "runtime", path: "/runtime", kind: "group" }],
+    });
+
+    expect(pagesApp.app.router).not.toBe(previousRouter);
+    await expect(
+      pagesApp.updateRuntime({ history: { type: "memory" } }),
+    ).rejects.toThrow(
+      "cannot replace history while an external React host owns the Application",
+    );
+    component.dispose();
+  });
+
+  it("reserves component ownership while a history update is queued and loading", async () => {
+    let releaseLoad = () => {};
+    let enteredLoad = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredLoad = resolve;
+    });
+    const pagesApp = createPagesApp({
+      routes: [
+        {
+          path: "/",
+          module: {
+            default: () => null,
+            beforeLoad: async () => {
+              enteredLoad();
+              await gate;
+            },
+          },
+        },
+      ],
+      history: { type: "memory", initialEntries: ["/before"] },
+    });
+    const previousRouter = pagesApp.app.router;
+    const update = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    await entered;
+    expect(pagesApp.app.router).toBe(previousRouter);
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    releaseLoad();
+    await update;
+    expect(pagesApp.app.router).not.toBe(previousRouter);
+    pagesApp.app.createComponent().dispose();
+  });
+
+  it("retains the reservation until every queued history update finishes", async () => {
+    let releaseLoad = () => {};
+    let enteredLoad = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredLoad = resolve;
+    });
+    const pagesApp = createPagesApp({
+      routes: [
+        { path: "/", module: { default: () => null } },
+        {
+          path: "/next",
+          module: {
+            default: () => null,
+            beforeLoad: async () => {
+              enteredLoad();
+              await gate;
+            },
+          },
+        },
+      ],
+      history: { type: "memory" },
+    });
+    void pagesApp.app.router;
+    const first = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    const second = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/next"] },
+    });
+    await first;
+    await entered;
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    releaseLoad();
+    await second;
+    pagesApp.app.createComponent().dispose();
+  });
+
+  it("releases a history reservation after validation rejects the update", async () => {
+    const pagesApp = createPagesApp({
+      routes: [{ path: "/", module: { default: () => null } }],
+      history: { type: "memory" },
+    });
+    await expect(
+      pagesApp.updateRuntime({ history: { type: "invalid" } } as never),
+    ).rejects.toThrow();
+    pagesApp.app.createComponent().dispose();
+    await pagesApp.updateRuntime({ history: { type: "memory" } });
+    pagesApp.app.createComponent().dispose();
   });
 
   it("keeps generated SPA search params as raw strings", () => {

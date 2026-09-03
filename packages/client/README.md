@@ -62,6 +62,23 @@ declare module "@evjs/client" {
 app.render("#app");
 ```
 
+An external React host can own the root without creating a hidden or nested DOM
+root. Component mode returns the same Router, QueryClient, and Application
+wrappers used by `render()`:
+
+```tsx
+const application = app.createComponent({ signal: mountController.signal });
+
+hostRoot.render(application.element);
+
+// Stop rendering application.element first, then release the ownership token.
+application.dispose();
+```
+
+Only one rendering owner may be active. Call `app.unmount()` before switching
+from DOM-root mode to component mode, or `dispose()` before switching back to
+`app.render()`.
+
 Use `@evjs/ev` only when the app wants framework composition such as Page
 routing, server-function transforms, manifests, SSR, PPR, RSC, or deployment
 artifacts.
