@@ -59,6 +59,7 @@ export {
   setSignedCookie,
   waitUntil,
 } from "./request-context/context.js";
+export { withMiddlewares } from "./routes/api-handler.js";
 export type {
   RouteHandler,
   RouteHandlerDefinition,

@@ -46,7 +46,7 @@ npx biome check --write
    Keep explicit `application.routes` cases in focused config-route fixtures.
 7. Server functions begin with `"use server";` and export named callables.
 8. Config/build imports stay on `@evjs/ev`; app source uses
-   `@evjs/ev/route`, `/navigation`, `/query`, `/server-context`, and
+   `@evjs/ev/api`, `/route`, `/navigation`, `/query`, `/server-context`, and
    `/transport`. Applications that use a runtime directly import
    `@evjs/client` or `@evjs/server`.
 9. Keep framework semantics in `@evjs/ev` build internals and normalized
@@ -54,6 +54,12 @@ npx biome check --write
    return facts.
 10. `.ev`, `dist`, `.turbo`, `node_modules`, and route-type declarations are
     generated output.
+11. Name middleware list fields and arguments `middlewares`, matching
+    `createApp()`, `createRoute()`, and `withMiddlewares(handler, middlewares)`.
+    Use `MiddlewareHandler` for one function and `MiddlewareChain` for an
+    ordered chain. Capability, hook, and module names stay singular:
+    `server.request.middleware`, `clientDevMiddleware`, and `middleware.*`.
+    Name concrete middleware factories by behavior, such as `requestLogger()`.
 
 ## Common tasks
 
@@ -81,7 +87,9 @@ npx biome check --write
 2. Export uppercase HTTP handlers such as `GET` or `POST` from that file.
 3. Keep helpers in ordinary colocated non-`api.*` modules.
 4. Compose ordered global middleware in `src/middlewares/middleware.ts`, or
-   use `src/apis/**/middleware.ts` for middleware limited to an API route tree.
+   use `src/apis/**/middleware.*` for middleware limited to an API route tree.
+   Both accept one function or a non-empty array. Compose a method's policies
+   with `withMiddlewares(handler, middlewares)` from `@evjs/ev/api`.
 
 ### Add an example
 

@@ -42,7 +42,10 @@ The semantic inputs are:
 - `src/middlewares/middleware.*` is the explicitly ordered global framework
   middleware composition anchor; other files in `src/middlewares` are ordinary
   modules.
-- `src/apis/**/middleware.ts` is scoped request-route middleware.
+- `src/apis/**/middleware.*` composes one middleware or an ordered non-empty
+  array for same-directory and descendant API routes. Method exports can use
+  `withMiddlewares(handler, middlewares)` from `@evjs/ev/api` for non-inherited
+  method policies.
 - reachable modules beginning with `"use server";` define server functions.
 
 `routing.mode` changes materialization, not Page identity. SPA normally owns
@@ -79,7 +82,7 @@ ownership visible and avoids barrel-induced cycles.
 
 | Package | Implementation domains |
 | --- | --- |
-| `@evjs/ev` | Public authoring domains under `config`, `plugin`, `route`, `navigation`, `query`, `server-context`, `transport`, and `deployment`; generated compatibility entries under `_internal/generated`; framework build ownership under `_internal/build`. |
+| `@evjs/ev` | Public authoring domains under `config`, `plugin`, `api`, `route`, `navigation`, `query`, `server-context`, `transport`, and `deployment`; generated compatibility entries under `_internal/generated`; framework build ownership under `_internal/build`. |
 | `@evjs/shared` | `assets`, `build`, `http`, `routing`, `rsc`, `runtime`, `serialization`, `server-functions`, and `urls`; control-plane contracts are further divided into `manifest/graph`, `manifest/page`, and `manifest/output`. |
 | `@evjs/client` | `standalone`, framework `page` and `shell`, `rsc`, `server-functions`, and client-only shared support. |
 | `@evjs/server` | Application assembly, framework rendering, middleware, request context, routes, runtimes, server functions, and server-only shared support. |
@@ -105,15 +108,28 @@ use explicit subpaths:
 | `@evjs/ev/config` | Advanced config utilities and resolved config types. |
 | `@evjs/ev/plugin` | Plugin declarations, typed setting contracts, hooks, and the read-only framework view. |
 | `@evjs/ev/deployment` | Built-in deployment adapters and artifact helpers. |
+| `@evjs/ev/api` | HTTP method composition, handler and middleware types, and request logging middleware. |
 | `@evjs/ev/route`, `/navigation`, `/query` | File-convention Page data, navigation, and query APIs. |
 | `@evjs/ev/server-context`, `/transport` | Framework request context and browser-to-server transport APIs. |
 | `@evjs/ev/build-tools` | Config loading for downstream tooling. |
 | `@evjs/ev/_internal/*` | CLI, bundler adapters, and generated framework code only. |
 
+`@evjs/ev/api` is additive. Existing middleware types and logging exports
+remain supported under `@evjs/ev/server-context`.
+
 Standalone applications may use `@evjs/client` and `@evjs/server` directly.
 Programmatic `createApp()`, client route trees, and server `createRoute()`
 declarations are runtime primitives; framework convention discovery does not
 scan them.
+
+Core owns directory discovery and inheritance, and generated entries validate
+each middleware export before flattening its chain. The server runtime owns
+method composition and dispatch. It mounts shared and selected method
+middleware into one Hono chain, including shared policy for OPTIONS. Unsupported
+methods return 405 through global middleware, bypassing directory and method
+middleware. `createRoute()` retains callable automatic HEAD/OPTIONS handlers
+and the mutable middleware array supplied by programmatic consumers.
+Explicit HEAD takes precedence over GET; automatic HEAD uses GET's pipeline.
 
 ## Internal Build Layout
 

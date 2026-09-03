@@ -46,7 +46,13 @@ the implementation rather than preserving the mismatch.
    supported `api.*` file in each route directory. Export uppercase HTTP
    methods, put global middleware in
    `src/middlewares/middleware.*` and route-specific middleware in
-   `src/apis/**/middleware.ts`.
+   `src/apis/**/middleware.*`. Both default-export one handler or an ordered
+   non-empty array; use `withMiddlewares(handler, middlewares)` from
+   `@evjs/ev/api` for a method-only chain. HTTP handler types, middleware types,
+   and request logging live in
+   `@evjs/ev/api`; request context helpers stay in `@evjs/ev/server-context`.
+   Keep existing middleware and logging exports from `/server-context`
+   supported as well.
 4. Server-function modules begin with `"use server";` and export supported named
    values. Adjacent `page.config.ts` owns static metadata, rendering choices,
    and page-level plugin options.

@@ -82,6 +82,12 @@ Release automation replaces them with the release version before publishing.
 10. Keep package roots, public subpath `index.ts` files, and executable entry
     modules as stable façades. Put implementation in a named capability domain,
     and import focused leaf modules inside that domain instead of its barrel.
+11. Name middleware list fields and arguments `middlewares`, matching
+    `createApp()`, `createRoute()`, and `withMiddlewares(handler, middlewares)`.
+    Use `MiddlewareHandler` for one function and `MiddlewareChain` for an
+    ordered chain. Capability, hook, and module names stay singular:
+    `server.request.middleware`, `clientDevMiddleware`, and `middleware.*`.
+    Name concrete middleware factories by behavior, such as `requestLogger()`.
 
 ## Common Tasks
 
@@ -107,14 +113,18 @@ Release automation replaces them with the release version before publishing.
 2. Add one `api.ts`, `api.tsx`, `api.js`, or `api.jsx` anchor.
 3. Export uppercase HTTP method handlers.
 4. Put helpers in other colocated modules and scoped middleware in
-   `middleware.ts`.
+   `middleware.*`, exporting one handler or an ordered non-empty array.
+5. Compose individual methods with `withMiddlewares(handler, middlewares)`
+   from `@evjs/ev/api`.
+   That entry also exports handler and middleware types and `requestLogger`.
+   Existing middleware and logging imports from `/server-context` stay supported.
 
 ### Add global server middleware
 
 1. Put individual middleware modules in `src/middlewares`.
 2. Default-export one handler or an ordered non-empty list from
    `src/middlewares/middleware.ts`; use `satisfies MiddlewareChain` to type a
-   list in TypeScript.
+   list in TypeScript, imported from `@evjs/ev/api`.
 3. Keep ordering explicit in that anchor; `index.*` and other sibling modules
    are ordinary source and are not auto-discovered.
 

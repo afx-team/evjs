@@ -742,7 +742,7 @@ describe("discoverServerConventions", () => {
   it("discovers ordered global composition and route-scoped middleware", async () => {
     const cwd = await createFixture({
       "src/middlewares/middleware.ts": `
-        import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/server-context";
+        import type { MiddlewareChain, MiddlewareHandler } from "@evjs/ev/api";
         const first: MiddlewareHandler = async (_ctx, next) => next();
         const second: MiddlewareHandler = async (_ctx, next) => next();
         export default [first, second] satisfies MiddlewareChain;
@@ -880,13 +880,13 @@ describe("discoverServerConventions", () => {
         level: "error",
         file: "src/middlewares/middleware.ts",
         message:
-          "Global server middleware default export item 2 must resolve to a function.",
+          "Server middleware default export[1] must resolve to a middleware function.",
       },
       {
         level: "error",
         file: "src/apis/api/middleware.ts",
         message:
-          "Server middleware modules must default-export a Hono-compatible middleware function.",
+          "Server middleware modules must default-export a Hono-compatible middleware function or a non-empty ordered middleware list.",
       },
       {
         level: "error",
@@ -897,7 +897,7 @@ describe("discoverServerConventions", () => {
     ]);
   });
 
-  it("accepts one global handler but rejects route-scoped middleware lists", async () => {
+  it("accepts one global handler and route-scoped middleware lists", async () => {
     const cwd = await createFixture({
       "src/middlewares/middleware.ts": `
         export default async function middleware(_ctx, next) {
@@ -916,13 +916,76 @@ describe("discoverServerConventions", () => {
     });
 
     expect(discovery.globalMiddlewares).toHaveLength(1);
+    expect(discovery.routeMiddlewares).toHaveLength(1);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it.each([
+    ["export default [];", "must contain at least one"],
+    [
+      "const chain = []; export { chain as default };",
+      "must contain at least one",
+    ],
+    [
+      "export default [async (_c, next) => next(), false];",
+      "default export[1]",
+    ],
+    ["export default [[async (_c, next) => next()]];", "default export[0]"],
+    ["export default [, async (_c, next) => next()];", "default export[0]"],
+    ["export default function* middleware() {}", "not a generator"],
+    [
+      "function* middleware() {} export { middleware as default };",
+      "not a generator",
+    ],
+    [
+      "class Middleware {} export default Middleware;",
+      "must resolve to a function",
+    ],
+  ])("applies the same validation to global and scoped exports: %s", async (source, diagnostic) => {
+    const cwd = await createFixture({
+      "src/middlewares/middleware.ts": source,
+      "src/apis/middleware.ts": source,
+    });
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/middlewares/middleware.ts",
+      routingDir: "./src/apis",
+    });
+    expect(discovery.diagnostics).toHaveLength(2);
+    expect(discovery.diagnostics.map((item) => item.message)).toEqual([
+      expect.stringContaining(diagnostic),
+      expect.stringContaining(diagnostic),
+    ]);
+  });
+
+  it("accepts spread chains, local default aliases, and deferred factory results", async () => {
+    const cwd = await createFixture({
+      "src/middlewares/middleware.ts":
+        "import factory from './factory'; export default factory();",
+      "src/apis/middleware.ts":
+        "import shared from './shared'; const chain = [...shared, async (_c, next) => next()]; export { chain as default };",
+    });
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/middlewares/middleware.ts",
+      routingDir: "./src/apis",
+    });
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("rejects duplicate scoped middleware anchors across source extensions", async () => {
+    const source = "export default async (_c, next) => next();";
+    const cwd = await createFixture({
+      "src/apis/admin/middleware.ts": source,
+      "src/apis/admin/middleware.js": source,
+    });
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/middlewares/middleware.ts",
+      routingDir: "./src/apis",
+    });
     expect(discovery.diagnostics).toEqual([
-      {
+      expect.objectContaining({
         level: "error",
-        file: "src/apis/admin/middleware.ts",
-        message:
-          "Route-scoped server middleware default export must resolve to a function.",
-      },
+        message: expect.stringContaining("Duplicate"),
+      }),
     ]);
   });
 

@@ -19,6 +19,7 @@ npm run dev
 | `src/middlewares/response-metadata.ts` | Ordinary middleware module composed by the anchor |
 | `src/apis/api/middleware.ts` | API route middleware for `/api/**` file routes |
 | `src/apis/api/posts/api.ts` | List/create handlers for `/api/posts` |
+| `src/apis/api/posts/validate-post.ts` | POST-only validation composed with `withMiddlewares` |
 | `src/apis/api/posts/$id/api.ts` | Dynamic handlers for `/api/posts/:id` |
 | `src/apis/api/health/api.ts` | Health check endpoint |
 | `src/apis/api/posts/posts-store.ts` | Private helper colocated in the `/api/posts` route scope |
@@ -29,9 +30,11 @@ npm run dev
 - Dynamic route directories (`$id/api.ts` -> `:id`)
 - Query string parsing (`?limit=N`)
 - Custom status codes (201, 204, 404)
-- Auto `OPTIONS` and `405 Method Not Allowed`
+- Auto `HEAD` and `OPTIONS` with scoped middleware; `405 Method Not Allowed` with global middleware
+- An explicit `HEAD` health probe
 - Explicitly ordered global middleware composition with `MiddlewareChain`
-- Route-scoped API `middleware.ts` conventions
+- Ordered route-scoped arrays in API `middleware.ts` anchors
+- Method-only middleware with `withMiddlewares(handler, middlewares)` from `@evjs/ev/api`
 - Colocated private helpers that are not named `api.ts`
 - A root `page.tsx` anchor mapped to `/` by file convention
 

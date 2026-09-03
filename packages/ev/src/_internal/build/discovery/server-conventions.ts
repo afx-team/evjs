@@ -145,11 +145,7 @@ async function discoverGlobalMiddlewares(
   const [file] = files;
   if (!file) return { middlewares: [], files: [] };
   const sourceRel = toDiagnosticPath(toPosixPath(path.relative(cwd, file)));
-  diagnostics.push(
-    ...(await analyzeMiddlewareModule(file, sourceRel, {
-      allowOrderedList: true,
-    })),
-  );
+  diagnostics.push(...(await analyzeMiddlewareModule(file, sourceRel)));
   return {
     files,
     middlewares: [
@@ -327,7 +323,6 @@ function parseRouteMiddlewareFile(
 async function analyzeMiddlewareModule(
   absolute: string,
   diagnosticFile: string,
-  options: { allowOrderedList?: boolean } = {},
 ): Promise<ServerConventionDiagnostic[]> {
   const source = await fs.readFile(absolute, "utf-8");
   const { ast, error } = parseRouteModuleWithError(source);
@@ -350,9 +345,8 @@ async function analyzeMiddlewareModule(
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message: options.allowOrderedList
-        ? "Global server middleware must default-export a Hono-compatible middleware function or an ordered middleware list."
-        : "Server middleware modules must default-export a Hono-compatible middleware function.",
+      message:
+        "Server middleware modules must default-export a Hono-compatible middleware function or a non-empty ordered middleware list.",
     });
   }
 
@@ -365,10 +359,7 @@ async function analyzeMiddlewareModule(
     });
   }
 
-  const defaultExportError = validateDefaultMiddlewareExport(
-    ast.body,
-    options.allowOrderedList === true,
-  );
+  const defaultExportError = validateDefaultMiddlewareExport(ast.body);
   if (defaultExportError) {
     diagnostics.push({
       level: "error",
@@ -382,7 +373,6 @@ async function analyzeMiddlewareModule(
 
 function validateDefaultMiddlewareExport(
   body: ModuleItem[],
-  allowOrderedList: boolean,
 ): string | undefined {
   const localValues = collectLocalVariableValues(body);
   const value = getDefaultExportValue(body);
@@ -391,7 +381,7 @@ function validateDefaultMiddlewareExport(
     value,
     localValues,
     new Set(),
-    allowOrderedList,
+    true,
   );
 }
 
@@ -402,6 +392,20 @@ function collectLocalVariableValues(
   for (const item of body) {
     const declaration =
       item.type === "ExportDeclaration" ? item.declaration : item;
+    if (declaration.type === "FunctionDeclaration") {
+      values.set(declaration.identifier.value, {
+        ...declaration,
+        type: "FunctionExpression",
+      });
+      continue;
+    }
+    if (declaration.type === "ClassDeclaration") {
+      values.set(declaration.identifier.value, {
+        ...declaration,
+        type: "ClassExpression",
+      });
+      continue;
+    }
     if (declaration.type !== "VariableDeclaration" || declaration.declare) {
       continue;
     }
@@ -421,6 +425,22 @@ function getDefaultExportValue(body: ModuleItem[]): Expression | undefined {
     if (item.type === "ExportDefaultExpression") {
       return item.expression;
     }
+    if (
+      item.type === "ExportNamedDeclaration" &&
+      !item.source &&
+      !item.typeOnly
+    ) {
+      for (const specifier of item.specifiers) {
+        if (
+          specifier.type === "ExportSpecifier" &&
+          !specifier.isTypeOnly &&
+          specifier.exported?.value === "default" &&
+          specifier.orig.type === "Identifier"
+        ) {
+          return specifier.orig;
+        }
+      }
+    }
   }
   return undefined;
 }
@@ -438,7 +458,7 @@ function validateDefaultMiddlewareExpression(
     const localValue = localValues.get(expression.value);
     if (!localValue) {
       return allowOrderedList
-        ? "Global server middleware default export must resolve to a function or an ordered middleware list."
+        ? "Server middleware default export must resolve to a function or a non-empty ordered middleware list."
         : "Server middleware default export must resolve to a function.";
     }
     return validateDefaultMiddlewareExpression(
@@ -451,13 +471,16 @@ function validateDefaultMiddlewareExpression(
 
   if (expression.type === "ArrayExpression") {
     if (!allowOrderedList) {
-      return "Route-scoped server middleware default export must resolve to a function.";
+      return "Server middleware list items must resolve to functions, not nested lists.";
     }
     if (expression.elements.length === 0) {
-      return "Global server middleware default export must contain at least one middleware function.";
+      return "Server middleware default export must contain at least one middleware function.";
     }
     for (const [index, element] of expression.elements.entries()) {
-      if (!element || element.spread) continue;
+      if (!element) {
+        return `Server middleware default export[${index}] must resolve to a middleware function.`;
+      }
+      if (element.spread) continue;
       const elementError = validateDefaultMiddlewareExpression(
         element.expression,
         localValues,
@@ -465,10 +488,14 @@ function validateDefaultMiddlewareExpression(
         false,
       );
       if (elementError) {
-        return `Global server middleware default export item ${index + 1} must resolve to a function.`;
+        return `Server middleware default export[${index}] must resolve to a middleware function.`;
       }
     }
     return undefined;
+  }
+
+  if (expression.type === "FunctionExpression" && expression.generator) {
+    return "Server middleware must be a regular or async function, not a generator.";
   }
 
   if (
@@ -488,7 +515,7 @@ function validateDefaultMiddlewareExpression(
     expression.type === "ClassExpression"
   ) {
     return allowOrderedList
-      ? "Global server middleware default export must resolve to a function or an ordered middleware list."
+      ? "Server middleware default export must resolve to a function or a non-empty ordered middleware list."
       : "Server middleware default export must resolve to a function.";
   }
 

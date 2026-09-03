@@ -3503,7 +3503,7 @@ describe("prepareFrameworkBuild", () => {
     );
     expect(serverEntry).not.toContain('from "src/apis/hello/api.ts"');
     expect(serverEntry).toContain(
-      "const middlewares = [contributedMiddleware0];",
+      "const middlewares = [...contributedMiddleware0Chain];",
     );
     expect(serverEntry).toContain(
       ["const routeDefinition0 = {", "  GET: routeModule0.GET,", "};"].join(
@@ -7914,7 +7914,7 @@ describe("build", () => {
     await writeFile(
       path.join(cwd, "src/middlewares/middleware.ts"),
       [
-        'import type { MiddlewareChain } from "@evjs/ev/server-context";',
+        'import type { MiddlewareChain } from "@evjs/ev/api";',
         "const tracing = async (_ctx, next) => next();",
         "const authentication = async (_ctx, next) => next();",
         "export default [tracing, authentication] satisfies MiddlewareChain;",
@@ -7983,9 +7983,7 @@ describe("build", () => {
     );
     await expect(
       fs.promises.readFile(path.join(cwd, ".ev/entries/server.ts"), "utf-8"),
-    ).resolves.toContain(
-      "const middlewares = [...(Array.isArray(middleware0) ? middleware0 : [middleware0])];",
-    );
+    ).resolves.toContain("const middlewares = [...middleware0Chain];");
   });
 
   it("fails on invalid default api anchors before running the bundler", async () => {

@@ -190,6 +190,10 @@ ctx.slot("server.request.middleware").add({
 
 Use this for plugin-owned cross-cutting server behavior. Application-specific
 middleware should normally use the documented file conventions.
+The module default-exports one Hono middleware or an ordered non-empty array.
+Contributions run in slot order before application global middleware, followed
+by API directory and method middleware. Resolved exports are validated before
+the server starts.
 
 ## Add HTML tags
 

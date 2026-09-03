@@ -1,7 +1,7 @@
 /**
  * Health check route handler.
  *
- * Demonstrates a minimal single-method server file route.
+ * Demonstrates a dedicated HEAD probe alongside a JSON GET handler.
  */
 
 export const GET = async () => {
@@ -11,3 +11,6 @@ export const GET = async () => {
     timestamp: new Date().toISOString(),
   });
 };
+
+export const HEAD = () =>
+  new Response(null, { status: 204, headers: { "x-health-probe": "head" } });

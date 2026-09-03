@@ -2,7 +2,7 @@
 
 大多数应用都应使用标准文件约定：`src/pages/**/page.*` 创建页面，
 `src/apis/**/api.*` 创建 API 路由，所在目录决定 URL。全局中间件与路由级中间件
-分别来自 `src/middlewares/middleware.*` 和 `src/apis/**/middleware.ts`。
+分别来自 `src/middlewares/middleware.*` 和 `src/apis/**/middleware.*`。
 
 只有在应用明确需要关闭文件发现、自行维护程序化 SPA 路由树，或直接使用客户端与
 服务端运行时时，才使用本页介绍的替代方式。
@@ -25,7 +25,7 @@ export default defineConfig({
 - `src/pages` 下的 `page.*` 文件和客户端路由；
 - `src/apis` 下的 `api.*` 文件和 API 路由；
 - 全局 `src/middlewares/middleware.*` 与路由级
-  `src/apis/**/middleware.ts`。
+  `src/apis/**/middleware.*`。
 
 框架不提供分别关闭页面、API 路由或中间件的开关。不要把
 `conventions: false` 与 `routing` 同时配置。启用文件约定时，页面固定放在

@@ -4,11 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import * as buildTools from "../src/_internal/build/index.js";
+import * as apiAuthoring from "../src/api/index.js";
 import * as publicBuildTools from "../src/build-tools/index.js";
 import * as evRoot from "../src/index.js";
 import * as pluginAuthoring from "../src/plugin/index.js";
+import * as serverContext from "../src/server-context/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -349,6 +351,7 @@ const expectedPackageExportSubpaths = {
     "./_internal/server/node",
     "./_internal/server/react",
     "./_internal/server/server-reference",
+    "./api",
     "./build-tools",
     "./config",
     "./deployment",
@@ -536,6 +539,20 @@ describe("workspace package surface", () => {
       "defineConfig",
       "definePageConfig",
     ]);
+    expect(evPackageJson.exports?.["./api"]).toEqual({
+      types: "./esm/api/index.d.ts",
+      import: "./esm/api/index.js",
+      default: "./esm/api/index.js",
+    });
+    expect(Object.keys(apiAuthoring).sort()).toEqual([
+      "requestLogger",
+      "withMiddlewares",
+    ]);
+    expect(serverContext.requestLogger).toBe(apiAuthoring.requestLogger);
+    expectTypeOf<serverContext.MiddlewareHandler>().toEqualTypeOf<apiAuthoring.MiddlewareHandler>();
+    expectTypeOf<serverContext.MiddlewareChain>().toEqualTypeOf<apiAuthoring.MiddlewareChain>();
+    expectTypeOf<serverContext.RequestLoggerOptions>().toEqualTypeOf<apiAuthoring.RequestLoggerOptions>();
+    expectTypeOf<serverContext.RequestLogEntry>().toEqualTypeOf<apiAuthoring.RequestLogEntry>();
     expect(evPackageJson.exports?.["./route"]).toEqual({
       types: "./esm/route/index.d.ts",
       import: "./esm/route/index.js",
@@ -834,6 +851,7 @@ describe("workspace package surface", () => {
       "packages/client/src/internal.ts",
       "packages/create-app/src/index.ts",
       "packages/ev/src/index.ts",
+      "packages/ev/src/api/index.ts",
       "packages/ev/src/config/index.ts",
       "packages/ev/src/deployment/index.ts",
       "packages/ev/src/navigation/index.ts",
@@ -930,7 +948,7 @@ describe("workspace package surface", () => {
     expect(agentInstructions).toContain("`@evjs/ev/_internal/*`");
     expect(agentInstructions).toContain("`src/pages/**/page.*`");
     expect(agentInstructions).toContain("`src/apis/**/api.*`");
-    expect(agentInstructions).toContain("`src/apis/**/middleware.ts`");
+    expect(agentInstructions).toContain("`src/apis/**/middleware.*`");
     expect(agentInstructions).toContain("English and Chinese documentation");
     expect(agentInstructions).not.toContain("## Package Map");
     expect(agentInstructions).not.toContain("## Common Mistakes");

@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
+import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { createApp } from "../src/app/app.js";
+import { type CreateAppOptions, createApp } from "../src/app/app.js";
 import {
   createRoute,
   type RouteHandlerDefinition,
@@ -176,7 +177,7 @@ describe("createRoute", () => {
         }),
       ),
     ).toThrow(
-      "[evjs] createRoute() middlewares must be an array of functions.",
+      "[evjs] createRoute() middlewares[0] must be a middleware function.",
     );
   });
 
@@ -313,6 +314,82 @@ describe("createRoute", () => {
     // HEAD should have empty body
     const body = await res.text();
     expect(body).toBe("");
+  });
+
+  it("exposes callable automatic methods before mounting", async () => {
+    const route = createRoute("/api/items", {
+      GET: () =>
+        new Response("body", { status: 202, headers: { "x-get": "true" } }),
+    });
+    const { HEAD, OPTIONS } = route.methods;
+    expect(Object.keys(route.methods)).toEqual(["GET", "OPTIONS", "HEAD"]);
+    expect(Object.isFrozen(route.methods)).toBe(true);
+    if (!HEAD || !OPTIONS) throw new Error("Missing automatic methods");
+
+    const app = new Hono().get("/invoke", async (context) => {
+      const request = new Request("http://localhost/api/items", {
+        method: "HEAD",
+      });
+      const head = await HEAD(request, context);
+      expect(head.status).toBe(202);
+      expect(head.headers.get("x-get")).toBe("true");
+      expect(await head.text()).toBe("");
+
+      const optionsRequest = new Request(request.url, { method: "OPTIONS" });
+      const options = await OPTIONS(optionsRequest, context);
+      expect(options.status).toBe(204);
+      expect(options.headers.get("Allow")).toBe("GET, OPTIONS, HEAD");
+      return context.body(null, 204);
+    });
+    expect((await app.request("/invoke")).status).toBe(204);
+  });
+
+  it("retains methods of manually constructed routes", async () => {
+    const app = createApp({
+      routes: [
+        {
+          path: "/api/items",
+          methods: {
+            GET: () => new Response("body", { headers: { "x-get": "true" } }),
+          },
+          middlewares: [],
+        },
+      ],
+    });
+    const head = await app.request("/api/items", { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("x-get")).toBe("true");
+    expect(await head.text()).toBe("");
+    const options = await app.request("/api/items", { method: "OPTIONS" });
+    expect(options.status).toBe(405);
+    expect(options.headers.get("Allow")).toBe("GET");
+  });
+
+  it("retains mutable middleware options and the route's original array", async () => {
+    const order: string[] = [];
+    const definition: RouteHandlerDefinition<"/api/items"> = {
+      middlewares: [],
+      GET: () => new Response("ok"),
+    };
+    const route = createRoute("/api/items", definition);
+    expect(route.middlewares).toBe(definition.middlewares);
+    definition.middlewares?.push(async (ctx, next) => {
+      ctx.set("legacyVariable", "value");
+      order.push("original");
+      await next();
+    });
+    route.middlewares.push(async (ctx, next) => {
+      order.push(ctx.get("legacyVariable"));
+      await next();
+    });
+    const options: CreateAppOptions = { routes: [route], middlewares: [] };
+    options.middlewares?.push(async (_ctx, next) => {
+      order.push("global");
+      await next();
+    });
+    const response = await createApp(options).request("/api/items");
+    expect(response.status).toBe(200);
+    expect(order).toEqual(["global", "original", "value"]);
   });
 
   it("reports non-Response handler results", async () => {

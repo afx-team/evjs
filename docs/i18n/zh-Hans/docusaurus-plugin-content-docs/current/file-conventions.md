@@ -12,7 +12,7 @@ evjs 只使用少量明确的文件标记。`page.*` 文件创建页面和客户
 | `src/pages` | 文件页面与客户端路由。 |
 | `src/apis` | 文件式 API 路由。 |
 | `src/middlewares/middleware.*` | 显式排列全局中间件的入口。 |
-| `src/apis/**/middleware.ts` | 作用于同目录及其后代 API 路由的中间件。 |
+| `src/apis/**/middleware.*` | 作用于同目录及其后代 API 路由的中间件。 |
 | 被应用引用的源码模块 | 以 `"use server";` 开头的服务端函数模块。 |
 
 页面文件、API 路由文件和两类中间件位置会一起启用或关闭。顶层
@@ -279,9 +279,16 @@ src/
   非空列表；TypeScript 列表应使用 `satisfies MiddlewareChain`；
 - `src/middlewares` 下的其他文件都是由 `middleware.*` 显式导入的普通模块，不会按文件名
   排序；
-- `src/apis/**/middleware.ts` 作用于同目录及后代 API 路由，并默认导出一个中间件。
+- `src/apis/**/middleware.*` 作用于同目录及后代 API 路由，包括自动 OPTIONS；
+  默认导出一个中间件或有序非空列表。不支持的方法返回 405，仅执行全局中间件。
 
-中间件文件不是路由，不能用路由模块中的中间件导出来代替。
+两种入口均允许 `.ts`、`.tsx`、`.js` 或 `.jsx`，每个目录只能有一种变体。
+数组必须扁平，复用链时使用展开语法；禁止显式空数组导出、数组空槽、非函数、生成器和
+运行时命名导出。动态计算的全局链可以在禁用时返回 `[]`。
+
+中间件文件不是路由。`api.*` 仍只导出大写 HTTP 方法，可使用 `@evjs/ev/api` 的
+`withMiddlewares(handler, middlewares)` 组合单个方法的策略，不影响子路由。
+详见[API 路由与中间件](./server-routes)。
 
 ## 生成文件
 

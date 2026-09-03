@@ -91,48 +91,55 @@ export const GET = async (_req, ctx) => {
 
 ## Middleware
 
-evjs has two server middleware scopes. They do not contain matcher
-configuration.
+Import HTTP authoring APIs from `@evjs/ev/api`: `withMiddlewares`,
+`MiddlewareHandler`, `MiddlewareChain`, `RouteHandlerFn`, and `requestLogger`
+(with `RequestLoggerOptions` and `RequestLogEntry`). Request, cookie, and
+server-function error helpers belong to `@evjs/ev/server-context`.
+`MiddlewareHandler`, `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`,
+and `RequestLogEntry` are also supported from `@evjs/ev/server-context`;
+existing imports do not need to change.
 
-The fixed `src/middlewares/middleware.*` file composes global middleware for
-every server runtime request: server file routes, server functions, SSR, PPR,
-and RSC framework handling. It default-exports either one Hono-compatible
-middleware function or a non-empty explicitly ordered list. In TypeScript, use
-`satisfies MiddlewareChain` to type the list while preserving its entries:
+Choose where a policy applies:
 
-```ts
-// src/middlewares/middleware.ts
-import type { MiddlewareChain } from "@evjs/ev/server-context";
-import authentication from "./authentication";
+| Declaration | Scope |
+| --- | --- |
+| `src/middlewares/middleware.*` | Every server runtime request, including API routes, server functions, SSR, PPR, and RSC |
+| `src/apis/**/middleware.*` | API routes in the same directory and its descendants |
+| `withMiddlewares(handler, middlewares)` in an `api.*` method export | Only that HTTP method |
+
+Both middleware anchors default-export one Hono-compatible function or a
+non-empty, ordered array. Each directory allows exactly one
+`middleware.{ts,tsx,js,jsx}` variant. Runtime named exports are rejected;
+type-only exports are allowed. Other filenames are ordinary source modules.
+
+```ts title="src/apis/api/admin/middleware.ts"
+import type { MiddlewareChain } from "@evjs/ev/api";
+import { audit, requireAdmin, requireSession } from "./policies";
+
+export default [requireSession, requireAdmin, audit] satisfies MiddlewareChain;
+```
+
+The same array convention applies to global middleware:
+
+```ts title="src/middlewares/middleware.ts"
+import { type MiddlewareChain, requestLogger } from "@evjs/ev/api";
 import tracing from "./tracing";
 
-export default [tracing, authentication] satisfies MiddlewareChain;
+export default [requestLogger(), tracing] satisfies MiddlewareChain;
 ```
 
-JavaScript modules can default-export the same array without the TypeScript
-annotation. evjs validates literal lists during convention discovery and all
-resolved entries again when creating the server application.
+JavaScript uses the same arrays without the type annotation. Use array spread
+to reuse a chain: `[...shared, audit]`. Nested arrays, holes, and non-functions
+are invalid. Explicit array exports and method chains must be non-empty.
+Computed global chains may resolve to `[]` when disabled. Repeated functions
+run each time they are listed.
+evjs checks statically known values during discovery, then validates every
+resolved export before composing the server, including factory results and
+imported arrays. Runtime errors identify the source module and, for an invalid
+array entry, its zero-based index. Loaded chains are copied so later array
+mutations do not change the registered pipeline.
 
-Other files in `src/middlewares` are ordinary modules imported by
-`middleware.*`. Filenames do not determine execution order, so that file keeps
-the order visible while allowing any number of implementation modules.
-
-A single global middleware remains valid:
-
-```ts
-// src/middlewares/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/server-context";
-
-const tracing: MiddlewareHandler = async (ctx, next) => {
-  await next();
-  ctx.header("x-server", "evjs");
-};
-
-export default tracing;
-```
-
-API route middleware lives inside the server file-route tree and runs only for
-same-directory and descendant server file routes:
+### Directory inheritance
 
 ```text
 src/apis/middleware.ts            -> every API route
@@ -141,18 +148,85 @@ src/apis/api/admin/middleware.ts  -> /api/admin and descendants
 src/apis/(admin)/middleware.ts    -> the group and its descendants
 ```
 
-Execution order is the global list from left to right, then API route
-middleware from parent directory to child directory, then the HTTP method
-handler. Code after `await next()` unwinds in the reverse order. Route groups
-do not add URL segments, but they do participate in filesystem scoping.
-`src/apis/api/middleware.ts` covers the `/api` route at
-`src/apis/api/api.ts`, plus routes such as `src/apis/api/users/api.ts` and all
-other descendants.
+Inheritance follows the source directory tree. An anchor also applies to its
+own directory's `api.*`, and the directory need not have an API anchor to scope
+its descendants. `(group)` directories participate in inheritance without
+adding URL segments. Parent policies always run before child policies;
+children cannot remove an ancestor's middleware.
 
-The signature follows Hono:
+For separate public and protected APIs, put their anchors in sibling
+`(public)` and `(protected)` groups and place authentication under
+`(protected)`. Middleware at `src/apis/middleware.*` still applies to both.
+These scopes affect API routes only, including when a server-function module
+is colocated in the same directory.
+
+### Method composition
+
+Keep uppercase method exports and wrap only the methods that need an extra
+policy:
+
+```ts title="src/apis/api/posts/api.ts"
+import { withMiddlewares } from "@evjs/ev/api";
+import { createPost, listPosts } from "./handlers";
+import { requireUser, validatePost } from "./policies";
+
+export const GET = listPosts;
+export const POST = withMiddlewares(createPost, [requireUser, validatePost]);
+```
+
+The name `withMiddlewares` follows the `middlewares` option on the
+programmatic `createApp()` and `createRoute()` APIs from `@evjs/server`.
+
+The first argument is the `(request, ctx) => Response | Promise<Response>`
+handler. The second accepts one middleware or a non-empty array. The returned
+value remains a callable handler with the same Request/Context signature.
+To share policy across several methods of one endpoint, reuse the same chain
+in those method exports. Method chains never inherit into child routes.
+Nested `withMiddlewares` calls run the outer chain first.
+
+`MiddlewareHandler<Env, Path, Input>`, `MiddlewareChain<Env, Path, Input>`, and
+`RouteHandlerFn<Path, Env, Input>` retain Hono context, parameter, and validated
+input types. `withMiddlewares` infers the first argument's context from the
+second argument's middleware. When using generic middleware factories such as
+Hono's `validator`, create the middleware before calling `withMiddlewares`.
+An inline factory in the second argument can leave the first callback's context
+under-inferred because of TypeScript's inference order:
 
 ```ts
-import type { MiddlewareHandler } from "@evjs/ev/server-context";
+import { withMiddlewares } from "@evjs/ev/api";
+import { validator } from "hono/validator";
+
+const validateBody = validator("json", (value) => ({
+  title: String(value.title),
+}));
+
+export const POST = withMiddlewares(
+  (_request, ctx) => ctx.json(ctx.req.valid("json")),
+  validateBody,
+);
+```
+
+Use an application Hono `ContextVariableMap` declaration or an explicit environment
+type for shared variables; directory discovery does not infer types across
+files. When middleware reads a request body, use `ctx.req.json()` and the same
+Hono body cache in the handler, or pass validated data through `ctx.req.valid()`
+or context variables. Reading the raw `Request` body twice consumes its stream.
+
+### Execution order
+
+Requests enter in this order:
+
+```text
+plugin middleware -> application global middleware -> API root
+-> ancestor directories -> current directory -> method chain -> handler
+```
+
+Plugin contributions run in slot order. Arrays run left to right, and code
+after `await next()` unwinds in reverse. All layers use the same Hono context.
+Returning a `Response` without calling `next()` short-circuits the request.
+
+```ts
+import type { MiddlewareHandler } from "@evjs/ev/api";
 
 const requireAuth: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {
@@ -165,14 +239,32 @@ const requireAuth: MiddlewareHandler = async (ctx, next) => {
 export default requireAuth;
 ```
 
-`ctx` is Hono's `Context`. `next` continues the remaining middleware/handler
-chain. Returning a `Response` short-circuits the request. After `await next()`,
-middleware can modify the downstream response with APIs such as `ctx.header()`
-or `ctx.res`. API route middleware is mounted in the route handler chain, so it
-can read route params with `ctx.req.param()`.
+API directory and method middleware can read resolved params through
+`ctx.req.param()`. After `await next()`, use `ctx.header()` or `ctx.res` to
+modify the response. Mounted method chains use Hono's error handling:
+exceptions become error responses, with the error available through `ctx.error`
+as middleware unwinds.
 
-## Built-in behavior
+## HTTP method behavior
 
-- **Auto OPTIONS**: returns `Allow` header listing all defined methods
-- **Auto HEAD**: derived from `GET` if not explicitly defined
-- **405 Method Not Allowed**: for unregistered HTTP methods
+For a matching API path, global middleware wraps every response. Directory
+middleware wraps supported methods, including automatic HEAD and OPTIONS:
+
+| Request | Method chain and response |
+| --- | --- |
+| Declared method | Its own chain, then its handler |
+| Explicit `HEAD` | The `HEAD` chain and handler; the final body is removed |
+| `HEAD` with only `GET` declared | The `GET` chain and handler; the final body is removed |
+| Automatic `OPTIONS` | No method chain; returns 204 with `Allow` |
+| Unsupported method | Only global middleware; returns 405 with `Allow`, without directory or method middleware |
+| No matching API path | No API directory or method middleware; normal framework routing continues |
+
+An explicit `OPTIONS` export runs its own method chain. `Allow` includes the
+supported explicit and automatic methods. A more specific API path owns its
+405 response; it cannot fall through to another API's method handler.
+
+Directory middleware can short-circuit automatic `OPTIONS`. Put policy that
+must also apply to 405 responses in global middleware. Place CORS
+before authentication when it should answer preflight requests; the framework
+does not silently bypass authentication for `OPTIONS`. Method middleware can
+also short-circuit derived `HEAD`, whose final response is always bodyless.

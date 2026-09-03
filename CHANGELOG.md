@@ -6,6 +6,29 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ✨ Features
+
+- **API middleware composition** — Scoped `middleware.*` anchors accept the
+  same ordered non-empty arrays as global anchors. `withMiddlewares(handler,
+  middlewares)` composes a single HTTP method with the handler first, preserving
+  Hono context and validation input types.
+  `@evjs/ev/api` also exports `RouteHandlerFn`; standalone applications can use
+  `withMiddlewares` from `@evjs/server`.
+- **Additive HTTP authoring entry** — Add `@evjs/ev/api` while preserving
+  `MiddlewareHandler`, `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`,
+  and `RequestLogEntry` under `@evjs/ev/server-context`. Existing imports and
+  single-function middleware remain supported. Automatic methods on
+  `createRoute().methods`, mutable programmatic middleware arrays, empty
+  conditional global chains, and the global-only middleware scope for 405
+  responses remain unchanged.
+
+### 🐛 Bug Fixes
+
+- **Explicit HEAD handlers** — Honor declared HEAD handlers and their method
+  middleware, with GET fallback when HEAD is absent and no final response body.
+- **Middleware diagnostics** — Report malformed resolved exports with their
+  source module and zero-based array index before server startup.
+
 ---
 
 ## [0.3.20] — 2026-09-02

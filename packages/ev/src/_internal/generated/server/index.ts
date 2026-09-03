@@ -10,3 +10,4 @@ export {
   createRoute,
   createServerFunctionRegistry,
 } from "@evjs/server";
+export { normalizeMiddleware } from "@evjs/server/app";
