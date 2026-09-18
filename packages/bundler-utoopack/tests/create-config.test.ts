@@ -528,6 +528,34 @@ describe("createUtoopackConfig", () => {
     }
   });
 
+  it.each([
+    "development",
+    "production",
+  ] as const)("uses configured client JS templates in %s without changing server output", async (mode) => {
+    const config = createResolvedConfig();
+    config.output.filename = "js/[name].[contenthash:9].js";
+    config.output.chunkFilename = "chunks/[contenthash].async.js";
+    const plan = await createPlan(config, {
+      mode,
+      serverRoutes: [
+        {
+          id: "health",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    });
+    const result = await createUtoopackConfig(config, plan, process.cwd(), []);
+    expect(result.output).toMatchObject({
+      filename: config.output.filename,
+      chunkFilename: config.output.chunkFilename,
+    });
+    expect(result.server?.output?.filename).toBe(
+      mode === "production" ? "[name].[contenthash:8].js" : "[name].js",
+    );
+  });
+
   it("content-hashes client CSS output filenames in production", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config, { mode: "production" });

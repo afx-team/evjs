@@ -134,6 +134,7 @@ export async function prepareDevRevision<TBundlerCfg>(
       mode: "development",
       cwd: options.cwd,
       flags: options.flags,
+      bundlerName: options.bundler?.name ?? configuredConfig?.bundler?.name,
     }),
     options.cliShortcuts,
   );

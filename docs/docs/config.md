@@ -245,10 +245,22 @@ export default defineConfig({
 | --- | --- | --- |
 | `client` | project-relative path | `dist/client` |
 | `server` | project-relative path | `dist/server` |
+| `filename` | client JavaScript entry template | `[name].[contenthash:8].js` in production; `[name].js` in development |
+| `chunkFilename` | client JavaScript chunk template | `[name].[contenthash:8].js` in production; `[name].js` in development |
 | `crossOriginLoading` | `false \| "anonymous" \| "use-credentials"` | `"anonymous"` |
 
 Client and server directories must be separate, non-nested descendants of
 `dist` and cannot contain empty, `.` or `..` path segments.
+
+`filename` and `chunkFilename` customize client JavaScript output in both bundled
+adapters. Explicit templates apply in development and production; server and CSS
+filenames are unaffected. Templates must be portable relative paths ending in
+`.js`, using only `[name]`, `[contenthash]`, or `[contenthash:N]` placeholders
+(`N` is a positive integer). Entries must retain `[name]`; chunks must contain
+at least one supported placeholder. For example, use
+`filename: "[name].[contenthash:9].js"` and
+`chunkFilename: "[contenthash].async.js"`. Configure these through `output`;
+`configureBundler` hooks cannot override the resolved templates.
 
 `crossOriginLoading` sets the `crossorigin` attribute for generated JavaScript
 and CSS tags and applies the same policy to dynamically loaded chunks.

@@ -20,6 +20,33 @@ import {
 } from "../src/adapter/config/create-config.js";
 
 describe("createWebpackConfigs", () => {
+  it.each([
+    "development",
+    "production",
+  ] as const)("uses configured client JS templates in %s without changing server output", async (mode) => {
+    const config = createResolvedConfig();
+    config.output.filename = "js/[name].[contenthash:9].js";
+    config.output.chunkFilename = "chunks/[contenthash].async.js";
+    const graph = createGraph(config);
+    graph.serverRoutes.push({
+      id: "health",
+      module: "src/apis/health/api.ts",
+      path: "/health",
+      methods: ["GET"],
+    });
+    const plan = await createGeneratedPlan(config, graph, mode);
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
+    expect(
+      configs.find((item) => item.name === "client")?.output,
+    ).toMatchObject({
+      filename: config.output.filename,
+      chunkFilename: config.output.chunkFilename,
+    });
+    expect(
+      configs.find((item) => item.name === "server")?.output?.filename,
+    ).toBe(mode === "production" ? "[name].[contenthash:8].cjs" : "[name].cjs");
+  });
+
   it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);

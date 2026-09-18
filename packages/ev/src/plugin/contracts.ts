@@ -162,6 +162,8 @@ export interface ConfigureBundlerContext<TBundlerCfg = unknown> {
 
 /** Context passed to plugin configure hooks. */
 export interface PluginConfigureContext {
+  /** Requested adapter name; command options take precedence over raw config. */
+  readonly bundlerName?: string;
   /** The current mode. */
   readonly mode: "development" | "production";
   /** The current working directory. */

@@ -225,9 +225,19 @@ export default defineConfig({
 | --- | --- | --- |
 | `client` | 项目相对路径 | `dist/client` |
 | `server` | 项目相对路径 | `dist/server` |
+| `filename` | 客户端 JavaScript 入口文件模板 | 生产为 `[name].[contenthash:8].js`；开发为 `[name].js` |
+| `chunkFilename` | 客户端 JavaScript chunk 文件模板 | 生产为 `[name].[contenthash:8].js`；开发为 `[name].js` |
 | `crossOriginLoading` | `false \| "anonymous" \| "use-credentials"` | `"anonymous"` |
 
 客户端和服务端目录必须是 `dist` 下分离且不嵌套的后代，不能包含空、`.` 或 `..` 路径段。
+
+`filename` 和 `chunkFilename` 在两个内置 bundler 中配置客户端 JavaScript 产物。
+显式模板同时作用于开发和生产模式，不影响服务端及 CSS 文件名。模板必须是以 `.js`
+结尾的可移植相对路径，只支持 `[name]`、`[contenthash]` 和 `[contenthash:N]`
+占位符（`N` 为正整数）。入口必须保留 `[name]`，chunk 必须包含至少一个受支持的占位符。
+例如 `filename: "[name].[contenthash:9].js"` 和
+`chunkFilename: "[contenthash].async.js"`。通过 `output` 配置；
+`configureBundler` hook 不能覆盖已解析的模板。
 
 `crossOriginLoading` 设置生成 JavaScript/CSS 标签的 `crossorigin` 属性，并对动态代码块加载应用相同策略。
 

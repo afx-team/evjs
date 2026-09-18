@@ -145,8 +145,12 @@ export async function createUtoopackConfig(
     })),
     output: {
       path: outputPaths.clientDir,
-      filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
-      chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
+      filename:
+        config.output.filename ??
+        (isProduction ? "[name].[contenthash:8].js" : "[name].js"),
+      chunkFilename:
+        config.output.chunkFilename ??
+        (isProduction ? "[name].[contenthash:8].js" : "[name].js"),
       cssFilename: isProduction ? "[name].[contenthash:8].css" : "[name].css",
       cssChunkFilename: isProduction
         ? "[name].[contenthash:8].css"

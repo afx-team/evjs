@@ -33,6 +33,7 @@ import {
   definedPluginRuntimeMetadata,
 } from "../plugin/definition.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
+import { resolveOutputFilename } from "./output-filenames.js";
 import type { PagePluginOptions, PagePluginOptionsCheck } from "./plugins.js";
 
 export type { PageMetadata } from "@evjs/shared/manifest";
@@ -359,6 +360,10 @@ export interface ResolvedPolyfillConfig {
 export type CrossOriginLoadingPolicy = false | "anonymous" | "use-credentials";
 
 export interface OutputConfig {
+  /** Client JavaScript entry template. Must include [name] and end in .js. */
+  filename?: string;
+  /** Client JavaScript chunk template. Must include [name] or [contenthash]. */
+  chunkFilename?: string;
   /**
    * Project-relative directory for browser/public build artifacts. It must be
    * a strict descendant of the BuildPlan distDir, must not contain dot
@@ -380,6 +385,8 @@ export interface OutputConfig {
 }
 
 export interface ResolvedOutputConfig {
+  filename?: string;
+  chunkFilename?: string;
   client: string;
   server: string;
   crossOriginLoading: CrossOriginLoadingPolicy;
@@ -649,6 +656,8 @@ const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
 const PUBLIC_POLYFILL_CONFIG_KEYS = new Set(["coreJs"]);
 const PUBLIC_OUTPUT_CONFIG_KEYS = new Set([
+  "filename",
+  "chunkFilename",
   "client",
   "server",
   "crossOriginLoading",
@@ -843,6 +852,22 @@ export function resolveConfig<TBundlerCfg = unknown>(
     },
     output: {
       ...resolveOutputDirectories(outputConfig),
+      ...(outputConfig.filename === undefined
+        ? {}
+        : {
+            filename: resolveOutputFilename(
+              outputConfig.filename,
+              "output.filename",
+            ),
+          }),
+      ...(outputConfig.chunkFilename === undefined
+        ? {}
+        : {
+            chunkFilename: resolveOutputFilename(
+              outputConfig.chunkFilename,
+              "output.chunkFilename",
+            ),
+          }),
       crossOriginLoading:
         outputConfig.crossOriginLoading === undefined
           ? CONFIG_DEFAULTS.crossOriginLoading
@@ -1878,7 +1903,7 @@ function validateOutputConfigKeys(output: OutputConfig): void {
     output,
     PUBLIC_OUTPUT_CONFIG_KEYS,
     "output",
-    "client, server, or crossOriginLoading",
+    "client, server, filename, chunkFilename, or crossOriginLoading",
   );
 }
 

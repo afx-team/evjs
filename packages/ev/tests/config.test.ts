@@ -1229,6 +1229,50 @@ describe("resolveConfig", () => {
     ).toThrow('server.externals["native"] must be a non-empty string');
   });
 
+  it("resolves portable client JavaScript output templates", () => {
+    expect(
+      resolveConfig({
+        output: {
+          filename: "js/[name].[contenthash:9].js",
+          chunkFilename: "chunks/[contenthash].async.js",
+        },
+      }).output,
+    ).toMatchObject({
+      filename: "js/[name].[contenthash:9].js",
+      chunkFilename: "chunks/[contenthash].async.js",
+    });
+  });
+
+  it("rejects unsafe, unsupported, and colliding JavaScript templates", () => {
+    for (const field of ["filename", "chunkFilename"] as const) {
+      for (const value of [
+        null,
+        false,
+        () => "[name].js",
+        "",
+        "bundle.js",
+        "../[name].js",
+        "/[name].js",
+        "C:/[name].js",
+        "js\\[name].js",
+        "a//[name].js",
+        "con/[name].js",
+        "[name].js?x",
+        "[name].css",
+        "[id].js",
+        "[name].[hash].js",
+        "[name].[contenthash:0].js",
+      ]) {
+        expect(() =>
+          resolveConfig({ output: { [field]: value } } as never),
+        ).toThrow(`output.${field}`);
+      }
+    }
+    expect(() =>
+      resolveConfig({ output: { filename: "[contenthash].js" } }),
+    ).toThrow("[name] to distinguish entries");
+  });
+
   it("rejects output directories that can escape or alias the project root", () => {
     const unsafeDirectories = [
       ".",
