@@ -8,6 +8,17 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.22] — 2026-09-18
+
+### 🐛 Bug Fixes
+
+- **Qiankun standalone startup diagnostics** — Report failures while loading or
+  mounting an independently running slave application with the original error
+  and stack. Preserve lifecycle Promise rejection and queue recovery, and avoid
+  duplicate reporting when the qiankun host owns startup.
+
+---
+
 ## [0.3.21] — 2026-09-03
 
 ### ⚠️ Breaking Changes
