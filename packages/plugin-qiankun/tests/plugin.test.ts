@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import { resolvePluginSettingsState } from "@evjs/ev/_internal/build";
 import { type ResolvedConfig, resolveConfig } from "@evjs/ev/config";
 import type {
@@ -17,8 +18,9 @@ import type {
   PluginEmitIRContext,
   PluginSetupContext,
 } from "@evjs/ev/plugin";
+import { transformSync } from "@swc/core";
 import { DOMParser } from "domparser-rs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createQiankunSlaveHooks,
   emitQiankunMasterIR,
@@ -26,6 +28,8 @@ import {
   evPluginQiankunMaster,
   evPluginQiankunSlave,
 } from "../src/index.js";
+import type { QiankunSlaveRuntime } from "../src/runtime.js";
+import * as qiankunRuntimeModule from "../src/runtime.js";
 
 const qiankunRuntime = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -48,6 +52,10 @@ interface CapturedSlot {
 }
 
 describe("@evjs/plugin-qiankun plugin", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("replaces the master entry so runtime routes install before render", async () => {
     const cwd = await createProject({
       "src/pages/page.tsx": "export default function Page() { return null; }",
@@ -244,6 +252,99 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
   });
 
+  it.each([
+    "entry",
+    "mount",
+    "start",
+  ] as const)("reports the original standalone %s failure from the generated entry", async (phase) => {
+    const error = new Error(`${phase} failed`);
+    const stack = error.stack;
+    const fail = () => {
+      throw error;
+    };
+    const reportError = vi.fn();
+    const entry = await executeSlaveEntry({
+      loadEntry: phase === "entry" ? fail : () => ({ start: fail }),
+      runtime: phase === "mount" ? { mount: fail } : {},
+      reportError,
+    });
+
+    // Queue behind automatic startup without awaiting standalone() ourselves.
+    await entry.lifecycles.bootstrap();
+
+    expect(reportError).toHaveBeenCalledExactlyOnceWith(error);
+    expect(reportError.mock.calls[0]?.[0]).toBe(error);
+    expect(error.stack).toBe(stack);
+    expect(entry.scheduleError).not.toHaveBeenCalled();
+  });
+
+  it("rethrows standalone failures asynchronously when reportError is unavailable", async () => {
+    const error = new Error("entry evaluation failed");
+    const entry = await executeSlaveEntry({
+      loadEntry() {
+        throw error;
+      },
+    });
+
+    await entry.lifecycles.bootstrap();
+
+    expect(entry.scheduleError).toHaveBeenCalledExactlyOnceWith(
+      expect.any(Function),
+      0,
+    );
+    const rethrow = entry.scheduleError.mock.calls[0]?.[0];
+    let reportedError: unknown;
+    try {
+      rethrow?.();
+    } catch (caught) {
+      reportedError = caught;
+    }
+    expect(reportedError).toBe(error);
+  });
+
+  it("starts the generated standalone entry successfully without reporting errors", async () => {
+    const start = vi.fn();
+    const reportError = vi.fn();
+    const entry = await executeSlaveEntry({
+      loadEntry: () => ({ start }),
+      reportError,
+    });
+
+    await entry.lifecycles.bootstrap();
+
+    expect(start).toHaveBeenCalledExactlyOnceWith("#app");
+    expect(reportError).not.toHaveBeenCalled();
+    expect(entry.scheduleError).not.toHaveBeenCalled();
+    expect(entry.window.catalog).toEqual(entry.lifecycles);
+  });
+
+  it("leaves host startup and error handling to the exported lifecycles", async () => {
+    const error = new Error("host entry evaluation failed");
+    const start = vi.fn();
+    const loadEntry = vi
+      .fn(() => ({ start }))
+      .mockImplementationOnce(() => {
+        throw error;
+      });
+    const reportError = vi.fn();
+    const entry = await executeSlaveEntry({
+      loadEntry,
+      reportError,
+      poweredByQiankun: true,
+    });
+
+    await entry.lifecycles.bootstrap();
+    expect(loadEntry).not.toHaveBeenCalled();
+    await expect(entry.lifecycles.mount()).rejects.toBe(error);
+    await entry.lifecycles.mount();
+    await entry.lifecycles.unmount();
+
+    expect(loadEntry).toHaveBeenCalledTimes(2);
+    expect(start).toHaveBeenCalledExactlyOnceWith("#app");
+    expect(reportError).not.toHaveBeenCalled();
+    expect(entry.scheduleError).not.toHaveBeenCalled();
+  });
+
   it("keeps UMD library output for webpack slave builds", async () => {
     const cwd = await createProject({
       "package.json": JSON.stringify({ name: "console" }),
@@ -404,6 +505,59 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
   });
 });
+
+async function executeSlaveEntry(options: {
+  loadEntry(): unknown;
+  runtime?: QiankunSlaveRuntime;
+  reportError?: (error: unknown) => void;
+  poweredByQiankun?: boolean;
+}) {
+  const cwd = await createProject({});
+  const captured = createContributionCapture(cwd, {});
+  const runtime = captured.ctx.emit.module({
+    id: "slave-runtime",
+    scope: { kind: "application" },
+    source: "export default {};",
+  });
+  await emitQiankunSlaveIR(captured.ctx, { name: "catalog", runtime });
+  const source = renderModule(
+    captured.modules.find((module) => module.id === "entry-wrapper"),
+    captured.importOf,
+  );
+  const { code } = transformSync(source, {
+    jsc: { parser: { syntax: "typescript" }, target: "es2022" },
+    module: { type: "commonjs" },
+  });
+  const lifecycles = {} as Pick<
+    ReturnType<typeof qiankunRuntimeModule.createQiankunSlaveLifecycles>,
+    "bootstrap" | "mount" | "unmount" | "update"
+  >;
+  const window: Record<string, unknown> = {};
+  const scheduleError = vi.fn<(callback: () => void, delay: number) => void>();
+  vi.stubGlobal("__POWERED_BY_QIANKUN__", options.poweredByQiankun ?? false);
+  vi.stubGlobal("reportError", options.reportError);
+  try {
+    runInNewContext(code, {
+      exports: lifecycles,
+      window,
+      reportError: options.reportError,
+      setTimeout: scheduleError,
+      require(specifier: string) {
+        if (specifier === "@evjs/plugin-qiankun/runtime") {
+          return qiankunRuntimeModule;
+        }
+        if (specifier === "virtual:slave-runtime") {
+          return { __esModule: true, default: options.runtime ?? {} };
+        }
+        if (specifier === "virtual:original-entry") return options.loadEntry();
+        throw new Error(`Unexpected generated import: ${specifier}`);
+      },
+    });
+    return { lifecycles, window, scheduleError };
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+}
 
 function createContributionCapture(
   cwd: string,

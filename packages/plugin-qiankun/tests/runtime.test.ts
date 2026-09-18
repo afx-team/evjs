@@ -817,6 +817,34 @@ describe("@evjs/plugin-qiankun runtime", () => {
     }
   });
 
+  it.each([
+    "bootstrap",
+    "mount",
+    "update",
+    "unmount",
+    "standalone",
+  ] as const)("rejects %s with the original error and continues queued lifecycles", async (lifecycle) => {
+    const error = new Error(`${lifecycle} failed`);
+    const hook = vi.fn().mockRejectedValueOnce(error);
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: { [lifecycle === "standalone" ? "mount" : lifecycle]: hook },
+      async loadEntry() {
+        return { app: { render() {}, unmount() {} } };
+      },
+    });
+    if (lifecycle === "update" || lifecycle === "unmount") {
+      await slave.mount();
+    }
+
+    const failed = slave[lifecycle]();
+    const next = slave.mount();
+    await expect(failed).rejects.toBe(error);
+    await expect(next).resolves.toBeUndefined();
+    await slave.unmount();
+  });
+
   it("projects slave base and history before the first render", async () => {
     const calls: string[] = [];
     const container = createElement();
