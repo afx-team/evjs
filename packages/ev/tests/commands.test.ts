@@ -19,7 +19,6 @@ import type {
 import {
   build,
   dev,
-  inspectFrameworkBuild,
   prepareFrameworkBuild,
 } from "../src/_internal/build/commands.js";
 import {
@@ -434,31 +433,6 @@ async function readSortedDirectoryEntries(root: string): Promise<string[]> {
 }
 
 describe("prepareFrameworkBuild", () => {
-  it("exposes the requested adapter to configure hooks with command options taking precedence", async () => {
-    const cwd = await createSpaProject();
-    const seen: Array<string | undefined> = [];
-    const configuredBundler = { ...createMockBundler([]), name: "configured" };
-    const optionBundler = { ...createMockBundler([]), name: "selected" };
-    const config: Config = {
-      routing: { mode: "spa" },
-      bundler: configuredBundler,
-      plugins: [
-        {
-          id: "observe-bundler",
-          configure(_config, context) {
-            seen.push(context.bundlerName);
-          },
-        },
-      ],
-    };
-    for (const bundler of [undefined, optionBundler]) {
-      const prepared = await prepareFrameworkBuild(config, { cwd, bundler });
-      await prepared.dispose();
-      await inspectFrameworkBuild(config, { cwd, bundler });
-    }
-    expect(seen).toEqual(["configured", "configured", "selected", "selected"]);
-  });
-
   it("releases its project operation lock before returning", async () => {
     const cwd = await createSpaProject();
     const prepared = await prepareFrameworkBuild(
@@ -789,53 +763,6 @@ describe("prepareFrameworkBuild", () => {
       "dispose:initial",
     ]);
     expect(flags.feature).toEqual(["initial", "caller-mutation"]);
-  });
-
-  it.each([
-    { configured: false, explicit: false, expected: "fallback" },
-    { configured: true, explicit: false, expected: "configured" },
-    { configured: true, explicit: true, expected: "explicit" },
-  ])("reports the selected dev adapter to configure hooks: $expected", async ({
-    configured,
-    explicit,
-    expected,
-  }) => {
-    const cwd = await createSpaProject();
-    const events: string[] = [];
-    const adapter = (name: string): BundlerAdapter<Record<string, never>> => ({
-      ...createMockBundler([]),
-      name,
-      async dev() {
-        events.push(`dev:${name}`);
-        return createTestDevController();
-      },
-    });
-    const running = dev(
-      {
-        routing: { mode: "spa" },
-        ...(configured ? { bundler: adapter("configured") } : {}),
-        plugins: [
-          {
-            id: "observe-dev-bundler",
-            configure(_config, context) {
-              events.push(`configure:${context.bundlerName}`);
-            },
-          },
-        ],
-      },
-      {
-        cwd,
-        fallbackBundler: adapter("fallback"),
-        ...(explicit ? { bundler: adapter("explicit") } : {}),
-      },
-    );
-    try {
-      await vi.waitFor(() => expect(events).toContain(`dev:${expected}`));
-      expect(events).toEqual([`configure:${expected}`, `dev:${expected}`]);
-    } finally {
-      process.emit("SIGINT");
-      await running;
-    }
   });
 
   it("reuses the initial CLI flag snapshot across immutable dev sessions", async () => {

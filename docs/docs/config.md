@@ -245,31 +245,17 @@ export default defineConfig({
 | --- | --- | --- |
 | `client` | project-relative path | `dist/client` |
 | `server` | project-relative path | `dist/server` |
-| `filename` | client JavaScript entry template | `[name].[contenthash:8].js` in production; `[name].js` in development |
-| `chunkFilename` | client JavaScript chunk template | `[name].[contenthash:8].js` in production; `[name].js` in development |
-| `cssFilename` | client CSS entry template | Adapter default |
-| `cssChunkFilename` | client CSS chunk template | Adapter default |
 | `crossOriginLoading` | `false \| "anonymous" \| "use-credentials"` | `"anonymous"` |
 
 Client and server directories must be separate, non-nested descendants of
 `dist` and cannot contain empty, `.` or `..` path segments.
 
-`filename` and `chunkFilename` customize client JavaScript output; `cssFilename`
-and `cssChunkFilename` customize entry and asynchronous CSS output. Both bundled
-adapters support these options. Explicit templates apply in development and
-production without changing server filenames. Templates must be portable
-relative paths ending in `.js` for JavaScript or `.css` for CSS, using only
-`[name]`, `[contenthash]`, or `[contenthash:N]` placeholders (`N` is a positive
-integer). JavaScript entries must retain `[name]`; all other templates must
-contain at least one supported placeholder. For example, use
-`filename: "[name].[contenthash:9].js"` and
-`chunkFilename: "[contenthash].async.js"`. Configure these through `output`;
-`configureBundler` hooks cannot override the resolved templates.
-
-To shorten CSS filenames, set both `cssFilename` and `cssChunkFilename` to
-`"[contenthash].css"`. When omitted, Utoopack uses `[name].[contenthash:8].css`
-in production and `[name].css` in development. Webpack retains its existing
-CSS extraction defaults for each omitted option.
+Utoopack production builds name client JavaScript entries
+`[name].[contenthash:8].js`, additional JavaScript chunks `[contenthash:8].js`,
+and entry/async CSS `[contenthash:8].css`. Entry names distinguish pages;
+chunks and styles use short content-based names. Development uses `[name].js`
+and `[name].css`. These filename templates are framework defaults and do not
+require application configuration.
 
 `crossOriginLoading` sets the `crossorigin` attribute for generated JavaScript
 and CSS tags and applies the same policy to dynamically loaded chunks.

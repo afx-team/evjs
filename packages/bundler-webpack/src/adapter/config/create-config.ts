@@ -94,7 +94,6 @@ export async function createWebpackConfigs(
         entries: clientEntries,
         mode: plan.mode,
         name: "client",
-        clientOutput: config.output,
         outputPath: outputPaths.clientDir,
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
@@ -889,10 +888,6 @@ function missingFrameworkWatchCollector(file: string): never {
 }
 
 function createWebpackConfig(options: {
-  clientOutput?: Pick<
-    ResolvedConfig["output"],
-    "filename" | "chunkFilename" | "cssFilename" | "cssChunkFilename"
-  >;
   cwd: string;
   entries: BuildEntry[];
   mode: BuildPlan["mode"];
@@ -933,16 +928,12 @@ function createWebpackConfig(options: {
     entry: createEntryObject(options.entries),
     output: {
       path: options.outputPath,
-      filename:
-        options.clientOutput?.filename ??
-        (isProduction
-          ? `[name].[contenthash:8]${outputExtension}`
-          : `[name]${outputExtension}`),
-      chunkFilename:
-        options.clientOutput?.chunkFilename ??
-        (isProduction
-          ? `${chunkDirectory ? `${chunkDirectory}/` : ""}[name].[contenthash:8]${outputExtension}`
-          : `${chunkDirectory ? `${chunkDirectory}/` : ""}[name]${outputExtension}`),
+      filename: isProduction
+        ? `[name].[contenthash:8]${outputExtension}`
+        : `[name]${outputExtension}`,
+      chunkFilename: isProduction
+        ? `${chunkDirectory ? `${chunkDirectory}/` : ""}[name].[contenthash:8]${outputExtension}`
+        : `${chunkDirectory ? `${chunkDirectory}/` : ""}[name]${outputExtension}`,
       publicPath: webpackPublicPath(options.publicPath, options.target),
       crossOriginLoading:
         options.target === "web" ? options.crossOriginLoading : undefined,
@@ -1048,12 +1039,6 @@ function createWebpackConfig(options: {
         __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(options.functionEndpoint),
       }),
       new MiniCssExtractPlugin({
-        ...(options.clientOutput?.cssFilename === undefined
-          ? {}
-          : { filename: options.clientOutput.cssFilename }),
-        ...(options.clientOutput?.cssChunkFilename === undefined
-          ? {}
-          : { chunkFilename: options.clientOutput.cssChunkFilename }),
         ...(options.target === "web" && options.crossOriginLoading
           ? { attributes: { crossorigin: options.crossOriginLoading } }
           : {}),

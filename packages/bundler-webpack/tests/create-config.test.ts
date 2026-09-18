@@ -13,7 +13,6 @@ import type {
   RenderMode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
-import MiniCssExtractPlugin from "mini-css-extract-plugin";
 import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
@@ -21,53 +20,6 @@ import {
 } from "../src/adapter/config/create-config.js";
 
 describe("createWebpackConfigs", () => {
-  it.each([
-    "development",
-    "production",
-  ] as const)("uses configured client asset templates in %s without changing server output", async (mode) => {
-    const config = createResolvedConfig();
-    config.output.filename = "js/[name].[contenthash:9].js";
-    config.output.chunkFilename = "chunks/[contenthash].async.js";
-    config.output.cssFilename = "styles/[contenthash].css";
-    config.output.cssChunkFilename = "styles/[contenthash:9].async.css";
-    const graph = createGraph(config);
-    graph.serverRoutes.push({
-      id: "health",
-      module: "src/apis/health/api.ts",
-      path: "/health",
-      methods: ["GET"],
-    });
-    const plan = await createGeneratedPlan(config, graph, mode);
-    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
-    expect(
-      configs.find((item) => item.name === "client")?.output,
-    ).toMatchObject({
-      filename: config.output.filename,
-      chunkFilename: config.output.chunkFilename,
-    });
-    expect(
-      configs.find((item) => item.name === "server")?.output?.filename,
-    ).toBe(mode === "production" ? "[name].[contenthash:8].cjs" : "[name].cjs");
-    const clientCss = configs
-      .find((item) => item.name === "client")
-      ?.plugins?.find((plugin) => plugin instanceof MiniCssExtractPlugin);
-    const serverCss = configs
-      .find((item) => item.name === "server")
-      ?.plugins?.find((plugin) => plugin instanceof MiniCssExtractPlugin);
-    expect(Reflect.get(clientCss ?? {}, "options")).toMatchObject({
-      filename: config.output.cssFilename,
-      chunkFilename: config.output.cssChunkFilename,
-    });
-    expect(Reflect.get(serverCss ?? {}, "options")).toMatchObject({
-      filename:
-        mode === "production" ? "[name].[contenthash:8].css" : "[name].css",
-      chunkFilename:
-        mode === "production"
-          ? "chunks/server/[name].[contenthash:8].css"
-          : "chunks/server/[name].css",
-    });
-  });
-
   it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);

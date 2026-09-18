@@ -515,6 +515,7 @@ describe("createUtoopackConfig", () => {
 
       expect(utoopackConfig.mode).toBe("production");
       expect(utoopackConfig.output?.filename).toBe("[name].[contenthash:8].js");
+      expect(utoopackConfig.output?.chunkFilename).toBe("[contenthash:8].js");
       expect(utoopackConfig.sourceMaps).toBe(false);
       expect(utoopackConfig.define?.["process.env.NODE_ENV"]).toBe(
         '"production"',
@@ -528,38 +529,6 @@ describe("createUtoopackConfig", () => {
     }
   });
 
-  it.each([
-    "development",
-    "production",
-  ] as const)("uses configured client asset templates in %s without changing server output", async (mode) => {
-    const config = createResolvedConfig();
-    config.output.filename = "js/[name].[contenthash:9].js";
-    config.output.chunkFilename = "chunks/[contenthash].async.js";
-    config.output.cssFilename = "styles/[contenthash].css";
-    config.output.cssChunkFilename = "styles/[contenthash:9].async.css";
-    const plan = await createPlan(config, {
-      mode,
-      serverRoutes: [
-        {
-          id: "health",
-          module: "src/apis/health/api.ts",
-          path: "/health",
-          methods: ["GET"],
-        },
-      ],
-    });
-    const result = await createUtoopackConfig(config, plan, process.cwd(), []);
-    expect(result.output).toMatchObject({
-      filename: config.output.filename,
-      chunkFilename: config.output.chunkFilename,
-      cssFilename: config.output.cssFilename,
-      cssChunkFilename: config.output.cssChunkFilename,
-    });
-    expect(result.server?.output?.filename).toBe(
-      mode === "production" ? "[name].[contenthash:8].js" : "[name].js",
-    );
-  });
-
   it("content-hashes client CSS output filenames in production", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config, { mode: "production" });
@@ -571,12 +540,8 @@ describe("createUtoopackConfig", () => {
       [],
     );
 
-    expect(utoopackConfig.output?.cssFilename).toBe(
-      "[name].[contenthash:8].css",
-    );
-    expect(utoopackConfig.output?.cssChunkFilename).toBe(
-      "[name].[contenthash:8].css",
-    );
+    expect(utoopackConfig.output?.cssFilename).toBe("[contenthash:8].css");
+    expect(utoopackConfig.output?.cssChunkFilename).toBe("[contenthash:8].css");
   });
 
   it("uses stable client CSS output filenames in development", async () => {
@@ -592,6 +557,8 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.output?.cssFilename).toBe("[name].css");
     expect(utoopackConfig.output?.cssChunkFilename).toBe("[name].css");
+    expect(utoopackConfig.output?.filename).toBe("[name].js");
+    expect(utoopackConfig.output?.chunkFilename).toBe("[name].js");
   });
 
   it("uses framework-owned Less tooling paths", async () => {

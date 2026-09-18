@@ -158,7 +158,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
     mode,
     cwd,
     flags,
-    bundlerName: options.bundler?.name ?? userConfig?.bundler?.name,
   });
   const pageResolvedConfig = await withPageRoutingDefaults(
     resolveConfig(configuredConfig),

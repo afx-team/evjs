@@ -225,27 +225,14 @@ export default defineConfig({
 | --- | --- | --- |
 | `client` | 项目相对路径 | `dist/client` |
 | `server` | 项目相对路径 | `dist/server` |
-| `filename` | 客户端 JavaScript 入口文件模板 | 生产为 `[name].[contenthash:8].js`；开发为 `[name].js` |
-| `chunkFilename` | 客户端 JavaScript chunk 文件模板 | 生产为 `[name].[contenthash:8].js`；开发为 `[name].js` |
-| `cssFilename` | 客户端 CSS 入口文件模板 | 使用适配器默认值 |
-| `cssChunkFilename` | 客户端异步 CSS 文件模板 | 使用适配器默认值 |
 | `crossOriginLoading` | `false \| "anonymous" \| "use-credentials"` | `"anonymous"` |
 
 客户端和服务端目录必须是 `dist` 下分离且不嵌套的后代，不能包含空、`.` 或 `..` 路径段。
 
-`filename` 和 `chunkFilename` 配置客户端 JavaScript 产物，`cssFilename` 和
-`cssChunkFilename` 分别配置入口和异步 CSS 产物，两个内置 bundler 均支持。
-显式模板同时作用于开发和生产模式，不影响服务端文件名。模板必须是可移植相对路径，
-JavaScript 以 `.js` 结尾，CSS 以 `.css` 结尾，只支持 `[name]`、`[contenthash]`
-和 `[contenthash:N]` 占位符（`N` 为正整数）。JavaScript 入口必须保留 `[name]`，
-其余模板必须包含至少一个受支持的占位符。
-例如 `filename: "[name].[contenthash:9].js"` 和
-`chunkFilename: "[contenthash].async.js"`。通过 `output` 配置；
-`configureBundler` hook 不能覆盖已解析的模板。
-
-需要缩短 CSS 文件名时，将 `cssFilename` 和 `cssChunkFilename` 均设为
-`"[contenthash].css"`。省略时 Utoopack 在生产模式使用 `[name].[contenthash:8].css`，
-开发模式使用 `[name].css`；Webpack 对省略的选项保留现有 CSS 提取默认值。
+Utoopack 生产构建的客户端 JavaScript 入口使用 `[name].[contenthash:8].js`，
+其他 JavaScript chunk 使用 `[contenthash:8].js`，入口和异步 CSS 均使用
+`[contenthash:8].css`。入口名称用于区分页面，chunk 和样式使用简短的内容 hash 文件名。
+开发模式使用 `[name].js` 和 `[name].css`。这些命名模板是框架默认行为，无需应用配置。
 
 `crossOriginLoading` 设置生成 JavaScript/CSS 标签的 `crossorigin` 属性，并对动态代码块加载应用相同策略。
 
