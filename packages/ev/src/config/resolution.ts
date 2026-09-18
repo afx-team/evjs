@@ -364,6 +364,10 @@ export interface OutputConfig {
   filename?: string;
   /** Client JavaScript chunk template. Must include [name] or [contenthash]. */
   chunkFilename?: string;
+  /** Client CSS entry template. Must include [name] or [contenthash] and end in .css. */
+  cssFilename?: string;
+  /** Client CSS chunk template. Must include [name] or [contenthash] and end in .css. */
+  cssChunkFilename?: string;
   /**
    * Project-relative directory for browser/public build artifacts. It must be
    * a strict descendant of the BuildPlan distDir, must not contain dot
@@ -387,6 +391,8 @@ export interface OutputConfig {
 export interface ResolvedOutputConfig {
   filename?: string;
   chunkFilename?: string;
+  cssFilename?: string;
+  cssChunkFilename?: string;
   client: string;
   server: string;
   crossOriginLoading: CrossOriginLoadingPolicy;
@@ -658,6 +664,8 @@ const PUBLIC_POLYFILL_CONFIG_KEYS = new Set(["coreJs"]);
 const PUBLIC_OUTPUT_CONFIG_KEYS = new Set([
   "filename",
   "chunkFilename",
+  "cssFilename",
+  "cssChunkFilename",
   "client",
   "server",
   "crossOriginLoading",
@@ -875,6 +883,22 @@ export function resolveConfig<TBundlerCfg = unknown>(
               outputConfig.crossOriginLoading,
               "output.crossOriginLoading",
             ),
+      ...(outputConfig.cssFilename === undefined
+        ? {}
+        : {
+            cssFilename: resolveOutputFilename(
+              outputConfig.cssFilename,
+              "output.cssFilename",
+            ),
+          }),
+      ...(outputConfig.cssChunkFilename === undefined
+        ? {}
+        : {
+            cssChunkFilename: resolveOutputFilename(
+              outputConfig.cssChunkFilename,
+              "output.cssChunkFilename",
+            ),
+          }),
     },
     bundler: resolveBundlerConfig<TBundlerCfg>(config.bundler),
     plugins: resolvePluginsConfig(config.plugins),
@@ -1903,7 +1927,7 @@ function validateOutputConfigKeys(output: OutputConfig): void {
     output,
     PUBLIC_OUTPUT_CONFIG_KEYS,
     "output",
-    "client, server, filename, chunkFilename, or crossOriginLoading",
+    "client, server, filename, chunkFilename, cssFilename, cssChunkFilename, or crossOriginLoading",
   );
 }
 

@@ -1229,22 +1229,32 @@ describe("resolveConfig", () => {
     ).toThrow('server.externals["native"] must be a non-empty string');
   });
 
-  it("resolves portable client JavaScript output templates", () => {
+  it("resolves portable client JavaScript and CSS output templates", () => {
     expect(
       resolveConfig({
         output: {
           filename: "js/[name].[contenthash:9].js",
           chunkFilename: "chunks/[contenthash].async.js",
+          cssFilename: "styles/[contenthash].css",
+          cssChunkFilename: "styles/[contenthash:9].async.css",
         },
       }).output,
     ).toMatchObject({
       filename: "js/[name].[contenthash:9].js",
       chunkFilename: "chunks/[contenthash].async.js",
+      cssFilename: "styles/[contenthash].css",
+      cssChunkFilename: "styles/[contenthash:9].async.css",
     });
   });
 
-  it("rejects unsafe, unsupported, and colliding JavaScript templates", () => {
-    for (const field of ["filename", "chunkFilename"] as const) {
+  it("rejects unsafe, unsupported, and colliding asset templates", () => {
+    for (const field of [
+      "filename",
+      "chunkFilename",
+      "cssFilename",
+      "cssChunkFilename",
+    ] as const) {
+      const isCss = field.startsWith("css");
       for (const value of [
         null,
         false,
@@ -1263,8 +1273,14 @@ describe("resolveConfig", () => {
         "[name].[hash].js",
         "[name].[contenthash:0].js",
       ]) {
+        const template =
+          isCss && typeof value === "string"
+            ? value === "[name].css"
+              ? "[name].js"
+              : value.replaceAll(".js", ".css")
+            : value;
         expect(() =>
-          resolveConfig({ output: { [field]: value } } as never),
+          resolveConfig({ output: { [field]: template } } as never),
         ).toThrow(`output.${field}`);
       }
     }

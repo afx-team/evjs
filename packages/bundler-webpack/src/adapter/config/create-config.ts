@@ -889,7 +889,10 @@ function missingFrameworkWatchCollector(file: string): never {
 }
 
 function createWebpackConfig(options: {
-  clientOutput?: Pick<ResolvedConfig["output"], "filename" | "chunkFilename">;
+  clientOutput?: Pick<
+    ResolvedConfig["output"],
+    "filename" | "chunkFilename" | "cssFilename" | "cssChunkFilename"
+  >;
   cwd: string;
   entries: BuildEntry[];
   mode: BuildPlan["mode"];
@@ -1045,6 +1048,12 @@ function createWebpackConfig(options: {
         __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(options.functionEndpoint),
       }),
       new MiniCssExtractPlugin({
+        ...(options.clientOutput?.cssFilename === undefined
+          ? {}
+          : { filename: options.clientOutput.cssFilename }),
+        ...(options.clientOutput?.cssChunkFilename === undefined
+          ? {}
+          : { chunkFilename: options.clientOutput.cssChunkFilename }),
         ...(options.target === "web" && options.crossOriginLoading
           ? { attributes: { crossorigin: options.crossOriginLoading } }
           : {}),

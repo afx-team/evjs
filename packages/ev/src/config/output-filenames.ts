@@ -1,13 +1,21 @@
 import { assertPortableRelativeBrowserArtifactPath } from "@evjs/shared/manifest";
 
-/** Validate client JavaScript templates shared by the bundled adapters. */
+/** Validate client asset templates shared by the bundled adapters. */
 export function resolveOutputFilename(
   value: unknown,
-  field: "output.filename" | "output.chunkFilename",
+  field:
+    | "output.filename"
+    | "output.chunkFilename"
+    | "output.cssFilename"
+    | "output.cssChunkFilename",
 ): string {
-  if (typeof value !== "string" || !value.endsWith(".js")) {
+  const extension =
+    field === "output.cssFilename" || field === "output.cssChunkFilename"
+      ? ".css"
+      : ".js";
+  if (typeof value !== "string" || !value.endsWith(extension)) {
     throw new Error(
-      `[evjs] ${field} must be a static relative .js filename template.`,
+      `[evjs] ${field} must be a static relative ${extension} filename template.`,
     );
   }
   const placeholder = /\[(?:name|contenthash(?::[1-9][0-9]*)?)\]/g;
@@ -24,7 +32,7 @@ export function resolveOutputFilename(
       : !placeholder.test(value)
   ) {
     throw new Error(
-      `[evjs] ${field} must include ${field === "output.filename" ? "[name] to distinguish entries" : "[name] or [contenthash] to distinguish chunks"}.`,
+      `[evjs] ${field} must include ${field === "output.filename" ? "[name] to distinguish entries" : "[name] or [contenthash] to distinguish assets"}.`,
     );
   }
   return value;

@@ -531,10 +531,12 @@ describe("createUtoopackConfig", () => {
   it.each([
     "development",
     "production",
-  ] as const)("uses configured client JS templates in %s without changing server output", async (mode) => {
+  ] as const)("uses configured client asset templates in %s without changing server output", async (mode) => {
     const config = createResolvedConfig();
     config.output.filename = "js/[name].[contenthash:9].js";
     config.output.chunkFilename = "chunks/[contenthash].async.js";
+    config.output.cssFilename = "styles/[contenthash].css";
+    config.output.cssChunkFilename = "styles/[contenthash:9].async.css";
     const plan = await createPlan(config, {
       mode,
       serverRoutes: [
@@ -550,6 +552,8 @@ describe("createUtoopackConfig", () => {
     expect(result.output).toMatchObject({
       filename: config.output.filename,
       chunkFilename: config.output.chunkFilename,
+      cssFilename: config.output.cssFilename,
+      cssChunkFilename: config.output.cssChunkFilename,
     });
     expect(result.server?.output?.filename).toBe(
       mode === "production" ? "[name].[contenthash:8].js" : "[name].js",

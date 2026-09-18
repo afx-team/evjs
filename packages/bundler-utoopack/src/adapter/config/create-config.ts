@@ -151,10 +151,12 @@ export async function createUtoopackConfig(
       chunkFilename:
         config.output.chunkFilename ??
         (isProduction ? "[name].[contenthash:8].js" : "[name].js"),
-      cssFilename: isProduction ? "[name].[contenthash:8].css" : "[name].css",
-      cssChunkFilename: isProduction
-        ? "[name].[contenthash:8].css"
-        : "[name].css",
+      cssFilename:
+        config.output.cssFilename ??
+        (isProduction ? "[name].[contenthash:8].css" : "[name].css"),
+      cssChunkFilename:
+        config.output.cssChunkFilename ??
+        (isProduction ? "[name].[contenthash:8].css" : "[name].css"),
       publicPath: plan.runtime.publicPath,
       crossOriginLoading: config.output.crossOriginLoading,
       clean: true,
