@@ -186,6 +186,7 @@ const generatedFrameworkArtifacts = [
   ".ev",
   ".evjs",
   ".turbopack",
+  ".utoopack",
   "route-types.d.ts",
   "plugin-types.d.ts",
 ] as const;

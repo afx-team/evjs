@@ -20,7 +20,7 @@
         "$TURBO_ROOT$/{AGENTS.md,ARCHITECTURE.md,CONTRIBUTING.md,README.md,package-lock.json}",
         "$TURBO_ROOT$/docs/{docs,i18n}/**/*.md",
         "$TURBO_ROOT$/examples/**",
-        "!$TURBO_ROOT$/examples/**/{dist,.turbo,.turbopack,node_modules}/**",
+        "!$TURBO_ROOT$/examples/**/{dist,.turbo,.turbopack,.utoopack,node_modules}/**",
         "!$TURBO_ROOT$/examples/**/route-types.d.ts",
         "$TURBO_ROOT$/packages/*/{README.md,package.json}",
         "$TURBO_ROOT$/packages/create-app/templates/*",
@@ -32,7 +32,7 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/examples/**",
-        "!$TURBO_ROOT$/examples/**/{dist,.turbo,.turbopack,node_modules}/**",
+        "!$TURBO_ROOT$/examples/**/{dist,.turbo,.turbopack,.utoopack,node_modules}/**",
         "!$TURBO_ROOT$/examples/**/route-types.d.ts",
         "$TURBO_ROOT$/packages/create-app/templates/*"
       ]
