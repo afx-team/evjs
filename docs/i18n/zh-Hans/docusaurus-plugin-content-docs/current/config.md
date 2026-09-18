@@ -229,6 +229,11 @@ export default defineConfig({
 
 客户端和服务端目录必须是 `dist` 下分离且不嵌套的后代，不能包含空、`.` 或 `..` 路径段。
 
+Utoopack 生产构建的客户端 JavaScript 入口使用 `[name].[contenthash:8].js`，
+其他 JavaScript chunk 使用 `[contenthash:8].js`，入口和异步 CSS 均使用
+`[contenthash:8].css`。入口名称用于区分页面，chunk 和样式使用简短的内容 hash 文件名。
+开发模式使用 `[name].js` 和 `[name].css`。这些命名模板是框架默认行为，无需应用配置。
+
 `crossOriginLoading` 设置生成 JavaScript/CSS 标签的 `crossorigin` 属性，并对动态代码块加载应用相同策略。
 
 ## 跨域服务端传输

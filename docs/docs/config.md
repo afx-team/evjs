@@ -250,6 +250,13 @@ export default defineConfig({
 Client and server directories must be separate, non-nested descendants of
 `dist` and cannot contain empty, `.` or `..` path segments.
 
+Utoopack production builds name client JavaScript entries
+`[name].[contenthash:8].js`, additional JavaScript chunks `[contenthash:8].js`,
+and entry/async CSS `[contenthash:8].css`. Entry names distinguish pages;
+chunks and styles use short content-based names. Development uses `[name].js`
+and `[name].css`. These filename templates are framework defaults and do not
+require application configuration.
+
 `crossOriginLoading` sets the `crossorigin` attribute for generated JavaScript
 and CSS tags and applies the same policy to dynamically loaded chunks.
 
