@@ -254,6 +254,11 @@ automatically or provide a second application entry. Slave code must use the
 supplied container; the plugin does not rewrite global `document` lookup
 methods.
 
+Failures during automatic standalone startup are reported as global errors with
+the original error and stack. Explicit lifecycle calls still reject to their
+callers, and a failed operation does not block later lifecycle calls. In qiankun
+mode, the host owns startup error handling.
+
 ## Module references
 
 `resolver` and `runtime` accept a module path, a generated module reference, or

@@ -440,7 +440,15 @@ function createSlaveEntryWrapperSource(
     "}",
     "",
     "if (!qiankunSlave.isPoweredByQiankun()) {",
-    "  void qiankunSlave.standalone();",
+    "  void qiankunSlave.standalone().catch((error: unknown) => {",
+    '    if (typeof globalThis.reportError === "function") {',
+    "      globalThis.reportError(error);",
+    "    } else {",
+    "      setTimeout(() => {",
+    "        throw error;",
+    "      }, 0);",
+    "    }",
+    "  });",
     "}",
   ]
     .filter(Boolean)
