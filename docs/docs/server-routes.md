@@ -62,6 +62,73 @@ static route.
 API route patterns cannot overlap page routes, redirects, or active framework
 runtime endpoints. Run `ev inspect` to catch conflicts before a build.
 
+## Calling application APIs from the browser
+
+Import `api` from the framework root. Use the full application path: the client
+does not add `/api`, and page routing `basepath` does not affect API URLs.
+
+```ts
+import { api } from "@evjs/ev";
+import type { CreateTaskInput, CreateTaskResult } from "@/shared/task";
+
+const input: CreateTaskInput = { title: "Run tests" };
+const task = await api.post("/api/tasks", { json: input }).json<CreateTaskResult>();
+```
+
+Define DTOs once in an ordinary module such as `src/shared/task.ts`:
+
+```ts
+export interface CreateTaskInput { title: string }
+export interface CreateTaskResult { id: string; title: string; createdAt: string }
+```
+
+Server business functions import the same types with `import type`. Annotate
+their arguments and return value, or check the result with `satisfies` before
+passing it to `Response.json()`. DTOs describe the JSON on the wire: dates are
+strings. Keep existing runtime input validation. `.json<T>()` supplies a
+compile-time type; it neither validates the response nor binds a URL to a DTO.
+The framework does not generate handler types, route clients, or schemas.
+
+`api` provides `get`, `post`, `put`, `patch`, `delete`, `head`, and `options`.
+Options follow `RequestInit`, except the method comes from the called function.
+`json` serializes the request and defaults `Content-Type` to `application/json`;
+it is mutually exclusive with `body`.
+
+Each call sends one request and returns a `Promise<Response>` with a
+`.json<T = unknown>()` method. Direct `await` preserves Fetch semantics,
+including HTTP error responses. `.json()` throws `ApiError` for non-success
+HTTP status codes or non-JSON content types. `error.response`, `error.status`,
+and `error.url` remain available; those checks do not consume the body.
+Malformed JSON uses the native parsing error. Network and abort errors propagate.
+
+```ts
+const controller = new AbortController();
+const response = await api.post("/api/events", {
+  json: { topic: "tasks" },
+  signal: controller.signal,
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const reader = response.body?.getReader(); // consume SSE incrementally
+// controller.abort() cancels the request/stream.
+```
+
+There are no retries or response buffering. Use the raw `Response` for SSE,
+binary data, or empty responses such as `HEAD` and `204`. The body is a native
+single-consumption stream; choose `.json()` or a raw body reader.
+
+The generated runtime module binds a client to its application/build before
+consumer modules execute, including top-level calls. It snapshots deployment
+defaults and merges application `transport` configuration, then per-request
+options; header names are case-insensitive. An explicit `baseUrl` retains its
+complete deployment prefix before the application path is appended. For example,
+`https://gateway.example/app/v1` plus `/health` becomes
+`https://gateway.example/app/v1/health`. With no base URL, requests are same-origin.
+
+This root client supports framework browser builds. Importing it during SSR is
+safe, but calling it on the server is unsupported. Standalone consumers can
+use `createApiClient()` from `@evjs/client/http-api`. Upgrading the framework
+does not change native `fetch`; migrate application API call sites explicitly.
+
 ## Handler signature
 
 Each HTTP method handler receives the Web `Request` and a Hono-compatible

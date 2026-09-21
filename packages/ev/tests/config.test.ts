@@ -1174,6 +1174,8 @@ describe("resolveConfig", () => {
       },
       transport: {
         baseUrl: "https://runtime.example.com",
+        credentials: "include",
+        headers: { "X-App": "example" },
       },
     });
 
@@ -1209,6 +1211,23 @@ describe("resolveConfig", () => {
       https: { key: "server.key", cert: "server.cert" },
     });
     expect(resolved.transport.baseUrl).toBe("https://runtime.example.com");
+    expect(resolved.transport.credentials).toBe("include");
+    expect(resolved.transport.headers).toEqual({ "x-app": "example" });
+  });
+
+  it("rejects non-serializable transport defaults and invalid credentials", () => {
+    expect(() =>
+      resolveConfig({ transport: { credentials: "invalid" } } as never),
+    ).toThrow("transport.credentials");
+    for (const headers of [
+      new Headers(),
+      [["x-app", "example"]],
+      { "x-app": 1 },
+    ]) {
+      expect(() => resolveConfig({ transport: { headers } } as never)).toThrow(
+        "transport.headers",
+      );
+    }
   });
 
   it("strictly validates server-only build settings", () => {

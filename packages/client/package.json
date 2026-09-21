@@ -44,6 +44,16 @@
       "import": "./esm/index.js",
       "default": "./esm/index.js"
     },
+    "./http-api": {
+      "types": "./esm/http-api/index.d.ts",
+      "import": "./esm/http-api/index.js",
+      "default": "./esm/http-api/index.js"
+    },
+    "./internal/http-api": {
+      "types": "./esm/http-api/framework-runtime.d.ts",
+      "import": "./esm/http-api/framework-runtime.js",
+      "default": "./esm/http-api/framework-runtime.js"
+    },
     "./transport": {
       "types": "./esm/server-functions/transport.d.ts",
       "import": "./esm/server-functions/transport.js",

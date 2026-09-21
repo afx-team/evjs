@@ -10,6 +10,7 @@
   "exports": {
     ".": {
       "types": "./esm/index.d.ts",
+      "browser": "./esm/browser.js",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
     },
@@ -72,6 +73,16 @@
       "types": "./esm/_internal/build/index.d.ts",
       "import": "./esm/_internal/build/index.js",
       "default": "./esm/_internal/build/index.js"
+    },
+    "./_internal/client/api": {
+      "types": "./esm/_internal/generated/client/api.d.ts",
+      "import": "./esm/_internal/generated/client/api.js",
+      "default": "./esm/_internal/generated/client/api.js"
+    },
+    "./_internal/client/api-transport": {
+      "types": "./esm/_internal/generated/client/api-transport.d.ts",
+      "import": "./esm/_internal/generated/client/api-transport.js",
+      "default": "./esm/_internal/generated/client/api-transport.js"
     },
     "./_internal/client": {
       "types": "./esm/_internal/generated/client/index.d.ts",

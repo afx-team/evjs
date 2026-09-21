@@ -57,6 +57,11 @@ import {
 } from "../output/portable-artifact-path.js";
 import { createPluginConfigView } from "../plugins/lifecycle.js";
 import { toPosixPath } from "../utils.js";
+import {
+  API_CLIENT_FILE,
+  API_CLIENT_MODULE,
+  createApiClientSource,
+} from "./sources/api-client-source.js";
 import { applyApplicationWrapperContributions } from "./sources/application-wrapper-contribution.js";
 import {
   createOriginalClientEntryFacadeSource,
@@ -1027,6 +1032,10 @@ function renderGeneratedIRImage(
 
   addFile(path.join(rootDir, GENERATED_IR_TYPES), createGeneratedTypesSource());
   addFile(
+    path.resolve(cwd, API_CLIENT_FILE),
+    createApiClientSource(graph, plan),
+  );
+  addFile(
     path.join(rootDir, "framework/core-graph.json"),
     stringifyGeneratedJson({ generatedBy: "evjs", graph }),
   );
@@ -1446,8 +1455,9 @@ function applyResolveContributions(
   const generatedFileBySpecifier = new Map(
     generated.modules.map((module) => [module.specifier, module.file]),
   );
-  const alias = {
+  const alias: Record<string, string> = {
     ...(plan.resolve?.alias ?? {}),
+    [API_CLIENT_MODULE]: API_CLIENT_FILE,
     ...Object.fromEntries(
       generated.modules.map((module) => [module.specifier, module.file]),
     ),
@@ -2340,6 +2350,7 @@ function sortStableValue(value: unknown): unknown {
 
 function createGeneratedFrameworkFiles(): GeneratedFrameworkPlan["frameworkFiles"] {
   return [
+    { id: "api-client", file: API_CLIENT_FILE },
     {
       id: "core-graph",
       file: `./${GENERATED_IR_DIR}/framework/core-graph.json`,

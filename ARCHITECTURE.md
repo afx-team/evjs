@@ -98,12 +98,14 @@ improve repository ownership.
 
 ## Public Imports
 
-The `@evjs/ev` root is the minimal config-authoring entry. Other responsibilities
-use explicit subpaths:
+The `@evjs/ev` root exposes config authoring in Node and a browser-safe HTTP
+client facade through its browser export condition. Other responsibilities use
+explicit subpaths. The generated application module binds transport at runtime;
+it does not import HTTP handlers or generate business types.
 
 | Import | Intended consumer |
 | --- | --- |
-| `@evjs/ev` | `defineConfig`, `definePageConfig`, and their basic types. |
+| `@evjs/ev` | `defineConfig`, `definePageConfig` in Node; `api`, `ApiError`, and HTTP client types in browser builds. |
 | `@evjs/ev/config` | Advanced config utilities and resolved config types. |
 | `@evjs/ev/plugin` | Plugin declarations, typed setting contracts, hooks, and the read-only framework view. |
 | `@evjs/ev/deployment` | Built-in deployment adapters and artifact helpers. |

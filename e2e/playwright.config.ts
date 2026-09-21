@@ -33,6 +33,7 @@ export default defineConfig<ExtTestOptions>({
     {
       name: "webpack-examples",
       testMatch: [
+        "cases/api-routes.ts",
         "cases/render-modes.ts",
         "cases/deployment-adapters.ts",
         "cases/ssg.ts",

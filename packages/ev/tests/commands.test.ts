@@ -1240,6 +1240,7 @@ describe("prepareFrameworkBuild", () => {
     expect(frameworkGraph.graph.rootDir).toBe(cwd);
     expect(frameworkPlan.plan.entries[0]?.import).toBe("./.ev/entries/main.ts");
     expect(manifest.generated?.frameworkFiles).toEqual([
+      { id: "api-client", file: "./.ev/framework/api-client.ts" },
       {
         id: "core-graph",
         file: "./.ev/framework/core-graph.json",
@@ -1481,7 +1482,7 @@ describe("prepareFrameworkBuild", () => {
         target: { android: 5, ios: 8 },
         polyfill: { coreJs: "bundled" },
       } as never,
-      graph: {} as CoreGraph,
+      graph: { applications: {} } as CoreGraph,
       plan,
       plugins: [],
       pluginContext: {} as never,
@@ -2513,6 +2514,7 @@ describe("prepareFrameworkBuild", () => {
       fs.promises.access(path.join(cwd, ".ev/framework/app-graph.json")),
     ).rejects.toThrow();
     expect(generatedManifest.generated?.frameworkFiles).toEqual([
+      { id: "api-client", file: "./.ev/framework/api-client.ts" },
       {
         id: "core-graph",
         file: "./.ev/framework/core-graph.json",

@@ -180,17 +180,27 @@ export function getGlobalRuntimeTransport():
 
 /**
  * Resolve defaults for framework-managed browser requests to evjs server
- * endpoints. Keep new server-route, PPR, or other framework client fetch
- * consumers on this helper instead of reading runtime.transport directly.
+ * endpoints using the legacy Server Function/RSC bootstrap. The application
+ * HTTP client uses its own application/build-scoped transport binding.
  */
 export function resolveClientRuntimeTransport(
   runtime: Pick<ClientRuntime, "runtime">,
 ): ClientRuntimeTransport | undefined {
   const transport = getClientRuntimeTransport(runtime);
-  if (transport !== undefined && hasClientRuntimeTransport(transport)) {
-    return transport;
-  }
-  return getGlobalRuntimeTransport();
+  // An explicit endpoint retains the existing independent transport behavior.
+  if (transport?.baseUrl !== undefined) return transport;
+  const defaults = getGlobalRuntimeTransport();
+  if (!transport || !hasClientRuntimeTransport(transport)) return defaults;
+  if (!defaults) return transport;
+  const headers = new Headers(defaults.headers);
+  new Headers(transport.headers).forEach((value, name) => {
+    headers.set(name, value);
+  });
+  return {
+    baseUrl: defaults.baseUrl,
+    credentials: transport.credentials ?? defaults.credentials,
+    headers,
+  };
 }
 
 export function hasClientRuntimeTransport(

@@ -81,6 +81,13 @@ export type {
   PageRoutePath,
   PageRouteSearch,
 } from "./framework/page/route-types.js";
+export { ApiError, createApiClient } from "./http-api/index.js";
+export type {
+  ApiCall,
+  ApiClient,
+  ApiClientOptions,
+  ApiRequestOptions,
+} from "./http-api/types.js";
 export type { RscFlightFetchOptions } from "./rsc/react.js";
 export { fetchRscFlight } from "./rsc/react.js";
 export type {

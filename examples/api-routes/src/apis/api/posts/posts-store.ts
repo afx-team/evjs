@@ -1,10 +1,4 @@
-/** Simulated post database private to the /api/posts route scope. */
-export interface Post {
-  id: string;
-  title: string;
-  body: string;
-  createdAt: string;
-}
+import type { CreatePostInput, Post } from "@/shared/posts";
 
 export const posts: Post[] = [
   {
@@ -23,7 +17,7 @@ export const posts: Post[] = [
 
 let nextId = 3;
 
-export function createPost(input: { title: string; body: string }): Post {
+export function createPost(input: CreatePostInput): Post {
   const post: Post = {
     id: String(nextId++),
     title: input.title,

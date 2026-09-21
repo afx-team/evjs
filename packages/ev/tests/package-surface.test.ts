@@ -90,6 +90,7 @@ const expectedCleanBuildOutput = {
 const expectedPrimaryPackageExports = {
   "@evjs/ev": {
     types: "./esm/index.d.ts",
+    browser: "./esm/browser.js",
     import: "./esm/index.js",
     default: "./esm/index.js",
   },
@@ -340,6 +341,8 @@ const expectedPackageExportSubpaths = {
     ".",
     "./_internal/build",
     "./_internal/client",
+    "./_internal/client/api",
+    "./_internal/client/api-transport",
     "./_internal/client/page-context",
     "./_internal/client/polyfill",
     "./_internal/client/react-page",
@@ -366,8 +369,10 @@ const expectedPackageExportSubpaths = {
   ],
   "@evjs/client": [
     ".",
+    "./http-api",
     "./transport",
     "./internal",
+    "./internal/http-api",
     "./internal/page-context",
     "./internal/react-page",
     "./internal/rsc-page-context",
@@ -538,6 +543,8 @@ describe("workspace package surface", () => {
       expectedPrimaryPackageExports["@evjs/ev"],
     );
     expect(Object.keys(evRoot).sort()).toEqual([
+      "ApiError",
+      "api",
       "defineConfig",
       "definePageConfig",
     ]);
@@ -817,7 +824,7 @@ describe("workspace package surface", () => {
       cli: ["cli.ts", "index.ts"],
       client: ["index.ts", "internal.ts", "react-server-dom-webpack.d.ts"],
       "create-app": ["index.ts"],
-      ev: ["index.ts"],
+      ev: ["browser.ts", "index.ts"],
       "plugin-qiankun": ["index.ts", "runtime.ts"],
       server: ["index.ts"],
       shared: ["index.ts"],
@@ -1053,7 +1060,7 @@ describe("workspace package surface", () => {
     expect(rootArchitecture).toContain("## Ownership Boundaries");
     expect(rootArchitecture).toContain("`@evjs/client`");
     expect(rootArchitecture).toContain(
-      "The `@evjs/ev` root is the minimal config-authoring entry",
+      "The `@evjs/ev` root exposes config authoring in Node and a browser-safe HTTP",
     );
     expect(rootArchitecture).toContain("`@evjs/ev/config`");
     expect(rootArchitecture).toContain("Bundler adapters consume `BuildPlan`");
@@ -1364,7 +1371,9 @@ describe("workspace package surface", () => {
     ).sort();
     expect(exportedSubpaths).toEqual([
       ".",
+      "./http-api",
       "./internal",
+      "./internal/http-api",
       "./internal/page-context",
       "./internal/react-page",
       "./internal/rsc-page-context",

@@ -321,11 +321,12 @@ export interface ResolvedServerConventionsConfig {
 export interface TransportConfig {
   /** Absolute HTTP(S) server URL used by the browser runtime. */
   baseUrl?: string;
+  /** Browser request defaults; headers must be serializable string values. */
+  credentials?: "omit" | "same-origin" | "include";
+  headers?: Record<string, string>;
 }
 
-export interface ResolvedTransportConfig {
-  baseUrl?: string;
-}
+export interface ResolvedTransportConfig extends TransportConfig {}
 
 /** Browser versions supported by framework-owned client compilation. */
 export interface ClientTarget {
@@ -646,7 +647,11 @@ const PUBLIC_SERVER_CONFIG_KEYS = new Set([
 const PUBLIC_SERVER_RESOLVE_CONFIG_KEYS = new Set(["alias"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
-const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
+const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set([
+  "baseUrl",
+  "credentials",
+  "headers",
+]);
 const PUBLIC_POLYFILL_CONFIG_KEYS = new Set(["coreJs"]);
 const PUBLIC_OUTPUT_CONFIG_KEYS = new Set([
   "client",
@@ -840,6 +845,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
         transportConfig.baseUrl === undefined
           ? undefined
           : assertHttpUrl(transportConfig.baseUrl, "transport.baseUrl"),
+      ...resolveTransportRequestDefaults(transportConfig),
     },
     output: {
       ...resolveOutputDirectories(outputConfig),
@@ -1807,8 +1813,36 @@ function validateTransportConfigKeys(transport: TransportConfig): void {
     transport,
     PUBLIC_TRANSPORT_CONFIG_KEYS,
     "transport",
-    "baseUrl",
+    "baseUrl, credentials, and headers",
   );
+}
+
+function resolveTransportRequestDefaults(
+  transport: TransportConfig,
+): Pick<TransportConfig, "headers" | "credentials"> {
+  const defaults: Pick<TransportConfig, "headers" | "credentials"> = {};
+  if (transport.credentials !== undefined) {
+    if (!["omit", "same-origin", "include"].includes(transport.credentials)) {
+      throw new Error(
+        '[evjs] transport.credentials must be "omit", "same-origin", or "include".',
+      );
+    }
+    defaults.credentials = transport.credentials;
+  }
+  if (transport.headers !== undefined) {
+    const headers = assertPlainConfigRecord(
+      transport.headers,
+      "transport.headers",
+      "a string-valued header object",
+    );
+    if (Object.values(headers).some((value) => typeof value !== "string")) {
+      throw new Error("[evjs] transport.headers must contain string values.");
+    }
+    defaults.headers = Object.fromEntries(
+      new Headers(headers as Record<string, string>),
+    );
+  }
+  return defaults;
 }
 
 function validatePolyfillConfigKeys(polyfill: PolyfillConfig): void {

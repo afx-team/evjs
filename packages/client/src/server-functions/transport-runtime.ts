@@ -33,6 +33,7 @@ import {
   getGlobalRuntimeTransport,
   hasClientRuntimeTransport,
   type RuntimeTransportOptions,
+  resolveClientRuntimeTransport,
 } from "../shared/runtime-config.js";
 import { formatErrorDetail, isRecord } from "../shared/validation.js";
 
@@ -504,8 +505,9 @@ export function initTransport(options: TransportOptions = {}): void {
 export function initTransportFromRuntime(
   runtime: Pick<ClientRuntime, "runtime">,
 ): void {
-  const transport =
-    readClientRuntimeTransport(runtime) ?? getGlobalRuntimeTransport();
+  const transport = resolveClientRuntimeTransport({
+    runtime: { transport: readClientRuntimeTransport(runtime) },
+  });
   const snapshot = snapshotRuntimeTransport(transport);
   if (_runtimeSource === "user") return;
 
