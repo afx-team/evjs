@@ -1,9 +1,89 @@
 import { expect } from "@playwright/test";
 import { createExampleTest } from "../fixtures";
 
-const test = createExampleTest("api-routes");
+const test = createExampleTest("api-routes", {
+  transport: { headers: { "X-Source": "application" }, credentials: "omit" },
+  plugins: [
+    {
+      id: "e2e-transport-probe",
+      emitIR(ctx) {
+        const probe = ctx.emit.module({
+          id: "startup-call",
+          scope: { kind: "application" },
+          source: `
+import { sayHello } from "@/apis/demo.server";
+import { initTransport } from "@evjs/ev/transport";
+const probe = (globalThis as { __evjsTransportProbe?: { baseUrl: string; override: boolean } }).__evjsTransportProbe;
+if (probe) {
+  if (probe.override) initTransport({ baseUrl: probe.baseUrl, headers: { "X-Source": "user" }, credentials: "same-origin", silent: true });
+  void sayHello("startup");
+}
+`,
+        });
+        ctx.slot("client.entry").add({
+          id: "startup-call-import",
+          module: probe,
+          position: "before-main-imports",
+        });
+      },
+    },
+  ],
+});
+
+interface TransportProbeGlobals {
+  __evjsTransportProbe?: { baseUrl: string; override: boolean };
+}
 
 test.describe("api-routes", () => {
+  for (const override of [false, true]) {
+    test(
+      override
+        ? "keeps explicit transport overrides for top-level server functions"
+        : "applies application transport before top-level server functions",
+      async ({ page, context, baseURL }) => {
+        await context.addCookies([
+          { name: "transport-probe", value: "present", url: baseURL },
+        ]);
+        await page.addInitScript(
+          ({ baseUrl, override }) => {
+            globalThis.__EVJS_TRANSPORT__ = {
+              baseUrl,
+              credentials: "include",
+              headers: {
+                "x-source": "deployment",
+                "x-webgw-appid": "test-app",
+              },
+            };
+            (globalThis as TransportProbeGlobals).__evjsTransportProbe = {
+              baseUrl,
+              override,
+            };
+          },
+          { baseUrl: baseURL, override },
+        );
+        const responsePromise = page.waitForResponse(
+          (response) => new URL(response.url()).pathname === "/__evjs/fn",
+        );
+        await page.goto(baseURL);
+        const response = await responsePromise;
+        expect(response.ok()).toBe(true);
+        const headers = await response.request().allHeaders();
+        expect(headers["x-source"]).toBe(override ? "user" : "application");
+        expect(headers["x-webgw-appid"]).toBe(
+          override ? undefined : "test-app",
+        );
+        if (override) {
+          expect(headers.cookie).toContain("transport-probe=present");
+        } else {
+          expect(headers.cookie).toBeUndefined();
+        }
+        await expect(response.json()).resolves.toMatchObject({
+          result: "Hello, startup! This is from a server function.",
+        });
+      },
+    );
+  }
+
   test("displays the correct heading", async ({ page, baseURL }) => {
     await page.goto(baseURL);
 

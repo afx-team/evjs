@@ -807,7 +807,7 @@ export interface GeneratedFrameworkPlan {
 }
 
 export interface GeneratedFrameworkFilePlan {
-  id: "core-graph" | "build-plan" | "api-client";
+  id: "core-graph" | "build-plan" | "api-client" | "server-function-transport";
   file: string;
 }
 
