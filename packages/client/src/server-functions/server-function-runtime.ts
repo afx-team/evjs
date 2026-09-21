@@ -5,4 +5,7 @@
  * instead of the public transport API or the broader internal runtime barrel.
  */
 
-export { createServerReference } from "./transport-runtime.js";
+export {
+  createServerReference,
+  initTransportFromRuntime,
+} from "./transport-runtime.js";

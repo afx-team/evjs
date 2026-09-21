@@ -53,6 +53,65 @@ export const POST = async (req) => {
 API 路由形态不能与页面路由、重定向或活动框架运行时端点重叠。运行 `ev inspect` 可以在
 构建前发现冲突。
 
+## 在浏览器中调用应用内 API
+
+从框架根包导入 `api`，传入完整应用路径。客户端不会补 `/api`，页面路由的
+`basepath` 不参与 API 地址计算。
+
+```ts
+import { api } from "@evjs/ev";
+import type { CreateTaskInput, CreateTaskResult } from "@/shared/task";
+
+const input: CreateTaskInput = { title: "运行测试" };
+const task = await api.post("/api/tasks", { json: input }).json<CreateTaskResult>();
+```
+
+DTO 放在普通模块中，例如 `src/shared/task.ts`，只定义一次：
+
+```ts
+export interface CreateTaskInput { title: string }
+export interface CreateTaskResult { id: string; title: string; createdAt: string }
+```
+
+服务端业务函数通过 `import type` 引用同一组类型，标注入参和返回值，或在
+`Response.json()` 前用 `satisfies` 检查结果。DTO 描述实际 JSON 数据，日期用字符串。
+保留业务现有的运行时输入校验。`.json<T>()` 只提供编译期类型，不校验响应，也不绑定
+URL 与 DTO。框架不生成 handler 类型、路由客户端或 schema。
+
+`api` 提供 `get/post/put/patch/delete/head/options`。选项沿用 `RequestInit`，
+方法由调用名称确定。`json` 负责序列化并默认设置 `Content-Type: application/json`，
+与 `body` 互斥。
+
+一次调用只发一个请求，返回附带 `.json<T = unknown>()` 的 `Promise<Response>`。
+直接 `await` 保留 Fetch 语义，包括 HTTP 错误响应。`.json()` 对非成功 HTTP 状态或
+非 JSON Content-Type 抛出 `ApiError`，可读取 `error.response`、`error.status` 和
+`error.url`；这些检查不会消耗响应体。JSON 内容损坏同样抛出 `ApiError`，其 `cause`
+保留原生解析错误，此时附带的响应体已消费。网络及取消错误直接透传。
+
+```ts
+const controller = new AbortController();
+const response = await api.post("/api/events", {
+  json: { topic: "tasks" },
+  signal: controller.signal,
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const reader = response.body?.getReader(); // 逐块读取 SSE
+// controller.abort() 取消请求及响应流。
+```
+
+客户端不重试、不预读响应体。SSE、二进制、HEAD 或 204 空响应使用原始 `Response`。
+响应体保留原生只能消费一次的语义，选择 `.json()` 或原始 reader 其中一种方式。
+
+生成的运行时模块在业务模块执行前绑定所属应用和 build，因此支持模块顶层调用。
+客户端保存部署配置快照，按“部署默认值 → 应用 transport 配置 → 单次请求选项”
+合并，header 名称大小写不敏感。`baseUrl` 保留完整部署前缀再拼接业务路径，
+例如 `https://gateway.example/app/v1` 加 `/health` 得到
+`https://gateway.example/app/v1/health`。未配置 baseUrl 时使用本地同源路径。
+
+根包客户端面向框架浏览器构建。SSR 中可以安全导入，但不支持在服务端调用。
+独立客户端可使用 `@evjs/client/http-api` 的 `createApiClient()`。
+升级框架不会改变原生 `fetch`；存量应用需明确替换应用内 API 调用点。
+
 ## 处理器签名
 
 每个 HTTP 方法处理器接收 Web `Request` 和兼容 Hono 的上下文：

@@ -448,6 +448,8 @@ export interface RuntimeServerOutput {
 
 export interface TransportOutput {
   baseUrl?: string;
+  credentials?: "omit" | "same-origin" | "include";
+  headers?: Record<string, string>;
 }
 
 export interface AppOutput {
@@ -697,6 +699,25 @@ export function assertFrameworkManifestShape(
       value.runtime.transport.baseUrl,
       `${source}.runtime.transport.baseUrl`,
     );
+    const { credentials, headers } = value.runtime.transport;
+    if (
+      credentials !== undefined &&
+      credentials !== "omit" &&
+      credentials !== "same-origin" &&
+      credentials !== "include"
+    ) {
+      throw new Error(
+        `[evjs] ${source}.runtime.transport.credentials must be omit, same-origin, or include.`,
+      );
+    }
+    if (headers !== undefined) {
+      assertObject(headers, `${source}.runtime.transport.headers`);
+      if (Object.values(headers).some((value) => typeof value !== "string")) {
+        throw new Error(
+          `[evjs] ${source}.runtime.transport.headers must contain string values.`,
+        );
+      }
+    }
   }
 
   assertObject(value.server, `${source}.server`);
@@ -786,7 +807,7 @@ export interface GeneratedFrameworkPlan {
 }
 
 export interface GeneratedFrameworkFilePlan {
-  id: "core-graph" | "build-plan";
+  id: "core-graph" | "build-plan" | "api-client" | "server-function-transport";
   file: string;
 }
 

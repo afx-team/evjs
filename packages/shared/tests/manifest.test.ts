@@ -54,6 +54,31 @@ function createMinimalBuildOutput(): BuildOutput {
   };
 }
 
+describe("transport defaults in build output", () => {
+  it("validates serializable headers and Fetch credentials", () => {
+    const output = createMinimalBuildOutput();
+    output.runtime.transport = {
+      credentials: "include",
+      headers: { "x-app": "example" },
+    };
+    expect(() =>
+      assertFrameworkManifestShape(output, "manifest"),
+    ).not.toThrow();
+    for (const transport of [
+      { credentials: "invalid" },
+      { headers: [] },
+      { headers: { "x-app": 1 } },
+    ]) {
+      expect(() =>
+        assertFrameworkManifestShape(
+          { ...output, runtime: { ...output.runtime, transport } },
+          "manifest",
+        ),
+      ).toThrow("manifest.runtime.transport");
+    }
+  });
+});
+
 function createRuntimeFreeBuildOutput(): BuildOutput {
   return {
     ...createMinimalBuildOutput(),

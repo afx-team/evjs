@@ -9,6 +9,7 @@
  */
 
 import { withMiddlewares } from "@evjs/ev/api";
+import type { CreatePostInput } from "@/shared/posts";
 import { apiPolicies } from "../policies";
 import { createPost, posts } from "./posts-store";
 import validatePost from "./validate-post";
@@ -23,10 +24,7 @@ export const GET = withMiddlewares(async (req) => {
 /** Create a post. */
 export const POST = withMiddlewares(
   async (_req, ctx) => {
-    const { title, body } = await ctx.req.json<{
-      title: string;
-      body: string;
-    }>();
+    const { title, body } = await ctx.req.json<CreatePostInput>();
 
     return Response.json(createPost({ title, body }), { status: 201 });
   },

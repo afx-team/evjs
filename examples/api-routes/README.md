@@ -14,6 +14,7 @@ npm run dev
 |------|---------| 
 | `ev.config.ts` | Selects SPA routing mode |
 | `src/pages/page.tsx` | Root Page that exercises the REST endpoints |
+| `src/shared/posts.ts` | JSON DTOs shared through type-only imports by client and server |
 | `src/pages/layout.tsx` | File-convention root layout |
 | `src/middlewares/middleware.ts` | Ordered global middleware composition anchor |
 | `src/middlewares/response-metadata.ts` | Ordinary middleware module composed by the anchor |
@@ -26,6 +27,8 @@ npm run dev
 
 ## What It Demonstrates
 
+- Application HTTP calls through `import { api } from '@evjs/ev'` and `.json<Post>()`
+- Handwritten shared DTOs, existing runtime validation, and no API type generation
 - Directory-owned `api.ts` anchors with uppercase method exports (`GET`, `POST`, `PUT`, `DELETE`)
 - Dynamic route directories (`$id/api.ts` -> `:id`)
 - Query string parsing (`?limit=N`)

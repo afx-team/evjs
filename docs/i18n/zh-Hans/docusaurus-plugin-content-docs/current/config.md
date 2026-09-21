@@ -248,7 +248,12 @@ export default defineConfig({
 });
 ```
 
-它影响服务端函数等框架发起的浏览器到服务端调用，不是通用 API 客户端的基础 URL。
+它配置服务端函数和根包 `api` HTTP 客户端等框架调用。`api` 保留 `baseUrl`
+的完整路径前缀，页面路由 `basepath` 独立。可选的 `credentials`
+（`omit`、`same-origin`、`include`）和字符串值 `headers` 提供请求默认值，
+按“部署默认值 → 应用配置 → 单次请求选项”覆盖，headers 大小写不敏感合并。
+这些配置会进入浏览器代码，不应存放服务端密钥。原生 `fetch` 不受影响。
+用法见 [API 路由](./server-routes)。
 
 ## 插件
 

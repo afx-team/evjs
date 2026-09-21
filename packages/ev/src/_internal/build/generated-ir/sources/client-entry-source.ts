@@ -9,7 +9,11 @@ type ImportFile = (file: string) => string;
 export function createOriginalClientEntryFacadeSource(
   entry: BuildEntry,
   importFile: ImportFile,
-  options: { autoStart?: boolean; bundleCoreJs?: boolean } = {},
+  options: {
+    autoStart?: boolean;
+    bundleCoreJs?: boolean;
+    serverFunctionTransport?: string;
+  } = {},
 ): string {
   let source: string;
   if (entry.metadata?.type === "pages-app") {
@@ -26,9 +30,15 @@ export function createOriginalClientEntryFacadeSource(
   } else {
     source = `import ${JSON.stringify(importFile(entry.import))};`;
   }
-  return options.bundleCoreJs
-    ? `import "@evjs/ev/_internal/client/polyfill";\n${source}`
-    : source;
+  return [
+    options.bundleCoreJs ? 'import "@evjs/ev/_internal/client/polyfill";' : "",
+    options.serverFunctionTransport
+      ? `import ${JSON.stringify(options.serverFunctionTransport)};`
+      : "",
+    source,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function createPagesAppEntryMainSource(

@@ -273,8 +273,14 @@ export default defineConfig({
 });
 ```
 
-This affects framework browser-to-server calls such as server functions. It
-does not act as a general API-client base URL.
+This configures framework browser-to-server calls, including server functions
+and the root `api` HTTP client. `api` preserves the complete `baseUrl` path
+prefix; page routing `basepath` is independent. Optional `credentials`
+(`omit`, `same-origin`, or `include`) and string-valued `headers` provide
+request defaults. Deployment defaults are overridden by application config,
+then by per-request options; headers merge case-insensitively. These settings
+are exposed to browser code, so do not put server secrets in them. Native
+`fetch` remains unchanged. See [API Routes](./server-routes) for usage.
 
 ## Plugins
 

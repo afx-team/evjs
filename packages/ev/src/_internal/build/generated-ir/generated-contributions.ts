@@ -57,6 +57,11 @@ import {
 } from "../output/portable-artifact-path.js";
 import { createPluginConfigView } from "../plugins/lifecycle.js";
 import { toPosixPath } from "../utils.js";
+import {
+  API_CLIENT_FILE,
+  API_CLIENT_MODULE,
+  createApiClientSource,
+} from "./sources/api-client-source.js";
 import { applyApplicationWrapperContributions } from "./sources/application-wrapper-contribution.js";
 import {
   createOriginalClientEntryFacadeSource,
@@ -65,6 +70,11 @@ import {
 } from "./sources/client-entry-source.js";
 import { applyPageWrapperContributions } from "./sources/page-wrapper-contribution.js";
 import { createReactServerPageEntrySource } from "./sources/react-server-page-source.js";
+import {
+  createServerFunctionTransportSource,
+  needsServerFunctionTransport,
+  SERVER_FUNCTION_TRANSPORT_FILE,
+} from "./sources/server-function-transport-source.js";
 
 export const GENERATED_IR_DIR = ".ev";
 export const GENERATED_IR_MANIFEST = "manifest.json";
@@ -501,7 +511,7 @@ class ContributionCollector<TBundlerCfg> {
       entriesDir: `./${GENERATED_IR_DIR}/entries`,
       frameworkDir: `./${GENERATED_IR_DIR}/framework`,
       pluginsDir: `./${GENERATED_IR_DIR}/plugins`,
-      frameworkFiles: createGeneratedFrameworkFiles(),
+      frameworkFiles: createGeneratedFrameworkFiles(this.options.plan),
       modules: this.modules.map(toGeneratedModulePlan),
       slots: this.slots,
       importEdges: this.importEdges,
@@ -586,6 +596,11 @@ class ContributionCollector<TBundlerCfg> {
             source: ({ importFile }) =>
               createOriginalClientEntryFacadeSource(entry, importFile, {
                 autoStart: input.autoStart,
+                serverFunctionTransport: needsServerFunctionTransport(
+                  this.options.plan,
+                )
+                  ? importFile(SERVER_FUNCTION_TRANSPORT_FILE)
+                  : undefined,
                 bundleCoreJs:
                   this.options.mode === "production" &&
                   this.options.config.target !== undefined &&
@@ -1027,6 +1042,16 @@ function renderGeneratedIRImage(
 
   addFile(path.join(rootDir, GENERATED_IR_TYPES), createGeneratedTypesSource());
   addFile(
+    path.resolve(cwd, API_CLIENT_FILE),
+    createApiClientSource(graph, plan),
+  );
+  if (needsServerFunctionTransport(plan)) {
+    addFile(
+      path.resolve(cwd, SERVER_FUNCTION_TRANSPORT_FILE),
+      createServerFunctionTransportSource(plan),
+    );
+  }
+  addFile(
     path.join(rootDir, "framework/core-graph.json"),
     stringifyGeneratedJson({ generatedBy: "evjs", graph }),
   );
@@ -1446,8 +1471,9 @@ function applyResolveContributions(
   const generatedFileBySpecifier = new Map(
     generated.modules.map((module) => [module.specifier, module.file]),
   );
-  const alias = {
+  const alias: Record<string, string> = {
     ...(plan.resolve?.alias ?? {}),
+    [API_CLIENT_MODULE]: API_CLIENT_FILE,
     ...Object.fromEntries(
       generated.modules.map((module) => [module.specifier, module.file]),
     ),
@@ -1582,6 +1608,7 @@ function shouldGenerateEntry(
   if (entry.environment === "client") {
     return (
       injectBundledCoreJs ||
+      needsServerFunctionTransport(plan) ||
       getMatchingClientEntrySlots(plan, entry).length > 0 ||
       getSlotItemsFromGenerated<ClientEntrySlotPlanItem>(
         generated,
@@ -1761,6 +1788,17 @@ function createClientEntrySource(options: {
       ? ['import "@evjs/ev/_internal/client/polyfill";']
       : []),
     ...importsFor("polyfill"),
+    ...(needsServerFunctionTransport(options.plan)
+      ? [
+          `import ${JSON.stringify(
+            toGeneratedImportSpecifier(
+              options.cwd,
+              options.fromFile,
+              SERVER_FUNCTION_TRANSPORT_FILE,
+            ),
+          )};`,
+        ]
+      : []),
     ...importsFor("before-main-imports"),
     ...importsFor("before-main"),
     ...mainSource,
@@ -2338,8 +2376,19 @@ function sortStableValue(value: unknown): unknown {
   );
 }
 
-function createGeneratedFrameworkFiles(): GeneratedFrameworkPlan["frameworkFiles"] {
+function createGeneratedFrameworkFiles(
+  plan: BuildPlan,
+): GeneratedFrameworkPlan["frameworkFiles"] {
   return [
+    { id: "api-client", file: API_CLIENT_FILE },
+    ...(needsServerFunctionTransport(plan)
+      ? [
+          {
+            id: "server-function-transport" as const,
+            file: SERVER_FUNCTION_TRANSPORT_FILE,
+          },
+        ]
+      : []),
     {
       id: "core-graph",
       file: `./${GENERATED_IR_DIR}/framework/core-graph.json`,
