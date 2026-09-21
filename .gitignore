@@ -2,6 +2,7 @@
 node_modules
 .turbo
 .turbopack
+.utoopack
 dist
 dist-server
 .next

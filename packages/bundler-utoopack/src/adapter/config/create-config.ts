@@ -136,6 +136,7 @@ export async function createUtoopackConfig(
 
   const utoopackConfig: ConfigComplete = {
     mode,
+    cacheDirectory: ".utoopack",
     ...(isProduction && config.target !== undefined && clientEntries.length > 0
       ? { target: createClientBrowserslistTarget(config.target) }
       : {}),
