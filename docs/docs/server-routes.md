@@ -99,7 +99,8 @@ Each call sends one request and returns a `Promise<Response>` with a
 including HTTP error responses. `.json()` throws `ApiError` for non-success
 HTTP status codes or non-JSON content types. `error.response`, `error.status`,
 and `error.url` remain available; those checks do not consume the body.
-Malformed JSON uses the native parsing error. Network and abort errors propagate.
+Malformed JSON also throws `ApiError`, with the parsing error as `cause` and
+the consumed response attached. Network and abort errors propagate unchanged.
 
 ```ts
 const controller = new AbortController();

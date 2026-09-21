@@ -91,7 +91,19 @@ export function createLazyApiClient(
           url,
         );
       }
-      return result.json() as Promise<T>;
+      try {
+        return (await result.json()) as T;
+      } catch (cause) {
+        if (cause instanceof SyntaxError) {
+          throw new ApiError(
+            `[evjs] Invalid JSON API response from ${url}.`,
+            result,
+            url,
+            { cause },
+          );
+        }
+        throw cause;
+      }
     };
     return response;
   }

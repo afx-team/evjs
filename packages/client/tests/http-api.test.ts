@@ -133,7 +133,7 @@ describe("application HTTP client", () => {
     expect(response.bodyUsed).toBe(false);
   });
 
-  it("accepts JSON media types and forwards malformed JSON errors", async () => {
+  it("accepts JSON media types and retains malformed JSON responses in ApiError", async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(
@@ -148,7 +148,12 @@ describe("application HTTP client", () => {
       );
     const api = createApiClient({ fetch });
     await expect(api.get("/health").json()).resolves.toEqual({ ok: true });
-    await expect(api.get("/health").json()).rejects.toBeInstanceOf(SyntaxError);
+    const malformed = api.get("/health");
+    await expect(malformed.json()).rejects.toMatchObject({
+      name: "ApiError",
+      response: await malformed,
+      cause: expect.any(SyntaxError),
+    });
   });
 
   it("forwards raw bodies and never retries failures", async () => {

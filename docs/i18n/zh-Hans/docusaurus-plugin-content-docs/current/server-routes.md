@@ -85,8 +85,8 @@ URL 与 DTO。框架不生成 handler 类型、路由客户端或 schema。
 一次调用只发一个请求，返回附带 `.json<T = unknown>()` 的 `Promise<Response>`。
 直接 `await` 保留 Fetch 语义，包括 HTTP 错误响应。`.json()` 对非成功 HTTP 状态或
 非 JSON Content-Type 抛出 `ApiError`，可读取 `error.response`、`error.status` 和
-`error.url`；这些检查不会消耗响应体。JSON 内容损坏保留原生解析错误，网络及取消
-错误直接透传。
+`error.url`；这些检查不会消耗响应体。JSON 内容损坏同样抛出 `ApiError`，其 `cause`
+保留原生解析错误，此时附带的响应体已消费。网络及取消错误直接透传。
 
 ```ts
 const controller = new AbortController();

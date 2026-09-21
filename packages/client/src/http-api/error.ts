@@ -6,8 +6,9 @@ export class ApiError extends Error {
     message: string,
     readonly response: Response,
     readonly url: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "ApiError";
     this.status = response.status;
   }
