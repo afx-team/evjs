@@ -13,7 +13,11 @@ import type {
 const registrationListenersKey = Symbol.for(
   "evjs.shell.module-registration-listeners",
 );
-type RegistrationListener = (href: string) => void;
+type RegistrationListener = {
+  href: string;
+  ctx: AppContext;
+  notify: (href: string) => void;
+};
 type ShellModuleRegistry = Record<string, ShellModuleRegistration> & {
   [registrationListenersKey]?: Set<RegistrationListener>;
 };
@@ -33,8 +37,28 @@ export function registerShellModule(
   const registry = getShellModuleRegistry();
   registry[href] = module;
   for (const listener of registry[registrationListenersKey] ?? []) {
-    listener(href);
+    listener.notify(href);
   }
+}
+
+export function registerPendingPageModule(
+  pageId: string | undefined,
+  buildId: string | undefined,
+  module: AppModule,
+): boolean {
+  if (!pageId || !buildId) return false;
+  const hrefs = new Set(
+    [...(readShellModuleRegistry()?.[registrationListenersKey] ?? [])]
+      .filter(
+        ({ ctx }) =>
+          ctx.kind === "page" &&
+          ctx.id === pageId &&
+          ctx.runtime.buildId === buildId,
+      )
+      .map(({ href }) => href),
+  );
+  for (const href of hrefs) registerShellModule(href, module);
+  return hrefs.size > 0;
 }
 
 export function getShellModuleRegistry(): ShellModuleRegistry {
@@ -48,6 +72,7 @@ export function getShellModuleRegistry(): ShellModuleRegistry {
 
 export function subscribeShellModule(
   href: string,
+  ctx: AppContext,
   onRegistered: () => void,
 ): () => void {
   const registry = getShellModuleRegistry();
@@ -61,8 +86,12 @@ export function subscribeShellModule(
     });
   }
   const keys = getRegistryKeys(href);
-  const listener = (registeredHref: string) => {
-    if (keys.includes(registeredHref)) onRegistered();
+  const listener: RegistrationListener = {
+    href,
+    ctx,
+    notify(registeredHref) {
+      if (keys.includes(registeredHref)) onRegistered();
+    },
   };
   listeners.add(listener);
   return () => {

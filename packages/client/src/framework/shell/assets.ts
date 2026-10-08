@@ -16,7 +16,7 @@ export async function defaultLoadModule(
   const registration = new Promise<void>((resolve) => {
     notifyRegistration = resolve;
   });
-  const unsubscribe = subscribeShellModule(href, notifyRegistration);
+  const unsubscribe = subscribeShellModule(href, ctx, notifyRegistration);
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let scriptAttempt: Promise<void> | undefined;
   try {

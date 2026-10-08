@@ -8,7 +8,11 @@ import {
   type ReactPageRuntimeOptions,
 } from "../../rsc/react.js";
 import { isRecord } from "../../shared/validation.js";
-import { registerShellModule, resolveBrowserHref } from "../shell/registry.js";
+import {
+  registerPendingPageModule,
+  registerShellModule,
+  resolveBrowserHref,
+} from "../shell/registry.js";
 import type { AppModule } from "../shell/types.js";
 
 export type {
@@ -25,14 +29,14 @@ export { registerShellModule } from "../shell/registry.js";
 type GeneratedReactPageEntryOptions = Omit<
   ReactPageRuntimeOptions,
   "component"
-> & { pageId?: string };
+> & { pageId?: string; buildId?: string };
 
 export function createGeneratedReactPageEntry(
   component: ReactPageRuntimeOptions["component"],
   options: GeneratedReactPageEntryOptions,
   importMetaHref: string,
 ): AppModule {
-  const { pageId, ...pageOptions } = options;
+  const { pageId, buildId, ...pageOptions } = options;
   const mod = createReactPageModule({
     component,
     hydrate: pageOptions.hydrate,
@@ -40,6 +44,8 @@ export function createGeneratedReactPageEntry(
     route: pageOptions.route,
     props: pageOptions.props,
   });
+  // Shell loads retain their requested URL through asynchronous chunk evaluation.
+  if (registerPendingPageModule(pageId, buildId, mod)) return mod;
   // A shared bundler runtime can evaluate this entry while it is the current
   // script. The framework manifest identifies the page's own bootstrap asset;
   // import.meta.url may instead identify an unservable source module.

@@ -10,6 +10,7 @@ export function createOriginalClientEntryFacadeSource(
   entry: BuildEntry,
   importFile: ImportFile,
   options: {
+    buildId?: string;
     autoStart?: boolean;
     bundleCoreJs?: boolean;
     serverFunctionTransport?: string;
@@ -27,6 +28,7 @@ export function createOriginalClientEntryFacadeSource(
       entry.metadata,
       importFile,
       entry.owner?.pageId,
+      options.buildId,
     ).join("\n");
   } else {
     source = `import ${JSON.stringify(importFile(entry.import))};`;
@@ -154,11 +156,13 @@ export function createReactComponentPageEntryMainSource(
   metadata: ReactComponentPageEntryMetadata,
   importFile: ImportFile,
   pageId?: string,
+  buildId?: string,
 ): string[] {
   const component = importFile(metadata.component);
   const layers = metadata.layers ?? [];
   const entryOptions = {
     ...(pageId ? { pageId } : {}),
+    ...(buildId ? { buildId } : {}),
     mount: metadata.mount,
     hydrate: metadata.hydrate,
     render: metadata.render,
