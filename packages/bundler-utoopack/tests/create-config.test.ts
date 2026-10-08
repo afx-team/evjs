@@ -167,6 +167,7 @@ describe("createUtoopackConfig", () => {
       removeUnusedExports: true,
       removeUnusedImports: true,
     });
+    expect(utoopackConfig.optimization?.sharedRuntime).toBeUndefined();
     expect(utoopackConfig.target).toBeUndefined();
   });
 
@@ -242,8 +243,9 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.optimization).toBeUndefined();
   });
 
-  it("lets configureBundler hooks override production module concatenation", async () => {
+  it("lets configureBundler hooks override production optimizations", async () => {
     const config = createResolvedConfig();
+    if (config.routing) config.routing.mode = "mpa";
     const plan = await createPlan(config, { mode: "production" });
 
     const utoopackConfig = await createUtoopackConfig(
@@ -253,14 +255,17 @@ describe("createUtoopackConfig", () => {
       [
         {
           configureBundler(config) {
+            expect(config.optimization?.sharedRuntime).toBe(true);
             config.optimization ??= {};
             config.optimization.concatenateModules = false;
+            config.optimization.sharedRuntime = false;
           },
         },
       ],
     );
 
     expect(utoopackConfig.optimization?.concatenateModules).toBe(false);
+    expect(utoopackConfig.optimization?.sharedRuntime).toBe(false);
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
@@ -924,7 +929,7 @@ describe("createUtoopackConfig", () => {
         ],
       },
     });
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { mode: "production" });
 
     expect(plan.entries[0]?.import).toBe("./.ev/entries/page-client-home.ts");
     expect(plan.entries[0]?.metadata).toMatchObject({
@@ -944,6 +949,7 @@ describe("createUtoopackConfig", () => {
         name: "page-client-home",
       },
     ]);
+    expect(utoopackConfig.optimization?.sharedRuntime).toBe(true);
   });
 
   it("uses generated component page entries instead of SPA router entries for MPA page routes", async () => {
