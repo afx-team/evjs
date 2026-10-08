@@ -291,37 +291,6 @@ export default defineConfig({
 
 改变构建器后运行 `ev inspect`，它会报告应用渲染选择需要的能力。
 
-### 生产 MPA 的共享运行时
-
-当 `routing.mode: "mpa"` 时，默认 Utoopack 适配器会在生产构建中启用
-`optimization.sharedRuntime`。页面入口共享一份浏览器运行时资源，减少重复代码，并让页面复用已缓存的运行时。
-对于单个页面，相比内联运行时，这会增加一次脚本请求。SPA 构建和开发模式沿用原有运行时设置。
-
-若要使用内联运行时，可通过插件的 `configureBundler` hook 覆盖此设置：
-
-```ts title="ev.config.ts"
-import { utoopack } from "@evjs/bundler-utoopack";
-import { defineConfig } from "@evjs/ev";
-import { definePlugin } from "@evjs/ev/plugin";
-
-const inlineRuntime = definePlugin({
-  id: "inline-runtime",
-  setup() {
-    return {
-      configureBundler: utoopack((config) => {
-        config.optimization ??= {};
-        config.optimization.sharedRuntime = false;
-      }),
-    };
-  },
-});
-
-export default defineConfig({
-  routing: { mode: "mpa" },
-  plugins: [inlineRuntime()],
-});
-```
-
 ## 关闭文件约定
 
 自行管理路由与运行时的应用可以一起关闭页面、API 路由和中间件文件发现：

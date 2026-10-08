@@ -323,40 +323,6 @@ export default defineConfig({
 Run `ev inspect` after changing the bundler. It reports capabilities required
 by the application's rendering choices.
 
-### Shared runtime for production MPA
-
-For production builds with `routing.mode: "mpa"`, the default Utoopack adapter
-enables `optimization.sharedRuntime`. Page entries share one browser runtime
-asset, reducing duplicated code and letting pages reuse the cached runtime.
-For a single page, this adds a script request compared with an inline runtime.
-SPA builds and development keep their existing runtime settings.
-
-To keep the runtime inline, override the setting through a plugin's
-`configureBundler` hook:
-
-```ts title="ev.config.ts"
-import { utoopack } from "@evjs/bundler-utoopack";
-import { defineConfig } from "@evjs/ev";
-import { definePlugin } from "@evjs/ev/plugin";
-
-const inlineRuntime = definePlugin({
-  id: "inline-runtime",
-  setup() {
-    return {
-      configureBundler: utoopack((config) => {
-        config.optimization ??= {};
-        config.optimization.sharedRuntime = false;
-      }),
-    };
-  },
-});
-
-export default defineConfig({
-  routing: { mode: "mpa" },
-  plugins: [inlineRuntime()],
-});
-```
-
 ## Disable file conventions
 
 Applications that manage routing and runtimes themselves can disable page, API
