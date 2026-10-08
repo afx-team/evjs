@@ -26,6 +26,7 @@ export function createOriginalClientEntryFacadeSource(
     source = createReactComponentPageEntryMainSource(
       entry.metadata,
       importFile,
+      entry.owner?.pageId,
     ).join("\n");
   } else {
     source = `import ${JSON.stringify(importFile(entry.import))};`;
@@ -152,10 +153,12 @@ export function createPagesAppEntryMainSource(
 export function createReactComponentPageEntryMainSource(
   metadata: ReactComponentPageEntryMetadata,
   importFile: ImportFile,
+  pageId?: string,
 ): string[] {
   const component = importFile(metadata.component);
   const layers = metadata.layers ?? [];
   const entryOptions = {
+    ...(pageId ? { pageId } : {}),
     mount: metadata.mount,
     hydrate: metadata.hydrate,
     render: metadata.render,

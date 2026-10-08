@@ -74,3 +74,21 @@ export default defineConfig({
   plugins: [myUtoopackPlugin()],
 });
 ```
+
+## Shared Runtime for Production MPA
+
+For production builds with `routing.mode: "mpa"`, the adapter enables
+`optimization.sharedRuntime` by default. Page entries share one browser runtime
+asset, reducing duplicated code and letting pages reuse the cached runtime.
+For a single page, this adds a script request compared with an inline runtime.
+SPA builds and development keep their existing runtime settings.
+
+To keep the runtime inline, override the setting in a plugin with the
+`utoopack()` helper:
+
+```ts
+configureBundler: utoopack((config) => {
+  config.optimization ??= {};
+  config.optimization.sharedRuntime = false;
+});
+```

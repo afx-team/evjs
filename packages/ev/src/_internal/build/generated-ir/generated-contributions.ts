@@ -1684,6 +1684,7 @@ function createEntrySource(
       mainSource: createReactComponentPageEntryMainSource(
         entry.metadata,
         importFile,
+        entry.owner?.pageId,
       ),
     });
   }
