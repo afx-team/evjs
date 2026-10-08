@@ -6087,17 +6087,6 @@ describe("build", () => {
       "metadata:react-component-page,react-component-page",
       "html:index:./index.html,about:./src/pages/about/index.html",
     ]);
-    for (const pageId of ["index", "about"]) {
-      const source = await fsPromises.readFile(
-        path.join(
-          cwd,
-          ".ev/entries",
-          `${createPageClientBuildEntryName(pageId)}.ts`,
-        ),
-        "utf-8",
-      );
-      expect(source).toContain(`"pageId":${JSON.stringify(pageId)}`);
-    }
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
   });

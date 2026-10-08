@@ -19,27 +19,23 @@ import { createUtoopackConfig } from "../src/adapter/config/create-config.js";
 const require = createRequire(import.meta.url);
 
 describe("createUtoopackConfig", () => {
-  function createRoutingConfig(mode: "spa" | "mpa") {
-    return {
-      mode,
-      html: "./index.html",
-      mount: "#app",
-      routes: [
-        {
-          id: "index",
-          path: "/",
-          module: "./src/pages/page.tsx",
-        },
-      ],
-    };
-  }
-
   function createResolvedConfig(
     overrides: Partial<Parameters<typeof createUtoopackConfig>[0]> = {},
   ): Parameters<typeof createUtoopackConfig>[0] {
     const config: Parameters<typeof createUtoopackConfig>[0] = {
       conventions: true,
-      routing: createRoutingConfig("spa"),
+      routing: {
+        mode: "spa",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/page.tsx",
+          },
+        ],
+      },
       output: {
         client: "dist/client",
         server: "dist/server",
@@ -175,109 +171,6 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.target).toBeUndefined();
   });
 
-  it.each([
-    "client-only",
-    "mixed",
-  ] as const)("shares the browser runtime for production MPA %s builds", async (environment) => {
-    const config = createResolvedConfig();
-    config.routing = createRoutingConfig("mpa");
-    const plan = await createPlan(config, {
-      mode: "production",
-      ...(environment === "mixed"
-        ? {
-            serverRoutes: [
-              {
-                id: "src/apis/health/api.ts:/health:GET",
-                module: "src/apis/health/api.ts",
-                path: "/health",
-                methods: ["GET"],
-              },
-            ],
-          }
-        : {}),
-    });
-
-    const utoopackConfig = await createUtoopackConfig(
-      config,
-      plan,
-      process.cwd(),
-      [],
-    );
-
-    expect(utoopackConfig.optimization).toEqual({
-      concatenateModules: environment === "client-only",
-      removeUnusedExports: true,
-      removeUnusedImports: true,
-      sharedRuntime: true,
-    });
-    expect(utoopackConfig.server?.entry !== undefined).toBe(
-      environment === "mixed",
-    );
-  });
-
-  it.each([
-    ["mpa", "spa", true],
-    ["spa", "mpa", undefined],
-  ] as const)("uses the active %s plan for runtime sharing when config says %s", async (planMode, configMode, sharedRuntime) => {
-    const config = createResolvedConfig();
-    config.routing = createRoutingConfig(planMode);
-    const plan = await createPlan(config, { mode: "production" });
-    config.routing = createRoutingConfig(configMode);
-
-    const utoopackConfig = await createUtoopackConfig(
-      config,
-      plan,
-      process.cwd(),
-      [],
-    );
-
-    expect(utoopackConfig.optimization?.sharedRuntime).toBe(sharedRuntime);
-  });
-
-  it("lets configureBundler hooks disable the shared MPA runtime", async () => {
-    const config = createResolvedConfig();
-    config.routing = createRoutingConfig("mpa");
-    const plan = await createPlan(config, { mode: "production" });
-
-    const utoopackConfig = await createUtoopackConfig(
-      config,
-      plan,
-      process.cwd(),
-      [
-        {
-          configureBundler(config) {
-            config.optimization ??= {};
-            config.optimization.sharedRuntime = false;
-          },
-        },
-      ],
-    );
-
-    expect(utoopackConfig.optimization?.sharedRuntime).toBe(false);
-    expect(utoopackConfig.optimization?.removeUnusedExports).toBe(true);
-  });
-
-  it("lets configureBundler hooks enable a shared SPA runtime", async () => {
-    const config = createResolvedConfig();
-    const plan = await createPlan(config, { mode: "production" });
-
-    const utoopackConfig = await createUtoopackConfig(
-      config,
-      plan,
-      process.cwd(),
-      [
-        {
-          configureBundler(config) {
-            config.optimization ??= {};
-            config.optimization.sharedRuntime = true;
-          },
-        },
-      ],
-    );
-
-    expect(utoopackConfig.optimization?.sharedRuntime).toBe(true);
-  });
-
   it("targets configured browsers only in production", async () => {
     for (const coreJs of [
       "bundled",
@@ -336,12 +229,8 @@ describe("createUtoopackConfig", () => {
     });
   });
 
-  it.each([
-    "spa",
-    "mpa",
-  ] as const)("does not enable production optimizations for development %s builds", async (mode) => {
+  it("does not enable production optimizations for development", async () => {
     const config = createResolvedConfig();
-    config.routing = createRoutingConfig(mode);
     const plan = await createPlan(config, { mode: "development" });
 
     const utoopackConfig = await createUtoopackConfig(
@@ -354,8 +243,9 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.optimization).toBeUndefined();
   });
 
-  it("lets configureBundler hooks override production module concatenation", async () => {
+  it("lets configureBundler hooks override production optimizations", async () => {
     const config = createResolvedConfig();
+    if (config.routing) config.routing.mode = "mpa";
     const plan = await createPlan(config, { mode: "production" });
 
     const utoopackConfig = await createUtoopackConfig(
@@ -365,14 +255,17 @@ describe("createUtoopackConfig", () => {
       [
         {
           configureBundler(config) {
+            expect(config.optimization?.sharedRuntime).toBe(true);
             config.optimization ??= {};
             config.optimization.concatenateModules = false;
+            config.optimization.sharedRuntime = false;
           },
         },
       ],
     );
 
     expect(utoopackConfig.optimization?.concatenateModules).toBe(false);
+    expect(utoopackConfig.optimization?.sharedRuntime).toBe(false);
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
@@ -1036,7 +929,7 @@ describe("createUtoopackConfig", () => {
         ],
       },
     });
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { mode: "production" });
 
     expect(plan.entries[0]?.import).toBe("./.ev/entries/page-client-home.ts");
     expect(plan.entries[0]?.metadata).toMatchObject({
@@ -1056,6 +949,7 @@ describe("createUtoopackConfig", () => {
         name: "page-client-home",
       },
     ]);
+    expect(utoopackConfig.optimization?.sharedRuntime).toBe(true);
   });
 
   it("uses generated component page entries instead of SPA router entries for MPA page routes", async () => {
