@@ -104,6 +104,7 @@ export {
   type ServerRouteNode,
   type ServerRouteOutput,
   type ServerRuntime,
+  type ServerScheduleNode,
   type TransportOutput,
 } from "./contracts.js";
 export {

@@ -697,6 +697,7 @@ function createFramework(
     documents,
     serverRoutes: [],
     serverFunctions: [],
+    serverSchedules: [],
     entries,
     getEntry(name) {
       return entries.find((entry) => entry.name === name);

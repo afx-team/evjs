@@ -122,6 +122,14 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
     return `${route.path} [${route.methods.join(", ")}] (${route.module})`;
   });
 
+  appendList(
+    lines,
+    "Schedules (declarations, not live platform state)",
+    result.graph.serverSchedules ?? [],
+    (task) =>
+      `${task.id}: cron=${task.cron}, disabled=${task.disable} (${task.module}#${task.exportName})`,
+  );
+
   lines.push("Runtime");
   lines.push(`  output.client: ${result.output.client}`);
   lines.push(`  output.server: ${result.output.server}`);

@@ -1273,6 +1273,7 @@ export function createFrameworkView(
     documents: Object.values(graph.documents).map(cloneJson),
     serverRoutes: graph.serverRoutes.map(cloneJson),
     serverFunctions: graph.serverFunctions.map(cloneJson),
+    serverSchedules: (graph.serverSchedules ?? []).map(cloneJson),
     entries,
     getEntry(name) {
       return entries.find((entry) => entry.name === name);
@@ -1889,6 +1890,7 @@ function createServerAppEntrySource(
       `middleware${index}`,
     ]),
   );
+  const schedules = metadata.serverSchedules ?? [];
   const serverFunctionModules = collectServerFunctionModules(
     metadata.serverFunctions,
   );
@@ -1915,6 +1917,10 @@ function createServerAppEntrySource(
         `import middleware${index} from ${JSON.stringify(
           toGeneratedImportSpecifier(cwd, fromFile, middleware.module),
         )};`,
+    ),
+    ...schedules.map(
+      (task, index) =>
+        `import { ${task.exportName} as schedule${index} } from ${JSON.stringify(toGeneratedImportSpecifier(cwd, fromFile, task.module))};`,
     ),
     ...serverFunctionModules.map(
       (module, index) =>
@@ -2010,7 +2016,17 @@ function createServerAppEntrySource(
     `const routes = [${routeEntries.join(", ")}];`,
     "const app = createApp({ middlewares, routes, serverFunctions, ...(framework ? { framework } : {}) });",
     "export const fetch = app.fetch;",
-    "export default { fetch };",
+    ...(schedules.length
+      ? [
+          `const schedules = new Map([${schedules.map((task, index) => `[${JSON.stringify(task.id)}, schedule${index}]`).join(",")}]);`,
+          "export async function runSchedule(taskId) {",
+          "  const handler = schedules.get(taskId);",
+          '  if (!handler) throw new Error("Unknown schedule: " + taskId);',
+          "  await handler();",
+          "}",
+          "export default { fetch, runSchedule };",
+        ]
+      : ["export default { fetch };"]),
   ].join("\n");
 }
 

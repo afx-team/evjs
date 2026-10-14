@@ -49,6 +49,7 @@ export {
   type PreparedFrameworkBuild,
   type PrepareFrameworkBuildOptions,
   prepareFrameworkBuild,
+  runSchedule,
 } from "./commands.js";
 export type { LoadConfigFileOptions } from "./config-loading/config-module.js";
 export { loadConfigFile } from "./config-loading/config-module.js";

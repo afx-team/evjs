@@ -174,19 +174,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
             toInspectDiagnostic("page-routes", diagnostic),
           ),
         );
-        if (
-          discovery.routes.length === 0 &&
-          readRoutingConfig(configuredConfig) !== undefined &&
-          !discovery.diagnostics.some(
-            (diagnostic) => diagnostic.level === "error",
-          )
-        ) {
-          diagnostics.push({
-            level: "error",
-            source: "page-routes",
-            message: createNoPageRoutesFoundMessage(),
-          });
-        }
       },
     },
   );
@@ -297,6 +284,20 @@ export async function inspectFrameworkBuild<TBundlerCfg = unknown>(
     }
     if (plan) {
       hooks = await collectPluginHooks(config.plugins, pluginContext);
+    }
+    if (
+      pageRouteDiscovery?.routes.length === 0 &&
+      readRoutingConfig(configuredConfig) !== undefined &&
+      !analysis.graph.serverSchedules?.length &&
+      !pageRouteDiscovery.diagnostics.some(
+        (diagnostic) => diagnostic.level === "error",
+      )
+    ) {
+      diagnostics.push({
+        level: "error",
+        source: "page-routes",
+        message: createNoPageRoutesFoundMessage(),
+      });
     }
     diagnostics.push(
       ...analysis.diagnostics.map((diagnostic) =>

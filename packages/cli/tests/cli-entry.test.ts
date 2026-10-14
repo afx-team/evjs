@@ -6,12 +6,14 @@ const entryMocks = vi.hoisted(() => ({
   dev: vi.fn(async (..._args: Parameters<CliProgramDependencies["dev"]>) => {}),
   loadConfig: vi.fn(async () => undefined),
   prepare: vi.fn(async () => {}),
+  runSchedule: vi.fn(async () => {}),
 }));
 
 vi.mock("../src/api/framework-commands.js", () => ({
   build: entryMocks.build,
   dev: entryMocks.dev,
   prepare: entryMocks.prepare,
+  runSchedule: entryMocks.runSchedule,
 }));
 
 vi.mock("../src/config/load.js", () => ({

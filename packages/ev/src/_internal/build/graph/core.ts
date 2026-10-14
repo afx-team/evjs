@@ -12,6 +12,7 @@ import type {
   ServerFunctionNode,
   ServerReferenceNode,
   ServerRouteNode,
+  ServerScheduleNode,
 } from "@evjs/shared/manifest";
 import {
   assertCoreGraph,
@@ -141,6 +142,7 @@ type CorePageClientRoute = CoreClientRouteNode & {
 export interface PageAnchorGraphFacts {
   rootDir: string;
   routes: PageRouteNode[];
+  serverSchedules?: ServerScheduleNode[];
   serverFunctions: ServerFunctionNode[];
   serverRoutes: ServerRouteNode[];
   clientReferences?: ClientReferenceNode[];
@@ -323,6 +325,9 @@ export function createPageAnchorGraph(
     routes,
     documents,
     plugins: { entries: {} },
+    ...(facts.serverSchedules?.length
+      ? { serverSchedules: facts.serverSchedules }
+      : {}),
     serverFunctions: facts.serverFunctions,
     serverRoutes: facts.serverRoutes,
     ...(facts.clientReferences

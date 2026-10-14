@@ -334,6 +334,11 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       entry: serverEntry,
       assets: serverAssets,
       renderers: linkServerRenderers(input.plan, serverAssetsForEntry),
+      ...(input.graph.serverSchedules?.length
+        ? {
+            schedules: input.graph.serverSchedules.map((task) => ({ ...task })),
+          }
+        : {}),
       functions: serverFunctions,
       routes: serverRoutes,
     },
@@ -694,6 +699,7 @@ export function createDeploymentMetadata(
     routes: createDeploymentRoutes(output),
     server: pruneUndefined({
       entry: output.server.entry,
+      schedules: output.server.schedules?.map((task) => ({ ...task })),
     }),
     metadata: metadata ? cloneStaticJsonValue(metadata) : undefined,
   }) as DeploymentMetadata;

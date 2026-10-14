@@ -16,4 +16,5 @@ export {
   dev,
   inspectFrameworkBuild,
   prepareFrameworkBuild,
+  runSchedule,
 } from "./operations/commands.js";

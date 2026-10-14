@@ -54,6 +54,7 @@ import {
   analyzeAndMaterializeFrameworkIR,
   publishFrameworkRevision,
 } from "./analyze-and-materialize.js";
+import { executeScheduleBuild } from "./run-schedule.js";
 
 const logger = getLogger(["evjs", "ev"]);
 
@@ -488,4 +489,27 @@ async function runBuild<TBundlerCfg = unknown>(
     );
   }
   await prepared.dispose();
+}
+
+/** Execute a declared task once, including disabled tasks, without deployment hooks. */
+export async function runSchedule<TBundlerCfg = unknown>(
+  taskId: string,
+  userConfig?: Config<TBundlerCfg>,
+  options: BuildOptions<TBundlerCfg> = {},
+): Promise<void> {
+  const cwd = options.cwd ?? process.cwd();
+  await assertNoActiveDevSessionLock(cwd);
+  return withProjectOperationLock(cwd, "build", async () => {
+    const prepared = await prepareInternalFrameworkBuild(userConfig, {
+      ...options,
+      cwd,
+      mode: "development",
+      requireBundler: true,
+    });
+    try {
+      await executeScheduleBuild(prepared, taskId);
+    } finally {
+      await prepared.dispose();
+    }
+  });
 }

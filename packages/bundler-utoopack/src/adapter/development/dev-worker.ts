@@ -23,6 +23,7 @@ interface ActiveSession {
   id: number;
   lifecycle: UtoopackReusableSessionLifecycle;
   options: UtoopackDevWorkerSessionOptions;
+  disposeEntry?: () => Promise<void>;
 }
 
 type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve">;
@@ -92,13 +93,18 @@ async function startSession(
 
   let readyContext: DevServerReadyContext | undefined;
   let spaHistoryFallbackUpdated = false;
-  await runUtoopackDevServer(runtime, options.config, options.cwd, {
-    ...options.server,
-    async onReady(context: DevServerReadyContext) {
-      spaHistoryFallbackUpdated = updateSpaHistoryFallback(options, context);
-      readyContext = context;
+  activeSession.disposeEntry = await runUtoopackDevServer(
+    runtime,
+    options.config,
+    options.cwd,
+    {
+      ...options.server,
+      async onReady(context: DevServerReadyContext) {
+        spaHistoryFallbackUpdated = updateSpaHistoryFallback(options, context);
+        readyContext = context;
+      },
     },
-  });
+  );
 
   if (!readyContext) {
     throw new Error(
@@ -121,8 +127,12 @@ async function closeSession(sessionId: number): Promise<void> {
     );
   }
 
-  await session.lifecycle.close();
-  activeSession = undefined;
+  try {
+    await session.lifecycle.close();
+  } finally {
+    await session.disposeEntry?.();
+    activeSession = undefined;
+  }
   postMessage({ type: "closed", sessionId });
 }
 
@@ -212,7 +222,9 @@ function failOwner(cause: unknown, sessionId?: number): void {
       stack: error.stack,
     });
   }
-  setImmediate(() => process.exit(1));
+  void Promise.resolve(activeSession?.disposeEntry?.()).finally(() => {
+    setImmediate(() => process.exit(1));
+  });
 }
 
 function postMessage(message: UtoopackDevWorkerMessage): void {

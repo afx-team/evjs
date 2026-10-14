@@ -360,6 +360,7 @@ export interface FrameworkView {
   readonly serverRoutes: readonly FrameworkServerRouteView[];
   /** Server functions discovered from `"use server"` modules. */
   readonly serverFunctions: readonly FrameworkServerFunctionView[];
+  readonly serverSchedules: readonly FrameworkServerScheduleView[];
   /** Bundler-independent entries that the framework will materialize. */
   readonly entries: readonly FrameworkEntryView[];
   getEntry(name: string): FrameworkEntryView | undefined;
@@ -455,6 +456,16 @@ export interface FrameworkRouteView {
   readonly facets: DeepReadonly<CoreRouteFacets>;
   /** Producer and source that declared this Route. */
   readonly provenance: DeepReadonly<CoreNodeProvenance>;
+}
+
+export interface FrameworkServerScheduleView {
+  readonly id: string;
+  readonly module: string;
+  readonly exportName: string;
+  readonly cron: string;
+  readonly disable: boolean;
+  readonly line?: number;
+  readonly column?: number;
 }
 
 export interface FrameworkServerFunctionView {
@@ -570,6 +581,7 @@ export interface FrameworkServerAppEntryMetadata {
   readonly routes: readonly FrameworkServerAppRouteView[];
   readonly middlewares?: readonly FrameworkServerMiddlewareView[];
   readonly serverFunctions?: readonly FrameworkServerFunctionView[];
+  readonly serverSchedules?: readonly FrameworkServerScheduleView[];
 }
 
 export interface PluginEmitIRContext<TBundlerCfg = unknown>
