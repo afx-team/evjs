@@ -40,6 +40,7 @@ export {
   type FrameworkServerFunctionView,
   type FrameworkServerMiddlewareView,
   type FrameworkServerRouteView,
+  type FrameworkServerScheduleView,
   type FrameworkSlot,
   type FrameworkSlotInput,
   type FrameworkSlotName,

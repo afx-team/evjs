@@ -16,6 +16,7 @@ import type {
   ServerFunctionNode,
   ServerReferenceNode,
   ServerRouteNode,
+  ServerScheduleNode,
 } from "@evjs/shared/manifest";
 import { assertCoreGraph } from "@evjs/shared/manifest";
 import { analyzePageModuleExports } from "../analysis/page-module-exports.js";
@@ -31,6 +32,7 @@ import {
   analyzeServerFunctionExports,
   type ServerFunctionExportAnalysis,
 } from "../analysis/server-fns.js";
+import { analyzeServerSchedules } from "../analysis/server-schedules.js";
 import { extractRuntimeModuleSpecifiers } from "../analysis/static-imports.js";
 import {
   resolveCorePageConfigModules,
@@ -43,6 +45,7 @@ import {
 } from "../conventions/page-route-conventions.js";
 import { sortRoutesBySpecificity } from "../conventions/route-order.js";
 import { CANONICAL_SERVER_ROUTE_ROOT } from "../conventions/server-route-conventions.js";
+import { discoverScheduleSources } from "../discovery/server-schedules.js";
 import {
   applyPluginSettings,
   collectPluginSettingsRegistry,
@@ -73,6 +76,7 @@ import type {
 
 interface FrameworkAnalysisFacts {
   rootDir: string;
+  serverSchedules?: ServerScheduleNode[];
   serverFunctions: ServerFunctionNode[];
   serverRoutes: ServerRouteNode[];
   clientReferences?: ClientReferenceNode[];
@@ -128,24 +132,61 @@ export async function createCoreGraph(
   };
 
   const sourceCache = new Map<string, string>();
+  const scheduleSources = await discoverScheduleSources(
+    cwd,
+    options.beforeSourceRead,
+  );
+  const schedules = new Map<string, ServerScheduleNode>();
+  for (const file of scheduleSources.files) {
+    const source = await readFrameworkSource(
+      file,
+      sourceCache,
+      options.beforeSourceRead,
+    );
+    if (source === undefined) continue;
+    const analysis = analyzeServerSchedules(
+      source,
+      toPosixPath(path.relative(cwd, file)),
+    );
+    diagnostics.push(...analysis.diagnostics);
+    for (const task of analysis.schedules) {
+      const previous = schedules.get(task.id);
+      if (previous) {
+        diagnostics.push({
+          level: "error",
+          file: task.module,
+          line: task.line,
+          column: task.column,
+          message: `Duplicate schedule id "${task.id}": ${previous.module}#${previous.exportName} and ${task.module}#${task.exportName}. Use an explicit unique id.`,
+        });
+      } else schedules.set(task.id, task);
+    }
+  }
+  facts.serverSchedules = [...schedules.values()].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  );
   const sourceFiles = await collectFrameworkSourceFiles(
     config,
     cwd,
     sourceCache,
     options.resolve?.alias,
-    configRouteGraph
-      ? collectConfigRouteCoreSourceModules(configRouteGraph)
-      : [],
+    [
+      ...(configRouteGraph
+        ? collectConfigRouteCoreSourceModules(configRouteGraph)
+        : []),
+      ...new Set(facts.serverSchedules.map((task) => task.module)),
+    ],
     options.beforeSourceRead,
     options.onSourceDependency,
   );
   diagnostics.push(...sourceFiles.diagnostics);
-  // Watch explicit graph roots and files that already declare framework
-  // semantics. Ordinary component edits should stay on the bundler HMR path.
-  // If a plain component starts declaring routes/server functions later, a
-  // configured route/server root or config change should introduce it into the
-  // watched framework graph set.
-  const fileDependencies = new Set(sourceFiles.explicitDependencyFiles);
+  // Watch source candidates so adding a declaration needs no import/config edit.
+  // Semantic fingerprints keep ordinary source edits on the bundler HMR path.
+  const fileDependencies = new Set([
+    ...sourceFiles.explicitDependencyFiles,
+    ...scheduleSources.files,
+    ...scheduleSources.directories,
+  ]);
   if (config.routing) {
     const pageRoot = path.resolve(cwd, CANONICAL_PAGE_ROUTE_ROOT);
     for (const dir of await collectRouteDirectories(cwd, pageRoot)) {
@@ -273,7 +314,8 @@ export async function createCoreGraph(
         withAnalysisFacts(configRouteGraph, facts),
         pageConfigs.pages,
       )
-    : hasPageAnchorDiscovery(config)
+    : hasPageAnchorDiscovery(config) &&
+        (configuredPageRoutes.length > 0 || !facts.serverSchedules?.length)
       ? createPageAnchorGraph(
           config,
           {
@@ -292,6 +334,13 @@ export async function createCoreGraph(
     options.resolve?.alias,
     options.beforeSourceRead,
     options.onSourceDependency,
+  );
+  await diagnoseClientScheduleImports(
+    graph,
+    cwd,
+    sourceCache,
+    diagnostics,
+    options,
   );
   validateCoreGraphPageContracts(graph, diagnostics);
   await diagnosePageModuleRouteLifecycleExports(
@@ -332,6 +381,9 @@ function withAnalysisFacts(
 ): CoreGraph {
   return {
     ...graph,
+    ...(facts.serverSchedules?.length
+      ? { serverSchedules: facts.serverSchedules }
+      : {}),
     serverFunctions: facts.serverFunctions,
     serverRoutes: facts.serverRoutes,
     ...(facts.clientReferences
@@ -351,6 +403,9 @@ function createEmptyCoreGraph(facts: FrameworkAnalysisFacts): CoreGraph {
     routes: [],
     documents: {},
     plugins: { entries: {} },
+    ...(facts.serverSchedules?.length
+      ? { serverSchedules: facts.serverSchedules }
+      : {}),
     serverFunctions: facts.serverFunctions,
     serverRoutes: facts.serverRoutes,
     ...(facts.clientReferences
@@ -1265,4 +1320,76 @@ async function resolveSourcePath(
   }
 
   return undefined;
+}
+
+async function diagnoseClientScheduleImports(
+  graph: CoreGraph,
+  cwd: string,
+  cache: Map<string, string>,
+  diagnostics: Diagnostic[],
+  options: CreateCoreGraphOptions,
+): Promise<void> {
+  if (!graph.serverSchedules?.length) return;
+  const taskModules = new Set(
+    graph.serverSchedules.map((task) => path.resolve(cwd, task.module)),
+  );
+  const roots = new Set(
+    (graph.clientReferences ?? []).map((reference) => reference.module),
+  );
+  const clientApps = new Set<string>();
+  for (const page of Object.values(graph.pages)) {
+    if (
+      page.componentModel !== "rsc" &&
+      (page.render === "csr" || page.hydrate !== "none")
+    ) {
+      roots.add(page.source.module);
+      clientApps.add(page.applicationId);
+    }
+  }
+  for (const app of Object.values(graph.applications))
+    if (clientApps.has(app.id) && app.layout) roots.add(app.layout);
+  for (const route of graph.routes) {
+    if (!clientApps.has(route.applicationId)) continue;
+    for (const module of [
+      route.facets.layout,
+      route.facets.error,
+      route.facets.notFound,
+      ...route.facets.wrappers,
+    ]) {
+      if (module) roots.add(module);
+    }
+  }
+  const visited = new Set<string>();
+  async function visit(file: string, importer?: string): Promise<void> {
+    if (visited.has(file)) return;
+    visited.add(file);
+    if (taskModules.has(file)) {
+      diagnostics.push({
+        level: "error",
+        file: toPosixPath(path.relative(cwd, importer ?? file)),
+        message: `Client modules cannot import schedule module "${toPosixPath(path.relative(cwd, file))}". Move shared code into a separate module.`,
+      });
+      return;
+    }
+    const source = await readFrameworkSource(
+      file,
+      cache,
+      options.beforeSourceRead,
+    );
+    if (source === undefined || detectUseServer(source)) return;
+    for (const specifier of extractStaticImportSpecifiers(
+      source,
+      options.resolve?.alias,
+    )) {
+      const dependency = await resolveSourceImport(
+        cwd,
+        file,
+        specifier,
+        options.resolve?.alias,
+        options.onSourceDependency,
+      );
+      if (dependency) await visit(dependency, file);
+    }
+  }
+  for (const module of roots) await visit(path.resolve(cwd, module));
 }

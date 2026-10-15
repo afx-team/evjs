@@ -107,6 +107,7 @@ interface BuildPlanFacts {
   routes: BuildRouteFacts[];
   devClientRoutes: BuildPlan["dev"]["clientRoutes"];
   serverRenderedRoutePaths: string[];
+  serverSchedules: NonNullable<CoreGraph["serverSchedules"]>;
   serverFunctions: CoreGraph["serverFunctions"];
   serverRoutes: CoreGraph["serverRoutes"];
   clientReferences?: CoreGraph["clientReferences"];
@@ -336,6 +337,7 @@ function deriveBuildPlanFacts(
     routes,
     devClientRoutes: createDevClientRoutes(graph, basepath),
     serverRenderedRoutePaths: createServerRenderedRoutePaths(graph, basepath),
+    serverSchedules: graph.serverSchedules ?? [],
     serverFunctions: graph.serverFunctions,
     serverRoutes: graph.serverRoutes,
     ...(graph.clientReferences
@@ -1121,7 +1123,8 @@ function createServerRuntimeEntry(
   if (
     routes.length > 0 ||
     middlewares.length > 0 ||
-    serverFunctions.length > 0
+    serverFunctions.length > 0 ||
+    graph.serverSchedules.length > 0
   ) {
     return {
       import: FRAMEWORK_SERVER_FETCH_ENTRY,
@@ -1130,6 +1133,9 @@ function createServerRuntimeEntry(
         routes,
         ...(middlewares.length > 0 ? { middlewares } : {}),
         ...(serverFunctions.length > 0 ? { serverFunctions } : {}),
+        ...(graph.serverSchedules.length > 0
+          ? { serverSchedules: graph.serverSchedules }
+          : {}),
       },
     };
   }

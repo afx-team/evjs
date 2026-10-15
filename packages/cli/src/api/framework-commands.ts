@@ -5,6 +5,7 @@ import {
   type DevOptions,
   build as frameworkBuild,
   dev as frameworkDev,
+  runSchedule as frameworkRunSchedule,
   type PrepareFrameworkBuildOptions,
   prepareFrameworkBuild,
 } from "@evjs/ev/_internal/build";
@@ -131,4 +132,15 @@ export async function prepare<TBundlerCfg = DefaultBundlerConfig>(
     options,
   );
   await prepared.dispose();
+}
+
+export async function runSchedule(
+  taskId: string,
+  config: Config<DefaultBundlerConfig> | undefined,
+  options: BuildOptions<DefaultBundlerConfig>,
+): Promise<void> {
+  await frameworkRunSchedule(taskId, config, {
+    ...options,
+    bundler: options.bundler ?? config?.bundler ?? defaultBundler,
+  });
 }

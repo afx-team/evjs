@@ -37,12 +37,14 @@ import type {
   ServerFunctionNode,
   ServerReferenceNode,
   ServerRouteNode,
+  ServerScheduleNode,
 } from "../contracts.js";
 import { assertPageMetadata, type PageMetadata } from "../page/metadata.js";
 import {
   coreRoutePatternShape,
   isCoreRoutePatternPrefix,
 } from "./route-pattern.js";
+import { assertServerScheduleNodes } from "./server-schedules.js";
 
 /** Built-in source provider for materialization-neutral positive `page.*` anchors. */
 export const PAGE_ANCHOR_PROVIDER_ID = "@evjs/provider/page-anchor";
@@ -95,6 +97,7 @@ export interface CoreGraph {
   routes: CoreRouteNode[];
   documents: Record<DocumentId, CoreDocumentNode>;
   plugins: CorePluginCatalogSnapshot;
+  serverSchedules?: ServerScheduleNode[];
   serverFunctions: ServerFunctionNode[];
   serverRoutes: ServerRouteNode[];
   clientReferences?: ClientReferenceNode[];
@@ -326,7 +329,7 @@ export function assertCoreGraph(
       "serverFunctions",
       "serverRoutes",
     ],
-    ["clientReferences", "serverReferences"],
+    ["clientReferences", "serverReferences", "serverSchedules"],
   );
   assertNonEmptyString(graph.rootDir, `${source}.rootDir`);
 
@@ -344,6 +347,12 @@ export function assertCoreGraph(
   }
   if (graph.serverReferences !== undefined) {
     assertStrictArray(graph.serverReferences, `${source}.serverReferences`);
+  }
+  if (graph.serverSchedules !== undefined) {
+    assertServerScheduleNodes(
+      graph.serverSchedules,
+      `${source}.serverSchedules`,
+    );
   }
   const pluginCatalog = assertPluginCatalog(graph.plugins, `${source}.plugins`);
   assertServerFunctionNodes(graph.serverFunctions, `${source}.serverFunctions`);

@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
         "rendering",
         "server-functions",
         "server-routes",
+        "server-schedules",
         "plugins",
         "dev",
         "build",

@@ -1,7 +1,9 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { CoreGraph } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { Config, ResolvedConfig } from "../../../config/index.js";
+import { analyzeServerSchedules } from "../analysis/server-schedules.js";
 import {
   CANONICAL_PAGE_ROUTE_ROOT,
   PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
@@ -26,6 +28,7 @@ import {
   discoverServerRoutes,
   type ServerRouteDiscovery,
 } from "./server-routes.js";
+import { discoverScheduleSources } from "./server-schedules.js";
 
 const logger = getLogger(["evjs", "ev"]);
 interface PageRoutingDefaultsOptions {
@@ -83,10 +86,30 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
       "[evjs] Internal invariant: explicit routing config was not preserved by config resolution.",
     );
   }
-  const discovery = await discoverPageRoutes(cwd, {
+  let discovery = await discoverPageRoutes(cwd, {
     mode: base.mode,
     required: requested,
   });
+  if (discovery.routes.length === 0) {
+    const candidates = await discoverScheduleSources(cwd);
+    for (const file of candidates.files) {
+      const analysis = analyzeServerSchedules(
+        await fs.readFile(file, "utf8"),
+        path.relative(cwd, file),
+      );
+      if (analysis.schedules.length || analysis.diagnostics.length) {
+        // Missing pages are valid for a task-only app; malformed routes are not.
+        discovery = await discoverPageRoutes(cwd, {
+          mode: base.mode,
+          required: false,
+        });
+        if (discovery.diagnostics.some((item) => item.level === "error")) break;
+        options.onDiscovery?.(base, discovery);
+        if (syncRouteTypes) await removeAllPageRouteTypes(cwd);
+        return { ...config, routing: { ...base, routes: [] } };
+      }
+    }
+  }
   options.onDiscovery?.(base, discovery);
   if (options.reportDiagnostics !== false) {
     reportPageRouteDiagnostics(discovery.diagnostics);

@@ -43,6 +43,7 @@ import {
   getUrlStringValidationError,
   type UrlStringValidationError,
 } from "../urls/validation.js";
+import { assertServerScheduleNodes } from "./graph/server-schedules.js";
 import { assertBuildOutputServerArtifacts } from "./output/server-artifacts.js";
 import { assertPageMetadata, type PageMetadata } from "./page/metadata.js";
 
@@ -82,6 +83,16 @@ export type AppRouteTarget =
 export type AppRouteLocation =
   | { kind: "path"; path: string }
   | { kind: "url"; href: string };
+
+export interface ServerScheduleNode {
+  id: string;
+  module: string;
+  exportName: string;
+  cron: string;
+  disable: boolean;
+  line?: number;
+  column?: number;
+}
 
 export interface ServerFunctionNode {
   id: string;
@@ -282,6 +293,7 @@ export interface ServerAppEntryMetadata {
   routes: ServerAppRouteNode[];
   middlewares?: ServerMiddlewareNode[];
   serverFunctions?: ServerFunctionNode[];
+  serverSchedules?: ServerScheduleNode[];
 }
 
 export interface PageRouteNode {
@@ -605,10 +617,12 @@ export type DeploymentRouteOutput =
 
 export interface DeploymentServerOutput {
   entry?: string;
+  schedules?: ServerScheduleNode[];
 }
 
 export interface ServerOutput {
   entry?: string;
+  schedules?: ServerScheduleNode[];
   assets: AssetGroup;
   renderers?: Record<string, ServerRendererOutput>;
   functions: Record<string, ServerFunctionOutput>;
@@ -723,6 +737,12 @@ export function assertFrameworkManifestShape(
   assertObject(value.server, `${source}.server`);
   if (value.server.entry !== undefined) {
     assertManifestString(value.server.entry, `${source}.server.entry`);
+  }
+  if (value.server.schedules !== undefined) {
+    assertServerScheduleNodes(
+      value.server.schedules,
+      `${source}.server.schedules`,
+    );
   }
   if (value.server.renderers !== undefined) {
     assertObject(value.server.renderers, `${source}.server.renderers`);

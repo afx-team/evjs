@@ -123,6 +123,9 @@ function getServerRuntimeRequirement(output: BuildOutput): string | undefined {
   if (Object.keys(output.server.functions).length > 0) {
     return "server Functions are present";
   }
+  if (output.server.schedules?.length) {
+    return "server schedules are present";
+  }
   if (output.server.routes.length > 0) {
     return "server request Routes are present";
   }

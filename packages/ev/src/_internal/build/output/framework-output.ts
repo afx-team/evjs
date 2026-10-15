@@ -364,7 +364,7 @@ function collectHtmlTemplates<TBundlerCfg>(
         mountInvalidMessage: "[evjs] Page routing mount selector is invalid",
       });
     }
-  } else if (config.routing) {
+  } else if (config.routing?.routes.length) {
     templates.push({
       path: config.routing.html,
       notFoundMessage: "[evjs] Page routing html template not found",

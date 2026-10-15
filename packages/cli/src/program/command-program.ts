@@ -40,6 +40,11 @@ export interface CliProgramDependencies {
   dev: DevFrameworkCommand;
   build: FrameworkCommand;
   prepare: FrameworkCommand;
+  runSchedule(
+    taskId: string,
+    config: Config<DefaultBundlerConfig> | undefined,
+    options: { cwd: string; flags: CliFlags },
+  ): Promise<void>;
   inspect(options: InspectCommandOptions): Promise<InspectCommandResult>;
   writeStdout(output: string): void;
   writeStderr(output: string): void;
@@ -125,6 +130,22 @@ export async function runCliProgram(
         const flags = parseCliFlags(command.args);
         const config = await dependencies.loadConfig(cwd);
         await dependencies.prepare(config, { cwd, flags });
+      });
+    });
+
+  program
+    .command("schedule")
+    .description("Manage declared server schedules")
+    .command("run <taskId>")
+    .description(
+      "Compile and execute a schedule once, without starting a timer",
+    )
+    .action(async (taskId: string) => {
+      await runCommand("Schedule failed", async () => {
+        const cwd = dependencies.cwd();
+        const config = await dependencies.loadConfig(cwd);
+        await dependencies.runSchedule(taskId, config, { cwd, flags: {} });
+        dependencies.writeStdout(`Schedule ${taskId} completed.\n`);
       });
     });
 

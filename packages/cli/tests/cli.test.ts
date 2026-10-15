@@ -22,6 +22,7 @@ function createDependencies(overrides: Partial<CliProgramDependencies> = {}) {
     dev: command,
     build: command,
     prepare: command,
+    runSchedule: async () => {},
     inspect: async () => ({ exitCode: 0, output: "inspect output\n" }),
     writeStdout: (output) => stdout.push(output),
     writeStderr: (output) => stderr.push(output),
@@ -172,4 +173,28 @@ describe("CLI execution", () => {
     expect(stderr.join("")).toContain("unknown command 'unknown'");
     expect(errors).toEqual([]);
   });
+});
+
+it("executes a requested schedule and propagates failures", async () => {
+  const runSchedule = vi.fn().mockResolvedValue(undefined);
+  const { dependencies, stdout } = createDependencies({ runSchedule });
+  expect(
+    await runCliProgram(
+      ["node", "ev", "schedule", "run", "orders.sync"],
+      dependencies,
+    ),
+  ).toBe(0);
+  expect(runSchedule).toHaveBeenCalledWith(
+    "orders.sync",
+    undefined,
+    expect.objectContaining({ cwd: dependencies.cwd() }),
+  );
+  expect(stdout.join("")).toContain("orders.sync completed");
+  runSchedule.mockRejectedValueOnce(new Error("task failed"));
+  expect(
+    await runCliProgram(
+      ["node", "ev", "schedule", "run", "orders.sync"],
+      dependencies,
+    ),
+  ).toBe(1);
 });

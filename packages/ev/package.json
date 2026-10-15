@@ -148,6 +148,11 @@
       "types": "./esm/_internal/generated/server/server-reference.d.ts",
       "import": "./esm/_internal/generated/server/server-reference.js",
       "default": "./esm/_internal/generated/server/server-reference.js"
+    },
+    "./schedule": {
+      "types": "./esm/schedule/index.d.ts",
+      "import": "./esm/schedule/index.js",
+      "default": "./esm/schedule/index.js"
     }
   },
   "scripts": {

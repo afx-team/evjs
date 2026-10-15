@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
-import { build, dev, prepare } from "../api/framework-commands.js";
+import { build, dev, prepare, runSchedule } from "../api/framework-commands.js";
 import { runInspectCommand } from "../commands/inspect/command.js";
 import { type DefaultBundlerConfig, loadConfig } from "../config/load.js";
 import { runCliProgram } from "./command-program.js";
@@ -63,6 +63,7 @@ export async function runCli(
     dev,
     build,
     prepare,
+    runSchedule,
     inspect: runInspectCommand,
     writeStdout: (output) => process.stdout.write(output),
     writeStderr: (output) => process.stderr.write(output),

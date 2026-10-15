@@ -276,6 +276,9 @@ function snapshotBuildOutputServer(
       snapshotBuildOutputServerFunction,
     ),
     routes: server.routes.map(snapshotBuildOutputServerRoute),
+    ...(server.schedules
+      ? { schedules: server.schedules.map((task) => ({ ...task })) }
+      : {}),
   };
 }
 
