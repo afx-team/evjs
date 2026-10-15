@@ -15,7 +15,7 @@ const excluded = new Set([
   "generated",
 ]);
 
-/** All source files participate: a task does not need an incoming import. */
+/** Tasks under src/schedules are discovered without an incoming import. */
 export async function discoverScheduleSources(
   cwd: string,
   beforeRead?: (file: string) => void,
@@ -44,6 +44,6 @@ export async function discoverScheduleSources(
         files.push(file);
     }
   }
-  await visit(path.join(cwd, "src"));
+  await visit(path.join(cwd, "src", "schedules"));
   return { files: files.sort(), directories: directories.sort() };
 }

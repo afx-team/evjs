@@ -1,10 +1,10 @@
 # Server schedules
 
-Declare a task beside its business code, in any `.ts`, `.tsx`, `.js`, or `.jsx` module under `src`:
+Declare tasks in `.ts`, `.tsx`, `.js`, or `.jsx` modules under the fixed `src/schedules/` directory. Filenames and nested directories are free to choose:
 
-```ts
+```ts title="src/schedules/orders.ts"
 import { defineSchedule } from "@evjs/ev/schedule";
-import { reconcileOrders } from "./orders";
+import { reconcileOrders } from "../services/orders";
 
 export const syncOrders = defineSchedule(
   { cron: "0 0/5 * * * ?" },
@@ -12,9 +12,9 @@ export const syncOrders = defineSchedule(
 );
 ```
 
-No filename convention, configuration entry, or page import is required. Core discovers named `export const` declarations statically. `defineSchedule` returns the same handler and never starts a timer. Deployment adapters validate the cron dialect and arrange platform scheduling; core does not provide a scheduler.
+No filename convention, configuration entry, or page import is required. Core discovers named `export const` declarations statically within `src/schedules/`. Declarations outside this directory are not registered, even when imported by a task. Handlers can import business functions from other directories. `defineSchedule` returns the same handler and never starts a timer. Deployment adapters validate the cron dialect and arrange platform scheduling; core does not provide a scheduler.
 
-Options must be an object literal with a non-empty string `cron`, optional string `id`, and optional boolean `disable`. The task ID defaults to the export name. Set `id` to preserve identity when renaming the export. Moving the module does not change identity. Duplicate IDs, computed options, spreads, factories, and default exports produce build diagnostics. Import aliases are supported. The handler takes no arguments; asynchronous work must be included in its returned Promise. Return values are ignored and errors propagate.
+Options must be an object literal with a non-empty string `cron`, optional string `id`, and optional boolean `disable`. The task ID defaults to the export name. Set `id` to preserve identity when renaming the export. Moving the module within `src/schedules/` does not change identity. Duplicate IDs, computed options, spreads, factories, and default exports produce build diagnostics. Import aliases are supported. The handler takes no arguments; asynchronous work must be included in its returned Promise. Return values are ignored and errors propagate.
 
 Task discovery excludes declaration files, `.test.*`/`.spec.*`, hidden directories, dependencies, build output, `test`, `tests`, `__tests__`, `__mocks__`, `generated`, and `__generated__`. Re-exports do not create extra tasks. A task module cannot use `"use server"` or enter a client import graph. Put shared DTOs and utilities in separate modules; type-only imports are allowed.
 

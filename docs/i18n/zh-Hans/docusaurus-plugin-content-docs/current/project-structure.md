@@ -30,6 +30,8 @@ my-evjs-app/
     ├── middlewares/
     │   ├── middleware.ts            # 有序全局中间件
     │   └── authentication.ts
+    ├── schedules/                   # 服务端定时任务声明
+    │   └── orders.ts
     ├── components/                  # 共享 UI
     ├── features/                    # 共享业务功能
     ├── hooks/
@@ -87,7 +89,7 @@ src/pages/orders/$orderId/
 | API 路由目录中的其他文件 | 路由拥有的源码 | 辅助文件和 `index.*` 不创建端点。 |
 | `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表；动态计算的全局链可以在禁用时返回 `[]`。 |
 | `src/middlewares` 中的其他文件 | 中间件实现模块 | 显式导入，文件名不决定顺序。 |
-| `src` 下的 `export const task = defineSchedule({...}, handler)` | 服务端定时任务 | 无特殊文件名，也无需页面引用；见[服务端定时任务](./server-schedules.md)。 |
+| `src/schedules/` 下的 `export const task = defineSchedule({...}, handler)` | 服务端定时任务 | 无特殊文件名，也无需页面引用；见[服务端定时任务](./server-schedules.md)。 |
 | `public/**` | 静态文件 | 按输出配置复制到浏览器产物。 |
 | `.ev/**`、`dist/**`、`src/route-types.d.ts`、`src/plugin-types.d.ts` | 生成产物 | 忽略，不要编辑或复制进脚手架。 |
 

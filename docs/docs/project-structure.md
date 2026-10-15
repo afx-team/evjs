@@ -32,6 +32,8 @@ my-evjs-app/
     ├── middlewares/
     │   ├── middleware.ts            # ordered global middleware
     │   └── authentication.ts
+    ├── schedules/                   # server task declarations
+    │   └── orders.ts
     ├── components/                  # shared UI
     ├── features/                    # shared business features
     ├── hooks/
@@ -93,7 +95,7 @@ Paths are relative to the project root unless stated otherwise.
 | Other files inside an API route directory | Route-owned source | Helpers and `index.*` do not create endpoints. |
 | `src/middlewares/middleware.*` | Global middleware composition | Default-export one middleware or an explicitly ordered non-empty list. Computed global chains may resolve to `[]` when disabled. |
 | Other files in `src/middlewares` | Middleware implementation modules | Imported explicitly; filenames do not define order. |
-| `export const task = defineSchedule({...}, handler)` under `src` | Server schedule | No special filename or importing page; see [Server schedules](./server-schedules.md). |
+| `export const task = defineSchedule({...}, handler)` under `src/schedules/` | Server schedule | No special filename or importing page; see [Server schedules](./server-schedules.md). |
 | `public/**` | Static files | Copied to browser output according to output configuration. |
 | `.ev/**`, `dist/**`, `src/route-types.d.ts`, `src/plugin-types.d.ts` | Generated output | Ignore and never edit or scaffold these files. |
 

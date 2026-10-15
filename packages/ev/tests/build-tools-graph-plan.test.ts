@@ -2003,8 +2003,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
 
     expect(analysis.diagnostics).toEqual([]);
-    // Source-wide schedule discovery watches candidates without publishing routes.
-    expect(analysis.fileDependencies).toContain(
+    expect(analysis.fileDependencies).not.toContain(
       path.join(cwd, "src/apis/users/middleware.ts"),
     );
     expect(analysis.graph.serverRoutes).toEqual([

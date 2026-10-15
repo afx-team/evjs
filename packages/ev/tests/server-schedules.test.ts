@@ -38,14 +38,14 @@ describe("schedule declarations", () => {
   it("recognizes import bindings and aliases without evaluating business code", () => {
     const result = analyzeServerSchedules(
       `${declaration}\nthrow Error('must not execute');`,
-      "src/orders.ts",
+      "src/schedules/orders.ts",
     );
     expect(result.diagnostics).toEqual([]);
     expect(result.schedules).toEqual([
       {
         id: "syncOrders",
         exportName: "syncOrders",
-        module: "src/orders.ts",
+        module: "src/schedules/orders.ts",
         cron: "0 0/5 * * * ?",
         disable: false,
         line: 2,
@@ -57,7 +57,7 @@ describe("schedule declarations", () => {
     for (let index = 0; index < 3; index++) {
       const result = analyzeServerSchedules(
         `// 中文注释\n\n${declaration}`,
-        "src/orders.ts",
+        "src/schedules/orders.ts",
       );
       expect(result.schedules[0]).toMatchObject({ line: 4, column: 27 });
     }
@@ -71,7 +71,7 @@ import { inspectFrameworkBuild } from "../src/_internal/build/operations/inspect
 import { validateHtmlTemplates } from "../src/_internal/build/output/framework-output.js";
 import { defineSchedule } from '@alipay/evjs'; import { run } from './service';
 export const renamed = defineSchedule({ id: 'orders.sync', cron: '0 0 * * * ?', disable: true }, run);`,
-      "src/tasks.ts",
+      "src/schedules/tasks.ts",
     );
     expect(result.diagnostics).toEqual([]);
     expect(result.schedules[0]).toMatchObject({
@@ -91,7 +91,7 @@ import { defineSchedule } from '@evjs/ev/schedule'; function factory(defineSched
       `export { syncOrders } from './orders';`,
       `import type { defineSchedule } from '@evjs/ev/schedule';`,
     ])
-      expect(analyzeServerSchedules(source, "src/test.ts")).toEqual({
+      expect(analyzeServerSchedules(source, "src/schedules/test.ts")).toEqual({
         schedules: [],
         diagnostics: [],
       });
@@ -113,36 +113,38 @@ import { defineSchedule } from '@evjs/ev/schedule'; function factory(defineSched
   ])("rejects unsupported static declarations: %s", (source) => {
     const result = analyzeServerSchedules(
       `import { defineSchedule as job } from '@evjs/ev/schedule';\n${source}`,
-      "src/task.ts",
+      "src/schedules/task.ts",
     );
     expect(result.diagnostics.length).toBeGreaterThan(0);
     expect(result.diagnostics[0]).toMatchObject({
-      file: "src/task.ts",
+      file: "src/schedules/task.ts",
       line: 2,
       level: "error",
     });
   });
 });
 
-describe("source-wide task discovery", () => {
+describe("schedule-directory task discovery", () => {
   it("discovers unreferenced tasks, excludes tests and tracks new declaration candidates", async () => {
     const cwd = await fixture({
-      "src/orders.ts": declaration,
-      "src/plain.ts": "export const value = 1;",
-      "src/orders.test.ts": declaration,
-      "src/generated/task.ts": declaration,
+      "src/schedules/orders.ts": declaration,
+      "src/schedules/nested/plain.ts": "export const value = 1;",
+      "src/schedules/orders.test.ts": declaration,
+      "src/schedules/generated/task.ts": declaration,
     });
     const first = await createCoreGraph({ server: {} }, cwd);
     expect(first.diagnostics).toEqual([]);
     expect(first.graph.serverSchedules).toHaveLength(1);
-    expect(first.fileDependencies).toContain(path.join(cwd, "src/plain.ts"));
-    expect(first.fileDependencies).toContain(path.join(cwd, "src"));
+    expect(first.fileDependencies).toContain(
+      path.join(cwd, "src/schedules/nested/plain.ts"),
+    );
+    expect(first.fileDependencies).toContain(path.join(cwd, "src/schedules"));
     await fs.rename(
-      path.join(cwd, "src/orders.ts"),
-      path.join(cwd, "src/moved.ts"),
+      path.join(cwd, "src/schedules/orders.ts"),
+      path.join(cwd, "src/schedules/nested/moved.ts"),
     );
     await fs.writeFile(
-      path.join(cwd, "src/plain.ts"),
+      path.join(cwd, "src/schedules/nested/plain.ts"),
       declaration.replace("syncOrders", "another"),
     );
     const next = await createCoreGraph({ server: {} }, cwd);
@@ -153,21 +155,46 @@ describe("source-wide task discovery", () => {
     expect(
       next.graph.serverSchedules?.find((task) => task.id === "syncOrders")
         ?.module,
-    ).toBe("src/moved.ts");
+    ).toBe("src/schedules/nested/moved.ts");
+  });
+  it("ignores declarations outside src/schedules, including imported modules", async () => {
+    const cwd = await fixture({
+      "src/schedules/orders.ts": `import { value } from '../service';\n${declaration}`,
+      "src/service.ts": `export const value = 1;\n${declaration.replace("syncOrders", "outside")}`,
+      "src/schedule/legacy.ts": declaration,
+    });
+    const result = await createCoreGraph({ server: {} }, cwd);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.graph.serverSchedules?.map((task) => task.id)).toEqual([
+      "syncOrders",
+    ]);
+  });
+  it("tracks a missing schedule directory and discovers its first task", async () => {
+    const cwd = await fixture({ "src/ordinary.ts": "export const value = 1;" });
+    const first = await createCoreGraph({ server: {} }, cwd);
+    expect(first.graph.serverSchedules ?? []).toEqual([]);
+    expect(first.fileDependencies).toContain(path.join(cwd, "src/schedules"));
+    await fs.mkdir(path.join(cwd, "src/schedules"));
+    await fs.writeFile(path.join(cwd, "src/schedules/orders.ts"), declaration);
+    const next = await createCoreGraph({ server: {} }, cwd);
+    expect(next.diagnostics).toEqual([]);
+    expect(next.graph.serverSchedules?.map((task) => task.id)).toEqual([
+      "syncOrders",
+    ]);
   });
   it("reports both owners of a duplicate ID", async () => {
     const cwd = await fixture({
-      "src/a.ts": declaration,
-      "src/b.ts": declaration,
+      "src/schedules/a.ts": declaration,
+      "src/schedules/b.ts": declaration,
     });
     const result = await createCoreGraph({ server: {} }, cwd);
     expect(result.diagnostics[0].message).toMatch(
-      /src\/a.ts#syncOrders and src\/b.ts#syncOrders/,
+      /src\/schedules\/a.ts#syncOrders and src\/schedules\/b.ts#syncOrders/,
     );
   });
   it("rejects tasks in use-server modules", async () => {
     const cwd = await fixture({
-      "src/task.ts": `'use server';\n${declaration}`,
+      "src/schedules/task.ts": `'use server';\n${declaration}`,
     });
     const result = await createCoreGraph({ server: {} }, cwd);
     expect(
@@ -178,9 +205,9 @@ describe("source-wide task discovery", () => {
   });
   it("rejects transitive client imports but allows type-only imports", async () => {
     const cwd = await fixture({
-      "src/task.ts": declaration,
+      "src/schedules/task.ts": declaration,
       "src/page.tsx": `import './bridge'; export default function Page() { return null; }`,
-      "src/bridge.ts": `export { syncOrders } from './task';`,
+      "src/bridge.ts": `export { syncOrders } from './schedules/task';`,
     });
     const config = {
       routing: {
@@ -206,7 +233,7 @@ describe("source-wide task discovery", () => {
     ).toBe(true);
     await fs.writeFile(
       path.join(cwd, "src/bridge.ts"),
-      `export type { syncOrders } from './task';`,
+      `export type { syncOrders } from './schedules/task';`,
     );
     expect((await createCoreGraph(config, cwd)).diagnostics).toEqual([]);
   });
@@ -216,7 +243,7 @@ it.each([
   "spa",
   "mpa",
 ] as const)("preserves %s configuration without adding a browser app to a task-only graph", async (mode) => {
-  const cwd = await fixture({ "src/orders.ts": declaration });
+  const cwd = await fixture({ "src/schedules/orders.ts": declaration });
   const input = { routing: { mode } };
   const config = await withPageRoutingDefaults(
     resolveConfig(input),
