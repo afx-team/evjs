@@ -195,6 +195,8 @@ jobs:
                 workspacePackage.dir,
                 "--access",
                 "public",
+                "--tag",
+                "legacy",
                 "--registry",
                 registry,
               ],

@@ -8,6 +8,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.2.17] — 2026-10-19
+
+### 🐛 Bug Fixes
+
+- **SWC dependency pin** — Pin `@swc/core` to `1.16.2` in the framework and Webpack adapter so new installations stay on the selected native binding version.
+
+---
+
 ## [0.2.16] — 2026-07-21
 
 ### ⚠️ Breaking Changes
