@@ -1,4 +1,5 @@
 import type { Project } from "@utoo/pack/cjs/core/types.js";
+import { rejections } from "./rejections.js";
 
 type WatchProject = Pick<
   Project,
@@ -196,14 +197,8 @@ export function startUtoopackServerEndpointWatch(
         // Some Pack versions queue generator.return() behind a native event.
         // Project shutdown runs alongside this cleanup and owns that final exit.
         void entrypoints?.return?.().catch(() => {});
-        const results = await Promise.allSettled([
-          cancelSubscriptions(),
-          queue,
-        ]);
-        results.push(...(await Promise.allSettled([cancelSubscriptions()])));
-        const errors = results.flatMap((result) =>
-          result.status === "rejected" ? [result.reason] : [],
-        );
+        const errors = await rejections([cancelSubscriptions(), queue]);
+        errors.push(...(await rejections([cancelSubscriptions()])));
         if (errors.length)
           throw new AggregateError(
             errors,

@@ -183,14 +183,10 @@ export async function startDevSession<TBundlerCfg>(
     );
 
     if (closing) return false;
-    try {
-      // Stop admitting requests and let the previous process finish the ones
-      // already forwarded before releasing its listener.
-      await gateway.suspend();
-    } catch (error) {
-      if (!closing && apiProcessController.process) gateway.resume();
-      throw error;
-    }
+    // Stop admitting requests and let the previous process finish the ones
+    // already forwarded before releasing its listener. This rejects only once
+    // the gateway is closed, which also means the Session is closing.
+    await gateway.suspend();
     if (closing) return false;
     if (apiProcessController.process) logger.info`Restarting API server...`;
     logger.info`Server bundle detected, starting API...`;
@@ -220,10 +216,9 @@ export async function startDevSession<TBundlerCfg>(
       throw error;
     }
 
-    const origin = gateway.origin;
     logger.info`${[
       "API server listening at:",
-      ...formatDevServerAddresses(origin),
+      ...formatDevServerAddresses(gateway.origin),
     ].join("\n")}`;
     return true;
   };

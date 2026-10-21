@@ -18,6 +18,7 @@ import {
   createUtoopackReusableSessionLifecycle,
   type UtoopackReusableSessionLifecycle,
 } from "./dev-worker-shutdown.js";
+import { rejections } from "./rejections.js";
 import {
   createUtoopackClientDevConfig,
   startUtoopackServerProject,
@@ -183,13 +184,10 @@ async function closeSession(sessionId: number): Promise<void> {
     );
   }
 
-  const results = await Promise.allSettled([
+  const errors = await rejections([
     session.serverProject?.close(),
     session.lifecycle.close(),
   ]);
-  const errors = results.flatMap((result) =>
-    result.status === "rejected" ? [result.reason] : [],
-  );
   if (errors.length) {
     throw new AggregateError(
       errors,

@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { ConfigComplete, Project } from "@utoo/pack";
 import type { MemoryEvictionMode } from "@utoo/pack/cjs/binding.js";
+import { rejections } from "./rejections.js";
 import { startUtoopackServerEndpointWatch } from "./server-endpoint-watch.js";
 
 const require = createRequire(import.meta.url);
@@ -82,18 +83,11 @@ export async function startUtoopackServerProject(options: {
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       // Shutdown must run alongside iterator cancellation to unblock pending next().
-      const results = await Promise.allSettled([
+      const errors = await rejections([
         watch?.close(),
         persistentCaching ? project?.shutdown() : project?.onExit(),
       ]);
-      try {
-        await lock?.unlock();
-      } catch (error) {
-        results.push({ status: "rejected", reason: error });
-      }
-      const errors = results.flatMap((result) =>
-        result.status === "rejected" ? [result.reason] : [],
-      );
+      errors.push(...(await rejections([lock?.unlock()])));
       if (errors.length)
         throw new AggregateError(
           errors,

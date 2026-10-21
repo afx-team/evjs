@@ -37,12 +37,6 @@ interface GatewayRequest {
   cancel(): void;
 }
 
-interface DrainWaiter {
-  resolve(): void;
-  reject(error: Error): void;
-  timer: NodeJS.Timeout;
-}
-
 const DRAIN_TIMEOUT_MS = 10_000;
 
 /** Keep one API listener across child replacements, without replaying requests. */
@@ -63,7 +57,13 @@ export async function startDevServerGateway(
   let closePromise: Promise<void> | undefined;
   const pending = new Set<GatewayRequest>();
   const active = new Set<GatewayRequest>();
-  const drains = new Set<DrainWaiter>();
+  let drain:
+    | {
+        promise: Promise<void>;
+        settle(error?: Error): void;
+        timer: NodeJS.Timeout;
+      }
+    | undefined;
   const sockets = new Set<Socket>();
   let rejectFailure!: (error: unknown) => void;
   const failure = new Promise<never>((_resolve, reject) => {
@@ -71,13 +71,11 @@ export async function startDevServerGateway(
   });
   void failure.catch(() => {});
 
-  const releaseDrains = () => {
-    if (active.size !== 0) return;
-    for (const waiter of drains) {
-      clearTimeout(waiter.timer);
-      waiter.resolve();
-    }
-    drains.clear();
+  const settleDrain = (error?: Error) => {
+    if (!drain) return;
+    clearTimeout(drain.timer);
+    drain.settle(error);
+    drain = undefined;
   };
 
   const listener = (request: IncomingMessage, response: ServerResponse) => {
@@ -93,13 +91,16 @@ export async function startDevServerGateway(
       request.off("error", cancel);
       response.off("close", cancel);
       response.off("error", cancel);
-      releaseDrains();
+      if (active.size === 0) settleDrain();
+    };
+    const destroyProxy = () => {
+      proxyRequest?.destroy();
+      proxyResponse?.destroy();
     };
     const cancel = () => {
       if (settled) return;
       request.unpipe(proxyRequest);
-      proxyRequest?.destroy();
-      proxyResponse?.destroy();
+      destroyProxy();
       response.destroy();
       finish();
     };
@@ -119,12 +120,7 @@ export async function startDevServerGateway(
       }
       request.resume();
       finish();
-    };
-    const proxyFailed = (error: unknown) => {
-      if (settled) return;
-      unavailable(error);
-      proxyRequest?.destroy();
-      proxyResponse?.destroy();
+      destroyProxy();
     };
     const exchange: GatewayRequest = {
       cancel,
@@ -156,14 +152,14 @@ export async function startDevServerGateway(
               upstream.rawHeaders,
             );
             upstream.once("end", finish);
-            upstream.once("error", proxyFailed);
+            upstream.once("error", unavailable);
             upstream.once("aborted", () => {
-              proxyFailed(new Error("The API response ended prematurely."));
+              unavailable(new Error("The API response ended prematurely."));
             });
             upstream.pipe(response);
           },
         );
-        proxyRequest.once("error", proxyFailed);
+        proxyRequest.once("error", unavailable);
         // IncomingMessage stays paused while queued. Transfer its body once,
         // preserving backpressure; never retry a request accepted by the child.
         request.pipe(proxyRequest);
@@ -197,31 +193,25 @@ export async function startDevServerGateway(
     unavailableReason = error;
     for (const exchange of pending) exchange.unavailable(error);
   };
-  server.on("error", (error) => {
+  const unexpected = (error: unknown) => {
     if (state === "closed") return;
     fail(error);
     rejectFailure(error);
-  });
+  };
+  server.on("error", unexpected);
   server.on("close", () => {
-    if (state === "closed") return;
-    const error = new Error(
-      "[evjs] Development API gateway closed unexpectedly.",
+    unexpected(
+      new Error("[evjs] Development API gateway closed unexpectedly."),
     );
-    fail(error);
-    rejectFailure(error);
   });
 
   const close = (): Promise<void> => {
     if (closePromise) return closePromise;
     state = "closed";
     options.signal.removeEventListener("abort", onAbort);
-    for (const waiter of drains) {
-      clearTimeout(waiter.timer);
-      waiter.reject(
-        new Error("[evjs] Development API gateway closed while draining."),
-      );
-    }
-    drains.clear();
+    settleDrain(
+      new Error("[evjs] Development API gateway closed while draining."),
+    );
     for (const exchange of pending) exchange.cancel();
     for (const exchange of active) exchange.cancel();
     closePromise = new Promise<void>((resolve, reject) => {
@@ -270,18 +260,18 @@ export async function startDevServerGateway(
         }
         state = "suspended";
         if (active.size === 0) return Promise.resolve();
-        return new Promise<void>((resolve, reject) => {
-          const waiter: DrainWaiter = {
-            resolve,
-            reject,
-            timer: setTimeout(() => {
-              // SSE and other long responses must not prevent source updates.
-              for (const exchange of active) exchange.cancel();
-            }, drainTimeoutMs),
-          };
-          waiter.timer.unref();
-          drains.add(waiter);
-        });
+        if (!drain) {
+          let settle!: (error?: Error) => void;
+          const promise = new Promise<void>((resolve, reject) => {
+            settle = (error) => (error ? reject(error) : resolve());
+          });
+          // SSE and other long responses must not prevent source updates.
+          const timer = setTimeout(() => {
+            for (const exchange of active) exchange.cancel();
+          }, drainTimeoutMs).unref();
+          drain = { promise, settle, timer };
+        }
+        return drain.promise;
       },
       resume() {
         if (state === "closed") return;
