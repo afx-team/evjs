@@ -200,7 +200,6 @@ export async function startDevSession<TBundlerCfg>(
           throw new Error("[evjs] API process startup was aborted.");
         }
         const child = execa("node", [bootstrapPath], {
-          cwd: options.cwd,
           stdio: ["inherit", "pipe", "pipe"],
           env: { ...process.env, NODE_ENV: "development" },
         });
@@ -306,7 +305,8 @@ export async function startDevSession<TBundlerCfg>(
 
     if (options.plan.entries.some((entry) => entry.kind === "server-runtime")) {
       apiGateway = await startDevServerGateway({
-        cwd: options.cwd,
+        // Match the child process's inherited base for relative TLS paths.
+        cwd: process.cwd(),
         port: options.config.server.dev.port,
         https: options.config.server.dev.https,
         signal: abortController.signal,

@@ -40,32 +40,80 @@ async function setup(
 const delay = () => new Promise((resolve) => setTimeout(resolve, 30));
 
 describe("development API server gateway", () => {
-  it("rejects a drain timeout without terminating or replaying an admitted POST", async () => {
+  it("drains a response that completes during the grace period", async () => {
     let release: (() => void) | undefined;
-    let writes = 0;
+    const { gateway } = await setup(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(new Response("finished"));
+        }),
+    );
+    gateway.resume();
+    const request = fetch(gateway.origin).then((response) => response.text());
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const drain = gateway.suspend();
+    release?.();
+    await expect(request).resolves.toBe("finished");
+    await expect(drain).resolves.toBeUndefined();
+  });
+
+  it("ends long responses after the grace period without replaying POSTs or releasing queued requests", async () => {
+    let release: (() => void) | undefined;
+    const writes: string[] = [];
     const { gateway } = await setup(
       async (request) => {
-        expect(await request.text()).toBe("payload");
-        writes++;
-        return new Promise((resolve) => {
-          release = () => resolve(new Response("committed"));
-        });
+        if (new URL(request.url).pathname === "/events") {
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("data: old\n\n"));
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        const body = await request.text();
+        writes.push(body);
+        if (body === "old") {
+          return new Promise((resolve) => {
+            release = () => resolve(new Response("committed"));
+          });
+        }
+        return new Response("new");
       },
-      { drainTimeoutMs: 30 },
+      { drainTimeoutMs: 120 },
     );
     gateway.resume();
-    const write = fetch(gateway.origin, {
+    const oldWrite = fetch(gateway.origin, {
       method: "POST",
-      body: "payload",
+      body: "old",
     }).then((response) => response.text());
+    void oldWrite.catch(() => {});
     await vi.waitFor(() => expect(release).toBeTypeOf("function"));
-    await expect(gateway.suspend()).rejects.toThrow(
-      "could not drain 1 active request",
-    );
-    gateway.resume();
-    release?.();
-    await expect(write).resolves.toBe("committed");
-    expect(writes).toBe(1);
+    const events = await fetch(`${gateway.origin}/events`);
+    const reader = events.body?.getReader();
+    expect((await reader?.read())?.value).toBeDefined();
+    const nextEvent = reader?.read();
+    void nextEvent?.catch(() => {});
+    const drain = gateway.suspend();
+    const queuedWrite = fetch(gateway.origin, {
+      method: "POST",
+      body: "queued",
+    }).then((response) => response.text());
+    void queuedWrite.catch(() => {});
+    try {
+      await delay();
+      expect(writes).toEqual(["old"]);
+      await expect(drain).resolves.toBeUndefined();
+      await expect(oldWrite).rejects.toBeInstanceOf(Error);
+      await expect(nextEvent).rejects.toBeInstanceOf(Error);
+      expect(writes).toEqual(["old"]);
+      gateway.resume();
+      await expect(queuedWrite).resolves.toBe("new");
+      expect(writes).toEqual(["old", "queued"]);
+    } finally {
+      release?.();
+    }
   });
 
   it("fails waiting requests with diagnostics and recovers without replaying them", async () => {

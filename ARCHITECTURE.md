@@ -262,10 +262,12 @@ place.
 
 Core also owns a stable API gateway for each Session. The gateway retains the
 public server port while API child processes use a private loopback port. A
-server rebuild suspends new HTTP requests, drains requests already forwarded,
-and replaces the child before admitting queued requests after readiness.
-Request bodies are streamed once. Failed startup releases waiting requests
-with a diagnostic 503; closing the Session cancels pending and active work.
+server rebuild suspends new HTTP requests, gives requests already forwarded up
+to 10 seconds to drain, disconnects any remaining exchanges, and replaces the
+child before admitting queued requests after readiness. Request bodies are
+streamed once; interrupted requests are never replayed. Failed startup releases
+waiting requests with a diagnostic 503; closing the Session cancels pending and
+active work.
 HTTPS is preserved on both sides of the gateway so request URLs retain the
 public scheme and Host. Semantic Session replacement still closes the whole
 Session before starting its successor.

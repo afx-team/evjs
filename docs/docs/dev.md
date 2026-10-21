@@ -146,9 +146,11 @@ certificate's subject alternative names.
   of changes.
 
 When an ordinary source edit restarts the server process, its public address
-stays available. Requests already being served finish first; new server
-requests wait until the replacement is ready, including requests sent directly
-to the server origin. Request bodies are forwarded once. If the new server
+stays available. Requests already being served have up to 10 seconds to finish;
+remaining requests and streams are disconnected so long-lived connections do
+not block the update. New server requests wait until the replacement is ready,
+including requests sent directly to the server origin. Request bodies are
+forwarded once and interrupted requests are never replayed. If the new server
 fails to start, waiting requests receive a diagnostic 503 response; fix the
 error and save again.
 

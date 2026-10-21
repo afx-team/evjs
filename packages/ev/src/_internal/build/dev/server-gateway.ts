@@ -15,7 +15,7 @@ export interface DevServerGateway {
   readonly upstreamPort: number;
   /** Rejects only for an unexpected public listener failure. */
   readonly failure: Promise<never>;
-  /** Block admission immediately, then wait for forwarded responses to drain. */
+  /** Block admission, drain responses, then end any left after the grace period. */
   suspend(): Promise<void>;
   resume(): void;
   /** Fail queued and future requests until a successful resume. */
@@ -275,12 +275,8 @@ export async function startDevServerGateway(
             resolve,
             reject,
             timer: setTimeout(() => {
-              drains.delete(waiter);
-              reject(
-                new Error(
-                  `[evjs] Development API gateway could not drain ${active.size} active request(s) within ${drainTimeoutMs}ms. The running API server must remain available.`,
-                ),
-              );
+              // SSE and other long responses must not prevent source updates.
+              for (const exchange of active) exchange.cancel();
             }, drainTimeoutMs),
           };
           waiter.timer.unref();

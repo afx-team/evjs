@@ -215,6 +215,8 @@ describe("immutable dev API process coverage", () => {
 
   it("drains requests and forwards queued GET, HEAD and POST once after readiness", async () => {
     const cwd = await createServerProject();
+    const launchCwd = process.cwd();
+    expect(cwd).not.toBe(launchCwd);
     const slowGate = path.join(cwd, "release-slow");
     const readyGate = path.join(cwd, "release-ready");
     const { execa } = await vi.importActual<typeof import("execa")>("execa");
@@ -227,6 +229,7 @@ describe("immutable dev API process coverage", () => {
     const source = (revision: number) => `
 const fs = require("node:fs");
 console.log("loading:${revision}");
+console.log("cwd:" + process.cwd());
 if (${revision}) while (!fs.existsSync(${JSON.stringify(readyGate)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
 module.exports.fetch = async request => {
   const body = await request.text();
@@ -290,6 +293,7 @@ module.exports.fetch = async request => {
       running = dev({}, { cwd, bundler });
       void running.catch(() => {});
       await waitForEvent(events, API_READY_MARKER);
+      expect(events).toContain(`cwd:${launchCwd}`);
       const slow = fetch(`${origin}/slow`, { signal: abort.signal });
       void slow.catch(() => {});
       await waitForEvent(events, "slow-started");
@@ -312,6 +316,10 @@ module.exports.fetch = async request => {
       expect(completed).toBe(0);
       await fs.promises.writeFile(readyGate, "release");
       await rebuilding;
+      expect(events.filter((event) => event.startsWith("cwd:"))).toEqual([
+        `cwd:${launchCwd}`,
+        `cwd:${launchCwd}`,
+      ]);
       await expect(Promise.all(queued)).resolves.toEqual([
         "1:1:",
         "1:",
