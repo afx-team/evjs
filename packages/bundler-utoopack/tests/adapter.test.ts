@@ -731,7 +731,7 @@ describe("utoopackAdapter dev", () => {
     expect(utoopackMock.workerClose).toHaveBeenCalledOnce();
   });
 
-  it("keeps all configured page-server entries after a server stats rebuild", async () => {
+  it("reloads changed server output even when stats stay unchanged", async () => {
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
       output: { client: "dist/client", server: "dist/server" },
@@ -782,8 +782,29 @@ describe("utoopackAdapter dev", () => {
           assets: { js: ["page-server-index.js"], css: [] },
         },
       });
+      const statsPath = path.join(cwd, "dist/server/stats.json");
+      const statsBefore = await fs.promises.stat(statsPath, { bigint: true });
       await fs.promises.writeFile(
-        path.join(cwd, "dist/server/stats.json"),
+        path.join(cwd, "dist/server/page-server-index.js"),
+        "// Updated Page implementation without changing the asset inventory.\n",
+      );
+      await waitForCondition(
+        () =>
+          onBuildOutput.mock.calls.length === 2 &&
+          onServerBundleReady.mock.calls.length === 2,
+        "Utoopack did not reload changed server output with unchanged stats",
+      );
+      const statsAfter = await fs.promises.stat(statsPath, { bigint: true });
+      expect(statsAfter.mtimeNs).toBe(statsBefore.mtimeNs);
+
+      await Promise.all(
+        ["page-server-index.updated.js", "server-shared.updated.js"].map(
+          (file) =>
+            fs.promises.writeFile(path.join(cwd, "dist/server", file), ""),
+        ),
+      );
+      await fs.promises.writeFile(
+        statsPath,
         JSON.stringify({
           assets: [
             { name: "server.js" },
@@ -809,17 +830,17 @@ describe("utoopackAdapter dev", () => {
 
       await waitForCondition(
         () =>
-          onBuildOutput.mock.calls.length === 2 &&
-          onServerBundleReady.mock.calls.length === 2,
+          onBuildOutput.mock.calls.length === 3 &&
+          onServerBundleReady.mock.calls.length === 3,
         "Utoopack did not publish its rebuilt server facts",
       );
-      expect(onBuildOutput.mock.calls[1]?.[0].server.renderers).toMatchObject({
+      expect(onBuildOutput.mock.calls[2]?.[0].server.renderers).toMatchObject({
         "page-server-index": {
           kind: "page-server",
           assets: { js: ["page-server-index.updated.js"], css: [] },
         },
       });
-      expect(rebuildFlags).toEqual([false, true]);
+      expect(rebuildFlags).toEqual([false, true, true]);
     } finally {
       await controller.close();
     }

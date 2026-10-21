@@ -136,6 +136,8 @@ export async function createUtoopackConfig(
 
   const utoopackConfig: ConfigComplete = {
     mode,
+    // Keep concurrent dev and production Projects on separate databases and locks.
+    cacheDirectory: `.turbopack/evjs/${mode}`,
     ...(isProduction && config.target !== undefined && clientEntries.length > 0
       ? { target: createClientBrowserslistTarget(config.target) }
       : {}),

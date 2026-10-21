@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -144,6 +145,7 @@ async function emitServerBuild(
   onBuildFacts: (
     facts: BundlerBuildFacts,
   ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>,
+  source = "export default { fetch() { return new Response('ok'); } };",
 ): Promise<void> {
   const facts = createServerFacts(plan);
   const runtimeEntry = plan.entries.find(
@@ -154,7 +156,7 @@ async function emitServerBuild(
   if (!serverEntry) throw new Error("Expected a server entry asset.");
   await writeFile(
     path.resolve(cwd, plan.output.serverDir, serverEntry),
-    "export default { fetch() { return new Response('ok'); } };",
+    source,
   );
   await onBuildFacts(facts);
 }
@@ -278,4 +280,251 @@ describe("immutable dev API process coverage", () => {
     expect(events).toContain("rebuilt-api-ready");
     expect(events).toContain("kill:rebuilt:SIGTERM");
   });
+
+  it("drains an old request and forwards queued requests once after replacement readiness", async () => {
+    const cwd = await createServerProject();
+    const requestLog = path.join(cwd, "requests.jsonl");
+    const releaseSlowRequest = path.join(cwd, "release-slow-request");
+    const candidateStarted = path.join(cwd, "candidate-started");
+    const releaseCandidate = path.join(cwd, "release-candidate");
+    const { execa: actualExeca } =
+      await vi.importActual<typeof import("execa")>("execa");
+    const children: Array<ReturnType<typeof actualExeca>> = [];
+    const events: string[] = [];
+    const requestAbort = new AbortController();
+    let running: Promise<void> | undefined;
+    let rebuild: (() => Promise<void>) | undefined;
+    let origin = "";
+
+    const serverSource = (revision: number) => `
+const fs = require("node:fs");
+const revision = ${revision};
+if (revision > 0) {
+  fs.writeFileSync(${JSON.stringify(candidateStarted)}, "started");
+  while (!fs.existsSync(${JSON.stringify(releaseCandidate)})) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+}
+module.exports = {
+  async fetch(request) {
+    const pathname = new URL(request.url).pathname;
+    const body = await request.text();
+    fs.appendFileSync(${JSON.stringify(requestLog)}, JSON.stringify({ revision, method: request.method, pathname, body }) + "\\n");
+    if (pathname === "/slow") {
+      while (!fs.existsSync(${JSON.stringify(releaseSlowRequest)})) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+    return new Response(request.method === "HEAD" ? null : JSON.stringify({ revision, body }), {
+      headers: { "content-type": "application/json", "x-revision": String(revision) },
+    });
+  }
+};
+`;
+
+    mockedExeca.state.spawn = (...args) => {
+      const index = children.length;
+      const [command, arguments_, options] = args;
+      const child = Reflect.apply(actualExeca, undefined, [
+        command,
+        arguments_,
+        { ...(options as object), cleanup: false },
+      ]) as ReturnType<typeof actualExeca>;
+      children.push(child);
+      events.push(`start:${index}`);
+      child.once("exit", () => events.push(`exit:${index}`));
+      child.stdout?.on("data", (data: Buffer) => {
+        if (data.toString().includes(API_READY_MARKER)) {
+          events.push(`ready:${index}`);
+        }
+      });
+      return child;
+    };
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "api-gateway-requests",
+      capabilities: { build: { server: true, rsc: true, ppr: true } },
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, config, plan }) {
+        origin = `http://127.0.0.1:${config.server.dev.port}`;
+        await emitServerBuild(
+          cwd,
+          plan,
+          (facts) => callbacks.onBuildFacts(facts, { isRebuild: false }),
+          serverSource(0),
+        );
+        await callbacks.onServerBundleReady();
+        rebuild = async () => {
+          await emitServerBuild(
+            cwd,
+            plan,
+            (facts) => callbacks.onBuildFacts(facts, { isRebuild: true }),
+            serverSource(1),
+          );
+          events.push("replacement-requested");
+          await callbacks.onServerBundleReady();
+        };
+        events.push("initial-api-ready");
+        return createTestDevController();
+      },
+    };
+
+    const readRequests = async (): Promise<
+      Array<{
+        revision: number;
+        method: string;
+        pathname: string;
+        body: string;
+      }>
+    > => {
+      try {
+        const source = await fs.promises.readFile(requestLog, "utf8");
+        return source
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+        throw error;
+      }
+    };
+
+    try {
+      await fs.promises.symlink(
+        fileURLToPath(new URL("../../../node_modules", import.meta.url)),
+        path.join(cwd, "node_modules"),
+        "dir",
+      );
+      running = dev(
+        { output: { client: "dist/client", server: "dist/server" } },
+        { cwd, bundler },
+      );
+      void running.catch(() => {});
+      await waitForEvent(events, "initial-api-ready");
+      const slowResponse = fetch(`${origin}/slow`, {
+        signal: requestAbort.signal,
+      }).then(async (response) => ({
+        status: response.status,
+        result: await response.json(),
+      }));
+      void slowResponse.catch(() => {});
+      await vi.waitFor(async () => {
+        expect(await readRequests()).toEqual([
+          { revision: 0, method: "GET", pathname: "/slow", body: "" },
+        ]);
+      });
+
+      if (!rebuild) throw new Error("Expected a rebuild callback.");
+      const rebuilding = rebuild();
+      void rebuilding.catch(() => {});
+      await waitForEvent(events, "replacement-requested");
+      // Allow admission to pause while the old response remains in flight.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(children).toHaveLength(1);
+      expect(events).not.toContain("exit:0");
+
+      const postBody = "queued:\n汉字\r\npayload";
+      let completed = 0;
+      const queued = [
+        { method: "GET", pathname: "/queued-get" },
+        { method: "HEAD", pathname: "/queued-head" },
+        { method: "POST", pathname: "/queued-post", body: postBody },
+      ].map(async ({ method, pathname, body }) => {
+        const response = await fetch(`${origin}${pathname}`, {
+          method,
+          body,
+          signal: requestAbort.signal,
+        });
+        const text = await response.text();
+        completed++;
+        return {
+          method,
+          status: response.status,
+          revision: response.headers.get("x-revision"),
+          text,
+        };
+      });
+      for (const request of queued) void request.catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(completed).toBe(0);
+      expect(await readRequests()).toHaveLength(1);
+      expect(events).not.toContain("exit:0");
+
+      events.push("release:old-request");
+      await fs.promises.writeFile(releaseSlowRequest, "release");
+      await expect(slowResponse).resolves.toEqual({
+        status: 200,
+        result: { revision: 0, body: "" },
+      });
+      await waitForEvent(events, "start:1");
+      await vi.waitFor(() =>
+        expect(fs.existsSync(candidateStarted)).toBe(true),
+      );
+      expect(events).not.toContain("ready:1");
+      expect(completed).toBe(0);
+      await fs.promises.writeFile(releaseCandidate, "release");
+      await rebuilding;
+
+      const results = await Promise.all(queued);
+      expect(
+        results.map(({ method, status, revision }) => ({
+          method,
+          status,
+          revision,
+        })),
+      ).toEqual([
+        { method: "GET", status: 200, revision: "1" },
+        { method: "HEAD", status: 200, revision: "1" },
+        { method: "POST", status: 200, revision: "1" },
+      ]);
+      expect(results.find(({ method }) => method === "HEAD")?.text).toBe("");
+      expect(
+        JSON.parse(
+          results.find(({ method }) => method === "POST")?.text ?? "null",
+        ),
+      ).toEqual({
+        revision: 1,
+        body: postBody,
+      });
+      expect(
+        (await readRequests()).filter(({ method }) => method === "POST"),
+      ).toEqual([
+        {
+          revision: 1,
+          method: "POST",
+          pathname: "/queued-post",
+          body: postBody,
+        },
+      ]);
+      const next = await fetch(`${origin}/after`, {
+        signal: requestAbort.signal,
+      });
+      expect(next.status).toBe(200);
+      await expect(next.json()).resolves.toEqual({ revision: 1, body: "" });
+      expect(events.indexOf("start:1")).toBeGreaterThan(
+        events.indexOf("release:old-request"),
+      );
+    } finally {
+      await fs.promises.writeFile(releaseSlowRequest, "release");
+      await fs.promises.writeFile(releaseCandidate, "release");
+      requestAbort.abort();
+      try {
+        if (running) {
+          process.emit("SIGINT");
+          await running;
+        }
+      } finally {
+        await Promise.all(
+          children.map(async (child) => {
+            child.kill("SIGKILL");
+            await child.catch(() => {});
+          }),
+        );
+        await fs.promises.rm(cwd, { recursive: true, force: true });
+      }
+    }
+  }, 25_000);
 });

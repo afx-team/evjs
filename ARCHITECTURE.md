@@ -260,6 +260,16 @@ one fixed config, CoreGraph, BuildPlan, plugin-hook set, generated IR image,
 and bundler controller; adapters are never asked to replace those inputs in
 place.
 
+Core also owns a stable API gateway for each Session. The gateway retains the
+public server port while API child processes use a private loopback port. A
+server rebuild suspends new HTTP requests, drains requests already forwarded,
+and replaces the child before admitting queued requests after readiness.
+Request bodies are streamed once. Failed startup releases waiting requests
+with a diagnostic 503; closing the Session cancels pending and active work.
+HTTPS is preserved on both sides of the gateway so request URLs retain the
+public scheme and Host. Semantic Session replacement still closes the whole
+Session before starting its successor.
+
 The Utoopack adapter keeps one native-owner Worker for the lifetime of
 `ev dev`. That Worker is the only development realm that loads Utoopack's
 native binding: it registers the process-global loader scheduler and owns all
