@@ -41,11 +41,12 @@ Methods return an opaque reference rather than a filesystem path. Use
 `importOf(ref)` only inside generated source; application code should never
 import `.ev` paths.
 
-Choose an application or page scope:
+Choose an application, page, or server scope:
 
 ```ts
 scope: { kind: "application" }
 scope: { kind: "page", pageId: "checkout" }
+scope: { kind: "server" }
 ```
 
 Contribution ids are local to the plugin. In `emitPageIR()`, ids are also local
@@ -248,6 +249,30 @@ ctx.slot("resolve.external").add({
 Runtime filters accept `"client"`, `"server"`, or `"all"` where the slot
 supports them.
 
+## Create an independent server entry
+
+Use `server.entry` with explicit `mode: "create"` for a plugin-owned Node build
+root. No Page or HTTP Route is required:
+
+```ts
+const entryName = ctx.slot("server.entry").add({
+  id: "service-entry",
+  mode: "create",
+  module: "./src/plugin/service.ts",
+});
+```
+
+`module` also accepts a reference returned by `emit.module()`. The returned
+entry name indexes `BuildOutput.assets[entryName]`; it is not an output path.
+Core assigns the name within the plugin/page emission namespace and reports
+collisions. The contribution and its module reference appear in the generated
+IR manifest, like other slots.
+
+Creation rejects `target` and `position`. Omitting `mode` still means importing
+into an existing Page entry and requires its target and insertion position.
+Existing import/replacement calls continue to return `undefined`. This slot
+creates a build root only; protocol dispatch and deployment belong to plugins.
+
 ## Extend server page entries
 
 `server.entry` imports into or replaces an existing page server entry. It
@@ -272,7 +297,7 @@ fails generation instead of becoming a no-op.
 | Slot | Purpose |
 | --- | --- |
 | `client.entry` | Import into or replace client entries |
-| `server.entry` | Import into or replace an existing page server entry |
+| `server.entry` | Create an independent server entry, or import into/replace a Page server entry |
 | `application.wrapper` | Wrap the complete client CSR Application root |
 | `page.wrapper` | Wrap page components across client/server rendering |
 | `server.request.middleware` | Add plugin-owned server request middleware |

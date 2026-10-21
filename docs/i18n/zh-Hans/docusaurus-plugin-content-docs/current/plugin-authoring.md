@@ -263,16 +263,20 @@ evjs 可能会再次执行它。
 
 ## 独立服务端入口
 
-协议插件可以通过 `emit.serverEntry` 声明 Node 服务端构建入口。入口进入
+协议插件可以通过 `server.entry` 的 `mode: "create"` 声明 Node 服务端构建入口。入口进入
 正式 BuildPlan，即使没有 Page 或 HTTP Route 引用也会打包，但不会创建 HTTP endpoint。
 
 ```ts
 const module = ctx.emit.module({
   id: "handler",
-  scope: { kind: "application" },
+  scope: { kind: "server" },
   source: "export async function invoke(input) { return input; }",
 });
-const entryName = ctx.emit.serverEntry({ id: "entry", module });
+const entryName = ctx.slot("server.entry").add({
+  id: "entry",
+  mode: "create",
+  module,
+});
 ```
 
 返回的名称对应 `BuildOutput.assets[entryName]` 中自包含的服务端资源组。

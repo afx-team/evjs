@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -26,10 +26,12 @@ describe("plugin server build roots", () => {
       emitIR(ctx) {
         const module = ctx.emit.module({
           id: "implementation",
-          scope: { kind: "application" },
+          scope: { kind: "server" },
           source: "export async function invoke(input) { return input; }",
         });
-        name = ctx.emit.serverEntry({ id: "entry", module });
+        name = ctx
+          .slot("server.entry")
+          .add({ id: "entry", mode: "create", module });
       },
     });
     const prepared = await prepareFrameworkBuild(
@@ -50,6 +52,24 @@ describe("plugin server build roots", () => {
       }),
     ]);
     expect(plan.server.entry).toBeUndefined();
+    expect(plan.generated.slots).toContainEqual({
+      key: "protocol:entry",
+      id: "entry",
+      pluginId: "protocol",
+      slot: "server.entry",
+      mode: "create",
+      entryName: name,
+      module: plan.entries[0].import,
+    });
+    expect(plan.generated.importEdges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "protocol:entry",
+          to: "protocol:implementation",
+          kind: "slot-module",
+        }),
+      ]),
+    );
     const { graph } = JSON.parse(
       await readFile(path.join(cwd, ".ev/framework/core-graph.json"), "utf8"),
     );
@@ -66,13 +86,17 @@ describe("plugin server build roots", () => {
     const left = definePlugin({
       id: "a-b",
       emitIR(ctx) {
-        ctx.emit.serverEntry({ id: "c", module: "./handler.ts" });
+        ctx
+          .slot("server.entry")
+          .add({ id: "c", mode: "create", module: "./handler.ts" });
       },
     });
     const right = definePlugin({
       id: "a",
       emitIR(ctx) {
-        ctx.emit.serverEntry({ id: "b-c", module: "./handler.ts" });
+        ctx
+          .slot("server.entry")
+          .add({ id: "b-c", mode: "create", module: "./handler.ts" });
       },
     });
     await expect(
@@ -81,5 +105,137 @@ describe("plugin server build roots", () => {
         { cwd },
       ),
     ).rejects.toThrow("duplicate build entry name");
+  });
+});
+
+describe("server.entry create mode", () => {
+  it.each([
+    { target: { kind: "page", pageId: "home" } },
+    { position: "before-main" },
+  ])("rejects page-only options %j", async (extra) => {
+    const cwd = await project();
+    const plugin = definePlugin({
+      id: "invalid-create",
+      emitIR(ctx) {
+        ctx.slot("server.entry").add({
+          id: "entry",
+          mode: "create",
+          module: "./handler.ts",
+          ...extra,
+        } as never);
+      },
+    });
+    await expect(
+      prepareFrameworkBuild(
+        { conventions: false, plugins: [plugin()] },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'server.entry mode "create" cannot declare target or position',
+    );
+  });
+
+  it("does not infer creation from an omitted page target", async () => {
+    const cwd = await project();
+    const plugin = definePlugin({
+      id: "missing-target",
+      emitIR(ctx) {
+        ctx.slot("server.entry").add({
+          id: "entry",
+          module: "./handler.ts",
+          position: "before-main",
+        } as never);
+      },
+    });
+    await expect(
+      prepareFrameworkBuild(
+        { conventions: false, plugins: [plugin()] },
+        { cwd },
+      ),
+    ).rejects.toThrow("server.entry target");
+  });
+
+  it("keeps independent entries separate from Page imports and replacements", async () => {
+    const cwd = await project();
+    await writeFile(
+      path.join(cwd, "index.html"),
+      '<html><head></head><body><div id="app"></div></body></html>',
+    );
+    await mkdir(path.join(cwd, "src/pages/home"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Page() { return null; }",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.config.ts"),
+      'export default { render: "ssr" };',
+    );
+    let serviceName = "";
+    const plugin = definePlugin({
+      id: "mixed",
+      emitIR(ctx) {
+        const service = ctx.emit.module({
+          id: "service",
+          scope: { kind: "server" },
+          source: "export async function invoke() { return 42; }",
+        });
+        serviceName = ctx
+          .slot("server.entry")
+          .add({ id: "service-entry", module: service, mode: "create" });
+        const before = ctx.emit.module({
+          id: "before",
+          scope: { kind: "page", pageId: "home" },
+          source: "export {};",
+        });
+        expect(
+          ctx.slot("server.entry").add({
+            id: "before-entry",
+            module: before,
+            target: { kind: "page", pageId: "home" },
+            position: "before-main",
+          }),
+        ).toBeUndefined();
+        const page = ctx.emit.module({
+          id: "renderer",
+          scope: { kind: "page", pageId: "home" },
+          source: "export default function render() {}",
+        });
+        expect(
+          ctx.slot("server.entry").add({
+            id: "renderer-entry",
+            module: page,
+            target: { kind: "page", pageId: "home" },
+            mode: "replace",
+          }),
+        ).toBeUndefined();
+      },
+    });
+    const prepared = await prepareFrameworkBuild(
+      { routing: { mode: "mpa" }, plugins: [plugin()] },
+      { cwd },
+    );
+    await prepared.dispose();
+    const { plan } = JSON.parse(
+      await readFile(path.join(cwd, ".ev/framework/build-plan.json"), "utf8"),
+    );
+    const serviceEntry = plan.entries.find(
+      (entry: { name: string }) => entry.name === serviceName,
+    );
+    const pageEntry = plan.entries.find(
+      (entry: { kind: string }) => entry.kind === "page-server",
+    );
+    const pageSource = await readFile(
+      path.resolve(cwd, pageEntry.import),
+      "utf8",
+    );
+    expect(pageSource).toContain("mixed/before");
+    expect(pageSource).toContain("mixed/renderer");
+    expect(pageSource).not.toContain("mixed/service");
+    const serviceSource = await readFile(
+      path.resolve(cwd, serviceEntry.import),
+      "utf8",
+    );
+    expect(serviceSource).toContain("export async function invoke");
+    expect(serviceSource).not.toContain("renderer");
   });
 });

@@ -307,17 +307,22 @@ graph.
 
 ## Independent server entries
 
-A protocol plugin can declare a Node server build root with `emit.serverEntry`.
+A protocol plugin can declare a Node server build root through the
+`server.entry` slot with `mode: "create"`.
 The entry participates in the normal build plan and is bundled even when no
 Page or HTTP Route imports it. It does not create an HTTP endpoint.
 
 ```ts
 const module = ctx.emit.module({
   id: "handler",
-  scope: { kind: "application" },
+  scope: { kind: "server" },
   source: "export async function invoke(input) { return input; }",
 });
-const entryName = ctx.emit.serverEntry({ id: "entry", module });
+const entryName = ctx.slot("server.entry").add({
+  id: "entry",
+  mode: "create",
+  module,
+});
 ```
 
 The returned name indexes the self-contained server asset group in

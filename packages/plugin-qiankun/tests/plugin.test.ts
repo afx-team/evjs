@@ -10,6 +10,7 @@ import type {
   EmitApi,
   FrameworkApplicationEntryMetadata,
   FrameworkEntryView,
+  FrameworkSlot,
   FrameworkSlotInput,
   FrameworkSlotName,
   FrameworkView,
@@ -570,9 +571,6 @@ function createContributionCapture(
   const entryFacades: Parameters<EmitApi["entryFacade"]>[0][] = [];
   const refs = new Map<GeneratedModuleRef, string>();
   const emit: EmitApi = {
-    serverEntry() {
-      throw new Error("Unexpected server entry in qiankun test");
-    },
     module(input) {
       const ref = { id: input.id } as unknown as GeneratedModuleRef;
       refs.set(ref, input.id);
@@ -605,10 +603,12 @@ function createContributionCapture(
     emit,
     slot(name) {
       return {
-        add(input) {
+        add(input: FrameworkSlotInput<typeof name>) {
+          if (name === "server.entry")
+            throw new Error("Unexpected server entry in qiankun test");
           slots.push({ name, input });
         },
-      };
+      } as FrameworkSlot<typeof name>;
     },
   };
   return {
