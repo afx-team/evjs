@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConfigComplete } from "@utoo/pack";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { __testing as modeTesting } from "../src/adapter/development/dev-process-mode.js";
 import {
   __testing as ownerTesting,
@@ -51,6 +51,44 @@ function createOptions(
 }
 
 describe("Utoopack dev worker client", () => {
+  it("acknowledges server builds only after host publication and returns failures", async () => {
+    let release!: () => void;
+    const publishing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const onServerBuild = vi.fn(async () => {
+      if (onServerBuild.mock.calls.length === 1) await publishing;
+      else throw new Error("publication failed");
+    });
+    const onServerError = vi.fn();
+    const handle = startUtoopackDevWorker(
+      {
+        ...createOptions((requestPath) => requestPath, {
+          TEST_SERVER_BUILD: "true",
+        }),
+        onServerBuild,
+        onServerError,
+      },
+      fixtureUrl,
+    );
+    try {
+      await handle.ready;
+      await vi.waitFor(() => expect(onServerBuild).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(onServerBuild).toHaveBeenCalledOnce();
+      release();
+      await vi.waitFor(() =>
+        expect(onServerError).toHaveBeenCalledWith(
+          expect.objectContaining({ message: "publication failed" }),
+        ),
+      );
+      expect(onServerBuild).toHaveBeenCalledTimes(2);
+    } finally {
+      release();
+      await handle.close();
+    }
+  });
+
   it("bridges closure-backed path rewrites and updates the worker-owned fallback", async () => {
     const prefix = "/closed";
     const handle = startUtoopackDevWorker(

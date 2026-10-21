@@ -25,6 +25,19 @@ await fs.promises.rm(path.join(cwd, "dist"), {
 });
 const second = await runSession(config, first.port);
 const secondOwnerThreadId = ownerTesting.getNativeOwnerThreadId();
+const serverConfig = {
+  ...config,
+  server: {
+    entry: "./src/server.js",
+    output: { path: "./dist/server", filename: "[name].js" },
+  },
+};
+const server = await runSession(serverConfig, second.port, true);
+const serverOwnerThreadId = ownerTesting.getNativeOwnerThreadId();
+await runSession(serverConfig, server.port);
+const serverSessionReused =
+  serverOwnerThreadId === firstOwnerThreadId &&
+  ownerTesting.getNativeOwnerThreadId() === firstOwnerThreadId;
 let buildModeRejected = false;
 try {
   markUtoopackProcessForBuild();
@@ -42,6 +55,8 @@ process.stdout.write(
     buildModeRejected,
     firstPort: first.port,
     secondPort: second.port,
+    serverPublicationClosed: server.publicationClosed,
+    serverSessionReused,
   })}\n`,
 );
 
@@ -71,10 +86,48 @@ function createConfig(customLoaderPath) {
   };
 }
 
-async function runSession(config, port) {
+async function runSession(config, port, blockPublication = false) {
+  let beginPublication;
+  let rejectPublication;
+  let releasePublication;
+  let publicationBlocked = false;
+  const publication = new Promise((resolve, reject) => {
+    beginPublication = resolve;
+    rejectPublication = reject;
+  });
+  void publication.catch(() => {});
+  const publicationGate = new Promise((resolve) => {
+    releasePublication = resolve;
+  });
   const handle = startUtoopackDevWorker({
     cwd,
     config,
+    async onServerBuild() {
+      try {
+        const stats = JSON.parse(
+          await fs.promises.readFile(
+            path.join(cwd, "dist/server/stats.json"),
+            "utf8",
+          ),
+        );
+        if (
+          !Array.isArray(stats.assets) ||
+          !stats.assets.length ||
+          !Object.keys(stats.entrypoints ?? {}).length
+        ) {
+          throw new Error(
+            "Native server publication has no valid canonical stats.",
+          );
+        }
+      } catch (error) {
+        rejectPublication(error);
+        throw error;
+      }
+      publicationBlocked = blockPublication;
+      beginPublication();
+      if (blockPublication) await publicationGate;
+    },
+    onServerError: rejectPublication,
     server: {
       port,
       https: false,
@@ -91,13 +144,14 @@ async function runSession(config, port) {
     if (!stats.includes("entrypoints")) {
       throw new Error("Native owner did not write Utoopack entrypoint stats.");
     }
+    if (config.server) await publication;
     await handle.close();
     await handle.done;
     await assertPortAvailable(ready.port);
-    return ready;
-  } catch (error) {
+    return { ...ready, publicationClosed: publicationBlocked };
+  } finally {
+    releasePublication();
     await handle.close().catch(() => {});
-    throw error;
   }
 }
 

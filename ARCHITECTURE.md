@@ -273,8 +273,12 @@ Session before starting its successor.
 The Utoopack adapter keeps one native-owner Worker for the lifetime of
 `ev dev`. That Worker is the only development realm that loads Utoopack's
 native binding: it registers the process-global loader scheduler and owns all
-sequential native Projects. Individual Sessions still own and fully release
-their Project, HTTP server, subscriptions, and persistent-cache lock. The host
+native Projects. Sessions own a client HMR Project and, when needed, a server
+Project with separate cache locks and private auxiliary output. Only the server
+Project writes canonical server assets. It subscribes to endpoint changes,
+awaits endpoint writes and complete stats, and waits for the host to finish
+publication and API readiness before writing the next batch. Individual Sessions
+fully release their Projects, HTTP server, subscriptions, and cache locks. The host
 exchanges cloneable Session commands with the owner and retains only callbacks
 that cannot cross the Worker boundary, such as function-valued proxy rewrites.
 Successful Utoopack process-exit requests are converted into Session-close

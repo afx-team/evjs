@@ -7,6 +7,9 @@ export const PATH_REWRITE_TIMEOUT_MS = 5_000;
 export interface UtoopackDevWorkerOptions {
   cwd: string;
   config: ConfigComplete;
+  /** Host publication must finish before the next server write begins. */
+  onServerBuild?(): Promise<void>;
+  onServerError?(error: Error): void;
   spaHistoryFallbackRuleIndex?: number;
   server: {
     port: number;
@@ -17,7 +20,7 @@ export interface UtoopackDevWorkerOptions {
 }
 
 export interface UtoopackDevWorkerSessionOptions
-  extends UtoopackDevWorkerOptions {
+  extends Omit<UtoopackDevWorkerOptions, "onServerBuild" | "onServerError"> {
   pathRewriteFunctionIndexes: number[];
 }
 
@@ -27,7 +30,13 @@ export type UtoopackDevWorkerCommand =
       sessionId: number;
       options: UtoopackDevWorkerSessionOptions;
     }
-  | { type: "close"; sessionId: number };
+  | { type: "close"; sessionId: number }
+  | {
+      type: "server-published";
+      sessionId: number;
+      buildId: number;
+      error?: string;
+    };
 
 export type UtoopackDevWorkerMessage =
   | { type: "owner-ready" }
@@ -38,6 +47,8 @@ export type UtoopackDevWorkerMessage =
       spaHistoryFallbackUpdated: boolean;
     }
   | { type: "closed"; sessionId: number }
+  | { type: "server-build"; sessionId: number; buildId: number }
+  | { type: "server-error"; sessionId: number; message: string }
   | {
       type: "session-error";
       sessionId: number;
