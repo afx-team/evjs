@@ -580,6 +580,14 @@ export interface PluginEmitIRContext<TBundlerCfg = unknown>
 }
 
 export interface EmitApi {
+  /**
+   * Declare a plugin-owned server build root independently of HTTP/Page entries.
+   * The returned name indexes its linked assets in BuildOutput.assets.
+   */
+  serverEntry(input: {
+    id: string;
+    module: GeneratedModuleRef | string;
+  }): string;
   module(input: {
     id: string;
     scope: GeneratedScope;

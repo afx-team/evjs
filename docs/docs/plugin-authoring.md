@@ -304,3 +304,23 @@ Required Application options stay required in either available factory form.
 Keep `emitIR()` deterministic and free of external side effects. evjs
 may evaluate it again when contributed source aliases change the framework
 graph.
+
+## Independent server entries
+
+A protocol plugin can declare a Node server build root with `emit.serverEntry`.
+The entry participates in the normal build plan and is bundled even when no
+Page or HTTP Route imports it. It does not create an HTTP endpoint.
+
+```ts
+const module = ctx.emit.module({
+  id: "handler",
+  scope: { kind: "application" },
+  source: "export async function invoke(input) { return input; }",
+});
+const entryName = ctx.emit.serverEntry({ id: "entry", module });
+```
+
+The returned name indexes the self-contained server asset group in
+`BuildOutput.assets[entryName]`. Use that group and plugin deployment metadata
+to deliver the entry. Keep protocol naming, schema and host lifecycle inside
+the protocol plugin; the core entry does not install a protocol listener.

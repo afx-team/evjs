@@ -260,3 +260,21 @@ export default defineConfig({
 
 `emitIR()` 应保持确定性且不产生外部副作用。当插件提供的源码别名改变框架语义图时，
 evjs 可能会再次执行它。
+
+## 独立服务端入口
+
+协议插件可以通过 `emit.serverEntry` 声明 Node 服务端构建入口。入口进入
+正式 BuildPlan，即使没有 Page 或 HTTP Route 引用也会打包，但不会创建 HTTP endpoint。
+
+```ts
+const module = ctx.emit.module({
+  id: "handler",
+  scope: { kind: "application" },
+  source: "export async function invoke(input) { return input; }",
+});
+const entryName = ctx.emit.serverEntry({ id: "entry", module });
+```
+
+返回的名称对应 `BuildOutput.assets[entryName]` 中自包含的服务端资源组。
+插件通过该资源组和部署元信息交付入口。协议命名、schema 和宿主生命周期
+由协议插件负责；core 入口本身不会安装协议监听器。

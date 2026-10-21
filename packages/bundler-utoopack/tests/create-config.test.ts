@@ -117,6 +117,33 @@ describe("createUtoopackConfig", () => {
     expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/unclaimed")).toBe(true);
   });
 
+  it("creates a private compiler anchor for independent server-only entries", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    plan.entries = [
+      {
+        name: "plugin-protocol-entry",
+        import: "./src/service.ts",
+        environment: "server",
+        runtime: "node",
+        phase: "runtime",
+        kind: "runtime",
+      },
+    ];
+    const output = await createUtoopackConfig(config, plan, process.cwd(), []);
+    expect(output.server?.entry).toEqual([
+      { name: "plugin-protocol-entry", import: "./src/service.ts" },
+    ]);
+    expect(output.entry).toEqual([
+      {
+        name: "__evjs_server_build__",
+        import: expect.stringContaining("server-build-anchor."),
+      },
+    ]);
+    expect(plan.entries).toHaveLength(1);
+    expect(plan.server.entry).toBeUndefined();
+  });
+
   it("rejects custom client certificates in development", async () => {
     const config = createResolvedConfig({
       dev: {

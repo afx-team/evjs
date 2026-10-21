@@ -213,6 +213,12 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
     await runUtoopackBuild(requireUtoopack(), utoopackConfig, cwd);
+    if (!plan.entries.some((entry) => entry.environment === "client")) {
+      await fs.promises.rm(outputPaths.clientDir, {
+        recursive: true,
+        force: true,
+      });
+    }
 
     logger.info`Collecting utoopack build facts...`;
     const generator = new UtoopackManifestGenerator(cwd, plan);

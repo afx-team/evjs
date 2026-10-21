@@ -242,6 +242,7 @@ export async function prepareFrameworkIR<TBundlerCfg>(
     await collector.run(plugin);
   }
   collector.validateTargets();
+  plan.entries.push(...collector.serverEntries);
 
   // Wrapper slots mutate entry metadata consumed by emit.entryFacade source
   // factories, so project them before resolving any generated module source.
@@ -309,6 +310,7 @@ export function applyHtmlTagContributions(
  */
 class ContributionCollector<TBundlerCfg> {
   readonly modules: InternalGeneratedModule[] = [];
+  readonly serverEntries: BuildEntry[] = [];
   private readonly slots: FrameworkSlotPlanItem[] = [];
   private readonly importEdges: GeneratedImportEdgePlan[] = [];
   private readonly seenImportEdges = new Set<string>();
@@ -537,6 +539,26 @@ class ContributionCollector<TBundlerCfg> {
 
   private createEmitApi(pluginId: string, namespace?: string): EmitApi {
     const emit: EmitApi = {
+      serverEntry: (input) => {
+        const id = validateContributionId(input.id, pluginId);
+        assertGeneratedModuleOrString(pluginId, id, input.module);
+        const key = this.reserveKey(pluginId, id, "server entry", namespace);
+        const name = `plugin-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+        const module = this.resolveModuleValue(
+          input.module,
+          { from: key, kind: "slot-module" },
+          "file",
+        );
+        this.serverEntries.push({
+          name,
+          import: module,
+          environment: "server",
+          runtime: "node",
+          phase: "runtime",
+          kind: "runtime",
+        });
+        return name;
+      },
       module: (input) => {
         const id = validateContributionId(input.id, pluginId);
         return this.emitGeneratedModule(

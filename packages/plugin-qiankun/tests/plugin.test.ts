@@ -570,6 +570,9 @@ function createContributionCapture(
   const entryFacades: Parameters<EmitApi["entryFacade"]>[0][] = [];
   const refs = new Map<GeneratedModuleRef, string>();
   const emit: EmitApi = {
+    serverEntry() {
+      throw new Error("Unexpected server entry in qiankun test");
+    },
     module(input) {
       const ref = { id: input.id } as unknown as GeneratedModuleRef;
       refs.set(ref, input.id);
