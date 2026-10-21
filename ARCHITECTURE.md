@@ -279,7 +279,9 @@ native Projects. Sessions own a client HMR Project and, when needed, a server
 Project with separate cache locks and private auxiliary output. Only the server
 Project writes canonical server assets. It subscribes to endpoint changes,
 awaits endpoint writes and complete stats, and waits for the host to finish
-publication and API readiness before writing the next batch. Individual Sessions
+publication and API readiness before writing the next batch. The first
+batch publishes even with compile diagnostics so client pages remain available;
+later failing batches keep the last valid server output. Individual Sessions
 fully release their Projects, HTTP server, subscriptions, and cache locks. The host
 exchanges cloneable Session commands with the owner and retains only callbacks
 that cannot cross the Worker boundary, such as function-valued proxy rewrites.

@@ -163,7 +163,7 @@ describe("Utoopack server endpoint watch", () => {
     "error",
     "fatal",
     "bug",
-  ])("keeps %s diagnostics unpublished and recovers from endpoint and project errors", async (severity) => {
+  ])("publishes initial %s diagnostics, then keeps later ones unpublished until recovery", async (severity) => {
     const diagnosticIssues = diagnostic.map((issue) => ({
       ...issue,
       severity,
@@ -172,22 +172,22 @@ describe("Utoopack server endpoint watch", () => {
     const a = endpoint();
     a.write.mockResolvedValueOnce(written(diagnosticIssues));
     f.entries.push({ apps: [a.value], issues: [] });
-    let ready = false;
-    void f.watch.ready.then(() => {
-      ready = true;
-    });
     try {
-      await vi.waitFor(() => expect(f.onError).toHaveBeenCalledOnce());
-      expect(ready).toBe(false);
-      expect(f.onBuild).not.toHaveBeenCalled();
-      expect(f.project.writeAllEntrypointsToDisk).not.toHaveBeenCalled();
-      a.changes.push({ issues: [] });
+      // The first batch still publishes so client pages are not blocked.
       await f.watch.ready;
+      expect(f.onError).toHaveBeenCalledOnce();
+      expect(f.onBuild).toHaveBeenCalledOnce();
+      expect(f.project.writeAllEntrypointsToDisk).toHaveBeenCalledOnce();
+      a.write.mockResolvedValueOnce(written(diagnosticIssues));
+      a.changes.push({ issues: [] });
+      await vi.waitFor(() => expect(f.onError).toHaveBeenCalledTimes(2));
+      expect(f.onBuild).toHaveBeenCalledOnce();
+      expect(f.project.writeAllEntrypointsToDisk).toHaveBeenCalledOnce();
       f.project.writeAllEntrypointsToDisk.mockResolvedValueOnce({
         issues: diagnosticIssues,
       });
       a.changes.push({ issues: [] });
-      await vi.waitFor(() => expect(f.onError).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(f.onError).toHaveBeenCalledTimes(3));
       expect(f.onBuild).toHaveBeenCalledOnce();
       a.changes.push({ issues: [] });
       await vi.waitFor(() => expect(f.onBuild).toHaveBeenCalledTimes(2));

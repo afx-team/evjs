@@ -24,6 +24,7 @@ export function startUtoopackServerEndpointWatch(
   let closed = false;
   let failed = false;
   let generation = 0;
+  let published = false;
   let queue = Promise.resolve();
   let closePromise: Promise<void> | undefined;
   let resolveReady!: () => void;
@@ -103,12 +104,21 @@ export function startUtoopackServerEndpointWatch(
             (result) => result.status === "rejected",
           );
           if (rejected?.status === "rejected") throw rejected.reason;
+          // Publish the first batch despite diagnostics so the host can serve
+          // client pages; later batches keep the last valid server output.
+          const checkIssues = (result: IssueResult) => {
+            const error = compilationError(result);
+            if (!error) return;
+            if (published) throw error;
+            report(error);
+          };
           for (const result of writes)
-            if (result.status === "fulfilled") assertNoErrors(result.value);
+            if (result.status === "fulfilled") checkIssues(result.value);
           if (!isCurrent(current) || dirty) return;
-          assertNoErrors(await project.writeAllEntrypointsToDisk());
+          checkIssues(await project.writeAllEntrypointsToDisk());
           if (!isCurrent(current) || dirty) return;
           await options.onBuild();
+          published = true;
           if (isCurrent(current)) resolveReady();
         } finally {
           queued = false;
@@ -201,15 +211,21 @@ export function startUtoopackServerEndpointWatch(
   };
 }
 
-function assertNoErrors(result: {
+interface IssueResult {
   issues: Array<{ severity: string; title: unknown }>;
-}): void {
+}
+
+function compilationError(result: IssueResult): Error | undefined {
   const errors = result.issues.filter((issue) =>
     ["bug", "fatal", "error"].includes(issue.severity),
   );
-  if (errors.length) {
-    throw new Error(
-      `[evjs] Utoopack server compilation failed: ${errors.map((issue) => (typeof issue.title === "string" ? issue.title : JSON.stringify(issue.title))).join("\n")}`,
-    );
-  }
+  if (!errors.length) return undefined;
+  return new Error(
+    `[evjs] Utoopack server compilation failed: ${errors.map((issue) => (typeof issue.title === "string" ? issue.title : JSON.stringify(issue.title))).join("\n")}`,
+  );
+}
+
+function assertNoErrors(result: IssueResult): void {
+  const error = compilationError(result);
+  if (error) throw error;
 }
