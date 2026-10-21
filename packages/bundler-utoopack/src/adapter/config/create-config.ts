@@ -8,6 +8,7 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -121,6 +122,23 @@ export async function createUtoopackConfig(
     (entry) => entry.environment === "client",
   );
 
+  // Utoopack initializes its server compiler through an AppProject. An empty
+  // browser entry list otherwise skips server emission entirely. This private
+  // compiler anchor has no framework route or browser Application ownership.
+  const compilerClientEntries =
+    clientEntries.length === 0 && finalServerEntry
+      ? [
+          {
+            name: "__evjs_server_build__",
+            import: fileURLToPath(
+              new URL(
+                `./server-build-anchor${path.extname(fileURLToPath(import.meta.url))}`,
+                import.meta.url,
+              ),
+            ),
+          },
+        ]
+      : clientEntries;
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
 
@@ -139,7 +157,7 @@ export async function createUtoopackConfig(
     ...(isProduction && config.target !== undefined && clientEntries.length > 0
       ? { target: createClientBrowserslistTarget(config.target) }
       : {}),
-    entry: clientEntries.map((entry) => ({
+    entry: compilerClientEntries.map((entry) => ({
       import: entry.import,
       name: entry.name,
     })),
@@ -230,12 +248,12 @@ export async function createUtoopackConfig(
   };
   const frameworkExpectation =
     snapshotUtoopackFrameworkExpectation(utoopackConfig);
-  const frameworkClientEntries = plan.entries
-    .filter((entry) => entry.environment === "client")
-    .map(({ import: entryImport, name }) => ({
+  const frameworkClientEntries = compilerClientEntries.map(
+    ({ import: entryImport, name }) => ({
       import: entryImport,
       name,
-    }));
+    }),
+  );
 
   // Run plugin bundler hooks
   const ctx: ConfigureBundlerContext<ConfigComplete> = Object.freeze({
@@ -640,7 +658,9 @@ function resolveServerEntries(
   const serverEntries = plan.entries.filter(
     (entry) =>
       entry.environment === "server" &&
-      (entry.kind === "server-runtime" || entry.kind === "page-server"),
+      (entry.kind === "server-runtime" ||
+        entry.kind === "page-server" ||
+        entry.kind === "runtime"),
   );
   if (serverEntries.length === 0) return undefined;
 

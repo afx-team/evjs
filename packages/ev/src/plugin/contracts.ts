@@ -617,7 +617,14 @@ export interface GeneratedModuleRef {
 }
 
 export interface FrameworkSlot<K extends FrameworkSlotName> {
-  add(input: FrameworkSlotInput<K>): void;
+  add: K extends "server.entry"
+    ? {
+        /** Create a Node build root and return its BuildOutput.assets key. */
+        (input: Extract<ServerEntryContribution, { mode: "create" }>): string;
+        (input: Exclude<ServerEntryContribution, { mode: "create" }>): void;
+        (input: ServerEntryContribution): string | undefined;
+      }
+    : (input: FrameworkSlotInput<K>) => void;
 }
 
 export type FrameworkSlotInput<K extends FrameworkSlotName> =
@@ -670,17 +677,23 @@ export interface ClientEntryContribution {
 interface ServerEntryContributionBase {
   id: string;
   module: GeneratedModuleRef | string;
-  target: { kind: "page"; pageId: string };
 }
 
-/** Imports into or replaces one existing framework-owned Page server entry. */
+/** Create an independent Node entry, or extend an existing Page server entry. */
 export type ServerEntryContribution = ServerEntryContributionBase &
   (
     | {
+        mode: "create";
+        target?: never;
+        position?: never;
+      }
+    | {
+        target: { kind: "page"; pageId: string };
         position: EntryContributionPosition;
         mode?: "import";
       }
     | {
+        target: { kind: "page"; pageId: string };
         /** Replacement positions are normalized but do not affect output. */
         position?: EntryContributionPosition;
         mode: "replace";

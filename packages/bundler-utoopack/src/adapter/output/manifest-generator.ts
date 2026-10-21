@@ -107,6 +107,10 @@ export class UtoopackManifestGenerator {
       `Utoopack client stats at "${formatStatsPath(this.outputPaths.rootDir, statsPath)}"`,
     );
     const byName = readEntrypointAssets(stats);
+    if (!this.plan.entries.some((entry) => entry.environment === "client")) {
+      delete byName.__evjs_server_build__;
+    }
+
     this.clientEntryAssets = resolveBundlerClientEntryAssets(
       this.plan,
       byName,
