@@ -77,32 +77,49 @@ function fileVersion(stats: fs.BigIntStats): string {
  * `@utoo/pack` invokes `onReady` for the initial build and server startup, not
  * later completed server rebuilds. Poll the authoritative server `stats.json`
  * and its emitted JavaScript so evjs can relink build facts and refresh its
- * server runtime even when only a shared chunk was rewritten.
+ * server runtime even when only a shared chunk was rewritten. Require two
+ * matching scans separated by a polling interval to let chunk writes settle.
  */
 export function startUtoopackServerStatsMonitor(
   options: StartUtoopackServerStatsMonitorOptions,
 ): UtoopackServerStatsMonitor {
   let currentVersion = options.initialVersion;
+  let pendingVersion: string | undefined;
   let baselineRevision = 0;
   let closed = false;
   let queue = Promise.resolve();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   const poll = () => {
-    queue = queue.then(processChange, processChange);
+    queue = processChange().finally(() => {
+      if (closed) return;
+      // Schedule after completion so slow reads/callbacks cannot accumulate
+      // back-to-back scans that bypass the settling interval.
+      timeout = setTimeout(poll, POLL_INTERVAL_MS);
+      timeout.unref();
+    });
   };
-  const interval = setInterval(poll, POLL_INTERVAL_MS);
-  interval.unref();
 
   async function processChange(): Promise<void> {
     if (closed) return;
+    const observedRevision = baselineRevision;
     try {
       const nextVersion = await readServerStatsVersion(options.statsPath);
-      if (!nextVersion || nextVersion === currentVersion) return;
-      const observedRevision = baselineRevision;
+      if (closed || observedRevision !== baselineRevision) return;
+      if (!nextVersion || nextVersion === currentVersion) {
+        pendingVersion = undefined;
+        return;
+      }
+      if (nextVersion !== pendingVersion) {
+        pendingVersion = nextVersion;
+        return;
+      }
       const consumed = await options.onChange(nextVersion);
       if (consumed && observedRevision === baselineRevision) {
         currentVersion = nextVersion;
+        pendingVersion = undefined;
       }
     } catch (error) {
+      pendingVersion = undefined;
       if (!closed) options.onError(error);
     }
   }
@@ -115,11 +132,12 @@ export function startUtoopackServerStatsMonitor(
     advance(version) {
       baselineRevision += 1;
       currentVersion = version;
+      pendingVersion = undefined;
     },
     async close() {
       if (closed) return;
       closed = true;
-      clearInterval(interval);
+      clearTimeout(timeout);
       await queue;
     },
   };

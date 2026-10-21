@@ -28,6 +28,68 @@ async function createFixture(assets: Array<string | { name: string }>) {
 }
 
 describe("Utoopack server stats monitor", () => {
+  it("waits for staggered chunk writes to settle, including after slow callbacks", async () => {
+    const { cwd, statsPath } = await createFixture(["server.js", "shared.js"]);
+    const stats = await fs.promises.stat(statsPath, { bigint: true });
+    let server = stats;
+    let shared = stats;
+    vi.spyOn(fs.promises, "stat").mockImplementation(async (file) => {
+      if (file === path.join(cwd, "server.js")) return server;
+      if (file === path.join(cwd, "shared.js")) return shared;
+      return stats;
+    });
+    vi.spyOn(fs.promises, "readFile").mockResolvedValue(
+      JSON.stringify({ assets: ["server.js", "shared.js"] }),
+    );
+    vi.useFakeTimers();
+    let release!: (consumed: boolean) => void;
+    const onChange = vi
+      .fn(async (_version: string) => true)
+      .mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          release = resolve;
+        }),
+      );
+    const monitor = startUtoopackServerStatsMonitor({
+      statsPath,
+      initialVersion: await readServerStatsVersion(statsPath),
+      onChange,
+      onError: vi.fn(),
+    });
+
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      server = { ...stats, mtimeNs: stats.mtimeNs + 1n };
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).not.toHaveBeenCalled();
+      shared = { ...stats, mtimeNs: stats.mtimeNs + 1n };
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledExactlyOnceWith(
+        await readServerStatsVersion(statsPath),
+      );
+      await vi.advanceTimersByTimeAsync(300);
+      expect(onChange).toHaveBeenCalledOnce();
+      server = { ...stats, mtimeNs: stats.mtimeNs + 2n };
+      release(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onChange).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(onChange).toHaveBeenLastCalledWith(
+        await readServerStatsVersion(statsPath),
+      );
+    } finally {
+      release(true);
+      await monitor.close();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
   it.each([
     "js",
     "cjs",
