@@ -867,13 +867,22 @@ export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   target?: ContributionTarget;
 }
 
-export interface ServerEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
+export type ServerEntrySlotPlanItem = FrameworkSlotPlanItemBase & {
   slot: "server.entry";
   module: string;
-  position: EntryContributionPosition;
-  mode: "import" | "replace";
-  target: { kind: "page"; pageId: string };
-}
+} & (
+    | {
+        mode: "create";
+        entryName: string;
+        target?: never;
+        position?: never;
+      }
+    | {
+        mode: "import" | "replace";
+        position: EntryContributionPosition;
+        target: { kind: "page"; pageId: string };
+      }
+  );
 
 export interface ApplicationWrapperSlotPlanItem
   extends FrameworkSlotPlanItemBase {

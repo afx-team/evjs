@@ -105,7 +105,7 @@ const CONTRIBUTION_RUNTIMES = [
 ] as const satisfies readonly ContributionRuntime[];
 const CLIENT_ENTRY_RUNTIMES = ["client"] as const;
 const CLIENT_ENTRY_MODES = ["import", "replace"] as const;
-const SERVER_ENTRY_MODES = ["import", "replace"] as const;
+const SERVER_ENTRY_MODES = ["import", "replace", "create"] as const;
 const HTML_TAG_NAMES = [
   "meta",
   "link",
@@ -159,9 +159,14 @@ interface InternalGeneratedModuleRef {
   readonly key: string;
 }
 
+type PageServerEntrySlotPlanItem = Exclude<
+  ServerEntrySlotPlanItem,
+  { mode: "create" }
+>;
+
 type TargetedSlotPlanItem =
   | ClientEntrySlotPlanItem
-  | ServerEntrySlotPlanItem
+  | PageServerEntrySlotPlanItem
   | ApplicationWrapperSlotPlanItem
   | PageWrapperSlotPlanItem
   | HtmlTagSlotPlanItem;
@@ -246,6 +251,17 @@ export async function prepareFrameworkIR<TBundlerCfg>(
   // Wrapper slots mutate entry metadata consumed by emit.entryFacade source
   // factories, so project them before resolving any generated module source.
   const slotProjection = collector.toSlotProjection();
+  for (const slot of slotProjection.slots) {
+    if (slot.slot !== "server.entry" || slot.mode !== "create") continue;
+    plan.entries.push({
+      name: slot.entryName,
+      import: slot.module,
+      environment: "server",
+      runtime: "node",
+      phase: "runtime",
+      kind: "runtime",
+    });
+  }
   applyApplicationWrapperContributions(plan, slotProjection);
   applyPageWrapperContributions(plan, options.graph, slotProjection);
   collector.resolveModuleSources();
@@ -383,7 +399,10 @@ class ContributionCollector<TBundlerCfg> {
       }
     }
 
-    const serverEntryReplacements = new Map<string, ServerEntrySlotPlanItem>();
+    const serverEntryReplacements = new Map<
+      string,
+      PageServerEntrySlotPlanItem
+    >();
     for (const slot of this.slots) {
       if (!isTargetedSlotPlanItem(slot) || !slot.target) continue;
       const target = slot.target;
@@ -662,8 +681,8 @@ class ContributionCollector<TBundlerCfg> {
     namespace?: string,
   ): FrameworkSlot<K> {
     validateEnum(name, FRAMEWORK_SLOT_NAMES, `Plugin "${pluginId}" slot name`);
-    const slot: FrameworkSlot<K> = {
-      add: (input) => {
+    const slot = {
+      add: (input: FrameworkSlotInput<K>) => {
         assertRecord(input, `Plugin "${pluginId}" ${name} contribution`);
         const normalized = this.normalizeSlotInput(
           pluginId,
@@ -672,9 +691,15 @@ class ContributionCollector<TBundlerCfg> {
           namespace,
         );
         this.slots.push(normalized);
+        if (
+          normalized.slot === "server.entry" &&
+          normalized.mode === "create"
+        ) {
+          return normalized.entryName;
+        }
       },
     };
-    return Object.freeze(slot);
+    return Object.freeze(slot) as FrameworkSlot<K>;
   }
 
   private normalizeSlotInput<K extends FrameworkSlotName>(
@@ -727,17 +752,29 @@ class ContributionCollector<TBundlerCfg> {
           SERVER_ENTRY_MODES,
           `${base.key}.mode`,
         );
+        const module = this.resolveModuleValue(
+          item.module,
+          { from: base.key, kind: "slot-module" },
+          "file",
+        );
+        if (mode === "create") {
+          if (item.target !== undefined || item.position !== undefined) {
+            throw new Error(
+              `[evjs] ${base.key}: server.entry mode "create" cannot declare target or position.`,
+            );
+          }
+          return {
+            ...base,
+            slot: name,
+            module,
+            mode,
+            entryName: `plugin-${base.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+          };
+        }
         return {
           ...base,
           slot: name,
-          module: this.resolveModuleValue(
-            item.module,
-            {
-              from: base.key,
-              kind: "slot-module",
-            },
-            "file",
-          ),
+          module,
           position:
             mode === "replace" && item.position === undefined
               ? "before-main"
@@ -1010,7 +1047,7 @@ function isTargetedSlotPlanItem(
 ): slot is TargetedSlotPlanItem {
   return (
     slot.slot === "client.entry" ||
-    slot.slot === "server.entry" ||
+    (slot.slot === "server.entry" && slot.mode !== "create") ||
     slot.slot === "application.wrapper" ||
     slot.slot === "page.wrapper" ||
     slot.slot === "html.tag"
@@ -1830,7 +1867,7 @@ function composePageServerEntrySource(options: {
     );
   }
 
-  const importsFor = (position: ServerEntrySlotPlanItem["position"]) =>
+  const importsFor = (position: PageServerEntrySlotPlanItem["position"]) =>
     entrySlots
       .filter((slot) => slot.position === position && slot.mode !== "replace")
       .map((slot) =>
@@ -2026,9 +2063,10 @@ function getMatchingClientEntrySlots(
 function getMatchingServerEntrySlots(
   plan: BuildPlan,
   entry: BuildEntry,
-): ServerEntrySlotPlanItem[] {
+): PageServerEntrySlotPlanItem[] {
   return getSlotItems<ServerEntrySlotPlanItem>(plan, "server.entry").filter(
-    (slot) => targetMatchesEntry(slot.target, entry),
+    (slot): slot is PageServerEntrySlotPlanItem =>
+      slot.mode !== "create" && targetMatchesEntry(slot.target, entry),
   );
 }
 

@@ -35,11 +35,12 @@ flowchart LR
 
 这些方法返回不透明引用，不暴露文件路径。`importOf(ref)` 只能在生成源码中使用，应用代码绝不能导入 `.ev` 路径。
 
-选择应用或页面作用域：
+选择应用、页面或服务端作用域：
 
 ```ts
 scope: { kind: "application" }
 scope: { kind: "page", pageId: "checkout" }
+scope: { kind: "server" }
 ```
 
 生成项的 id 只需在插件内部唯一。`emitPageIR()` 中的 id 还限定在当前页面，因此每个启用页面都可以安全复用相同 id。`@evjs/` 前缀由框架保留。
@@ -222,6 +223,26 @@ ctx.slot("resolve.external").add({
 
 扩展槽位支持运行时过滤时，可以使用 `"client"`、`"server"` 或 `"all"`。
 
+## 创建独立服务端入口
+
+插件通过 `server.entry` 和显式的 `mode: "create"` 创建 Node 构建入口，不依赖 Page 或 HTTP Route：
+
+```ts
+const entryName = ctx.slot("server.entry").add({
+  id: "service-entry",
+  mode: "create",
+  module: "./src/plugin/service.ts",
+});
+```
+
+`module` 也支持 `emit.module()` 返回的引用。返回的入口名称用于访问
+`BuildOutput.assets[entryName]`，不是输出路径。框架在插件和页面贡献命名空间内
+分配名称并检测冲突；贡献与模块引用会和其他 slot 一起记录到生成的 IR manifest。
+
+创建模式不接受 `target` 和 `position`。省略 `mode` 仍表示向已有 Page 入口导入模块，
+必须提供目标和插入位置。已有 `import/replace` 调用仍返回 `undefined`。
+该 slot 只声明构建入口，协议分发和部署由插件负责。
+
 ## 扩展服务端页面入口
 
 `server.entry` 向已有页面服务端入口导入或替换。必须精确指定一个已经具有请求时或构建时服务端渲染的页面：
@@ -242,7 +263,7 @@ ctx.slot("server.entry").add({
 | 扩展槽位 | 用途 |
 | --- | --- |
 | `client.entry` | 导入或替换客户端入口 |
-| `server.entry` | 导入或替换已有页面服务端入口 |
+| `server.entry` | 创建独立服务端入口，或导入/替换已有页面服务端入口 |
 | `application.wrapper` | 包裹完整的客户端 CSR Application 根节点 |
 | `page.wrapper` | 在客户端/服务端渲染中包裹页面组件 |
 | `server.request.middleware` | 增加插件拥有的服务端请求中间件 |

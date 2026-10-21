@@ -10,6 +10,7 @@ import type {
   EmitApi,
   FrameworkApplicationEntryMetadata,
   FrameworkEntryView,
+  FrameworkSlot,
   FrameworkSlotInput,
   FrameworkSlotName,
   FrameworkView,
@@ -602,10 +603,12 @@ function createContributionCapture(
     emit,
     slot(name) {
       return {
-        add(input) {
+        add(input: FrameworkSlotInput<typeof name>) {
+          if (name === "server.entry")
+            throw new Error("Unexpected server entry in qiankun test");
           slots.push({ name, input });
         },
-      };
+      } as FrameworkSlot<typeof name>;
     },
   };
   return {
