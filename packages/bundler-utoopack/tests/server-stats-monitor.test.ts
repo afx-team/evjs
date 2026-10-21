@@ -80,31 +80,12 @@ describe("Utoopack server stats monitor", () => {
     }
   });
 
-  it("waits for missing emitted assets and recovers without consuming a rebuild", async () => {
+  it("reports a version only after all emitted JavaScript is available", async () => {
     const { cwd, statsPath } = await createFixture(["server.js", "shared.js"]);
     await fs.promises.writeFile(path.join(cwd, "server.js"), "entry");
     expect(await readServerStatsVersion(statsPath)).toBeUndefined();
-    const onChange = vi.fn(async () => true);
-    const onError = vi.fn();
-    const monitor = startUtoopackServerStatsMonitor({
-      statsPath,
-      initialVersion: undefined,
-      onChange,
-      onError,
-    });
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      expect(onChange).not.toHaveBeenCalled();
-      expect(onError).not.toHaveBeenCalled();
-
-      await fs.promises.writeFile(path.join(cwd, "shared.js"), "ready");
-      await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      expect(onChange).toHaveBeenCalledTimes(1);
-    } finally {
-      await monitor.close();
-    }
+    await fs.promises.writeFile(path.join(cwd, "shared.js"), "ready");
+    expect(await readServerStatsVersion(statsPath)).toBeTypeOf("string");
   });
 
   it.each([

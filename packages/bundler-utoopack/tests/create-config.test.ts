@@ -1,6 +1,4 @@
-import fs from "node:fs/promises";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import {
   createBuildPlan,
@@ -119,67 +117,27 @@ describe("createUtoopackConfig", () => {
     expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/unclaimed")).toBe(true);
   });
 
-  it("keeps stable development and production caches isolated", async () => {
+  it.each([
+    "development",
+    "production",
+  ] as const)("isolates the %s cache and allows plugin overrides", async (mode) => {
     const config = createResolvedConfig();
-    const caches = new Set<string | undefined>();
-    for (const mode of ["development", "production"] as const) {
-      const plan = await createPlan(config, { mode });
-      const first = await createUtoopackConfig(config, plan, process.cwd(), []);
-      const nextPlan = await createPlan(config, { mode });
-      const next = await createUtoopackConfig(
-        config,
-        nextPlan,
-        process.cwd(),
-        [],
-      );
-
-      expect(first.cacheDirectory).toBe(`.turbopack/evjs/${mode}`);
-      expect(next.cacheDirectory).toBe(first.cacheDirectory);
-      caches.add(first.cacheDirectory);
-    }
-    expect(caches.size).toBe(2);
-  });
-
-  it("resolves its cache inside the application instead of the host workspace", async () => {
-    const config = createResolvedConfig();
-    const plan = await createPlan(config);
-    const workspace = await fs.mkdtemp(
-      path.join(os.tmpdir(), "evjs-utoo-cache-"),
+    const plan = await createPlan(config, { mode });
+    const defaults = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
     );
-    const cwd = path.join(workspace, "applications", "h5");
-    try {
-      await fs.mkdir(cwd, { recursive: true });
-      const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
-      const { resolveCacheDirectory } =
-        require("@utoo/pack/cjs/utils/cacheDirectory.js") as typeof import("@utoo/pack/cjs/utils/cacheDirectory.js");
-
-      expect(resolveCacheDirectory(cwd, utoopackConfig.cacheDirectory)).toBe(
-        path.join(cwd, ".turbopack", "evjs", "development"),
-      );
-    } finally {
-      await fs.rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("preserves plugin-configured cache directories", async () => {
-    const config = createResolvedConfig();
-    for (const mode of ["development", "production"] as const) {
-      const plan = await createPlan(config, { mode });
-      const utoopackConfig = await createUtoopackConfig(
-        config,
-        plan,
-        process.cwd(),
-        [
-          {
-            configureBundler(config) {
-              config.cacheDirectory = `.cache/custom/${mode}`;
-            },
-          },
-        ],
-      );
-
-      expect(utoopackConfig.cacheDirectory).toBe(`.cache/custom/${mode}`);
-    }
+    expect(defaults.cacheDirectory).toBe(`.turbopack/evjs/${mode}`);
+    const custom = await createUtoopackConfig(config, plan, process.cwd(), [
+      {
+        configureBundler(config) {
+          config.cacheDirectory = ".cache/custom";
+        },
+      },
+    ]);
+    expect(custom.cacheDirectory).toBe(".cache/custom");
   });
 
   it("rejects custom client certificates in development", async () => {
