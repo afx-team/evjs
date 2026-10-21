@@ -26,20 +26,22 @@ export function checkServerEntryTypes(
     mode: "replace",
   });
   const result: string | undefined = slot.add(contribution);
-  // @ts-expect-error Independent entries do not target an existing Page.
-  slot.add({
+  const targetedEntry = {
     id: "bad",
     mode: "create",
     module: "./handler.ts",
     target: { kind: "page", pageId: "home" },
-  });
-  // @ts-expect-error Independent entries have no insertion position.
-  slot.add({
+  } as const;
+  // @ts-expect-error Independent entries do not target an existing Page.
+  slot.add(targetedEntry);
+  const positionedEntry = {
     id: "bad",
     mode: "create",
     module: "./handler.ts",
     position: "before-main",
-  });
+  } as const;
+  // @ts-expect-error Independent entries have no insertion position.
+  slot.add(positionedEntry);
   // @ts-expect-error Omitting the mode does not create an independent entry.
   slot.add({ id: "bad", module: "./handler.ts" });
   // @ts-expect-error Page replacement still requires a target.
