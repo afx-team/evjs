@@ -186,6 +186,9 @@ export async function createUtoopackConfig(
             concatenateModules: finalServerEntry === undefined,
             removeUnusedExports: true,
             removeUnusedImports: true,
+            ...(clientEntries.some((entry) => entry.kind === "page-client")
+              ? { sharedRuntime: true }
+              : {}),
           },
         }
       : {}),

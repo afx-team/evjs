@@ -614,6 +614,7 @@ class ContributionCollector<TBundlerCfg> {
             scope: input.scope ?? generatedScopeForEntry(entry),
             source: ({ importFile }) =>
               createOriginalClientEntryFacadeSource(entry, importFile, {
+                buildId: this.options.plan.buildId,
                 autoStart: input.autoStart,
                 serverFunctionTransport: needsServerFunctionTransport(
                   this.options.plan,
@@ -1721,6 +1722,8 @@ function createEntrySource(
       mainSource: createReactComponentPageEntryMainSource(
         entry.metadata,
         importFile,
+        entry.owner?.pageId,
+        plan.buildId,
       ),
     });
   }

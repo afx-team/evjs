@@ -10,6 +10,18 @@ import type {
   ShellModuleRegistration,
 } from "./types.js";
 
+const registrationListenersKey = Symbol.for(
+  "evjs.shell.module-registration-listeners",
+);
+type RegistrationListener = {
+  href: string;
+  ctx: AppContext;
+  notify: (href: string) => void;
+};
+type ShellModuleRegistry = Record<string, ShellModuleRegistration> & {
+  [registrationListenersKey]?: Set<RegistrationListener>;
+};
+
 declare global {
   var __EVJS_SHELL_MODULES__:
     | Record<string, ShellModuleRegistration>
@@ -22,19 +34,69 @@ export function registerShellModule(
 ): void {
   assertShellModuleHref(href, "[evjs] registerShellModule() href");
   assertShellModuleRegistration(module, "[evjs] registerShellModule() module");
-  getShellModuleRegistry()[href] = module;
+  const registry = getShellModuleRegistry();
+  registry[href] = module;
+  for (const listener of registry[registrationListenersKey] ?? []) {
+    listener.notify(href);
+  }
 }
 
-export function getShellModuleRegistry(): Record<
-  string,
-  ShellModuleRegistration
-> {
+export function registerPendingPageModule(
+  pageId: string | undefined,
+  buildId: string | undefined,
+  module: AppModule,
+): boolean {
+  if (!pageId || !buildId) return false;
+  const hrefs = new Set(
+    [...(readShellModuleRegistry()?.[registrationListenersKey] ?? [])]
+      .filter(
+        ({ ctx }) =>
+          ctx.kind === "page" &&
+          ctx.id === pageId &&
+          ctx.runtime.buildId === buildId,
+      )
+      .map(({ href }) => href),
+  );
+  for (const href of hrefs) registerShellModule(href, module);
+  return hrefs.size > 0;
+}
+
+export function getShellModuleRegistry(): ShellModuleRegistry {
   let registry = readShellModuleRegistry();
   if (!registry) {
     registry = {};
     globalThis.__EVJS_SHELL_MODULES__ = registry;
   }
   return registry;
+}
+
+export function subscribeShellModule(
+  href: string,
+  ctx: AppContext,
+  onRegistered: () => void,
+): () => void {
+  const registry = getShellModuleRegistry();
+  let listeners = registry[registrationListenersKey];
+  if (!listeners) {
+    listeners = new Set();
+    // Independent entry bundles share this state through the global registry.
+    Object.defineProperty(registry, registrationListenersKey, {
+      value: listeners,
+      configurable: true,
+    });
+  }
+  const keys = getRegistryKeys(href);
+  const listener: RegistrationListener = {
+    href,
+    ctx,
+    notify(registeredHref) {
+      if (keys.includes(registeredHref)) onRegistered();
+    },
+  };
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export async function readRegisteredModule(
@@ -63,9 +125,7 @@ export async function readRegisteredModule(
   return module;
 }
 
-function readShellModuleRegistry():
-  | Record<string, ShellModuleRegistration>
-  | undefined {
+function readShellModuleRegistry(): ShellModuleRegistry | undefined {
   const registry = globalThis.__EVJS_SHELL_MODULES__;
   if (registry === undefined) return undefined;
   if (!isRecord(registry)) {

@@ -8,6 +8,35 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.23] — 2026-09-21
+
+### ✨ Features
+
+- **Application HTTP client** — Import `api` from `@evjs/ev` to call application
+  routes with native Fetch options, a `json` request shorthand, and a typed
+  `.json<T>()` response helper. Preserve raw `Response` access, cancellation,
+  streaming, and binary responses without retries or response pre-reading.
+- **Application transport binding** — Bind the HTTP client to an application
+  and build before business modules execute. Preserve complete deployment URL
+  prefixes and merge request headers and credentials. Share request and response
+  DTOs through ordinary `import type` modules without API type generation.
+
+### 🐛 Bug Fixes
+
+- **Server Function startup configuration** — Initialize configured transport
+  before client business imports so application headers and credentials apply
+  to module-level calls. Preserve explicit `initTransport()` overrides.
+- **Utoopack production filenames** — Shorten production JavaScript chunk and
+  CSS filenames.
+
+### Upgrade
+
+- Upgrade installed `@evjs/*` packages together to `0.3.23` and rebuild.
+- Replace application API calls with `api` to use framework transport defaults.
+  Upgrading does not change the behavior of native `fetch`.
+
+---
+
 ## [0.3.22] — 2026-09-18
 
 ### 🐛 Bug Fixes

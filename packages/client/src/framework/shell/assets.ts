@@ -1,8 +1,9 @@
 import { formatErrorDetail, isRecord } from "../../shared/validation.js";
-import { readRegisteredModule } from "./registry.js";
+import { readRegisteredModule, subscribeShellModule } from "./registry.js";
 import type { AppContext, AppModule } from "./types.js";
 
 const loadingScripts = new Map<string, Promise<void>>();
+const MODULE_REGISTRATION_TIMEOUT_MS = 10_000;
 
 export async function defaultLoadModule(
   href: string,
@@ -11,12 +12,45 @@ export async function defaultLoadModule(
   const registered = await readRegisteredModule(href, ctx);
   if (registered) return registered;
 
-  await loadScriptAsset(href);
+  let notifyRegistration: () => void = () => {};
+  const registration = new Promise<void>((resolve) => {
+    notifyRegistration = resolve;
+  });
+  const unsubscribe = subscribeShellModule(href, ctx, notifyRegistration);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let scriptAttempt: Promise<void> | undefined;
+  try {
+    const scriptLoad = loadScriptAsset(href);
+    scriptAttempt = loadingScripts.get(href);
+    await scriptLoad;
+    const loaded = await readRegisteredModule(href, ctx);
+    if (loaded) return loaded;
 
-  const loaded = await readRegisteredModule(href, ctx);
-  if (loaded) return loaded;
+    // Bootstrap onload can precede its asynchronously loaded dependency chunks.
+    // Registration, rather than elapsed time, signals that the entry is ready.
+    await Promise.race([
+      registration,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(missingModuleRegistration(href)),
+          MODULE_REGISTRATION_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    const ready = await readRegisteredModule(href, ctx);
+    if (ready) return ready;
+    throw missingModuleRegistration(href);
+  } catch (error) {
+    if (loadingScripts.get(href) === scriptAttempt) loadingScripts.delete(href);
+    throw error;
+  } finally {
+    unsubscribe();
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
 
-  throw new Error(
+function missingModuleRegistration(href: string): Error {
+  return new Error(
     `[evjs] Shell module script "${href}" loaded but did not register a module. ` +
       `Call registerShellModule("${href}", module) from the built entry or pass loadModule to createShell().`,
   );
