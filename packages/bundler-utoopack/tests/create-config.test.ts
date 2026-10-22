@@ -117,6 +117,29 @@ describe("createUtoopackConfig", () => {
     expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/unclaimed")).toBe(true);
   });
 
+  it.each([
+    "development",
+    "production",
+  ] as const)("isolates the %s cache and allows plugin overrides", async (mode) => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode });
+    const defaults = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    expect(defaults.cacheDirectory).toBe(`.turbopack/evjs/${mode}`);
+    const custom = await createUtoopackConfig(config, plan, process.cwd(), [
+      {
+        configureBundler(config) {
+          config.cacheDirectory = ".cache/custom";
+        },
+      },
+    ]);
+    expect(custom.cacheDirectory).toBe(".cache/custom");
+  });
+
   it("creates a private compiler anchor for independent server-only entries", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);

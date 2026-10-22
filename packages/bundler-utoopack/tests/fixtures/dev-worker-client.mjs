@@ -12,6 +12,24 @@ parentPort.on("message", (message) => {
     return;
   }
   if (message?.type === "close") closeSession(message.sessionId);
+  if (
+    message?.type === "server-published" &&
+    activeSession?.id === message.sessionId
+  ) {
+    if (message.error) {
+      parentPort.postMessage({
+        type: "server-error",
+        sessionId: message.sessionId,
+        message: message.error,
+      });
+    } else if (message.buildId === 1) {
+      parentPort.postMessage({
+        type: "server-build",
+        sessionId: message.sessionId,
+        buildId: 2,
+      });
+    }
+  }
 });
 
 function startSession(sessionId, options) {
@@ -59,6 +77,10 @@ function startSession(sessionId, options) {
     },
     spaHistoryFallbackUpdated: Boolean(fallbackRule),
   });
+
+  if (options.config.define?.TEST_SERVER_BUILD === "true") {
+    parentPort.postMessage({ type: "server-build", sessionId, buildId: 1 });
+  }
 
   if (options.config.define?.TEST_EXIT === "true") {
     process.exit(0);

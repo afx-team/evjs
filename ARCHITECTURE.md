@@ -260,11 +260,29 @@ one fixed config, CoreGraph, BuildPlan, plugin-hook set, generated IR image,
 and bundler controller; adapters are never asked to replace those inputs in
 place.
 
+Core also owns a stable API gateway for each Session. The gateway retains the
+public server port while API child processes use a private loopback port. A
+server rebuild suspends new HTTP requests, gives requests already forwarded up
+to 10 seconds to drain, disconnects any remaining exchanges, and replaces the
+child before admitting queued requests after readiness. Request bodies are
+streamed once; interrupted requests are never replayed. Failed startup releases
+waiting requests with a diagnostic 503; closing the Session cancels pending and
+active work.
+HTTPS is preserved on both sides of the gateway so request URLs retain the
+public scheme and Host. Semantic Session replacement still closes the whole
+Session before starting its successor.
+
 The Utoopack adapter keeps one native-owner Worker for the lifetime of
 `ev dev`. That Worker is the only development realm that loads Utoopack's
 native binding: it registers the process-global loader scheduler and owns all
-sequential native Projects. Individual Sessions still own and fully release
-their Project, HTTP server, subscriptions, and persistent-cache lock. The host
+native Projects. Sessions own a client HMR Project and, when needed, a server
+Project with separate cache locks and private auxiliary output. Only the server
+Project writes canonical server assets. It subscribes to endpoint changes,
+awaits endpoint writes and complete stats, and waits for the host to finish
+publication and API readiness before writing the next batch. The first
+batch publishes even with compile diagnostics so client pages remain available;
+later failing batches keep the last valid server output. Individual Sessions
+fully release their Projects, HTTP server, subscriptions, and cache locks. The host
 exchanges cloneable Session commands with the owner and retains only callbacks
 that cannot cross the Worker boundary, such as function-valued proxy rewrites.
 Successful Utoopack process-exit requests are converted into Session-close

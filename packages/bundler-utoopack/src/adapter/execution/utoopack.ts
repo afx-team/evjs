@@ -5,7 +5,13 @@
 import type { ConfigComplete } from "@utoo/pack";
 
 type UtoopackBuildRuntime = Pick<typeof import("@utoo/pack"), "build">;
-type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve">;
+// This bridge uses the void-returning serve overload; Session teardown is
+// owned by the native-owner Worker rather than the optional dev server handle.
+type UtoopackDevRuntime = {
+  serve(
+    ...args: Parameters<typeof import("@utoo/pack")["serve"]>
+  ): Promise<void>;
+};
 type UtoopackServerOptions = NonNullable<
   Parameters<UtoopackDevRuntime["serve"]>[3]
 >;

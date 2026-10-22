@@ -27,6 +27,8 @@ const DEFAULT_NATIVE_OWNER_WORKER_URL = new URL(
 
 interface PreparedWorkerOptions {
   workerOptions: UtoopackDevWorkerSessionOptions;
+  onServerBuild?: UtoopackDevWorkerOptions["onServerBuild"];
+  onServerError?: UtoopackDevWorkerOptions["onServerError"];
   pathRewriteFunctions: ReadonlyMap<
     number,
     Extract<PathRewrite, (path: string) => string>
@@ -104,6 +106,7 @@ function assertHostDoesNotOwnUtoopackBinding(): void {
 export function prepareUtoopackDevWorkerOptions(
   options: UtoopackDevWorkerOptions,
 ): PreparedWorkerOptions {
+  const { onServerBuild, onServerError, ...serializableOptions } = options;
   const pathRewriteFunctions = new Map<
     number,
     Extract<PathRewrite, (path: string) => string>
@@ -116,7 +119,7 @@ export function prepareUtoopackDevWorkerOptions(
     return serializableRule;
   });
   const candidate: UtoopackDevWorkerSessionOptions = {
-    ...options,
+    ...serializableOptions,
     config: serializableProxy
       ? {
           ...options.config,
@@ -133,6 +136,8 @@ export function prepareUtoopackDevWorkerOptions(
     return {
       workerOptions: structuredClone(candidate),
       pathRewriteFunctions,
+      onServerBuild,
+      onServerError,
     };
   } catch (error) {
     throw new Error(
@@ -279,6 +284,33 @@ class UtoopackNativeOwner {
     }
     if (message.type === "session-error") {
       this.failOwner(createWorkerMessageError(message));
+      return;
+    }
+    if (message.type === "server-error") {
+      if (!session.closing) {
+        session.prepared.onServerError?.(new Error(message.message));
+      }
+      return;
+    }
+    if (message.type === "server-build") {
+      void (async () => {
+        let error: string | undefined;
+        try {
+          if (!session.closing) await session.prepared.onServerBuild?.();
+        } catch (cause) {
+          error = normalizeError(cause).message;
+        }
+        // Closing Sessions also acknowledge publications so shutdown cannot
+        // leave the native write queue waiting on the host.
+        if (this.activeSession === session && !session.doneSettled) {
+          this.postMessage({
+            type: "server-published",
+            sessionId: session.id,
+            buildId: message.buildId,
+            error,
+          });
+        }
+      })();
       return;
     }
     if (message.type === "ready") {

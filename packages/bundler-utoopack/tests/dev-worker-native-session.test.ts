@@ -42,6 +42,10 @@ describe("Utoopack single native-owner Session replacement", () => {
     const loaderPath = path.join(cwd, "custom-loader.cjs");
     await fs.promises.writeFile(loaderPath, createLoaderSource(loaderLogPath));
     await fs.promises.writeFile(path.join(cwd, "src/message.foo"), "A\n");
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server.js"),
+      "export default { fetch() { return new Response('server'); } };\n",
+    );
     const port = await reservePort();
 
     const { stdout } = await execFileAsync(
@@ -68,10 +72,14 @@ describe("Utoopack single native-owner Session replacement", () => {
       secondOwnerThreadId: number;
       hostLoadedBinding: boolean;
       buildModeRejected: boolean;
+      serverPublicationClosed: boolean;
+      serverSessionReused: boolean;
     };
     expect(result).toMatchObject({
       hostLoadedBinding: false,
       buildModeRejected: true,
+      serverPublicationClosed: true,
+      serverSessionReused: true,
     });
     expect(result.firstOwnerThreadId).toBeGreaterThan(0);
     expect(result.secondOwnerThreadId).toBe(result.firstOwnerThreadId);

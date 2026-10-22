@@ -37,11 +37,6 @@ import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./development/dev-worker-client.js";
-import {
-  readServerStatsVersion,
-  startUtoopackServerStatsMonitor,
-  type UtoopackServerStatsMonitor,
-} from "./development/server-stats-monitor.js";
 import { runUtoopackBuild } from "./execution/utoopack.js";
 import { UtoopackManifestGenerator } from "./output/manifest-generator.js";
 import { assertSafeUtoopackCleanOutput } from "./output/output-paths.js";
@@ -266,6 +261,12 @@ async function startUtoopackDev(
   const worker = startUtoopackDevWorker({
     cwd,
     config: utoopackConfig,
+    async onServerBuild() {
+      await controller.processServerBuild();
+    },
+    onServerError(error) {
+      logger.error`Failed to process Utoopack server rebuild: ${error}`;
+    },
     spaHistoryFallbackRuleIndex: getSpaHistoryFallbackRuleIndex(utoopackConfig),
     server: {
       port: internalPort,
@@ -340,28 +341,7 @@ async function startUtoopackDev(
       logger.warn`Reserved client port ${internalPort} became unavailable during startup; Utoopack is listening on ${ready.port}.${fallbackStatus}`;
     }
 
-    const serverStatsPath = path.join(outputPaths.serverDir, "stats.json");
-    // Establish the monitor baseline before reading facts. If stats changes
-    // while facts are being collected, the monitor may conservatively emit a
-    // duplicate cycle, but it cannot mistake an unseen newer version for the
-    // version represented by the initial callback.
-    const initialServerStatsVersion = hasServerEntries(plan)
-      ? await readServerStatsVersion(serverStatsPath)
-      : undefined;
-    if (hasServerEntries(plan)) {
-      const monitor = startUtoopackServerStatsMonitor({
-        statsPath: serverStatsPath,
-        initialVersion: initialServerStatsVersion,
-        async onChange(version) {
-          return controller.processServerStatsChange(version);
-        },
-        onError(error) {
-          logger.error`Failed to process Utoopack server rebuild: ${error}`;
-        },
-      });
-      controller.attachServerStatsMonitor(monitor);
-    }
-    controller.startInitialFacts();
+    if (!hasServerEntries(plan)) controller.startInitialFacts();
     worker.throwIfFailed();
     return controller;
   } catch (error) {
@@ -407,7 +387,6 @@ function formatDevServerOrigin(
 class UtoopackDevController implements BundlerDevController {
   origin = "";
   readonly done: Promise<void>;
-  private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
   private clientMiddlewareServer: ClientDevMiddlewareServerHandle | undefined;
   private devWorkQueue: Promise<void> = Promise.resolve();
   private hasEmittedDevArtifacts = false;
@@ -456,15 +435,6 @@ class UtoopackDevController implements BundlerDevController {
     void server.failure.catch(this.rejectClientMiddlewareFailure);
   }
 
-  attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
-    if (this.serverStatsMonitor) {
-      throw new Error(
-        "[evjs] Utoopack server stats monitor was attached more than once.",
-      );
-    }
-    this.serverStatsMonitor = monitor;
-  }
-
   startInitialFacts(): void {
     void this.enqueueDevWork(async () => {
       const disposition = await this.processBuildFacts(false);
@@ -489,11 +459,6 @@ class UtoopackDevController implements BundlerDevController {
         errors.push(error);
       }
       try {
-        await this.serverStatsMonitor?.close();
-      } catch (error) {
-        errors.push(error);
-      }
-      try {
         await this.options.worker.close();
       } catch (error) {
         errors.push(error);
@@ -511,11 +476,10 @@ class UtoopackDevController implements BundlerDevController {
     return this.closePromise;
   }
 
-  processServerStatsChange(_version: string): Promise<boolean> {
-    if (this.closed) return Promise.resolve(true);
+  processServerBuild(): Promise<void> {
+    if (this.closed) return Promise.resolve();
     return this.enqueueDevWork(async () => {
-      const disposition = await this.processBuildFacts(true);
-      return disposition !== "discarded";
+      await this.processBuildFacts(this.hasEmittedDevArtifacts);
     });
   }
 

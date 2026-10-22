@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -144,6 +146,7 @@ async function emitServerBuild(
   onBuildFacts: (
     facts: BundlerBuildFacts,
   ) => BundlerBuildFactsDisposition | Promise<BundlerBuildFactsDisposition>,
+  source = "export default { fetch() { return new Response('ok'); } };",
 ): Promise<void> {
   const facts = createServerFacts(plan);
   const runtimeEntry = plan.entries.find(
@@ -154,7 +157,7 @@ async function emitServerBuild(
   if (!serverEntry) throw new Error("Expected a server entry asset.");
   await writeFile(
     path.resolve(cwd, plan.output.serverDir, serverEntry),
-    "export default { fetch() { return new Response('ok'); } };",
+    source,
   );
   await onBuildFacts(facts);
 }
@@ -210,72 +213,141 @@ describe("immutable dev API process coverage", () => {
     ]);
   });
 
-  it("replaces the API process after a rebuild in the same session", async () => {
+  it("drains requests and forwards queued GET, HEAD and POST once after readiness", async () => {
     const cwd = await createServerProject();
+    const launchCwd = process.cwd();
+    expect(cwd).not.toBe(launchCwd);
+    const slowGate = path.join(cwd, "release-slow");
+    const readyGate = path.join(cwd, "release-ready");
+    const { execa } = await vi.importActual<typeof import("execa")>("execa");
+    const children: Array<ReturnType<typeof execa>> = [];
     const events: string[] = [];
-    const processKinds = ["initial", "rebuilt"] as const;
-    let processIndex = 0;
-    mockedExeca.state.spawn = () => {
-      const id = processKinds[processIndex++];
-      if (!id) throw new Error("Unexpected additional API process.");
-      const child = createFakeApiProcess(id, events);
-      events.push(`start:${id}`);
-      queueMicrotask(() => child.reportReady());
+    const abort = new AbortController();
+    let running: Promise<void> | undefined;
+    let rebuild = async () => {};
+    let origin = "";
+    const source = (revision: number) => `
+const fs = require("node:fs");
+console.log("loading:${revision}");
+console.log("cwd:" + process.cwd());
+if (${revision}) while (!fs.existsSync(${JSON.stringify(readyGate)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+module.exports.fetch = async request => {
+  const body = await request.text();
+  if (request.method === "POST") console.log("post:" + JSON.stringify(body));
+  if (new URL(request.url).pathname === "/slow") {
+    console.log("slow-started");
+    while (!fs.existsSync(${JSON.stringify(slowGate)})) await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  return new Response(request.method === "HEAD" ? null : "${revision}:" + body, { headers: { "x-revision": "${revision}" } });
+};`;
+    mockedExeca.state.spawn = (command, arguments_, options) => {
+      const child = Reflect.apply(execa, undefined, [
+        command,
+        arguments_,
+        { ...(options as object), cleanup: false },
+      ]) as ReturnType<typeof execa>;
+      children.push(child);
+      if (child.stdout)
+        createInterface({ input: child.stdout }).on("line", (line) =>
+          events.push(line),
+        );
       return child;
     };
-
-    let rebuild: (() => Promise<void>) | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
-      name: "api-session-rebuild",
+      name: "api-gateway-requests",
       capabilities: { build: { server: true, rsc: true, ppr: true } },
-      async build() {
-        return {};
-      },
-      async dev({ callbacks, plan }) {
-        await emitServerBuild(cwd, plan, (facts) =>
-          callbacks.onBuildFacts(facts, { isRebuild: false }),
-        );
-        await callbacks.onServerBundleReady();
-        events.push("initial-api-ready");
-        rebuild = async () => {
-          await emitServerBuild(cwd, plan, (facts) =>
-            callbacks.onBuildFacts(facts, { isRebuild: true }),
+      build: async () => ({}),
+      async dev({ callbacks, config, plan }) {
+        origin = `http://127.0.0.1:${config.server.dev.port}`;
+        const build = async (revision: number) => {
+          await emitServerBuild(
+            cwd,
+            plan,
+            (facts) =>
+              callbacks.onBuildFacts(facts, { isRebuild: revision > 0 }),
+            source(revision),
           );
+          events.push(`rebuild:${revision}`);
           await callbacks.onServerBundleReady();
-          events.push("rebuilt-api-ready");
         };
+        await build(0);
+        rebuild = () => build(1);
         return createTestDevController();
       },
     };
-
-    const running = dev(
-      { output: { client: "dist/client", server: "dist/server" } },
-      { cwd, bundler },
-    );
-    await waitForEvent(events, "initial-api-ready");
-    if (!rebuild) throw new Error("Expected a rebuild callback.");
-    await rebuild();
-    process.emit("SIGINT");
-
-    await Promise.race([
-      running,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Dev API shutdown timed out.")),
-          updateTimeoutMs,
-        ),
-      ),
-    ]);
-
-    expect(events.filter((event) => event.startsWith("start:"))).toEqual([
-      "start:initial",
-      "start:rebuilt",
-    ]);
-    expect(events.indexOf("kill:initial:SIGTERM")).toBeLessThan(
-      events.indexOf("start:rebuilt"),
-    );
-    expect(events).toContain("ready:rebuilt");
-    expect(events).toContain("rebuilt-api-ready");
-    expect(events).toContain("kill:rebuilt:SIGTERM");
-  });
+    const send = async (method = "GET", body?: string) => {
+      const response = await fetch(origin, {
+        method,
+        body,
+        signal: abort.signal,
+      });
+      expect(response.status).toBe(200);
+      return `${response.headers.get("x-revision")}:${await response.text()}`;
+    };
+    try {
+      await fs.promises.symlink(
+        fileURLToPath(new URL("../../../node_modules", import.meta.url)),
+        path.join(cwd, "node_modules"),
+        "dir",
+      );
+      running = dev({}, { cwd, bundler });
+      void running.catch(() => {});
+      await waitForEvent(events, API_READY_MARKER);
+      expect(events).toContain(`cwd:${launchCwd}`);
+      const slow = fetch(`${origin}/slow`, { signal: abort.signal });
+      void slow.catch(() => {});
+      await waitForEvent(events, "slow-started");
+      const rebuilding = rebuild();
+      void rebuilding.catch(() => {});
+      await waitForEvent(events, "rebuild:1");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(children).toHaveLength(1);
+      let completed = 0;
+      const body = "queued:\n汉字\r\npayload";
+      const queued = [send(), send("HEAD"), send("POST", body)];
+      for (const request of queued)
+        void request.then(() => completed++).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(completed).toBe(0);
+      expect(children).toHaveLength(1);
+      await fs.promises.writeFile(slowGate, "release");
+      await expect((await slow).text()).resolves.toBe("0:");
+      await waitForEvent(events, "loading:1");
+      expect(completed).toBe(0);
+      await fs.promises.writeFile(readyGate, "release");
+      await rebuilding;
+      expect(events.filter((event) => event.startsWith("cwd:"))).toEqual([
+        `cwd:${launchCwd}`,
+        `cwd:${launchCwd}`,
+      ]);
+      await expect(Promise.all(queued)).resolves.toEqual([
+        "1:1:",
+        "1:",
+        `1:1:${body}`,
+      ]);
+      await vi.waitFor(() =>
+        expect(events.filter((event) => event.startsWith("post:"))).toEqual([
+          `post:${JSON.stringify(body)}`,
+        ]),
+      );
+    } finally {
+      await fs.promises.writeFile(slowGate, "release");
+      await fs.promises.writeFile(readyGate, "release");
+      abort.abort();
+      try {
+        if (running) {
+          process.emit("SIGINT");
+          await running;
+        }
+      } finally {
+        await Promise.all(
+          children.map(async (child) => {
+            child.kill("SIGKILL");
+            await child.catch(() => {});
+          }),
+        );
+        await fs.promises.rm(cwd, { recursive: true, force: true });
+      }
+    }
+  }, 25_000);
 });

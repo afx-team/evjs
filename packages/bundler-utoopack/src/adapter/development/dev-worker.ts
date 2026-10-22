@@ -18,11 +18,24 @@ import {
   createUtoopackReusableSessionLifecycle,
   type UtoopackReusableSessionLifecycle,
 } from "./dev-worker-shutdown.js";
+import { rejections } from "./rejections.js";
+import {
+  createUtoopackClientDevConfig,
+  startUtoopackServerProject,
+} from "./server-project.js";
 
 interface ActiveSession {
   id: number;
   lifecycle: UtoopackReusableSessionLifecycle;
   options: UtoopackDevWorkerSessionOptions;
+  serverProject?: Awaited<ReturnType<typeof startUtoopackServerProject>>;
+  closing: boolean;
+  nextBuildId: number;
+  publication?: {
+    id: number;
+    resolve(): void;
+    reject(error: Error): void;
+  };
 }
 
 type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve">;
@@ -55,13 +68,32 @@ function observeSchedulerFailure(
 }
 
 function enqueueCommand(command: UtoopackDevWorkerCommand): void {
+  // Publication acknowledgements must bypass start/close, which can themselves
+  // be waiting for the current publication to finish.
+  if (command.type === "server-published") {
+    const session = activeSession;
+    if (
+      session?.id === command.sessionId &&
+      session.publication?.id === command.buildId
+    ) {
+      if (command.error) session.publication.reject(new Error(command.error));
+      else session.publication.resolve();
+    }
+    return;
+  }
+  if (command.type === "close" && activeSession?.id === command.sessionId) {
+    activeSession.closing = true;
+    activeSession.publication?.reject(
+      new Error("[evjs] Utoopack Session closed during server publication."),
+    );
+  }
   commandQueue = commandQueue
     .then(() => executeCommand(command))
     .catch((error: unknown) => failOwner(error, command.sessionId));
 }
 
 async function executeCommand(
-  command: UtoopackDevWorkerCommand,
+  command: Exclude<UtoopackDevWorkerCommand, { type: "server-published" }>,
 ): Promise<void> {
   if (ownerExiting) return;
   if (command.type === "start") {
@@ -87,18 +119,49 @@ async function startSession(
   }
 
   const lifecycle = createUtoopackReusableSessionLifecycle();
-  activeSession = { id: sessionId, lifecycle, options };
+  const session: ActiveSession = {
+    id: sessionId,
+    lifecycle,
+    options,
+    closing: false,
+    nextBuildId: 0,
+  };
+  activeSession = session;
   installPathRewriteBridges(sessionId, options);
 
+  if (options.config.server) {
+    session.serverProject = await startUtoopackServerProject({
+      cwd: options.cwd,
+      config: options.config,
+      onBuild: () => publishServerBuild(session),
+      onError(error) {
+        if (!session.closing) {
+          postMessage({
+            type: "server-error",
+            sessionId,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      },
+    });
+    void session.serverProject.failure.catch((error: unknown) => {
+      if (!session.closing) failOwner(error, sessionId);
+    });
+  }
   let readyContext: DevServerReadyContext | undefined;
   let spaHistoryFallbackUpdated = false;
-  await runUtoopackDevServer(runtime, options.config, options.cwd, {
-    ...options.server,
-    async onReady(context: DevServerReadyContext) {
-      spaHistoryFallbackUpdated = updateSpaHistoryFallback(options, context);
-      readyContext = context;
+  await runUtoopackDevServer(
+    runtime,
+    createUtoopackClientDevConfig(options.config, options.cwd),
+    options.cwd,
+    {
+      ...options.server,
+      async onReady(context: DevServerReadyContext) {
+        spaHistoryFallbackUpdated = updateSpaHistoryFallback(options, context);
+        readyContext = context;
+      },
     },
-  });
+  );
 
   if (!readyContext) {
     throw new Error(
@@ -121,9 +184,29 @@ async function closeSession(sessionId: number): Promise<void> {
     );
   }
 
-  await session.lifecycle.close();
+  const errors = await rejections([
+    session.serverProject?.close(),
+    session.lifecycle.close(),
+  ]);
+  if (errors.length) {
+    throw new AggregateError(
+      errors,
+      "[evjs] Failed to close Utoopack Session.",
+    );
+  }
   activeSession = undefined;
   postMessage({ type: "closed", sessionId });
+}
+
+function publishServerBuild(session: ActiveSession): Promise<void> {
+  if (session.closing || activeSession !== session) return Promise.resolve();
+  const buildId = ++session.nextBuildId;
+  return new Promise<void>((resolve, reject) => {
+    session.publication = { id: buildId, resolve, reject };
+    postMessage({ type: "server-build", sessionId: session.id, buildId });
+  }).finally(() => {
+    if (session.publication?.id === buildId) session.publication = undefined;
+  });
 }
 
 function updateSpaHistoryFallback(

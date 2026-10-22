@@ -38,7 +38,17 @@ const utoopackMock = vi.hoisted(() => ({
   markUtoopackProcessForBuild: vi.fn(),
   workerClose: vi.fn(async () => {}),
   startUtoopackDevWorker: vi.fn(
-    ({ config, server }: { config: ConfigComplete; server: unknown }) => {
+    ({
+      config,
+      server,
+      onServerBuild,
+      onServerError,
+    }: {
+      config: ConfigComplete;
+      server: unknown;
+      onServerBuild?: () => Promise<void>;
+      onServerError?: (error: Error) => void;
+    }) => {
       let resolveReady!: (context: {
         port: number;
         hostname: string;
@@ -79,7 +89,15 @@ const utoopackMock = vi.hoisted(() => ({
             });
           },
         })
-        .catch(rejectReady);
+        .then(async () => {
+          if (config.server) await onServerBuild?.();
+        })
+        .catch((error) => {
+          onServerError?.(
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          rejectReady(error);
+        });
       return {
         ready,
         done: new Promise<void>(() => {}),
@@ -669,7 +687,7 @@ describe("utoopackAdapter dev", () => {
       const initialHtml = await fs.promises.readFile(htmlPath, "utf-8");
       const statsPath = path.join(cwd, "dist/client/stats.json");
       await fs.promises.writeFile(statsPath, "null", "utf-8");
-      const pending = controller.processServerStatsChange("malformed");
+      const pending = controller.processServerBuild();
       await new Promise((resolve) => setTimeout(resolve, 75));
 
       expect(outputs).toHaveLength(1);
@@ -687,7 +705,7 @@ describe("utoopackAdapter dev", () => {
         }),
         "utf-8",
       );
-      await expect(pending).resolves.toBe(true);
+      await expect(pending).resolves.toBeUndefined();
       expect(outputs).toHaveLength(2);
       await expect(fs.promises.readFile(htmlPath, "utf-8")).resolves.toContain(
         'src="/main-v2.js"',
@@ -731,7 +749,7 @@ describe("utoopackAdapter dev", () => {
     expect(utoopackMock.workerClose).toHaveBeenCalledOnce();
   });
 
-  it("keeps all configured page-server entries after a server stats rebuild", async () => {
+  it("publishes completed server endpoint builds even when stats stay unchanged", async () => {
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
       output: { client: "dist/client", server: "dist/server" },
@@ -782,8 +800,30 @@ describe("utoopackAdapter dev", () => {
           assets: { js: ["page-server-index.js"], css: [] },
         },
       });
+      const onServerBuild =
+        utoopackMock.startUtoopackDevWorker.mock.calls.at(-1)?.[0]
+          .onServerBuild;
+      if (!onServerBuild) throw new Error("Expected a server build callback.");
+      const statsPath = path.join(cwd, "dist/server/stats.json");
+      const statsBefore = await fs.promises.stat(statsPath, { bigint: true });
       await fs.promises.writeFile(
-        path.join(cwd, "dist/server/stats.json"),
+        path.join(cwd, "dist/server/page-server-index.js"),
+        "// Updated Page implementation without changing the asset inventory.\n",
+      );
+      await onServerBuild();
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+      expect(onServerBundleReady).toHaveBeenCalledTimes(2);
+      const statsAfter = await fs.promises.stat(statsPath, { bigint: true });
+      expect(statsAfter.mtimeNs).toBe(statsBefore.mtimeNs);
+
+      await Promise.all(
+        ["page-server-index.updated.js", "server-shared.updated.js"].map(
+          (file) =>
+            fs.promises.writeFile(path.join(cwd, "dist/server", file), ""),
+        ),
+      );
+      await fs.promises.writeFile(
+        statsPath,
         JSON.stringify({
           assets: [
             { name: "server.js" },
@@ -807,19 +847,16 @@ describe("utoopackAdapter dev", () => {
         }),
       );
 
-      await waitForCondition(
-        () =>
-          onBuildOutput.mock.calls.length === 2 &&
-          onServerBundleReady.mock.calls.length === 2,
-        "Utoopack did not publish its rebuilt server facts",
-      );
-      expect(onBuildOutput.mock.calls[1]?.[0].server.renderers).toMatchObject({
+      await onServerBuild();
+      expect(onBuildOutput).toHaveBeenCalledTimes(3);
+      expect(onServerBundleReady).toHaveBeenCalledTimes(3);
+      expect(onBuildOutput.mock.calls[2]?.[0].server.renderers).toMatchObject({
         "page-server-index": {
           kind: "page-server",
           assets: { js: ["page-server-index.updated.js"], css: [] },
         },
       });
-      expect(rebuildFlags).toEqual([false, true]);
+      expect(rebuildFlags).toEqual([false, true, true]);
     } finally {
       await controller.close();
     }

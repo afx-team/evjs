@@ -42,6 +42,10 @@ import {
   waitForApiReady,
   writeDevDistLock,
 } from "./runtime.js";
+import {
+  type DevServerGateway,
+  startDevServerGateway,
+} from "./server-gateway.js";
 
 const logger = getLogger(["evjs", "ev"]);
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
@@ -97,6 +101,7 @@ export async function startDevSession<TBundlerCfg>(
   let frameworkRuntime: ReturnType<typeof createFrameworkRuntime> | undefined;
   let serverEntry: string | undefined;
   let controller: BundlerDevController | undefined;
+  let apiGateway: DevServerGateway | undefined;
   let releaseDistLock: DevRuntimeRelease | undefined;
   let unregisterDistExitCleanup = () => {};
   let pluginContextRetired = false;
@@ -144,7 +149,11 @@ export async function startDevSession<TBundlerCfg>(
     );
     if (!serverBundlePath || closing) return false;
 
-    const serverPort = state.config.server.dev.port;
+    if (!apiGateway) {
+      throw new Error("[evjs] The API development gateway is not running.");
+    }
+    const gateway = apiGateway;
+    const serverPort = gateway.upstreamPort;
     const devRootDir = path.resolve(options.cwd, state.plan.distDir);
     const bootstrapPath = path.join(devRootDir, "_dev_start.cjs");
     const { writeOwnedOutputFile } = await import(
@@ -164,7 +173,7 @@ export async function startDevSession<TBundlerCfg>(
         `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
         `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
         `const { serve } = require("@evjs/ev/_internal/server/node");`,
-        `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, host: "0.0.0.0", https: ${JSON.stringify(state.config.server.dev.https ?? false)} });`,
+        `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, host: "127.0.0.1", https: ${JSON.stringify(state.config.server.dev.https ?? false)} });`,
         `const ready = () => console.log(${JSON.stringify(API_READY_MARKER)});`,
         `if (server.listening) ready(); else server.once("listening", ready);`,
         `server.once("error", (err) => { console.error(err); process.exit(1); });`,
@@ -174,28 +183,42 @@ export async function startDevSession<TBundlerCfg>(
     );
 
     if (closing) return false;
+    // Stop admitting requests and let the previous process finish the ones
+    // already forwarded before releasing its listener. This rejects only once
+    // the gateway is closed, which also means the Session is closing.
+    await gateway.suspend();
+    if (closing) return false;
     if (apiProcessController.process) logger.info`Restarting API server...`;
     logger.info`Server bundle detected, starting API...`;
-    await apiProcessController.replace(() => {
-      const child = execa("node", [bootstrapPath], {
-        stdio: ["inherit", "pipe", "pipe"],
-        env: { ...process.env, NODE_ENV: "development" },
-      });
-      forwardApiOutput(child);
-      child.catch((error) => {
-        if (expectedApiExits.has(child)) return;
-        if (apiProcessController.clearUnexpectedExit(child)) {
-          logger.error`API server process exited unexpectedly: ${error}`;
+    try {
+      await apiProcessController.replace(() => {
+        if (closing) {
+          throw new Error("[evjs] API process startup was aborted.");
         }
-      });
-      return child;
-    }, waitForApiReady);
+        const child = execa("node", [bootstrapPath], {
+          stdio: ["inherit", "pipe", "pipe"],
+          env: { ...process.env, NODE_ENV: "development" },
+        });
+        forwardApiOutput(child);
+        child.catch((error) => {
+          if (expectedApiExits.has(child)) return;
+          if (apiProcessController.clearUnexpectedExit(child)) {
+            gateway.fail(error);
+            logger.error`API server process exited unexpectedly: ${error}`;
+          }
+        });
+        return child;
+      }, waitForApiReady);
+      if (closing) return false;
+      gateway.resume();
+    } catch (error) {
+      gateway.fail(error);
+      throw error;
+    }
 
-    const protocol = state.config.server.dev.https ? "https" : "http";
-    const origin = `${protocol}://localhost:${serverPort}`;
     logger.info`${[
       "API server listening at:",
-      ...formatDevServerAddresses(origin),
+      ...formatDevServerAddresses(gateway.origin),
     ].join("\n")}`;
     return true;
   };
@@ -208,8 +231,13 @@ export async function startDevSession<TBundlerCfg>(
       pluginContextRetired = true;
       const errors: unknown[] = [];
 
-      // Stop the API first so a replacement session can reuse its port. The
-      // bundler close then guarantees no new output callbacks can enter.
+      // Release requests waiting for readiness before waiting for API work.
+      // The bundler close then guarantees no new callbacks can enter.
+      try {
+        await apiGateway?.close();
+      } catch (error) {
+        errors.push(error);
+      }
       try {
         await apiProcessController.stop();
       } catch (error) {
@@ -269,6 +297,16 @@ export async function startDevSession<TBundlerCfg>(
     unregisterDistExitCleanup = options.registerExitCleanup(() =>
       releaseDistLock?.sync(),
     );
+
+    if (options.plan.entries.some((entry) => entry.kind === "server-runtime")) {
+      apiGateway = await startDevServerGateway({
+        // Match the child process's inherited base for relative TLS paths.
+        cwd: process.cwd(),
+        port: options.config.server.dev.port,
+        https: options.config.server.dev.https,
+        signal: abortController.signal,
+      });
+    }
 
     controller = await options.bundler.dev({
       config: options.config,
@@ -360,7 +398,8 @@ export async function startDevSession<TBundlerCfg>(
 
     return {
       get done() {
-        return controller?.done ?? Promise.resolve();
+        const done = controller?.done ?? Promise.resolve();
+        return apiGateway ? Promise.race([done, apiGateway.failure]) : done;
       },
       get origin() {
         return controller?.origin ?? "";
