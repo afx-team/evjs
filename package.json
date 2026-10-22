@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "React fullstack framework for file-based pages and Hono servers",
   "private": true,
-  "packageManager": "npm@11.6.2",
+  "packageManager": "npm@11.19.0",
   "workspaces": [
     "packages/*",
     "examples/*",
@@ -22,7 +22,8 @@
   "author": "xusd320",
   "scripts": {
     "build": "turbo build",
-    "test": "turbo test",
+    "test": "turbo test && npm run test:release",
+    "test:release": "node --test scripts/release-packages.test.mjs",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "dev": "turbo dev",
     "lint": "biome check .",
