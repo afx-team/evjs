@@ -28,6 +28,69 @@ afterEach(async () => {
 });
 
 describe("Utoopack single native-owner Session replacement", () => {
+  it("uses an explicit root for linked dependencies in client and server Projects", async () => {
+    const root = fs.realpathSync(
+      await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-linked-dev-")),
+    );
+    tempDirs.push(root);
+    const cwd = path.join(root, "app");
+    const modules = path.join(root, "shared/node_modules");
+    const dependency = path.join(modules, "linked-dependency");
+    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.mkdir(dependency, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(dependency, "package.json"),
+      '{"name":"linked-dependency","main":"index.js"}',
+    );
+    await fs.promises.writeFile(
+      path.join(dependency, "index.js"),
+      'module.exports = "evjs-linked-dev-ok";',
+    );
+    await fs.promises.symlink(
+      modules,
+      path.join(cwd, "node_modules"),
+      "junction",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/index.js"),
+      'import value from "./message.foo"; import linked from "linked-dependency"; console.log(value, linked);',
+    );
+    await fs.promises.writeFile(path.join(cwd, "src/message.foo"), "A\n");
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server.js"),
+      'import linked from "linked-dependency"; export default { fetch() { return new Response(linked); } };',
+    );
+    const loaderPath = path.join(cwd, "custom-loader.cjs");
+    await fs.promises.writeFile(
+      loaderPath,
+      createLoaderSource(path.join(cwd, "loader.log")),
+    );
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      [harnessPath, cwd, loaderPath, String(await reservePort()), root],
+      { env: process.env, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+    );
+    expect(stdout).toContain("EVJS_NATIVE_OWNER_RESULT=");
+    expect(stdout + stderr).not.toContain(
+      "Symlink node_modules could not be resolved",
+    );
+    const serverFiles = await fs.promises.readdir(
+      path.join(cwd, "dist/server"),
+    );
+    const serverCode = await Promise.all(
+      serverFiles
+        .filter((file) => file.endsWith(".js"))
+        .map((file) =>
+          fs.promises.readFile(path.join(cwd, "dist/server", file), "utf8"),
+        ),
+    );
+    expect(serverCode.join("\n")).toContain("evjs-linked-dev-ok");
+    expect(fs.existsSync(path.join(root, "dist"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, ".turbopack/client"))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, ".turbopack/server"))).toBe(true);
+    expect(fs.existsSync(path.join(root, ".turbopack/lock"))).toBe(false);
+  }, 30_000);
+
   it("replaces Projects in one Worker without loading the addon in the host", async () => {
     const cwd = await fs.promises.mkdtemp(
       path.join(os.tmpdir(), "evjs-utoopack-native-owner-"),

@@ -130,6 +130,8 @@ export interface ResolvedServerRuntimeConfig {
  * A version of Config where all fields with defaults are guaranteed.
  */
 export interface ResolvedConfig<TBundlerCfg = unknown> {
+  /** Explicit filesystem root for Utoopack; project inputs remain application-relative. */
+  rootPath?: string;
   /** Whether framework file conventions are enabled. */
   conventions: boolean;
   /** Framework-owned browser compilation target, when explicitly enabled. */
@@ -169,6 +171,13 @@ export type ResolvedFrameworkConfig<TBundlerCfg = unknown> =
  * evjs framework configuration.
  */
 export interface Config<TBundlerCfg = unknown> {
+  /**
+   * Explicit Utoopack filesystem root for linked dependencies outside the application.
+   * Relative paths resolve from the application directory. The root must exist,
+   * contain the application, and must not be the filesystem root.
+   * Omit this to retain automatic workspace-root discovery.
+   */
+  rootPath?: string;
   /**
    * Enable framework file conventions.
    *
@@ -590,6 +599,7 @@ export const CONFIG_DEFAULTS = {
   browserToTerminal: "error",
 } as const;
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
+  "rootPath",
   "conventions",
   "target",
   "polyfill",
@@ -720,6 +730,10 @@ export function resolveConfig<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
 ): ResolvedConfig<TBundlerCfg> {
   const config = resolveRootConfig(userConfig);
+  const rootPath =
+    config.rootPath === undefined
+      ? undefined
+      : assertTrimmedNonEmptyString(config.rootPath, "rootPath");
   const conventions = resolveConventionsConfig(config.conventions);
   const devConfig = resolveOptionalConfigRecord<DevConfig>(config.dev, "dev");
   validateDevConfigKeys(devConfig);
@@ -799,6 +813,7 @@ export function resolveConfig<TBundlerCfg = unknown>(
 
   return {
     conventions,
+    ...(rootPath === undefined ? {} : { rootPath }),
     ...(clientTarget !== undefined
       ? {
           target: clientTarget,
@@ -1170,7 +1185,7 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     config,
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
-    "conventions, output, dev, logging, server, transport, routing, application, bundler, or plugins",
+    "rootPath, conventions, output, dev, logging, server, transport, routing, application, bundler, or plugins",
   );
 }
 

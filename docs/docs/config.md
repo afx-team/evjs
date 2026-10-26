@@ -29,7 +29,35 @@ page-plugin settings.
 | `output` | Browser/server directories and asset CORS policy | `dist/client`, `dist/server` |
 | `plugins` | Install and configure integrations | `[]` |
 | `bundler` | Select a non-default bundler adapter | Utoopack from the CLI |
+| `rootPath` | Include an explicitly trusted directory in Utoopack's filesystem scope | Automatically discovered workspace root |
 | `application` | Advanced explicit SPA route tree | Not set |
+
+## Linked dependencies outside the application
+
+Utoopack restricts module resolution to its filesystem root. If you explicitly
+link a dependency or `node_modules` to another directory outside the discovered
+workspace, set `rootPath` to the nearest common parent of the application and
+the dependency's real location:
+
+```ts
+export default defineConfig({
+  routing: { mode: "spa" },
+  rootPath: "../..",
+});
+```
+
+Relative roots resolve from the application directory, not the shell's working
+directory. The directory must exist and contain the application's real path;
+the filesystem root itself is rejected. Only include directories you trust.
+The setting applies to production builds and both client and server development
+Projects in the default Utoopack adapter. Custom adapters may have different
+filesystem policies.
+
+The application directory still owns entry paths, outputs, and persistent caches.
+Utoopack may create temporary loader execution files in `.turbopack` under the
+selected filesystem root. Omitting
+`rootPath` preserves automatic discovery; it does not follow arbitrary external
+symlinks. A separate dependency installation per worktree needs no special root.
 
 ## Routing
 

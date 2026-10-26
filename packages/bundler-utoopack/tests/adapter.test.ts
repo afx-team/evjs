@@ -416,6 +416,40 @@ function embedClientRuntime(
 }
 
 describe("utoopackAdapter build", () => {
+  it("resolves the configured root and preserves the application path", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      rootPath: "..",
+      routing: { mode: "spa" },
+    });
+    const { plan } = await createBuildContext(config, cwd);
+    await utoopackAdapter.build({ config, cwd, plan, hooks: [] });
+    expect(
+      utoopackMock.requireUtoopack.mock.results.at(-1)?.value.build,
+    ).toHaveBeenCalledWith(
+      expect.any(Object),
+      cwd,
+      fs.realpathSync(path.dirname(cwd)),
+    );
+  });
+
+  it("rejects an invalid root before deleting existing build output", async () => {
+    const cwd = await makeProject();
+    const sentinel = path.join(cwd, "dist/client/sentinel.txt");
+    await fs.promises.mkdir(path.dirname(sentinel), { recursive: true });
+    await fs.promises.writeFile(sentinel, "keep");
+    const config = await resolveProjectConfig(cwd, {
+      rootPath: "./missing",
+      routing: { mode: "spa" },
+    });
+    const { plan } = await createBuildContext(config, cwd);
+    await expect(
+      utoopackAdapter.build({ config, cwd, plan, hooks: [] }),
+    ).rejects.toThrow("existing directory");
+    expect(await fs.promises.readFile(sentinel, "utf8")).toBe("keep");
+    expect(utoopackMock.requireUtoopack).not.toHaveBeenCalled();
+  });
+
   it("checks the process mode before starting a Project", async () => {
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
@@ -529,6 +563,7 @@ describe("utoopackAdapter dev", () => {
     utoopackMock.clientStatsDelayMs = 100;
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
+      rootPath: "..",
       routing: { mode: "spa" },
     });
     const buildContext = await createBuildContext(config, cwd);
@@ -550,7 +585,10 @@ describe("utoopackAdapter dev", () => {
     try {
       expect(controller.origin).toBe("http://localhost:3210");
       expect(utoopackMock.startUtoopackDevWorker).toHaveBeenCalledWith(
-        expect.objectContaining({ cwd }),
+        expect.objectContaining({
+          cwd,
+          rootPath: fs.realpathSync(path.dirname(cwd)),
+        }),
       );
       expect(onBuildOutput).not.toHaveBeenCalled();
       await waitForCondition(

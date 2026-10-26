@@ -132,6 +132,7 @@ async function startSession(
   if (options.config.server) {
     session.serverProject = await startUtoopackServerProject({
       cwd: options.cwd,
+      rootPath: options.rootPath,
       config: options.config,
       onBuild: () => publishServerBuild(session),
       onError(error) {
@@ -161,6 +162,7 @@ async function startSession(
         readyContext = context;
       },
     },
+    options.rootPath,
   );
 
   if (!readyContext) {

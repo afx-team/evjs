@@ -6,6 +6,7 @@ export const PATH_REWRITE_TIMEOUT_MS = 5_000;
 
 export interface UtoopackDevWorkerOptions {
   cwd: string;
+  rootPath?: string;
   config: ConfigComplete;
   /** Host publication must finish before the next server write begins. */
   onServerBuild?(): Promise<void>;

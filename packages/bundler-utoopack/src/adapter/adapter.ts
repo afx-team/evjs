@@ -32,6 +32,7 @@ import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
+import { resolveUtoopackRootPath } from "./config/root-path.js";
 import { markUtoopackProcessForBuild } from "./development/dev-process-mode.js";
 import {
   startUtoopackDevWorker,
@@ -190,6 +191,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   ): Promise<BundlerBuildFacts> {
     markUtoopackProcessForBuild();
     const { addWatchFile, config, cwd, hooks, plan } = ctx;
+    const rootPath = resolveUtoopackRootPath(config.rootPath, cwd);
     const { createUtoopackConfig } = await import("./config/create-config.js");
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -207,7 +209,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
-    await runUtoopackBuild(requireUtoopack(), utoopackConfig, cwd);
+    await runUtoopackBuild(requireUtoopack(), utoopackConfig, cwd, rootPath);
     if (!plan.entries.some((entry) => entry.environment === "client")) {
       await fs.promises.rm(outputPaths.clientDir, {
         recursive: true,
@@ -233,6 +235,7 @@ async function startUtoopackDev(
   ctx: BundlerDevContext<ConfigComplete>,
 ): Promise<UtoopackDevController> {
   const { addWatchFile, callbacks, config, cwd, hooks, plan, signal } = ctx;
+  const rootPath = resolveUtoopackRootPath(config.rootPath, cwd);
   throwIfUtoopackDevAborted(signal);
   const { createUtoopackConfig, getSpaHistoryFallbackRuleIndex } = await import(
     "./config/create-config.js"
@@ -260,6 +263,7 @@ async function startUtoopackDev(
 
   const worker = startUtoopackDevWorker({
     cwd,
+    ...(rootPath === undefined ? {} : { rootPath }),
     config: utoopackConfig,
     async onServerBuild() {
       await controller.processServerBuild();

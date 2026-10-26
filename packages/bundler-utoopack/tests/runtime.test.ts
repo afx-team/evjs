@@ -9,6 +9,35 @@ const PROJECT_PATH = "/workspace/apps/example";
 const config = {} as ConfigComplete;
 
 describe("Utoopack runtime invocation", () => {
+  it("passes the explicit root without moving the build project", async () => {
+    const build = vi.fn(async () => {});
+    await runUtoopackBuild({ build }, config, PROJECT_PATH, "/workspace");
+    expect(build).toHaveBeenCalledWith({ config }, PROJECT_PATH, "/workspace");
+  });
+
+  it("passes the explicit root to the client development server", async () => {
+    const serve = vi.fn(async () => {});
+    const serverOptions = {
+      port: 3000,
+      https: false,
+      hostname: "0.0.0.0",
+      logServerInfo: false,
+    };
+    await runUtoopackDevServer(
+      { serve },
+      config,
+      PROJECT_PATH,
+      serverOptions,
+      "/workspace",
+    );
+    expect(serve).toHaveBeenCalledWith(
+      { config },
+      PROJECT_PATH,
+      "/workspace",
+      serverOptions,
+    );
+  });
+
   it("anchors builds to the project and lets Utoopack discover the workspace root", async () => {
     const build = vi.fn(
       async (..._args: Parameters<typeof import("@utoo/pack")["build"]>) => {},

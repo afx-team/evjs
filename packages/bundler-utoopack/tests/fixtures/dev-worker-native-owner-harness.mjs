@@ -8,7 +8,7 @@ import {
   startUtoopackDevWorker,
 } from "../../esm/adapter/development/dev-worker-client.js";
 
-const [cwd, loaderPath, requestedPort] = process.argv.slice(2);
+const [cwd, loaderPath, requestedPort, rootPath] = process.argv.slice(2);
 if (!cwd || !loaderPath || !requestedPort) {
   throw new Error("Native owner harness requires cwd, loader path, and port.");
 }
@@ -101,6 +101,7 @@ async function runSession(config, port, blockPublication = false) {
   });
   const handle = startUtoopackDevWorker({
     cwd,
+    rootPath,
     config,
     async onServerBuild() {
       try {

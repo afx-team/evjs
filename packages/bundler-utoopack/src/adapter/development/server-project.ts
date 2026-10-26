@@ -40,6 +40,7 @@ export function createUtoopackClientDevConfig(
 
 export async function startUtoopackServerProject(options: {
   cwd: string;
+  rootPath?: string;
   config: ConfigComplete;
   onBuild(): Promise<void>;
   onError(error: unknown): void;
@@ -105,7 +106,7 @@ export async function startUtoopackServerProject(options: {
         buildId: randomUUID(),
         tracing: true,
         projectPath: cwd,
-        rootPath: findRootDir(cwd),
+        rootPath: options.rootPath ?? findRootDir(cwd),
         packPath: getPackPath(),
         config: {
           ...config,

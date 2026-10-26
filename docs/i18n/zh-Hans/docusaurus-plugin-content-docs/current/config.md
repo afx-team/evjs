@@ -27,7 +27,30 @@ export default defineConfig({
 | `output` | 浏览器/服务端目录与资源 CORS 策略 | `dist/client`、`dist/server` |
 | `plugins` | 安装并配置集成 | `[]` |
 | `bundler` | 选择非默认构建器适配器 | CLI 使用 Utoopack |
+| `rootPath` | 将明确受信任的目录纳入 Utoopack 文件系统范围 | 自动推断工作区根目录 |
 | `application` | 程序化 SPA 路由树 | 未设置 |
+
+## 应用目录外的软链接依赖
+
+Utoopack 只在文件系统根目录范围内解析模块。如果主动将某个依赖或整个
+`node_modules` 软链接到自动推断的工作区之外，可将 `rootPath` 设为应用与依赖
+真实位置的最近共同父目录：
+
+```ts
+export default defineConfig({
+  routing: { mode: "spa" },
+  rootPath: "../..",
+});
+```
+
+相对路径基于应用目录解析，不随运行命令的 shell 目录变化。目录必须存在，且包含
+应用的真实路径；不能使用磁盘根目录。只应纳入明确受信任的目录。该选项同时作用于
+默认 Utoopack 适配器的生产构建、客户端开发和服务端开发 Project；自定义适配器
+可能采用其他文件系统策略。
+
+入口、产物与持久缓存仍以应用目录为基准。Utoopack 可能在所选文件系统根目录的
+`.turbopack` 中生成 loader 执行临时文件。省略 `rootPath` 时保留自动推断行为，不会
+自动追踪任意外部软链接。每个 worktree 独立安装依赖时无需配置此选项。
 
 ## 路由
 

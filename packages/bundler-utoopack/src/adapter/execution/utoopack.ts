@@ -20,8 +20,11 @@ export function runUtoopackBuild(
   runtime: UtoopackBuildRuntime,
   config: ConfigComplete,
   projectPath: string,
+  rootPath?: string,
 ): Promise<void> {
-  return runtime.build({ config }, projectPath);
+  return rootPath === undefined
+    ? runtime.build({ config }, projectPath)
+    : runtime.build({ config }, projectPath, rootPath);
 }
 
 export function runUtoopackDevServer(
@@ -29,6 +32,7 @@ export function runUtoopackDevServer(
   config: ConfigComplete,
   projectPath: string,
   serverOptions: UtoopackServerOptions,
+  rootPath?: string,
 ): Promise<void> {
-  return runtime.serve({ config }, projectPath, undefined, serverOptions);
+  return runtime.serve({ config }, projectPath, rootPath, serverOptions);
 }
