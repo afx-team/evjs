@@ -232,25 +232,33 @@ function resolveExpression(
   }
   if (expression.type === "ObjectExpression") {
     if (!allowDescriptor) return "non-callable";
-    const handler = expression.properties
-      .filter((property) => {
-        if (property.type === "Identifier") return property.value === "handler";
-        return (
-          "key" in property &&
-          (property.key.type === "Identifier" ||
-            property.key.type === "StringLiteral") &&
-          property.key.value === "handler"
-        );
-      })
-      .at(-1);
-    if (!handler) return "non-callable";
-    if (handler.type === "KeyValueProperty")
-      return resolveExpression(handler.value, bindings, seen, false);
-    if (handler.type === "Identifier")
-      return resolveLocalBinding(handler.value, bindings, seen, false);
-    if (handler.type === "MethodProperty")
-      return handler.generator ? "generator" : "callable";
-    return "unknown";
+    // Later properties override earlier ones. An opaque spread or computed key
+    // may supply handler, so leave that value to runtime validation.
+    for (let index = expression.properties.length - 1; index >= 0; index--) {
+      const property = expression.properties[index];
+      if (property.type === "SpreadElement") return "unknown";
+      if (property.type === "Identifier") {
+        if (property.value === "handler")
+          return resolveLocalBinding(property.value, bindings, seen, false);
+        continue;
+      }
+      const key = property.key;
+      if (key.type === "Computed") {
+        const name = unwrapExpression(key.expression);
+        if (name.type !== "StringLiteral") return "unknown";
+        if (name.value !== "handler") continue;
+      } else if (
+        (key.type !== "Identifier" && key.type !== "StringLiteral") ||
+        key.value !== "handler"
+      )
+        continue;
+      if (property.type === "KeyValueProperty")
+        return resolveExpression(property.value, bindings, seen, false);
+      if (property.type === "MethodProperty")
+        return property.generator ? "generator" : "callable";
+      return "unknown";
+    }
+    return "non-callable";
   }
   if (
     expression.type === "StringLiteral" ||

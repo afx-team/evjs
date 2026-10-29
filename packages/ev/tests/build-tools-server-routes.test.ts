@@ -221,12 +221,31 @@ describe("discoverServerRoutes", () => {
   });
 
   it.each([
+    "{ ...shared }",
+    "{ ['handler']: () => new Response('computed') }",
+    "{ handler: 42, ...shared }",
+    "{ handler: 42, [key]: () => new Response('computed') }",
+  ])("defers unresolved descriptors without dropping the route: %s", async (definition) => {
+    const cwd = await createFixture({
+      "src/apis/probe/api.ts": `const shared = { handler: () => new Response('spread') }; const key = 'handler'; export const GET = ${definition};`,
+    });
+    const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(discovery.diagnostics).toEqual([]);
+    expect(
+      discovery.routes.map((route) => [route.path, route.methods]),
+    ).toEqual([["/probe", ["GET"]]]);
+  });
+
+  it.each([
     "{ handler: 42 }",
+    "{ ['handler']: 42 }",
+    "{ ...shared, handler: 42 }",
+    "{ [key]: () => new Response(), handler: 42 }",
     "{ handler: { handler() { return new Response(); } } }",
     "{ *handler() { yield 1; } }",
   ])("rejects an invalid descriptor %s", async (definition) => {
     const cwd = await createFixture({
-      "src/apis/api.ts": `export const GET = ${definition};`,
+      "src/apis/api.ts": `const shared = { handler: () => new Response() }; const key = "handler"; export const GET = ${definition};`,
     });
     const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
     expect(discovery.routes).toEqual([]);
