@@ -217,3 +217,15 @@ export default defineConfig({
 大多数应用应使用 `routing.mode` 和上面的文件约定。需要自行维护程序化 SPA 路由树的项目可以使用 `application.routes`。它不能与 `routing` 组合，也不支持 MPA。
 
 选择这种模型前，请阅读[自定义路由与运行时](./advanced-conventions)。
+
+## HTTP 方法描述对象
+
+大写 HTTP 方法既可导出处理函数，也可导出包含 `handler` 函数的对象。路径仍由所在目录决定，描述对象中的元信息由框架插件负责。HTTP 运行时提取原处理函数，保留中间件组合、流式响应以及 HEAD/OPTIONS 行为。
+
+```ts
+export const GET = {
+  handler(request: Request): Response {
+    return Response.json({ method: request.method });
+  },
+};
+```

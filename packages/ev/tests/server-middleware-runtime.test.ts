@@ -94,7 +94,7 @@ describe("generated server middleware", () => {
         import { trace } from '../../trace';
         import { policies } from './policies';
         export const GET = () => new Response('public');
-        export const POST = withMiddlewares(() => new Response('created', { status: 201 }), [...policies, trace('method')]);
+        export const POST = { handler: withMiddlewares(() => new Response('created', { status: 201 }), [...policies, trace('method')]) };
       `,
         "src/apis/items/child/api.ts":
           "export const GET = () => new Response('child');",

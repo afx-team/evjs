@@ -200,6 +200,39 @@ describe("discoverServerRoutes", () => {
     });
   });
 
+  it("discovers descriptor methods and validates their actual handlers", async () => {
+    const cwd = await createFixture({
+      "src/apis/method/api.ts":
+        "export const GET = { handler() { return new Response('ok'); } };",
+      "src/apis/alias/api.ts":
+        "const handler = () => new Response('ok'); const definition = { handler }; export { definition as POST };",
+      "src/apis/typed/api.ts":
+        "export const PUT = { handler: () => new Response('ok') } satisfies { handler: () => Response };",
+    });
+    const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(discovery.diagnostics).toEqual([]);
+    expect(
+      discovery.routes.map((route) => [route.path, route.methods]),
+    ).toEqual([
+      ["/alias", ["POST"]],
+      ["/method", ["GET"]],
+      ["/typed", ["PUT"]],
+    ]);
+  });
+
+  it.each([
+    "{ handler: 42 }",
+    "{ handler: { handler() { return new Response(); } } }",
+    "{ *handler() { yield 1; } }",
+  ])("rejects an invalid descriptor %s", async (definition) => {
+    const cwd = await createFixture({
+      "src/apis/api.ts": `export const GET = ${definition};`,
+    });
+    const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toHaveLength(1);
+  });
+
   it("rejects method values that are statically known to be non-callable", async () => {
     const cwd = await createFixture({
       "src/apis/class/api.ts": `
@@ -225,7 +258,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/class/api.ts",
         message:
-          'Server route method "OPTIONS" must resolve to a function. Non-callable values such as strings, objects, and classes are not valid HTTP handlers.',
+          'Server route method "OPTIONS" must resolve to a function. Non-callable values such as strings, objects without a callable handler, and classes are not valid HTTP handlers.',
       },
       {
         level: "error",
@@ -237,7 +270,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/literal/api.ts",
         message:
-          'Server route method "PATCH" must resolve to a function. Non-callable values such as strings, objects, and classes are not valid HTTP handlers.',
+          'Server route method "PATCH" must resolve to a function. Non-callable values such as strings, objects without a callable handler, and classes are not valid HTTP handlers.',
       },
     ]);
   });

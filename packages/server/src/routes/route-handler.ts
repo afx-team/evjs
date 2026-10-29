@@ -51,6 +51,21 @@ export type RouteHandlerFn<
   ctx: HonoContext<E, TPath, I>,
 ) => Response | Promise<Response>;
 
+/** A method export may carry build-time metadata beside its callable handler. */
+export interface RouteHandlerDescriptor<
+  TPath extends string = string,
+  E extends HonoEnv = HonoEnv,
+  I extends Input = BlankInput,
+> {
+  handler: RouteHandlerFn<TPath, E, I>;
+}
+
+export type RouteHandlerInput<
+  TPath extends string = string,
+  E extends HonoEnv = HonoEnv,
+  I extends Input = BlankInput,
+> = RouteHandlerFn<TPath, E, I> | RouteHandlerDescriptor<TPath, E, I>;
+
 /**
  * Route handler definition — HTTP method handlers + optional middleware.
  */
@@ -58,7 +73,7 @@ export type RouteHandlerDefinition<
   TPath extends string = string,
   E extends HonoEnv = HonoEnv,
   I extends Input = BlankInput,
-> = Partial<Record<HttpMethod, RouteHandlerFn<TPath, E, I>>> & {
+> = Partial<Record<HttpMethod, RouteHandlerInput<TPath, E, I>>> & {
   /**
    * Optional per-route middleware stack. Runs before any handler.
    */
@@ -124,13 +139,13 @@ export function createRoute<
   // Infer each method independently: one method's middleware cannot provide
   // variables or validated input to another method on the same route.
   definition: {
-    GET?: RouteHandlerFn<NoInfer<T>, GetEnv, GetInput>;
-    POST?: RouteHandlerFn<NoInfer<T>, PostEnv, PostInput>;
-    PUT?: RouteHandlerFn<NoInfer<T>, PutEnv, PutInput>;
-    PATCH?: RouteHandlerFn<NoInfer<T>, PatchEnv, PatchInput>;
-    DELETE?: RouteHandlerFn<NoInfer<T>, DeleteEnv, DeleteInput>;
-    HEAD?: RouteHandlerFn<NoInfer<T>, HeadEnv, HeadInput>;
-    OPTIONS?: RouteHandlerFn<NoInfer<T>, OptionsEnv, OptionsInput>;
+    GET?: RouteHandlerInput<NoInfer<T>, GetEnv, GetInput>;
+    POST?: RouteHandlerInput<NoInfer<T>, PostEnv, PostInput>;
+    PUT?: RouteHandlerInput<NoInfer<T>, PutEnv, PutInput>;
+    PATCH?: RouteHandlerInput<NoInfer<T>, PatchEnv, PatchInput>;
+    DELETE?: RouteHandlerInput<NoInfer<T>, DeleteEnv, DeleteInput>;
+    HEAD?: RouteHandlerInput<NoInfer<T>, HeadEnv, HeadInput>;
+    OPTIONS?: RouteHandlerInput<NoInfer<T>, OptionsEnv, OptionsInput>;
   } & Pick<RouteHandlerDefinition<T>, "middlewares">,
 ): RouteHandler;
 export function createRoute(
@@ -143,7 +158,15 @@ export function createRoute(
   }
 
   assertRouteDefinition(definition);
-  const { middlewares = [], ...methods } = definition;
+  const { middlewares = [], ...entries } = definition;
+  const methods = Object.fromEntries(
+    Object.entries(entries).map(([method, value]) => [
+      method,
+      typeof value === "function"
+        ? value
+        : (value as RouteHandlerDescriptor).handler,
+    ]),
+  ) as Partial<Record<HttpMethod, RouteHandlerFn<string>>>;
 
   if (collectRouteMethods(methods).length === 0) {
     throw new Error(
@@ -248,7 +271,14 @@ function assertRouteDefinition(
       );
     }
 
-    if (typeof value !== "function") {
+    if (
+      typeof value !== "function" &&
+      !(
+        value &&
+        typeof value === "object" &&
+        typeof (value as RouteHandlerDescriptor).handler === "function"
+      )
+    ) {
       throw new Error(
         `[evjs] createRoute() ${key} handler must be a function.`,
       );
