@@ -5,6 +5,7 @@ import { type CreateAppOptions, createApp } from "../src/app/app.js";
 import {
   createRoute,
   type RouteHandlerDefinition,
+  type RouteHandlerDescriptor,
 } from "../src/routes/route-handler.js";
 
 /**
@@ -36,6 +37,31 @@ function invalidRouteDefinition(
 }
 
 describe("createRoute", () => {
+  it("normalizes descriptor methods while preserving legacy handlers and automatic HEAD/OPTIONS", async () => {
+    const descriptor = {
+      async handler(_request, context) {
+        return Response.json({ id: context.req.param("id") });
+      },
+    } satisfies RouteHandlerDescriptor<"/api/items/:id">;
+    const route = createRoute("/api/items/:id", {
+      GET: descriptor,
+      POST: () => Response.json({ legacy: true }),
+    });
+    expect(route.methods.GET).toBe(descriptor.handler);
+    expect(await (await fetch(route, "/api/items/42")).json()).toEqual({
+      id: "42",
+    });
+    expect(
+      await (await fetch(route, "/api/items/42", { method: "POST" })).json(),
+    ).toEqual({ legacy: true });
+    expect(
+      await (await fetch(route, "/api/items/42", { method: "HEAD" })).text(),
+    ).toBe("");
+    expect(
+      (await fetch(route, "/api/items/42", { method: "OPTIONS" })).status,
+    ).toBe(204);
+  });
+
   it("routes GET requests to the GET handler", async () => {
     const handler = createRoute("/api/items", {
       GET: async () => Response.json({ items: [1, 2, 3] }),

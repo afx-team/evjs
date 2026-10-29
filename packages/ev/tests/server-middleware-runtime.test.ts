@@ -94,7 +94,7 @@ describe("generated server middleware", () => {
         import { trace } from '../../trace';
         import { policies } from './policies';
         export const GET = () => new Response('public');
-        export const POST = withMiddlewares(() => new Response('created', { status: 201 }), [...policies, trace('method')]);
+        export const POST = { handler: withMiddlewares(() => new Response('created', { status: 201 }), [...policies, trace('method')]) };
       `,
         "src/apis/items/child/api.ts":
           "export const GET = () => new Response('child');",
@@ -143,6 +143,27 @@ describe("generated server middleware", () => {
     );
     expect(await child.text()).toBe("child");
     expect(child.headers.get("x-order")).toBe("plugin,global-1,global-2");
+  });
+
+  it("serves spread and computed descriptors through generated routes", async () => {
+    const server = await loadServer({
+      "src/apis/items/api.ts": `
+        import { withMiddlewares } from '@evjs/ev/api';
+        const shared = { handler: () => new Response('spread') };
+        export const GET = { ...shared };
+        export const POST = { ['handler']: withMiddlewares(() => new Response('computed'), async (ctx, next) => {
+          await next(); ctx.header('x-policy', 'checked');
+        }) };
+      `,
+    });
+    expect(
+      await (await server.fetch(new Request("http://localhost/items"))).text(),
+    ).toBe("spread");
+    const response = await server.fetch(
+      new Request("http://localhost/items", { method: "POST" }),
+    );
+    expect(await response.text()).toBe("computed");
+    expect(response.headers.get("x-policy")).toBe("checked");
   });
 
   it("supports the middleware authoring entry and a disabled global factory", async () => {

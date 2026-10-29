@@ -191,6 +191,7 @@ function resolveLocalBinding(
   name: string,
   bindings: Map<string, LocalBinding>,
   seen: Set<string>,
+  allowDescriptor = true,
 ): CallableResolution {
   if (seen.has(name)) return "unknown";
   const binding = bindings.get(name);
@@ -202,13 +203,19 @@ function resolveLocalBinding(
   if (binding.kind === "unknown") return "unknown";
   if (binding.declarationKind !== "const" || !binding.value) return "unknown";
 
-  return resolveExpression(binding.value, bindings, new Set([...seen, name]));
+  return resolveExpression(
+    binding.value,
+    bindings,
+    new Set([...seen, name]),
+    allowDescriptor,
+  );
 }
 
 function resolveExpression(
   value: Expression,
   bindings: Map<string, LocalBinding>,
   seen: Set<string>,
+  allowDescriptor = true,
 ): CallableResolution {
   const expression = unwrapExpression(value);
   if (expression.type === "ArrowFunctionExpression") return "callable";
@@ -216,7 +223,42 @@ function resolveExpression(
     return expression.generator ? "generator" : "callable";
   }
   if (expression.type === "Identifier") {
-    return resolveLocalBinding(expression.value, bindings, seen);
+    return resolveLocalBinding(
+      expression.value,
+      bindings,
+      seen,
+      allowDescriptor,
+    );
+  }
+  if (expression.type === "ObjectExpression") {
+    if (!allowDescriptor) return "non-callable";
+    // Later properties override earlier ones. An opaque spread or computed key
+    // may supply handler, so leave that value to runtime validation.
+    for (let index = expression.properties.length - 1; index >= 0; index--) {
+      const property = expression.properties[index];
+      if (property.type === "SpreadElement") return "unknown";
+      if (property.type === "Identifier") {
+        if (property.value === "handler")
+          return resolveLocalBinding(property.value, bindings, seen, false);
+        continue;
+      }
+      const key = property.key;
+      if (key.type === "Computed") {
+        const name = unwrapExpression(key.expression);
+        if (name.type !== "StringLiteral") return "unknown";
+        if (name.value !== "handler") continue;
+      } else if (
+        (key.type !== "Identifier" && key.type !== "StringLiteral") ||
+        key.value !== "handler"
+      )
+        continue;
+      if (property.type === "KeyValueProperty")
+        return resolveExpression(property.value, bindings, seen, false);
+      if (property.type === "MethodProperty")
+        return property.generator ? "generator" : "callable";
+      return "unknown";
+    }
+    return "non-callable";
   }
   if (
     expression.type === "StringLiteral" ||
@@ -227,7 +269,6 @@ function resolveExpression(
     expression.type === "RegExpLiteral" ||
     expression.type === "TemplateLiteral" ||
     expression.type === "ArrayExpression" ||
-    expression.type === "ObjectExpression" ||
     expression.type === "ClassExpression" ||
     expression.type === "JSXElement" ||
     expression.type === "JSXFragment"
@@ -261,5 +302,5 @@ function formatCallableDiagnostic(
   if (resolution === "generator") {
     return `Server route method "${method}" cannot be a generator function. HTTP method handlers must return a Response or Promise<Response>, not an iterator.`;
   }
-  return `Server route method "${method}" must resolve to a function. Non-callable values such as strings, objects, and classes are not valid HTTP handlers.`;
+  return `Server route method "${method}" must resolve to a function. Non-callable values such as strings, objects without a callable handler, and classes are not valid HTTP handlers.`;
 }

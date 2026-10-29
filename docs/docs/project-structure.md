@@ -243,3 +243,15 @@ MPA.
 
 Read [Custom Routing and Runtimes](./advanced-conventions) before choosing
 that model.
+
+## HTTP method descriptors
+
+An uppercase HTTP method export can be a handler function or an object with a `handler` function. The containing directory still determines the route path. Descriptor metadata is owned by framework plugins; the HTTP runtime extracts the original handler and preserves middleware composition, streaming responses, HEAD and OPTIONS behavior.
+
+```ts
+export const GET = {
+  handler(request: Request): Response {
+    return Response.json({ method: request.method });
+  },
+};
+```

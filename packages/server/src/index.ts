@@ -63,7 +63,9 @@ export { withMiddlewares } from "./routes/api-handler.js";
 export type {
   RouteHandler,
   RouteHandlerDefinition,
+  RouteHandlerDescriptor,
   RouteHandlerFn,
+  RouteHandlerInput,
 } from "./routes/index.js";
 export { createRoute } from "./routes/index.js";
 export type {
