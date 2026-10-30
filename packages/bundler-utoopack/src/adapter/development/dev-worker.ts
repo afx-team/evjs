@@ -33,7 +33,6 @@ interface ActiveSession {
   options: UtoopackDevWorkerSessionOptions;
   serverProject?: Awaited<ReturnType<typeof startUtoopackServerProject>>;
   closing: boolean;
-  closeError?: Error;
   clientClosed?: boolean;
   nextBuildId: number;
   publications: Map<number, { resolve(): void; reject(error: Error): void }>;
@@ -88,11 +87,10 @@ function enqueueCommand(command: UtoopackDevWorkerCommand): void {
   }
   if (command.type === "close" && activeSession?.id === command.sessionId) {
     activeSession.closing = true;
-    activeSession.closeError ??= new Error(
-      "[evjs] Utoopack Session closed during build publication.",
-    );
     for (const publication of activeSession.publications.values()) {
-      publication.reject(activeSession.closeError);
+      publication.reject(
+        new Error("[evjs] Utoopack Session closed during build publication."),
+      );
     }
   }
   commandQueue = commandQueue
@@ -189,9 +187,8 @@ async function startSession(
       },
     );
   } catch (error) {
-    if (!session.closing || error !== session.closeError) throw error;
+    if (!session.closing) throw error;
     // serve() has already awaited its own cleanup after the callback rejected.
-    // Cleanup failures wrap the cancellation error and must poison the owner.
     // Its SIGTERM handler is gone, so do not run the normal lifecycle twice.
     session.clientClosed = true;
     session.lifecycle.dispose();
