@@ -10,7 +10,7 @@ For the complete server file route and middleware filename rules, see
 ## File routes
 
 File-based API routes are enabled by default. evjs scans
-`./src/apis/**/api.*`; each file's containing directory maps to its request URL.
+`./src/apis/**/api.*` and `./src/apis/**/http.*`; each file's containing directory maps to its request URL.
 The root is fixed and there is no prefix configuration; put the file under a
 directory such as `src/apis/api/users` when its URL should start with
 `/api/users`.
@@ -48,11 +48,11 @@ supported as long as the final value is callable. Generator handlers are not
 supported because they return iterators rather than one response.
 
 Every other filename is ordinary route source, so `schema.ts`, `db.ts`,
-`types.ts`, `index.ts`, and `route.ts` can be colocated safely. An `api.*`
+`types.ts`, `index.ts`, and `route.ts` can be colocated safely. An `api.*` or `http.*`
 file may export only uppercase HTTP methods; move helpers to another file.
 evjs rejects missing methods, default or lowercase exports, unsupported runtime
-exports, duplicate paths, ambiguous dynamic routes, and multiple `api.*`
-variants in one directory.
+exports, duplicate paths, ambiguous dynamic routes, and multiple `api.*` or `http.*`
+anchors in one directory.
 
 evjs orders discovered routes by path segment. Parent paths come before their
 descendants, and static segments come before dynamic segments. This keeps
@@ -308,3 +308,7 @@ Put policies that must cover automatic `OPTIONS` and 405 responses in global
 middleware. Global authentication also runs for `OPTIONS`; place CORS before
 it when CORS should answer preflight requests. Method middleware can
 short-circuit derived `HEAD`, whose final response is always bodyless.
+
+## Alternate HTTP anchor
+
+Use `http.ts`, `http.tsx`, `http.js`, or `http.jsx` to declare an HTTP route through the same compiler and runtime as `api.*`. The containing directory determines the URL. A route directory may contain one anchor of either name; using both is a duplicate route error. Other colocated source files remain private modules.

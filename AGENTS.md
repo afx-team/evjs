@@ -43,8 +43,8 @@ the implementation rather than preserving the mismatch.
    URL; other colocated files remain ordinary source.
    `application.routes` is an advanced SPA-only alternative to `routing` and
    uses `routes` for nesting.
-3. Publish API routes only with `src/apis/**/api.*`, and keep exactly one
-   supported `api.*` file in each route directory. Export uppercase HTTP
+3. Publish API routes only with `src/apis/**/api.*` or `src/apis/**/http.*`,
+   and keep exactly one supported anchor file in each route directory. Export uppercase HTTP
    methods and put global middleware in `src/middlewares/middleware.*`,
    default-exporting one handler or an ordered non-empty array. Compose HTTP
    method policies with `withMiddlewares(handler, middlewares)` from

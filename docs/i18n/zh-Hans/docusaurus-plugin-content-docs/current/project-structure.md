@@ -40,10 +40,10 @@ my-evjs-app/
 
 ## 目录职责
 
-`page.*` 或 `api.*` 文件会让所在目录成为公共入口：
+`page.*`、`api.*` 或 `http.*` 文件会让所在目录成为公共入口：
 
 - `page.*` 发布页面和客户端路由；
-- `api.*` 发布服务端请求路由。
+- `api.*` 或 `http.*` 发布服务端请求路由。
 
 除非匹配其他文件约定，否则目录中的其余文件都是普通源码。因此可以把组件、Hook 函数、
 模型、测试、样式、资源和服务端函数放在使用它们的页面旁边。
@@ -83,7 +83,7 @@ src/pages/orders/$orderId/
 | `<页面>/index.html` | 单个 MPA 页面的 HTML 模板 | 不创建页面或客户端入口。 |
 | `index.html` 或 `routing.html` | 共享应用 HTML 模板 | 默认使用 `index.html`。 |
 | 以 `"use server";` 开头且被应用导入的模块 | 服务端函数模块 | 只能命名导出可调用值，不要求固定目录。 |
-| `src/apis/**/api.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一种变体，导出大写方法处理器；单方法策略使用 `withMiddlewares(handler, middlewares)`。 |
+| `src/apis/**/{api,http}.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一种变体，导出大写方法处理器；单方法策略使用 `withMiddlewares(handler, middlewares)`。 |
 | API 路由目录中的其他文件 | 路由拥有的源码 | 辅助文件和 `index.*` 不创建端点。 |
 | `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表；动态计算的全局链可以在禁用时返回 `[]`。 |
 | `src/middlewares` 中的其他文件 | 中间件实现模块 | 显式导入，文件名不决定顺序。 |
@@ -229,3 +229,5 @@ export const GET = {
   },
 };
 ```
+
+`src/apis/**/http.*` 也是 HTTP 路由正锚点，沿用 `api.*` 的目录、方法、中间件和运行时规则。每个路由目录只保留一个 `api.*` 或 `http.*` 锚点。两者进入同一开发服务器、路由类型、HTTP 客户端元信息及生产构建图，框架插件可以根据文件名区分部署策略。

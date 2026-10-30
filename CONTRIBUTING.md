@@ -65,7 +65,7 @@ Release automation replaces them with the release version before publishing.
    documented responsibilities. Reserve `@evjs/ev/_internal/*` for the CLI,
    adapters, and generated code.
 4. Framework Pages use `src/pages/**/page.*`; server request Routes use
-   `src/apis/**/api.*`. The containing directory owns scope and URL
+   `src/apis/**/api.*` or `src/apis/**/http.*`. The containing directory owns scope and URL
    in both trees.
 5. Put Page metadata, rendering settings, and the generated plugin map keyed by
    canonical plugin id in adjacent `page.config.ts`. Configure plugins at
@@ -110,7 +110,7 @@ Release automation replaces them with the release version before publishing.
 ### Add a server request Route
 
 1. Create the URL directory below `src/apis`.
-2. Add one `api.ts`, `api.tsx`, `api.js`, or `api.jsx` anchor.
+2. Add one `api.*` or `http.*` anchor with a `ts`, `tsx`, `js`, or `jsx` extension.
 3. Export uppercase HTTP method handlers.
 4. Put helpers and shared middleware chains in ordinary colocated modules.
 5. Compose individual methods with `withMiddlewares(handler, middlewares)`

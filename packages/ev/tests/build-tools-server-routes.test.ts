@@ -18,6 +18,54 @@ afterEach(async () => {
 });
 
 describe("discoverServerRoutes", () => {
+  it.each([
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+  ])("discovers http.%s through the same route graph as api.*", async (extension) => {
+    const module = `src/apis/(internal)/orders/$id/http.${extension}`;
+    const cwd = await createFixture({
+      [module]:
+        "export const GET = { handler: () => Response.json({ ok: true }) };",
+      "src/apis/health/api.ts":
+        "export function GET() { return new Response('ok'); }",
+      "src/apis/orders/helper.ts":
+        "export const POST = () => new Response('private');",
+    });
+    const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(discovery.diagnostics).toEqual([]);
+    expect(discovery.routes).toHaveLength(2);
+    expect(
+      discovery.routes.find((route) => route.module === module),
+    ).toMatchObject({
+      path: "/orders/:id",
+      methods: ["GET"],
+      moduleSegments: ["(internal)", "orders", "$id"],
+    });
+    expect(
+      discovery.routes.find((route) => route.path === "/health")?.module,
+    ).toBe("src/apis/health/api.ts");
+  });
+
+  it("rejects api.* and http.* claiming the same route directory", async () => {
+    const cwd = await createFixture({
+      "src/apis/orders/api.ts":
+        "export const GET = () => new Response('legacy');",
+      "src/apis/orders/http.ts":
+        "export const POST = { handler: () => new Response('native') };",
+    });
+    const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(discovery.routes).toHaveLength(1);
+    expect(discovery.diagnostics).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        file: "src/apis/orders/http.ts",
+        message: expect.stringContaining("Duplicate api.* or http.* anchor"),
+      }),
+    );
+  });
+
   it("maps strict api.* anchors from their containing directories", async () => {
     const cwd = await createFixture({
       "src/apis/api.ts": `
@@ -436,7 +484,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/(two)/health/api.ts",
         message:
-          'Duplicate api.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
+          'Duplicate api.* or http.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* or http.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
       },
       {
         level: "error",
@@ -448,7 +496,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/users/api.ts",
         message:
-          'Duplicate api.* anchor in server route directory "src/apis/users". src/apis/users/api.js already declares the anchor for this directory. Keep exactly one api.* source-extension variant (api.ts, api.tsx, api.js, or api.jsx) per server route directory.',
+          'Duplicate api.* or http.* anchor in server route directory "src/apis/users". src/apis/users/api.js already declares the anchor for this directory. Keep exactly one api.* or http.* source-extension variant (api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx) per server route directory.',
       },
     ]);
   });
@@ -473,7 +521,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/users/api.js",
         message:
-          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+          "api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",
@@ -485,7 +533,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/users/api.ts",
         message:
-          'Duplicate api.* anchor in server route directory "src/apis/users". src/apis/users/api.js already declares the anchor for this directory. Keep exactly one api.* source-extension variant (api.ts, api.tsx, api.js, or api.jsx) per server route directory.',
+          'Duplicate api.* or http.* anchor in server route directory "src/apis/users". src/apis/users/api.js already declares the anchor for this directory. Keep exactly one api.* or http.* source-extension variant (api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx) per server route directory.',
       },
     ]);
   });
@@ -516,7 +564,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/(one)/health/api.ts",
         message:
-          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+          "api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",
@@ -528,7 +576,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/(two)/health/api.ts",
         message:
-          'Duplicate api.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
+          'Duplicate api.* or http.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* or http.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
       },
       {
         level: "error",
@@ -645,7 +693,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/empty/api.ts",
         message:
-          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+          "api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",
@@ -663,7 +711,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/lowercase/api.ts",
         message:
-          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+          "api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",
@@ -675,7 +723,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/middleware-only/api.ts",
         message:
-          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+          "api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",

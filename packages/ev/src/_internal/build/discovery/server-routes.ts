@@ -444,8 +444,8 @@ function createDuplicateServerRoutePathDiagnostic(
   previous: string,
 ): string {
   return [
-    `Duplicate api.* anchor for server route path "${routePath}" also declared by ${previous}.`,
-    "Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.",
+    `Duplicate api.* or http.* anchor for server route path "${routePath}" also declared by ${previous}.`,
+    "Keep one api.* or http.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.",
   ].join(" ");
 }
 
@@ -454,9 +454,9 @@ function createDuplicateServerRouteAnchorDiagnostic(
   previous: string,
 ): string {
   return [
-    `Duplicate api.* anchor in server route directory "${directory}".`,
+    `Duplicate api.* or http.* anchor in server route directory "${directory}".`,
     `${previous} already declares the anchor for this directory.`,
-    `Keep exactly one api.* source-extension variant (${SERVER_ROUTE_ENTRY_LABEL}) per server route directory.`,
+    `Keep exactly one api.* or http.* source-extension variant (${SERVER_ROUTE_ENTRY_LABEL}) per server route directory.`,
   ].join(" ");
 }
 

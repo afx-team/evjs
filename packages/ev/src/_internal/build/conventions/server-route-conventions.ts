@@ -8,10 +8,11 @@ import {
   type RouteSegmentConventionViolation,
 } from "./route-conventions.js";
 
-export const SERVER_ROUTE_ENTRY_BASENAME = "api";
+const SERVER_ROUTE_ENTRY_BASENAMES = new Set(["api", "http"]);
 /** Fixed root for the canonical server request-route file convention. */
 export const CANONICAL_SERVER_ROUTE_ROOT = "./src/apis";
-export const SERVER_ROUTE_ENTRY_LABEL = "api.ts, api.tsx, api.js, or api.jsx";
+export const SERVER_ROUTE_ENTRY_LABEL =
+  "api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx";
 
 export interface ServerRouteAnchorConvention {
   segments: string[];
@@ -33,7 +34,8 @@ export function parseServerRouteAnchorFile(
   const extension = path.posix.extname(normalizedRouteRel);
   const withoutExtension = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExtension.split("/").filter(Boolean);
-  if (segments.at(-1) !== SERVER_ROUTE_ENTRY_BASENAME) return undefined;
+  if (!SERVER_ROUTE_ENTRY_BASENAMES.has(segments.at(-1) ?? ""))
+    return undefined;
   return { segments: segments.slice(0, -1) };
 }
 
