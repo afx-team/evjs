@@ -28,6 +28,7 @@ const DEFAULT_NATIVE_OWNER_WORKER_URL = new URL(
 interface PreparedWorkerOptions {
   workerOptions: UtoopackDevWorkerSessionOptions;
   onServerBuild?: UtoopackDevWorkerOptions["onServerBuild"];
+  onClientBuild?: UtoopackDevWorkerOptions["onClientBuild"];
   onServerError?: UtoopackDevWorkerOptions["onServerError"];
   pathRewriteFunctions: ReadonlyMap<
     number,
@@ -106,7 +107,12 @@ function assertHostDoesNotOwnUtoopackBinding(): void {
 export function prepareUtoopackDevWorkerOptions(
   options: UtoopackDevWorkerOptions,
 ): PreparedWorkerOptions {
-  const { onServerBuild, onServerError, ...serializableOptions } = options;
+  const {
+    onServerBuild,
+    onClientBuild,
+    onServerError,
+    ...serializableOptions
+  } = options;
   const pathRewriteFunctions = new Map<
     number,
     Extract<PathRewrite, (path: string) => string>
@@ -137,6 +143,7 @@ export function prepareUtoopackDevWorkerOptions(
       workerOptions: structuredClone(candidate),
       pathRewriteFunctions,
       onServerBuild,
+      onClientBuild,
       onServerError,
     };
   } catch (error) {
@@ -292,11 +299,17 @@ class UtoopackNativeOwner {
       }
       return;
     }
-    if (message.type === "server-build") {
+    if (message.type === "server-build" || message.type === "client-build") {
       void (async () => {
         let error: string | undefined;
         try {
-          if (!session.closing) await session.prepared.onServerBuild?.();
+          if (!session.closing) {
+            if (message.type === "client-build") {
+              await session.prepared.onClientBuild?.(message.context);
+            } else {
+              await session.prepared.onServerBuild?.();
+            }
+          }
         } catch (cause) {
           error = normalizeError(cause).message;
         }
@@ -304,7 +317,10 @@ class UtoopackNativeOwner {
         // leave the native write queue waiting on the host.
         if (this.activeSession === session && !session.doneSettled) {
           this.postMessage({
-            type: "server-published",
+            type:
+              message.type === "client-build"
+                ? "client-published"
+                : "server-published",
             sessionId: session.id,
             buildId: message.buildId,
             error,

@@ -38,6 +38,10 @@ await runSession(serverConfig, server.port);
 const serverSessionReused =
   serverOwnerThreadId === firstOwnerThreadId &&
   ownerTesting.getNativeOwnerThreadId() === firstOwnerThreadId;
+await runSession(config, server.port, false, true);
+const client = await runSession(config, server.port);
+const clientSessionReused =
+  ownerTesting.getNativeOwnerThreadId() === firstOwnerThreadId;
 let buildModeRejected = false;
 try {
   markUtoopackProcessForBuild();
@@ -57,6 +61,7 @@ process.stdout.write(
     secondPort: second.port,
     serverPublicationClosed: server.publicationClosed,
     serverSessionReused,
+    clientPublicationClosed: clientSessionReused && client.clientPublished,
   })}\n`,
 );
 
@@ -86,11 +91,21 @@ function createConfig(customLoaderPath) {
   };
 }
 
-async function runSession(config, port, blockPublication = false) {
+async function runSession(
+  config,
+  port,
+  blockPublication = false,
+  blockClientPublication = false,
+) {
   let beginPublication;
   let rejectPublication;
   let releasePublication;
   let publicationBlocked = false;
+  let clientPublished = false;
+  let beginClientPublication;
+  const clientPublication = new Promise((resolve) => {
+    beginClientPublication = resolve;
+  });
   const publication = new Promise((resolve, reject) => {
     beginPublication = resolve;
     rejectPublication = reject;
@@ -102,6 +117,20 @@ async function runSession(config, port, blockPublication = false) {
   const handle = startUtoopackDevWorker({
     cwd,
     config,
+    async onClientBuild({ clientPaths }) {
+      const stats = await fs.promises.readFile(
+        path.join(cwd, "dist/client/stats.json"),
+        "utf8",
+      );
+      if (!clientPaths.length || !stats.includes("entrypoints")) {
+        throw new Error(
+          "Client publication ran before its outputs were ready.",
+        );
+      }
+      clientPublished = true;
+      beginClientPublication();
+      if (blockClientPublication) await publicationGate;
+    },
     async onServerBuild() {
       try {
         const stats = JSON.parse(
@@ -136,7 +165,15 @@ async function runSession(config, port, blockPublication = false) {
     },
   });
   try {
+    if (blockClientPublication) {
+      await clientPublication;
+      await handle.close();
+      await handle.done;
+      return;
+    }
     const ready = await handle.ready;
+    if (!clientPublished)
+      throw new Error("Missing initial client publication.");
     const stats = await fs.promises.readFile(
       path.join(cwd, "dist/client/stats.json"),
       "utf8",
@@ -148,7 +185,7 @@ async function runSession(config, port, blockPublication = false) {
     await handle.close();
     await handle.done;
     await assertPortAvailable(ready.port);
-    return { ...ready, publicationClosed: publicationBlocked };
+    return { ...ready, publicationClosed: publicationBlocked, clientPublished };
   } finally {
     releasePublication();
     await handle.close().catch(() => {});

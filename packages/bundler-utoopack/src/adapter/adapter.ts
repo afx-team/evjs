@@ -9,7 +9,6 @@
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path";
 import type {
   BundlerAdapter,
   BundlerBuildContext,
@@ -37,10 +36,6 @@ import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./development/dev-worker-client.js";
-import {
-  readClientStatsVersion,
-  watchClientStats,
-} from "./development/stats-watcher.js";
 import { runUtoopackBuild } from "./execution/utoopack.js";
 import { UtoopackManifestGenerator } from "./output/manifest-generator.js";
 import { assertSafeUtoopackCleanOutput } from "./output/output-paths.js";
@@ -51,7 +46,6 @@ const { version: utoopackVersion } = require("@utoo/pack/package.json") as {
   version: string;
 };
 type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build">;
-const DEV_STATS_POLL_INTERVAL_MS = 25;
 
 async function createUtoopackSelfSignedCertificate(): Promise<
   ClientDevMiddlewareTlsCredentials | undefined
@@ -78,102 +72,6 @@ async function cleanServerOutput(
   await fs.promises.rm(outputPaths.serverDir, {
     recursive: true,
     force: true,
-  });
-}
-
-async function generateDevArtifacts(
-  cwd: string,
-  plan: BuildPlan,
-  onBuildFacts: (
-    facts: BundlerBuildFacts,
-    options: { isRebuild: boolean },
-  ) => Promise<BundlerBuildFactsDisposition>,
-  options: { isRebuild: boolean },
-  facts?: BundlerBuildFacts,
-): Promise<BundlerBuildFactsDisposition> {
-  logger.info`Generating development manifest and HTML...`;
-  const buildFacts =
-    facts ??
-    (await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts());
-  return onBuildFacts(buildFacts, options);
-}
-
-async function waitForReadableDevStats(
-  cwd: string,
-  plan: BuildPlan,
-  signal: AbortSignal,
-): Promise<BundlerBuildFacts> {
-  return (await waitForReadableDevSnapshot(cwd, plan, signal)).facts;
-}
-
-interface DevBuildSnapshot {
-  facts: BundlerBuildFacts;
-  clientStatsVersion: string | undefined;
-}
-
-function getClientStatsPath(cwd: string, plan: BuildPlan): string | undefined {
-  return plan.entries.some((entry) => entry.environment === "client")
-    ? path.join(resolveBuildOutputPaths(cwd, plan).clientDir, "stats.json")
-    : undefined;
-}
-
-async function collectDevBuildSnapshot(
-  cwd: string,
-  plan: BuildPlan,
-  clientOnly = false,
-): Promise<DevBuildSnapshot> {
-  const statsPath = getClientStatsPath(cwd, plan);
-  const clientStatsVersion = await readClientStatsVersion(statsPath);
-  const generator = new UtoopackManifestGenerator(cwd, plan);
-  const facts = await generator.collectBuildFacts({ clientOnly });
-  if (clientStatsVersion !== (await readClientStatsVersion(statsPath))) {
-    throw new Error("[evjs] Utoopack client stats changed while being read.");
-  }
-  return { facts, clientStatsVersion };
-}
-
-async function waitForReadableDevSnapshot(
-  cwd: string,
-  plan: BuildPlan,
-  signal: AbortSignal,
-): Promise<DevBuildSnapshot> {
-  while (true) {
-    throwIfPollingAborted(
-      signal,
-      "[evjs] Utoopack development session closed while waiting for build stats.",
-    );
-    try {
-      return await collectDevBuildSnapshot(cwd, plan);
-    } catch {}
-    await waitForPollingDelay(
-      signal,
-      "[evjs] Utoopack development session closed while waiting for build stats.",
-    );
-  }
-}
-
-function throwIfPollingAborted(signal: AbortSignal, message: string): void {
-  if (signal.aborted) throw new Error(message);
-}
-
-function waitForPollingDelay(
-  signal: AbortSignal,
-  abortMessage: string,
-): Promise<void> {
-  throwIfPollingAborted(signal, abortMessage);
-  return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(finish, DEV_STATS_POLL_INTERVAL_MS);
-    timer.unref();
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-      reject(new Error(abortMessage));
-    };
-    function finish() {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -286,6 +184,9 @@ async function startUtoopackDev(
   const worker = startUtoopackDevWorker({
     cwd,
     config: utoopackConfig,
+    async onClientBuild({ isRebuild }) {
+      await controller.processClientBuild(isRebuild);
+    },
     async onServerBuild() {
       await controller.processServerBuild();
     },
@@ -366,8 +267,6 @@ async function startUtoopackDev(
       logger.warn`Reserved client port ${internalPort} became unavailable during startup; Utoopack is listening on ${ready.port}.${fallbackStatus}`;
     }
 
-    if (!hasServerEntries(plan)) controller.startInitialFacts();
-    controller.startClientStatsWatcher();
     worker.throwIfFailed();
     return controller;
   } catch (error) {
@@ -417,8 +316,9 @@ class UtoopackDevController implements BundlerDevController {
   private devWorkQueue: Promise<void> = Promise.resolve();
   private hasEmittedDevArtifacts = false;
   private acceptedFacts: BundlerBuildFacts | undefined;
-  private lastPublishedClientVersion: string | undefined;
-  private clientStatsWatcher: ReturnType<typeof watchClientStats> | undefined;
+  private clientFacts: BundlerBuildFacts = { clientEntryAssets: {} };
+  private readonly clientFactsReady: Promise<void>;
+  private resolveClientFactsReady!: () => void;
   private closed = false;
   private closePromise: Promise<void> | undefined;
   private readonly closingController = new AbortController();
@@ -433,6 +333,17 @@ class UtoopackDevController implements BundlerDevController {
       onServerBundleReady: BundlerDevContext<ConfigComplete>["callbacks"]["onServerBundleReady"];
     },
   ) {
+    this.clientFactsReady = Promise.race([
+      new Promise<void>((resolve) => {
+        this.resolveClientFactsReady = resolve;
+      }),
+      options.worker.failure,
+      waitForAbort(this.closingController.signal),
+    ]);
+    void this.clientFactsReady.catch(() => {});
+    if (!options.plan.entries.some((entry) => entry.environment === "client")) {
+      this.resolveClientFactsReady();
+    }
     const clientMiddlewareFailure = new Promise<never>((_resolve, reject) => {
       this.rejectClientMiddlewareFailure = reject;
     });
@@ -464,44 +375,11 @@ class UtoopackDevController implements BundlerDevController {
     void server.failure.catch(this.rejectClientMiddlewareFailure);
   }
 
-  startInitialFacts(): void {
-    void this.enqueueDevWork(async () => {
-      const disposition = await this.processBuildFacts(false);
-      if (disposition === "published") {
-        this.hasEmittedDevArtifacts = true;
-      }
-    }).catch((error) => {
-      if (!this.closed) {
-        logger.error`Failed to process initial Utoopack dev build: ${error}`;
-      }
-    });
-  }
-
-  startClientStatsWatcher(): void {
-    const statsPath = getClientStatsPath(this.options.cwd, this.options.plan);
-    if (this.closed || !statsPath) return;
-    const onError = (error: unknown) => {
-      if (!this.closed) {
-        logger.error`Failed to process Utoopack client rebuild: ${error}`;
-      }
-    };
-    this.clientStatsWatcher = watchClientStats(
-      statsPath,
-      () => {
-        if (!this.closed) void this.processClientBuild().catch(onError);
-      },
-      onError,
-    );
-  }
-
   async close(): Promise<void> {
     this.closePromise ??= (async () => {
       this.closed = true;
       this.closingController.abort();
       const errors: unknown[] = [];
-      const statsWatcherClosed = this.clientStatsWatcher
-        ?.close()
-        .catch((error) => errors.push(error));
       try {
         await this.clientMiddlewareServer?.close();
       } catch (error) {
@@ -512,7 +390,6 @@ class UtoopackDevController implements BundlerDevController {
       } catch (error) {
         errors.push(error);
       }
-      await statsWatcherClosed;
       try {
         await this.devWorkQueue;
       } catch (error) {
@@ -529,78 +406,58 @@ class UtoopackDevController implements BundlerDevController {
   processServerBuild(): Promise<void> {
     if (this.closed) return Promise.resolve();
     return this.enqueueDevWork(async () => {
-      await this.processBuildFacts(this.hasEmittedDevArtifacts);
+      await this.clientFactsReady;
+      if (this.closed) return;
+      const serverFacts = await new UtoopackManifestGenerator(
+        this.options.cwd,
+        this.options.plan,
+      ).collectBuildFacts({ environment: "server" });
+      await this.publishBuildFacts(this.combineFacts(serverFacts), true);
     });
   }
 
-  private processClientBuild(): Promise<void> {
+  async processClientBuild(isRebuild: boolean): Promise<void> {
+    if (this.closed) return;
+    // Capture only the output owned by this callback, while Utoopack holds its
+    // write queue. Server callbacks independently own their server snapshot.
+    this.clientFacts = await new UtoopackManifestGenerator(
+      this.options.cwd,
+      this.options.plan,
+    ).collectBuildFacts({ environment: "client" });
+    this.resolveClientFactsReady();
     return this.enqueueDevWork(async () => {
       if (this.closed) return;
       // The native server endpoint owns the first publication and API ACK.
       if (hasServerEntries(this.options.plan) && !this.acceptedFacts) return;
-      const version = await readClientStatsVersion(
-        getClientStatsPath(this.options.cwd, this.options.plan),
+      if (!isRebuild && this.acceptedFacts) return;
+      await this.publishBuildFacts(
+        this.combineFacts(this.acceptedFacts),
+        false,
       );
-      if (!version || version === this.lastPublishedClientVersion) return;
-      let snapshot: DevBuildSnapshot;
-      try {
-        snapshot = await collectDevBuildSnapshot(
-          this.options.cwd,
-          this.options.plan,
-          true,
-        );
-      } catch {
-        // A partial/invalid client write must not block a server endpoint ACK.
-        return;
-      }
-      if (this.acceptedFacts) {
-        snapshot.facts = {
-          ...this.acceptedFacts,
-          ...snapshot.facts,
-          emittedFiles: {
-            ...(this.acceptedFacts.emittedFiles?.server
-              ? { server: this.acceptedFacts.emittedFiles.server }
-              : {}),
-            ...snapshot.facts.emittedFiles,
-          },
-        };
-      }
-      await this.publishBuildFacts(snapshot, false);
     });
   }
 
-  private waitForReadableSnapshot(plan: BuildPlan): Promise<DevBuildSnapshot> {
-    return Promise.race([
-      waitForReadableDevSnapshot(
-        this.options.cwd,
-        plan,
-        this.closingController.signal,
-      ),
-      this.options.worker.failure,
-    ]);
-  }
-
-  private async processBuildFacts(
-    isRebuild: boolean,
-  ): Promise<BundlerBuildFactsDisposition> {
-    if (this.closed) return "discarded";
-    const snapshot = await this.waitForReadableSnapshot(this.options.plan);
-    return this.publishBuildFacts(snapshot, true, isRebuild);
+  private combineFacts(serverFacts?: BundlerBuildFacts): BundlerBuildFacts {
+    return {
+      ...serverFacts,
+      ...this.clientFacts,
+      emittedFiles: {
+        ...(serverFacts?.emittedFiles?.server
+          ? { server: serverFacts.emittedFiles.server }
+          : {}),
+        ...this.clientFacts.emittedFiles,
+      },
+    };
   }
 
   private async publishBuildFacts(
-    snapshot: DevBuildSnapshot,
+    facts: BundlerBuildFacts,
     notifyServerReady: boolean,
-    isRebuild = this.hasEmittedDevArtifacts,
   ): Promise<BundlerBuildFactsDisposition> {
     if (this.closed) return "discarded";
-    const disposition = await generateDevArtifacts(
-      this.options.cwd,
-      this.options.plan,
-      this.options.onBuildFacts,
-      { isRebuild: isRebuild || this.hasEmittedDevArtifacts },
-      snapshot.facts,
-    );
+    const disposition = await this.options.onBuildFacts(facts, {
+      isRebuild: this.hasEmittedDevArtifacts,
+    });
     if (disposition === "published") {
       this.hasEmittedDevArtifacts = true;
       if (
@@ -610,8 +467,7 @@ class UtoopackDevController implements BundlerDevController {
       ) {
         await this.options.onServerBundleReady();
       }
-      this.acceptedFacts = snapshot.facts;
-      this.lastPublishedClientVersion = snapshot.clientStatsVersion;
+      this.acceptedFacts = facts;
     }
     return disposition;
   }
@@ -625,8 +481,3 @@ class UtoopackDevController implements BundlerDevController {
     return result;
   }
 }
-
-export const __testing = {
-  startUtoopackDev,
-  waitForReadableDevStats,
-};

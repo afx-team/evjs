@@ -174,31 +174,38 @@ export class UtoopackManifestGenerator {
   }
 
   async collectBuildFacts({
-    clientOnly = false,
+    environment,
+  }: {
+    environment?: "client" | "server";
   } = {}): Promise<BundlerBuildFacts> {
-    await this.loadClientStats();
-    if (!clientOnly) await this.loadServerStats();
+    if (environment !== "server") await this.loadClientStats();
+    if (environment !== "client") await this.loadServerStats();
     const emittedFiles = {
-      ...(this.clientEmittedFiles
+      ...(environment !== "server" && this.clientEmittedFiles
         ? { client: includeAdapterStatsFile(this.clientEmittedFiles) }
         : {}),
-      ...(!clientOnly && this.serverEmittedFiles
+      ...(environment !== "client" && this.serverEmittedFiles
         ? { server: includeAdapterStatsFile(this.serverEmittedFiles) }
         : {}),
     };
 
     const facts: BundlerBuildFacts = {
       ...(Object.keys(emittedFiles).length > 0 ? { emittedFiles } : {}),
-      clientEntryAssets: cloneEntryAssets(this.clientEntryAssets),
-      ...(!clientOnly
+      clientEntryAssets:
+        environment === "server"
+          ? {}
+          : cloneEntryAssets(this.clientEntryAssets),
+      ...(environment !== "client"
         ? { serverEntryAssets: cloneEntryAssets(this.serverEntryAssets) }
         : {}),
     };
     assertBundlerEmittedFiles(facts.emittedFiles);
-    assertBuildOutputLinkInputClientAssets({
-      plan: this.plan,
-      clientEntryAssets: facts.clientEntryAssets,
-    });
+    if (environment !== "server") {
+      assertBuildOutputLinkInputClientAssets({
+        plan: this.plan,
+        clientEntryAssets: facts.clientEntryAssets,
+      });
+    }
     return facts;
   }
 
