@@ -52,6 +52,7 @@ export {
 } from "./commands.js";
 export type { LoadConfigFileOptions } from "./config-loading/config-module.js";
 export { loadConfigFile } from "./config-loading/config-module.js";
+export { resolveHttpOperationPath } from "./conventions/http-operation-path.js";
 export {
   type ClientDevMiddlewareCertificateFactory,
   type ClientDevMiddlewareHttpsConfig,

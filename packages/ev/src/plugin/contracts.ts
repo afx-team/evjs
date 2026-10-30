@@ -468,6 +468,7 @@ export interface FrameworkServerRouteView {
   readonly module: string;
   readonly path: string;
   readonly methods: readonly string[];
+  readonly handlerExports?: Readonly<Record<string, string>>;
 }
 
 export interface FrameworkEntryView {

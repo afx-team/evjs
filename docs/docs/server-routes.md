@@ -309,6 +309,29 @@ middleware. Global authentication also runs for `OPTIONS`; place CORS before
 it when CORS should answer preflight requests. Method middleware can
 short-circuit derived `HEAD`, whose final response is always bodyless.
 
-## Alternate HTTP anchor
+## Domain HTTP operations
 
-Use `http.ts`, `http.tsx`, `http.js`, or `http.jsx` to declare an HTTP route through the same compiler and runtime as `api.*`. The containing directory determines the URL. A route directory may contain one anchor of either name; using both is a duplicate route error. Other colocated source files remain private modules.
+`http.*` groups named operation descriptors in one domain module. Each export declares an uppercase `method` and an optional `path` suffix; the directory supplies the URL prefix. A missing suffix maps to the domain root. Handler functions, middleware, streaming, HEAD and OPTIONS use the same HTTP runtime as `api.*`.
+
+```ts
+// src/apis/orders/http.ts
+import type { HttpOperation } from "@evjs/ev/api";
+
+export const listOrders = {
+  method: "GET",
+  handler: () => Response.json([]),
+} satisfies HttpOperation;
+export const createOrder = {
+  method: "POST",
+  async handler(request: Request) {
+    return Response.json(await request.json());
+  },
+} satisfies HttpOperation;
+export const getOrder = {
+  method: "GET",
+  path: "/:id",
+  handler: (_request, ctx) => Response.json({ id: ctx.req.param("id") }),
+} satisfies HttpOperation<"/:id">;
+```
+
+These exports publish GET /orders, POST /orders, and GET /orders/:id. Method and path metadata must be static string literals; duplicate methods at the same URL are rejected. Keep one api.* or http.* anchor per directory. Framework plugins own deployment metadata; source-file grouping does not prescribe a deployment resource boundary.

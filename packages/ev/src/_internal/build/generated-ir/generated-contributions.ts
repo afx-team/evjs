@@ -1986,8 +1986,10 @@ function createServerAppEntrySource(
             ).join(", ")}]`,
           ]
         : []),
-      ...toMethods(route).map(
-        (method) => `${method}: routeModule${index}.${method}`,
+      ...toMethods(route).map((method) =>
+        route.handlerExports
+          ? `${method}: routeModule${index}[${JSON.stringify(route.handlerExports[method])}]`
+          : `${method}: routeModule${index}.${method}`,
       ),
     ];
     if (properties.length === 0) {
