@@ -28,24 +28,33 @@ import { createClientRuntime } from "../../ev/src/_internal/build/framework-runt
 import { utoopackAdapter } from "../src/adapter/index.js";
 
 const utoopackMock = vi.hoisted(() => ({
+  initialClientAssets: undefined as string[] | undefined,
+  initialClientStats: undefined as string | undefined,
   requireUtoopack: vi.fn(() => ({
     serve: vi.fn(async ({ config }, _projectPath, _rootPath, serverOptions) => {
       const fs = await import("node:fs");
       const path = await import("node:path");
       const clientOutDir = config.output.path;
+      const clientAssets = utoopackMock.initialClientAssets ?? [
+        "main.js",
+        "main.css",
+      ];
 
       await fs.promises.mkdir(clientOutDir, { recursive: true });
-      await fs.promises.writeFile(path.join(clientOutDir, "main.js"), "");
-      await fs.promises.writeFile(path.join(clientOutDir, "main.css"), "");
+      for (const asset of clientAssets) {
+        await fs.promises.writeFile(path.join(clientOutDir, asset), "");
+      }
       await fs.promises.writeFile(
         path.join(clientOutDir, "stats.json"),
-        JSON.stringify({
-          entrypoints: {
-            main: {
-              assets: [{ name: "main.js" }, { name: "main.css" }],
-            },
-          },
-        }),
+        utoopackMock.initialClientStats ??
+          JSON.stringify({
+            entrypoints: Object.fromEntries(
+              config.entry.map((entry: { name: string }) => [
+                entry.name,
+                { assets: clientAssets.map((name) => ({ name })) },
+              ]),
+            ),
+          }),
       );
 
       if (config.server) {
@@ -110,6 +119,8 @@ async function makeProject() {
 }
 
 afterEach(async () => {
+  utoopackMock.initialClientAssets = undefined;
+  utoopackMock.initialClientStats = undefined;
   await Promise.all(
     tempDirs.splice(0).map((dir) =>
       fs.promises.rm(dir, {
@@ -119,6 +130,26 @@ afterEach(async () => {
     ),
   );
 });
+
+async function writeClientStats(
+  cwd: string,
+  assets: string[],
+  clientDir = "dist/client",
+  entryName = "main",
+) {
+  const outputDir = path.join(cwd, clientDir);
+  for (const asset of assets) {
+    await fs.promises.writeFile(path.join(outputDir, asset), "");
+  }
+  await fs.promises.writeFile(
+    path.join(outputDir, "stats.json"),
+    JSON.stringify({
+      entrypoints: {
+        [entryName]: { assets: assets.map((name) => ({ name })) },
+      },
+    }),
+  );
+}
 
 function createFrameworkCallbacks(options: {
   config: ResolvedConfig<ConfigComplete>;
@@ -276,6 +307,225 @@ async function expectRejectedMessage(action: () => void | Promise<void>) {
 }
 
 describe("utoopackAdapter dev", () => {
+  it.each([
+    ["truncated JSON", '{"entrypoints":'],
+    ["empty entrypoints", JSON.stringify({ entrypoints: {} })],
+  ])("waits for complete initial client stats after %s", async (_name, stats) => {
+    const cwd = await makeProject();
+    utoopackMock.initialClientStats = stats;
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const rebuildFlags: boolean[] = [];
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput,
+    });
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: {
+        ...framework,
+        async onBuildFacts(facts, options) {
+          rebuildFlags.push(options?.isRebuild ?? false);
+          await framework.onBuildFacts(facts);
+        },
+      },
+      hooks: [],
+    });
+
+    try {
+      const htmlPath = path.join(cwd, "dist/client/index.html");
+      expect(fs.existsSync(htmlPath)).toBe(false);
+      expect(onBuildOutput).not.toHaveBeenCalled();
+
+      await writeClientStats(cwd, ["root-initial.js", "main.js"]);
+      await expect
+        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
+        .toContain('src="/root-initial.js"');
+      expect(rebuildFlags).toEqual([false]);
+
+      await writeClientStats(cwd, ["root-rebuilt.js", "main.js"]);
+      await expect
+        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
+        .toContain('src="/root-rebuilt.js"');
+      expect(rebuildFlags).toEqual([false, true]);
+    } finally {
+      await controller?.close?.();
+    }
+  });
+
+  it("rejects initialization when publishing initial client artifacts fails", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildFacts = vi.fn().mockRejectedValue(new Error("publish failed"));
+
+    await expect(
+      utoopackAdapter.dev({
+        config,
+        cwd,
+        ...buildContext,
+        callbacks: {
+          onBuildFacts,
+          onServerBundleReady: vi.fn(),
+        },
+        hooks: [],
+      }),
+    ).rejects.toThrow("publish failed");
+    expect(onBuildFacts).toHaveBeenCalledTimes(1);
+  });
+
+  it("republishes HTML and manifests when a client rebuild replaces a chunk", async () => {
+    const cwd = await makeProject();
+    utoopackMock.initialClientAssets = ["root-old.js", "main.js"];
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const onServerBundleReady = vi.fn();
+    const rebuildFlags: boolean[] = [];
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput,
+      onServerBundleReady,
+    });
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: {
+        ...framework,
+        async onBuildFacts(facts, options) {
+          rebuildFlags.push(options?.isRebuild ?? false);
+          await framework.onBuildFacts(facts);
+        },
+      },
+      hooks: [],
+    });
+
+    try {
+      const htmlPath = path.join(cwd, "dist/client/index.html");
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+        'src="/root-old.js"',
+      );
+
+      await writeClientStats(cwd, ["root-new.js", "main.js", "new.css"]);
+      await expect
+        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
+        .toContain('src="/root-new.js"');
+
+      const html = await fs.promises.readFile(htmlPath, "utf-8");
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, "dist/client/manifest.json"),
+          "utf-8",
+        ),
+      );
+      const deployment = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, "dist/build-output.json"),
+          "utf-8",
+        ),
+      );
+      expect(html).not.toContain('src="/root-old.js"');
+      expect(html).toContain('href="/new.css"');
+      expect(manifest.assets.main).toEqual({
+        js: ["root-new.js", "main.js"],
+        css: ["new.css"],
+      });
+      expect(deployment.documents[0].assets).toEqual({
+        js: ["root-new.js", "main.js"],
+        css: ["new.css"],
+      });
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+      expect(rebuildFlags).toEqual([false, true]);
+      expect(onServerBundleReady).not.toHaveBeenCalled();
+    } finally {
+      await controller?.close?.();
+    }
+  });
+
+  it("keeps published HTML while client stats are incomplete and recovers", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+        onBuildOutput,
+      }),
+      hooks: [],
+    });
+
+    try {
+      const htmlPath = path.join(cwd, "dist/client/index.html");
+      const initialHtml = await fs.promises.readFile(htmlPath, "utf-8");
+      for (const incompleteStats of [
+        '{"entrypoints":',
+        JSON.stringify({ entrypoints: {} }),
+      ]) {
+        await fs.promises.writeFile(
+          path.join(cwd, "dist/client/stats.json"),
+          incompleteStats,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(initialHtml);
+        expect(onBuildOutput).toHaveBeenCalledTimes(1);
+      }
+
+      await writeClientStats(cwd, ["root-recovered.js", "main.js"]);
+      await expect
+        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
+        .toContain('src="/root-recovered.js"');
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+    } finally {
+      await controller?.close?.();
+    }
+  });
+
+  it("stops publishing client rebuilds after the controller closes", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+        onBuildOutput,
+      }),
+      hooks: [],
+    });
+
+    try {
+      const htmlPath = path.join(cwd, "dist/client/index.html");
+      const initialHtml = await fs.promises.readFile(htmlPath, "utf-8");
+      await controller?.close?.();
+      await writeClientStats(cwd, ["root-after-close.js", "main.js"]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(initialHtml);
+      expect(onBuildOutput).toHaveBeenCalledTimes(1);
+    } finally {
+      await controller?.close?.();
+    }
+  });
+
   it("emits flat CSR manifest and index.html in flat output mode", async () => {
     const cwd = await makeProject();
     const config = resolveConfig<ConfigComplete>({
@@ -479,6 +729,22 @@ describe("utoopackAdapter dev", () => {
         fileName: "home.html",
       });
       expect(onBuildOutput).toHaveBeenCalledTimes(2);
+
+      await writeClientStats(
+        cwd,
+        ["root-next-plan.js", "main.js"],
+        "dist",
+        "home",
+      );
+      await expect
+        .poll(() =>
+          fs.promises.readFile(path.join(cwd, "dist/home.html"), "utf-8"),
+        )
+        .toContain('src="/root-next-plan.js"');
+      expect(
+        await fs.promises.readFile(path.join(cwd, "dist/home.html"), "utf-8"),
+      ).toContain("next-shell");
+      expect(onBuildOutput).toHaveBeenCalledTimes(3);
     } finally {
       await controller.close?.();
     }
@@ -610,7 +876,7 @@ describe("utoopackAdapter dev", () => {
       },
     ];
 
-    await utoopackAdapter.dev({
+    const controller = await utoopackAdapter.dev({
       config,
       cwd,
       ...buildContext,
@@ -665,6 +931,7 @@ describe("utoopackAdapter dev", () => {
     expect(html).toContain('data-evjs-id="default"');
     expect(html).toContain('<meta name="server">');
     expect(onServerBundleReady).not.toHaveBeenCalled();
+    await controller?.close?.();
   });
 });
 
