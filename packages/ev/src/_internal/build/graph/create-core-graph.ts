@@ -477,6 +477,9 @@ function validateServerRouteNodePublication(
       module: route.module,
       path: route.path,
       methods: route.methods,
+      ...(route.handlerExports
+        ? { handlerExports: { ...route.handlerExports } }
+        : {}),
     });
   }
 

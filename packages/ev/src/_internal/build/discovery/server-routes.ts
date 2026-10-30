@@ -5,6 +5,7 @@ import type {
   ServerMiddlewareNode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
+import { analyzeHttpOperations } from "../analysis/http-operations.js";
 import { collectModuleExportNames } from "../analysis/module-exports.js";
 import {
   formatParseErrorMessage,
@@ -121,6 +122,55 @@ export async function discoverServerRoutes(
         file: anchor.diagnosticFile,
         message: formatServerRouteSegmentConventionViolation(segmentViolation),
       });
+      continue;
+    }
+
+    if (/^http\.[jt]sx?$/.test(path.basename(anchor.file))) {
+      const source = await fs.readFile(anchor.file, "utf-8");
+      const { ast, error } = parseRouteModuleWithError(source);
+      if (!ast) {
+        diagnostics.push({
+          level: "error",
+          file: anchor.diagnosticFile,
+          message: `HTTP operation module could not be parsed: ${formatParseErrorMessage(error, { firstLine: true })}`,
+        });
+        continue;
+      }
+      const analysis = analyzeHttpOperations(
+        ast,
+        anchor.diagnosticFile,
+        serverRoutePathFromSegments(anchor.segments),
+        anchor.segments,
+      );
+      diagnostics.push(...analysis.diagnostics);
+      for (const route of analysis.routes) {
+        const shape = serverRoutePathShapeFromPath(route.path);
+        const previous = routeByPath.get(route.path);
+        const previousShape = routeByShape.get(shape);
+        let message: string | undefined;
+        if (previous)
+          message = createDuplicateServerRoutePathDiagnostic(
+            route.path,
+            previous,
+          );
+        else if (previousShape)
+          message = createAmbiguousServerRouteShapeDiagnostic(
+            shape,
+            route.path,
+            previousShape,
+          );
+        if (message) {
+          diagnostics.push({
+            level: "error",
+            file: anchor.diagnosticFile,
+            message,
+          });
+          continue;
+        }
+        routeByPath.set(route.path, anchor.sourceRel);
+        routeByShape.set(shape, { file: anchor.sourceRel, path: route.path });
+        routeCandidates.push({ ...route, shape });
+      }
       continue;
     }
 

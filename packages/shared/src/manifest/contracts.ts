@@ -94,6 +94,8 @@ export interface ServerRouteNode {
   module: string;
   path: string;
   methods: string[];
+  /** Optional business export selected for each HTTP method in this module. */
+  handlerExports?: Record<string, string>;
 }
 
 export interface ClientReferenceNode {

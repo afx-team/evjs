@@ -1,4 +1,3 @@
-import type { HttpMethod } from "@evjs/shared";
 import type { ExportSpecifier, Expression, ModuleItem } from "@swc/types";
 import {
   getIdentifierExportName,
@@ -28,7 +27,7 @@ type MethodExportTarget =
  */
 export function validateServerRouteMethodExports(
   body: ModuleItem[],
-  methods: HttpMethod[],
+  methods: readonly string[],
 ): string[] {
   const methodSet = new Set<string>(methods);
   const targets = collectMethodExportTargets(body, methodSet);
@@ -278,7 +277,7 @@ function resolveExpression(
   return "unknown";
 }
 
-function unwrapExpression(expression: Expression): Expression {
+export function unwrapExpression(expression: Expression): Expression {
   let current = expression;
   while (
     current.type === "ParenthesisExpression" ||
@@ -295,7 +294,7 @@ function unwrapExpression(expression: Expression): Expression {
 }
 
 function formatCallableDiagnostic(
-  method: HttpMethod,
+  method: string,
   resolution: CallableResolution,
 ): string | undefined {
   if (resolution === "callable" || resolution === "unknown") return undefined;

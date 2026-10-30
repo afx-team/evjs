@@ -65,8 +65,8 @@ Release automation replaces them with the release version before publishing.
    documented responsibilities. Reserve `@evjs/ev/_internal/*` for the CLI,
    adapters, and generated code.
 4. Framework Pages use `src/pages/**/page.*`; server request Routes use
-   `src/apis/**/api.*` or `src/apis/**/http.*`. The containing directory owns scope and URL
-   in both trees.
+   `src/apis/**/api.*` or `src/apis/**/http.*`. The containing directory owns scope
+   and the URL prefix; `http.*` operations can add a path suffix.
 5. Put Page metadata, rendering settings, and the generated plugin map keyed by
    canonical plugin id in adjacent `page.config.ts`. Configure plugins at
    Application scope through factory calls in `config.plugins`; do not add Route

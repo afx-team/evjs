@@ -1264,16 +1264,29 @@ function assertServerRouteNodes(value: unknown[], source: string): void {
 
   for (const [index, item] of value.entries()) {
     const nodeSource = `${source}[${index}]`;
-    const node = assertObjectShape(item, nodeSource, [
-      "id",
-      "module",
-      "path",
-      "methods",
-    ]);
+    const node = assertObjectShape(
+      item,
+      nodeSource,
+      ["id", "module", "path", "methods"],
+      ["handlerExports"],
+    );
     assertTrimmedNonEmptyString(node.id, `${nodeSource}.id`);
     assertFrameworkModuleId(node.module, `${nodeSource}.module`);
     assertServerRoutePath(node.path, `${nodeSource}.path`);
     assertHttpMethods(node.methods, `${nodeSource}.methods`);
+    if (node.handlerExports !== undefined) {
+      const handlers = assertObjectShape(
+        node.handlerExports,
+        `${nodeSource}.handlerExports`,
+        node.methods as string[],
+      );
+      for (const [method, name] of Object.entries(handlers)) {
+        assertTrimmedNonEmptyString(
+          name,
+          `${nodeSource}.handlerExports.${method}`,
+        );
+      }
+    }
     assertUniqueNodeId(node.id as string, ids, `${nodeSource}.id`);
 
     const routePath = node.path as string;
