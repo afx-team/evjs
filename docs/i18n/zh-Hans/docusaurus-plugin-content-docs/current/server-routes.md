@@ -43,9 +43,10 @@ export const POST = async (req) => {
 因为它返回迭代器，而不是一份响应。
 
 其他文件名都属于普通路由源码，因此 `schema.ts`、`db.ts`、`types.ts`、`index.ts` 与
-`route.ts` 可以就近放置。`api.*` 或 `http.*` 文件只能导出大写 HTTP 方法，辅助函数
-应移到其他文件。evjs 会拒绝缺少方法、默认或小写导出、不受支持的运行时导出、重复路径、
-模糊动态路由，以及同一目录中的多个 `api.*` 或 `http.*` 锚点。
+`route.ts` 可以就近放置。`api.*` 导出大写 HTTP 处理器，`http.*` 导出显式声明
+`method` 的业务操作描述对象；辅助函数放在其他文件。evjs 会拒绝缺少方法、默认导出、
+`api.*` 中的小写 HTTP 方法导出、不受支持的运行时导出、重复路径、模糊动态路由，
+以及同一目录中的多个 `api.*` 或 `http.*` 锚点。
 
 框架会逐段比较已发现路由的匹配优先级：父路径排在后代之前，遇到不同路径段时先注册
 静态路径，再注册动态路径。这样可以保持顺序稳定，动态路由也不会遮蔽更具体的静态分支。
@@ -276,7 +277,7 @@ Hono 的错误处理行为：异常转成错误响应，中间件退出时可通
 
 ## 领域 HTTP 操作
 
-`http.*` 在同一领域文件中导出多个具名描述对象，每个导出显式声明大写 `method`，可选 `path` 为目录路径下的后缀。省略 path 时对应领域根路径。例如 orders/http.ts 中 listOrders 的 GET 对应 /orders，createOrder 的 POST 也对应 /orders，getOrder 的 GET 和 path: '/:id' 对应 /orders/:id。
+`http.*` 在同一领域文件中导出多个具名描述对象，每个导出显式声明大写 `method`，可选 `path` 为目录路径下的后缀。省略 path 时对应领域根路径。例如 orders/http.ts 中 listOrders 的 GET 对应 /orders，createOrder 的 POST 也对应 /orders，getOrder 的 GET 和 path: '/:id' 对应 /orders/:id。导出名使用 `listOrders`、`createOrder` 等业务名称，不接受 `GET`、`POST` 等大写 HTTP 动词作为导出名。
 
 `satisfies HttpOperation`（从 `@evjs/ev/api` 导入）提供编写提示；带动态后缀时使用 `HttpOperation<"/:id">`。
 

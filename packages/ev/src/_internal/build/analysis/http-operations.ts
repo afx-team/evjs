@@ -43,6 +43,12 @@ export function analyzeHttpOperations(
       if (declaration.id.type !== "Identifier" || !declaration.init) continue;
       const name = declaration.id.value;
       definitions.add(name);
+      if (HTTP_METHODS.some((method) => method === name)) {
+        fail(
+          `http.* export "${name}" must use a business operation name such as "listOrders"; declare the HTTP verb in the method field.`,
+        );
+        continue;
+      }
       const object = unwrapExpression(declaration.init);
       if (object.type !== "ObjectExpression") {
         fail(

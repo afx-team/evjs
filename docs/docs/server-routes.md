@@ -48,9 +48,10 @@ supported as long as the final value is callable. Generator handlers are not
 supported because they return iterators rather than one response.
 
 Every other filename is ordinary route source, so `schema.ts`, `db.ts`,
-`types.ts`, `index.ts`, and `route.ts` can be colocated safely. An `api.*` or `http.*`
-file may export only uppercase HTTP methods; move helpers to another file.
-evjs rejects missing methods, default or lowercase exports, unsupported runtime
+`types.ts`, `index.ts`, and `route.ts` can be colocated safely. An `api.*`
+file exports uppercase HTTP handlers; `http.*` exports business operation descriptors
+with an explicit `method` field. Move helpers to another file. evjs rejects missing
+methods, default exports, lowercase HTTP method exports in `api.*`, unsupported runtime
 exports, duplicate paths, ambiguous dynamic routes, and multiple `api.*` or `http.*`
 anchors in one directory.
 
@@ -311,7 +312,7 @@ short-circuit derived `HEAD`, whose final response is always bodyless.
 
 ## Domain HTTP operations
 
-`http.*` groups named operation descriptors in one domain module. Each export declares an uppercase `method` and an optional `path` suffix; the directory supplies the URL prefix. A missing suffix maps to the domain root. Handler functions, middleware, streaming, HEAD and OPTIONS use the same HTTP runtime as `api.*`.
+`http.*` groups named operation descriptors in one domain module. Export names express business operations, such as `listOrders` or `createOrder`; uppercase HTTP verbs such as `GET` and `POST` are rejected as export names. Each export declares an uppercase `method` and an optional `path` suffix; the directory supplies the URL prefix. A missing suffix maps to the domain root. Handler functions, middleware, streaming, HEAD and OPTIONS use the same HTTP runtime as `api.*`.
 
 ```ts
 // src/apis/orders/http.ts
