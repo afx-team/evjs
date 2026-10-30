@@ -10,7 +10,7 @@ For the complete server file route and middleware filename rules, see
 ## File routes
 
 File-based API routes are enabled by default. evjs scans
-`./src/apis/**/api.*`; each file's containing directory maps to its request URL.
+`./src/apis/**/api.*` and `./src/apis/**/http.*`; each file's containing directory maps to its request URL.
 The root is fixed and there is no prefix configuration; put the file under a
 directory such as `src/apis/api/users` when its URL should start with
 `/api/users`.
@@ -48,11 +48,11 @@ supported as long as the final value is callable. Generator handlers are not
 supported because they return iterators rather than one response.
 
 Every other filename is ordinary route source, so `schema.ts`, `db.ts`,
-`types.ts`, `index.ts`, and `route.ts` can be colocated safely. An `api.*`
+`types.ts`, `index.ts`, and `route.ts` can be colocated safely. An `api.*` or `http.*`
 file may export only uppercase HTTP methods; move helpers to another file.
 evjs rejects missing methods, default or lowercase exports, unsupported runtime
-exports, duplicate paths, ambiguous dynamic routes, and multiple `api.*`
-variants in one directory.
+exports, duplicate paths, ambiguous dynamic routes, and multiple `api.*` or `http.*`
+anchors in one directory.
 
 evjs orders discovered routes by path segment. Parent paths come before their
 descendants, and static segments come before dynamic segments. This keeps
@@ -308,3 +308,30 @@ Put policies that must cover automatic `OPTIONS` and 405 responses in global
 middleware. Global authentication also runs for `OPTIONS`; place CORS before
 it when CORS should answer preflight requests. Method middleware can
 short-circuit derived `HEAD`, whose final response is always bodyless.
+
+## Domain HTTP operations
+
+`http.*` groups named operation descriptors in one domain module. Each export declares an uppercase `method` and an optional `path` suffix; the directory supplies the URL prefix. A missing suffix maps to the domain root. Handler functions, middleware, streaming, HEAD and OPTIONS use the same HTTP runtime as `api.*`.
+
+```ts
+// src/apis/orders/http.ts
+import type { HttpOperation } from "@evjs/ev/api";
+
+export const listOrders = {
+  method: "GET",
+  handler: () => Response.json([]),
+} satisfies HttpOperation;
+export const createOrder = {
+  method: "POST",
+  async handler(request: Request) {
+    return Response.json(await request.json());
+  },
+} satisfies HttpOperation;
+export const getOrder = {
+  method: "GET",
+  path: "/:id",
+  handler: (_request, ctx) => Response.json({ id: ctx.req.param("id") }),
+} satisfies HttpOperation<"/:id">;
+```
+
+These exports publish GET /orders, POST /orders, and GET /orders/:id. Method and path metadata must be static string literals; duplicate methods at the same URL are rejected. Keep one api.* or http.* anchor per directory. Framework plugins own deployment metadata; source-file grouping does not prescribe a deployment resource boundary.

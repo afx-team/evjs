@@ -43,10 +43,10 @@ framework requirements. Use the organization that matches your product.
 
 ## Where code belongs
 
-A `page.*` or `api.*` file makes a directory public:
+A `page.*`, `api.*`, or `http.*` file makes a directory public:
 
 - `page.*` publishes a page and client route;
-- `api.*` publishes a server request route.
+- `api.*` or `http.*` publishes a server request route.
 
 Everything else is ordinary source unless another documented convention names
 it. This means a page can safely own components, hooks, models, tests, styles,
@@ -89,7 +89,7 @@ Paths are relative to the project root unless stated otherwise.
 | `<page>/index.html` | HTML template for one MPA page | Does not create a page or client entry. |
 | `index.html` or `routing.html` | Shared application HTML template | `index.html` is the default. |
 | Imported module starting with `"use server";` | Server-function module | Named callable exports only; no required directory. |
-| `src/apis/**/api.{ts,tsx,js,jsx}` | Public HTTP route | Exactly one variant per directory. Export uppercase handlers; use `withMiddlewares(handler, middlewares)` for method-only policies. |
+| `src/apis/**/{api,http}.{ts,tsx,js,jsx}` | Public HTTP route | Exactly one anchor per directory. `api.*` exports uppercase handlers; `http.*` exports named `{ method, path?, handler }` operations. Compose policies with `withMiddlewares(handler, middlewares)`. |
 | Other files inside an API route directory | Route-owned source | Helpers and `index.*` do not create endpoints. |
 | `src/middlewares/middleware.*` | Global middleware composition | Default-export one middleware or an explicitly ordered non-empty list. Computed global chains may resolve to `[]` when disabled. |
 | Other files in `src/middlewares` | Middleware implementation modules | Imported explicitly; filenames do not define order. |
@@ -246,7 +246,7 @@ that model.
 
 ## HTTP method descriptors
 
-An uppercase HTTP method export can be a handler function or an object with a `handler` function. The containing directory still determines the route path. Descriptor metadata is owned by framework plugins; the HTTP runtime extracts the original handler and preserves middleware composition, streaming responses, HEAD and OPTIONS behavior.
+In `api.*`, an uppercase HTTP method export can be a handler function or an object with a `handler` function. The containing directory still determines the route path. Descriptor metadata is owned by framework plugins; the HTTP runtime extracts the original handler and preserves middleware composition, streaming responses, HEAD and OPTIONS behavior.
 
 ```ts
 export const GET = {
@@ -255,3 +255,5 @@ export const GET = {
   },
 };
 ```
+
+`src/apis/**/http.*` groups named `{ method, path?, handler }` operation descriptors. Its directory supplies a URL prefix, and each operation supplies a path suffix (default `/`). Multiple operations may share one file and one URL when their HTTP methods differ. Middleware and runtime execution use the same chain as `api.*`. Keep exactly one `api.*` or `http.*` anchor per route directory. Both feed the same development server, route types, HTTP client metadata, and production build graph. Framework plugins may use the filename to distinguish deployment policies.

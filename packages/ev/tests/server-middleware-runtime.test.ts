@@ -64,6 +64,54 @@ async function loadServer(
 }
 
 describe("generated server middleware", () => {
+  it("runs multiple named HTTP operations through the generated server and middleware", async () => {
+    const server = await loadServer({
+      "src/middlewares/middleware.ts": `export default async (ctx, next) => { await next(); ctx.header('x-global', 'yes'); };`,
+      "src/apis/orders/http.ts": `
+        import { withMiddlewares } from '@evjs/ev/api';
+        export const list = { method: 'GET', handler: () => Response.json({ operation: 'list' }) };
+        export const create = { method: 'POST', async handler(req) { return Response.json({ operation: 'create', body: await req.json() }); } };
+        export const read = { method: 'GET', path: '/:id', handler: withMiddlewares((_req, ctx) => Response.json({ id: ctx.req.param('id') }), async (ctx, next) => { await next(); ctx.header('x-method', 'read'); }) };
+        export const stream = { method: 'GET', path: '/stream', handler: () => new Response('data: ready\\n\\n', { headers: { 'content-type': 'text/event-stream' } }) };
+      `,
+    });
+    const read = await server.fetch(new Request("http://app.test/orders/42"));
+    expect(await read.json()).toEqual({ id: "42" });
+    expect(read.headers.get("x-global")).toBe("yes");
+    expect(read.headers.get("x-method")).toBe("read");
+    const create = await server.fetch(
+      new Request("http://app.test/orders", {
+        method: "POST",
+        body: '{"id":"42"}',
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(await create.json()).toEqual({
+      operation: "create",
+      body: { id: "42" },
+    });
+    expect(
+      await (await server.fetch(new Request("http://app.test/orders"))).json(),
+    ).toEqual({ operation: "list" });
+    const head = await server.fetch(
+      new Request("http://app.test/orders/42", { method: "HEAD" }),
+    );
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    const options = await server.fetch(
+      new Request("http://app.test/orders", { method: "OPTIONS" }),
+    );
+    expect(options.headers.get("allow")).toContain("POST");
+    expect(
+      (
+        await server.fetch(new Request("http://app.test/orders/stream"))
+      ).headers.get("content-type"),
+    ).toContain("text/event-stream");
+    expect(
+      await (await server.fetch(new Request("http://app.test/items"))).text(),
+    ).toBe("ok");
+  });
+
   it("runs plugin, global, and explicit method chains without loading API middleware files", async () => {
     const server = await loadServer(
       {
@@ -94,7 +142,7 @@ describe("generated server middleware", () => {
         import { trace } from '../../trace';
         import { policies } from './policies';
         export const GET = () => new Response('public');
-        export const POST = { handler: withMiddlewares(() => new Response('created', { status: 201 }), [...policies, trace('method')]) };
+        export const POST = { method: 'POST', handler: withMiddlewares(() => new Response('created', { status: 201 }), [...policies, trace('method')]) };
       `,
         "src/apis/items/child/api.ts":
           "export const GET = () => new Response('child');",
@@ -150,8 +198,8 @@ describe("generated server middleware", () => {
       "src/apis/items/api.ts": `
         import { withMiddlewares } from '@evjs/ev/api';
         const shared = { handler: () => new Response('spread') };
-        export const GET = { ...shared };
-        export const POST = { ['handler']: withMiddlewares(() => new Response('computed'), async (ctx, next) => {
+        export const GET = { method: 'GET', ...shared };
+        export const POST = { method: 'POST', ['handler']: withMiddlewares(() => new Response('computed'), async (ctx, next) => {
           await next(); ctx.header('x-policy', 'checked');
         }) };
       `,

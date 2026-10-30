@@ -8,7 +8,7 @@ evjs 项目中，API 路由通过文件约定声明。
 
 ## 文件路由
 
-文件式 API 路由默认启用。evjs 扫描 `./src/apis/**/api.*`，每个文件的所在目录映射为
+文件式 API 路由默认启用。evjs 扫描 `./src/apis/**/api.*` 和 `./src/apis/**/http.*`，每个文件的所在目录映射为
 请求 URL。根目录固定，不提供额外前缀配置；如果 URL 需要以 `/api/users` 开头，请把
 文件放在 `src/apis/api/users` 这类目录下。
 
@@ -43,9 +43,9 @@ export const POST = async (req) => {
 因为它返回迭代器，而不是一份响应。
 
 其他文件名都属于普通路由源码，因此 `schema.ts`、`db.ts`、`types.ts`、`index.ts` 与
-`route.ts` 可以就近放置。`api.*` 文件只能导出大写 HTTP 方法，辅助函数
+`route.ts` 可以就近放置。`api.*` 或 `http.*` 文件只能导出大写 HTTP 方法，辅助函数
 应移到其他文件。evjs 会拒绝缺少方法、默认或小写导出、不受支持的运行时导出、重复路径、
-模糊动态路由，以及同一目录中的多个 `api.*` 变体。
+模糊动态路由，以及同一目录中的多个 `api.*` 或 `http.*` 锚点。
 
 框架会逐段比较已发现路由的匹配优先级：父路径排在后代之前，遇到不同路径段时先注册
 静态路径，再注册动态路径。这样可以保持顺序稳定，动态路由也不会遮蔽更具体的静态分支。
@@ -269,3 +269,15 @@ Hono 的错误处理行为：异常转成错误响应，中间件退出时可通
 需要覆盖自动 `OPTIONS` 和 405 响应的策略应放在全局中间件中。全局鉴权也会执行于
 `OPTIONS`；如果希望 CORS 直接响应预检，将它放在全局鉴权之前。方法中间件可以提前
 结束由 `GET` 派生的 `HEAD`，最终响应始终没有响应体。
+
+## HTTP 路由锚点别名
+
+可以使用 `http.ts`、`http.tsx`、`http.js` 或 `http.jsx`，它们与 `api.*` 复用同一编译器和运行时，目录提供 URL 前缀，http.* 的具名操作使用 method/path 声明各自的路由。每个路由目录只能保留其中一个锚点，同时声明两者会报重复路由错误。其他同目录源码仍为普通私有模块。
+
+## 领域 HTTP 操作
+
+`http.*` 在同一领域文件中导出多个具名描述对象，每个导出显式声明大写 `method`，可选 `path` 为目录路径下的后缀。省略 path 时对应领域根路径。例如 orders/http.ts 中 listOrders 的 GET 对应 /orders，createOrder 的 POST 也对应 /orders，getOrder 的 GET 和 path: '/:id' 对应 /orders/:id。
+
+`satisfies HttpOperation`（从 `@evjs/ev/api` 导入）提供编写提示；带动态后缀时使用 `HttpOperation<"/:id">`。
+
+method/path 必须是静态字符串，不通过业务函数体推断。相同 URL 下可声明不同动词，重复动词会报错。handler、中间件、SSE、HEAD 和 OPTIONS 复用既有 HTTP 执行链。每个目录保留一个 api.* 或 http.* 锚点，部署策略和资源拆分由框架插件管理。

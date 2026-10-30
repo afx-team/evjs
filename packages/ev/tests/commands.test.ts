@@ -7991,7 +7991,7 @@ describe("build", () => {
     await expect(build({}, { cwd, bundler })).rejects.toThrow(
       [
         "[evjs] Server route discovery failed.",
-        "src/apis/users/api.ts - api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+        "src/apis/users/api.ts - api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
         'src/apis/users/api.ts - Server route module exports lowercase method "get". Use uppercase "GET".',
       ].join("\n"),
     );
