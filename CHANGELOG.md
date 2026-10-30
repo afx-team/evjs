@@ -6,6 +6,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Client development HTML updates** — Regenerate Utoopack development HTML and
+  manifests when client rebuilds change the entry assets, so adding a component
+  dependency no longer leaves refreshes loading an older chunk. Preserve the
+  last published HTML while build stats are incomplete.
+
 ---
 
 ## [0.2.17] — 2026-10-19

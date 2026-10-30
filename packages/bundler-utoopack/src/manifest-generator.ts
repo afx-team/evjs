@@ -16,6 +16,8 @@ const logger = getLogger(["evjs", "bundler-utoopack", "manifest"]);
 
 const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
 
+export class IncompleteClientStatsError extends Error {}
+
 interface UtoopackStatsModule {
   name?: string;
   id?: string | number;
@@ -146,9 +148,14 @@ export class UtoopackManifestGenerator {
     this.plan = plan;
   }
 
-  async loadClientStats() {
+  async loadClientStats(strict = false) {
     const statsPath = path.join(this.outputPaths.clientDir, "stats.json");
     if (!fs.existsSync(statsPath)) {
+      if (strict) {
+        throw new IncompleteClientStatsError(
+          "Client stats.json is not available yet.",
+        );
+      }
       this.clientEntryAssets = {};
       this.firstClientEntryAssets = EMPTY_ASSETS;
       return;
@@ -158,9 +165,35 @@ export class UtoopackManifestGenerator {
       const statsStr = await fs.promises.readFile(statsPath, "utf-8");
       const stats = JSON.parse(statsStr);
       const { byName, first } = readEntrypointAssets(stats);
+      if (
+        strict &&
+        this.plan.entries
+          .filter((entry) => entry.environment === "client")
+          .some((entry) => {
+            const assets = byName[entry.name];
+            return !assets || assets.js.length + assets.css.length === 0;
+          })
+      ) {
+        throw new IncompleteClientStatsError(
+          "Client stats.json is missing entry assets.",
+        );
+      }
       this.clientEntryAssets = byName;
       this.firstClientEntryAssets = first;
     } catch (err) {
+      if (strict) {
+        if (
+          err instanceof SyntaxError ||
+          err instanceof TypeError ||
+          (err as NodeJS.ErrnoException).code === "ENOENT"
+        ) {
+          throw new IncompleteClientStatsError(
+            "Client stats.json is not readable yet.",
+            { cause: err },
+          );
+        }
+        throw err;
+      }
       logger.warn`Failed to parse client stats.json: ${err}`;
       this.clientEntryAssets = {};
       this.firstClientEntryAssets = EMPTY_ASSETS;
@@ -212,8 +245,10 @@ export class UtoopackManifestGenerator {
     }
   }
 
-  async collectBuildFacts(): Promise<BundlerBuildFacts> {
-    await this.loadClientStats();
+  async collectBuildFacts(
+    options: { strictClientStats?: boolean } = {},
+  ): Promise<BundlerBuildFacts> {
+    await this.loadClientStats(options.strictClientStats);
     await this.loadServerStats();
 
     return {
