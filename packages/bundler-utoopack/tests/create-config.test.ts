@@ -14,7 +14,7 @@ import type {
 } from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
-import { createUtoopackConfig } from "../src/adapter/create-config.js";
+import { createUtoopackConfig } from "../src/adapter/config/create-config.js";
 
 const require = createRequire(import.meta.url);
 
@@ -47,10 +47,13 @@ describe("createUtoopackConfig", () => {
         proxy: [],
         cliShortcuts: true,
       },
+      logging: {
+        browserToTerminal: "error",
+      },
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },
@@ -114,6 +117,56 @@ describe("createUtoopackConfig", () => {
     expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/unclaimed")).toBe(true);
   });
 
+  it.each([
+    "development",
+    "production",
+  ] as const)("isolates the %s cache and allows plugin overrides", async (mode) => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, { mode });
+    const defaults = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    expect(defaults.cacheDirectory).toBe(`.turbopack/evjs/${mode}`);
+    const custom = await createUtoopackConfig(config, plan, process.cwd(), [
+      {
+        configureBundler(config) {
+          config.cacheDirectory = ".cache/custom";
+        },
+      },
+    ]);
+    expect(custom.cacheDirectory).toBe(".cache/custom");
+  });
+
+  it("creates a private compiler anchor for independent server-only entries", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    plan.entries = [
+      {
+        name: "plugin-protocol-entry",
+        import: "./src/service.ts",
+        environment: "server",
+        runtime: "node",
+        phase: "runtime",
+        kind: "runtime",
+      },
+    ];
+    const output = await createUtoopackConfig(config, plan, process.cwd(), []);
+    expect(output.server?.entry).toEqual([
+      { name: "plugin-protocol-entry", import: "./src/service.ts" },
+    ]);
+    expect(output.entry).toEqual([
+      {
+        name: "__evjs_server_build__",
+        import: expect.stringContaining("server-build-anchor."),
+      },
+    ]);
+    expect(plan.entries).toHaveLength(1);
+    expect(plan.server.entry).toBeUndefined();
+  });
+
   it("rejects custom client certificates in development", async () => {
     const config = createResolvedConfig({
       dev: {
@@ -164,6 +217,7 @@ describe("createUtoopackConfig", () => {
       removeUnusedExports: true,
       removeUnusedImports: true,
     });
+    expect(utoopackConfig.optimization?.sharedRuntime).toBeUndefined();
     expect(utoopackConfig.target).toBeUndefined();
   });
 
@@ -239,8 +293,9 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.optimization).toBeUndefined();
   });
 
-  it("lets configureBundler hooks override production module concatenation", async () => {
+  it("lets configureBundler hooks override production optimizations", async () => {
     const config = createResolvedConfig();
+    if (config.routing) config.routing.mode = "mpa";
     const plan = await createPlan(config, { mode: "production" });
 
     const utoopackConfig = await createUtoopackConfig(
@@ -250,14 +305,17 @@ describe("createUtoopackConfig", () => {
       [
         {
           configureBundler(config) {
+            expect(config.optimization?.sharedRuntime).toBe(true);
             config.optimization ??= {};
             config.optimization.concatenateModules = false;
+            config.optimization.sharedRuntime = false;
           },
         },
       ],
     );
 
     expect(utoopackConfig.optimization?.concatenateModules).toBe(false);
+    expect(utoopackConfig.optimization?.sharedRuntime).toBe(false);
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
@@ -426,9 +484,9 @@ describe("createUtoopackConfig", () => {
         crossOriginLoading: "anonymous",
       },
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },
@@ -512,6 +570,7 @@ describe("createUtoopackConfig", () => {
 
       expect(utoopackConfig.mode).toBe("production");
       expect(utoopackConfig.output?.filename).toBe("[name].[contenthash:8].js");
+      expect(utoopackConfig.output?.chunkFilename).toBe("[contenthash:8].js");
       expect(utoopackConfig.sourceMaps).toBe(false);
       expect(utoopackConfig.define?.["process.env.NODE_ENV"]).toBe(
         '"production"',
@@ -536,12 +595,8 @@ describe("createUtoopackConfig", () => {
       [],
     );
 
-    expect(utoopackConfig.output?.cssFilename).toBe(
-      "[name].[contenthash:8].css",
-    );
-    expect(utoopackConfig.output?.cssChunkFilename).toBe(
-      "[name].[contenthash:8].css",
-    );
+    expect(utoopackConfig.output?.cssFilename).toBe("[contenthash:8].css");
+    expect(utoopackConfig.output?.cssChunkFilename).toBe("[contenthash:8].css");
   });
 
   it("uses stable client CSS output filenames in development", async () => {
@@ -557,6 +612,8 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.output?.cssFilename).toBe("[name].css");
     expect(utoopackConfig.output?.cssChunkFilename).toBe("[name].css");
+    expect(utoopackConfig.output?.filename).toBe("[name].js");
+    expect(utoopackConfig.output?.chunkFilename).toBe("[name].js");
   });
 
   it("uses framework-owned Less tooling paths", async () => {
@@ -599,9 +656,9 @@ describe("createUtoopackConfig", () => {
   it("keeps SPA history fallback away from BuildPlan runtime paths", async () => {
     const config = createResolvedConfig({
       server: {
-        basePath: "/rpc",
+        basepath: "/rpc",
         runtime: {
-          basePath: "/rpc",
+          basepath: "/rpc",
           fn: "rpc/fn",
           ppr: "/rpc/ppr",
           rsc: "/rpc/rsc",
@@ -922,7 +979,7 @@ describe("createUtoopackConfig", () => {
         ],
       },
     });
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { mode: "production" });
 
     expect(plan.entries[0]?.import).toBe("./.ev/entries/page-client-home.ts");
     expect(plan.entries[0]?.metadata).toMatchObject({
@@ -942,6 +999,7 @@ describe("createUtoopackConfig", () => {
         name: "page-client-home",
       },
     ]);
+    expect(utoopackConfig.optimization?.sharedRuntime).toBe(true);
   });
 
   it("uses generated component page entries instead of SPA router entries for MPA page routes", async () => {
@@ -1554,9 +1612,9 @@ describe("createUtoopackConfig", () => {
   it("maps server-runtime and page-server entries to named Utoopack server entries", async () => {
     const config = createResolvedConfig({
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },
@@ -1616,9 +1674,9 @@ describe("createUtoopackConfig", () => {
   it("continues to reject unsupported RSC and PPR server entries", async () => {
     const config = createResolvedConfig({
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         runtime: {
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           fn: "__evjs/fn",
           ppr: "__evjs/ppr",
         },

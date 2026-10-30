@@ -39,7 +39,7 @@ export interface ReactRscRuntimeBootstrap {
   buildId: string;
   pageId: string;
   endpoint: string;
-  basePath?: string;
+  basepath?: string;
   publicPath?: string;
   mount: string;
   page?: {
@@ -440,8 +440,8 @@ function assertRscBootstrap(
   assertBootstrapEndpoint(value.endpoint, `${source} endpoint`);
   assertBootstrapString(value.mount, `${source} mount`);
 
-  if (value.basePath !== undefined) {
-    assertBootstrapPathname(value.basePath, `${source} basePath`);
+  if (value.basepath !== undefined) {
+    assertBootstrapPathname(value.basepath, `${source} basepath`);
   }
   if (value.publicPath !== undefined) {
     assertBootstrapPublicPath(value.publicPath, `${source} publicPath`);

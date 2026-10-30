@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
+import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/conventions/page-route-conventions.js";
 import {
   collectGeneratedPageRouteTypeFiles,
   generatePageRouteTypes,
@@ -15,7 +15,7 @@ import {
   PAGE_ROUTE_TYPES_REGISTER_MODULE,
   PAGE_ROUTE_TYPES_USAGE_HINT,
   writePageRouteTypesIfChanged,
-} from "../src/_internal/build/page-route-types.js";
+} from "../src/_internal/build/typegen/page-route-types.js";
 
 const tempDirs: string[] = [];
 

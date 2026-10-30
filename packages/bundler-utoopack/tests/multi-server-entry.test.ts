@@ -4,9 +4,9 @@ import path from "node:path";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { build as utoopackBuild } from "@utoo/pack";
 import { afterEach, describe, expect, it } from "vitest";
-import { createUtoopackConfig } from "../src/adapter/create-config.js";
-import { runUtoopackBuild } from "../src/adapter/runtime.js";
-import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
+import { createUtoopackConfig } from "../src/adapter/config/create-config.js";
+import { runUtoopackBuild } from "../src/adapter/execution/utoopack.js";
+import { UtoopackManifestGenerator } from "../src/adapter/output/manifest-generator.js";
 
 const require = createRequire(import.meta.url);
 const tempDirs: string[] = [];
@@ -141,10 +141,13 @@ function createResolvedConfig(): Parameters<typeof createUtoopackConfig>[0] {
       proxy: [],
       cliShortcuts: true,
     },
+    logging: {
+      browserToTerminal: "error",
+    },
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       runtime: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         ppr: "__evjs/ppr",
       },
@@ -224,7 +227,7 @@ function createPlan(): BuildPlan {
     runtime: {
       publicPath: "auto",
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

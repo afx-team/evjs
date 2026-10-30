@@ -27,6 +27,9 @@ The semantic inputs are:
 - `routing: { mode: "spa" | "mpa" }` enables canonical Page discovery from
   `src/pages/**/page.*`. The containing directory owns the Page scope and
   determines its URL.
+- SPA-only `routing.basepath` is a delivery prefix rather than Page identity.
+  CoreGraph paths stay application-relative; BuildPlan entries, development
+  routing, linked output routes, and deployment fallbacks project the prefix.
 - `config.plugins` installs typed plugin factories and supplies each plugin's
   independent Application configuration.
 - adjacent `page.config.ts` modules provide static title, named metadata,
@@ -35,11 +38,13 @@ The semantic inputs are:
   derive Route or Document behavior from the normalized Page graph.
 - `application.routes` is an explicit SPA-only route tree. It normalizes into
   the same graph and cannot be combined with canonical `routing` discovery.
-- `src/apis/**/api.*` defines framework-managed request Routes.
+- `src/apis/**/api.*` and `src/apis/**/http.*` define framework-managed request Routes.
 - `src/middlewares/middleware.*` is the explicitly ordered global framework
   middleware composition anchor; other files in `src/middlewares` are ordinary
   modules.
-- `src/apis/**/middleware.ts` is scoped request-route middleware.
+- API method exports use `withMiddlewares(handler, middlewares)` from
+  `@evjs/ev/api` to compose one middleware or an ordered non-empty array.
+  Shared policies are ordinary modules imported by each method that uses them.
 - reachable modules beginning with `"use server";` define server functions.
 
 `routing.mode` changes materialization, not Page identity. SPA normally owns
@@ -66,17 +71,46 @@ graphs, chunks, assets, stats, and HMR; they do not rediscover framework
 semantics. Deployment adapters consume `BuildOutput` or its canonical
 `DeploymentMetadata` projection; they do not infer routing from bundler stats.
 
+## Repository Source Layout
+
+Public package roots, documented subpaths, and executable entry files are
+stable façades. They curate exports or delegate startup; implementation lives
+in capability-owned leaf modules. Code inside one domain imports its leaf
+modules directly instead of routing through that domain's façade, which keeps
+ownership visible and avoids barrel-induced cycles.
+
+| Package | Implementation domains |
+| --- | --- |
+| `@evjs/ev` | Public authoring domains under `config`, `plugin`, `api`, `middleware`, `route`, `navigation`, `query`, `server-context`, `transport`, and `deployment`; generated compatibility entries under `_internal/generated`; framework build ownership under `_internal/build`. |
+| `@evjs/shared` | `assets`, `build`, `http`, `routing`, `rsc`, `runtime`, `serialization`, `server-functions`, and `urls`; control-plane contracts are further divided into `manifest/graph`, `manifest/page`, and `manifest/output`. |
+| `@evjs/client` | `standalone`, framework `page` and `shell`, `rsc`, `server-functions`, and client-only shared support. |
+| `@evjs/server` | Application assembly, framework rendering, middleware, request context, routes, runtimes, server functions, and server-only shared support. |
+| Bundler adapters | Adapter orchestration plus focused `config`, `development`, `execution`, and `output` modules; plugin-facing configuration helpers live outside adapter internals. |
+| `@evjs/cli` | Programmatic framework commands, config loading, user commands, and executable program assembly. |
+| `@evjs/create-app` | Scaffolding implementation behind the stable package and binary entries. |
+| `@evjs/plugin-qiankun` | Plugin-definition and browser-runtime domains behind the package's two public exports. |
+
+Package test suites stay under each package's `tests` root and name the
+capability they verify. End-to-end cases stay under `e2e/cases`. Example source
+is organized by the Page/API conventions themselves; moving those anchors into
+generic implementation folders would change framework behavior rather than
+improve repository ownership.
+
 ## Public Imports
 
-The `@evjs/ev` root is the minimal config-authoring entry. Other responsibilities
-use explicit subpaths:
+The `@evjs/ev` root exposes config authoring in Node and a browser-safe HTTP
+client facade through its browser export condition. Other responsibilities use
+explicit subpaths. The generated application module binds transport at runtime;
+it does not import HTTP handlers or generate business types.
 
 | Import | Intended consumer |
 | --- | --- |
-| `@evjs/ev` | `defineConfig`, `definePageConfig`, and their basic types. |
+| `@evjs/ev` | `defineConfig`, `definePageConfig` in Node; `api`, `ApiError`, and HTTP client types in browser builds. |
 | `@evjs/ev/config` | Advanced config utilities and resolved config types. |
 | `@evjs/ev/plugin` | Plugin declarations, typed setting contracts, hooks, and the read-only framework view. |
 | `@evjs/ev/deployment` | Built-in deployment adapters and artifact helpers. |
+| `@evjs/ev/api` | HTTP method composition with `withMiddlewares` and the `RouteHandlerFn` type. |
+| `@evjs/ev/middleware` | Middleware types and request logging middleware for global and method policies. |
 | `@evjs/ev/route`, `/navigation`, `/query` | File-convention Page data, navigation, and query APIs. |
 | `@evjs/ev/server-context`, `/transport` | Framework request context and browser-to-server transport APIs. |
 | `@evjs/ev/build-tools` | Config loading for downstream tooling. |
@@ -86,6 +120,35 @@ Standalone applications may use `@evjs/client` and `@evjs/server` directly.
 Programmatic `createApp()`, client route trees, and server `createRoute()`
 declarations are runtime primitives; framework convention discovery does not
 scan them.
+
+Core discovers the global middleware anchor, and generated entries validate
+its export before flattening the chain. The server runtime owns method
+composition and dispatch. Global and selected method middleware use one Hono
+context. Automatic OPTIONS and unsupported methods run global middleware;
+unsupported methods return 405. Programmatic `createRoute()` supports explicit
+route middleware arrays, including for OPTIONS, and callable automatic
+HEAD/OPTIONS handlers. The supplied middleware array remains mutable.
+Explicit HEAD takes precedence over GET; automatic HEAD uses GET's pipeline.
+
+## Internal Build Layout
+
+`packages/ev/src/_internal/build` is grouped by capability instead of build
+phase. Its root contains only the curated `index.ts`, the command façade, and
+the small shared `types.ts` / `utils.ts` modules.
+
+| Domain | Responsibility |
+| --- | --- |
+| `analysis`, `discovery`, `conventions` | Parse framework semantics, discover positive anchors, and own filesystem naming rules. |
+| `graph`, `plan` | Project discovered semantics into `CoreGraph` and `BuildPlan`; each `index.ts` is a thin façade over implementation and contract modules. |
+| `generated-ir`, `typegen` | Materialize `.ev` inputs and authored-source declaration files. |
+| `bundler`, `plugins` | Define adapter contracts and orchestrate plugin settings and lifecycle state. |
+| `output` | Validate, link, transform, and transactionally publish framework-owned output, including HTML. |
+| `config-loading`, `operations`, `dev` | Load observed configuration, coordinate commands, and own development runtime/watch state. |
+| `transforms` | Rewrite client and server modules at bundler boundaries. |
+
+Domain implementations import focused leaf modules. They do not import a
+domain's broad `index.ts` façade internally; façades exist for stable consumers
+and should not become implementation owners.
 
 ## Build Flow
 
@@ -99,11 +162,12 @@ sequenceDiagram
 
   CLI->>EV: load config and select bundler
   EV->>Plugin: configure() and resolve typed Application settings
-  EV->>Plugin: setup()
   EV->>EV: create CoreGraph and resolve Page settings
   EV->>Plugin: emitIR(FrameworkView)
   EV->>EV: derive BuildPlan
-  EV->>EV: materialize .ev IR
+  EV->>EV: render complete .ev IR image in memory
+  EV->>EV: publish selected .ev IR and generated types
+  EV->>Plugin: setup()
   EV->>Plugin: configureBundler()
   EV->>Bundler: build(BuildPlan)
   Bundler-->>EV: fresh BundlerBuildFacts
@@ -113,7 +177,16 @@ sequenceDiagram
   EV->>Plugin: transformHtml()
   EV->>EV: publish canonical output
   EV->>Plugin: afterBuild()
+  EV->>Plugin: dispose()
 ```
+
+Publishing paths—build, prepare, and accepted development revisions—complete
+graph and generated-IR planning, then publish the selected revision before
+plugin setup. `inspectFrameworkBuild()` is the exception: it completes planning
+in memory, runs setup and dispose, and never publishes `.ev` or generated
+types. A planning failure never reaches setup. Development may discard a failed
+or semantically unchanged candidate without replacing the active Session;
+setup runs only while constructing an accepted replacement.
 
 `transformOutput()` may change asset-group contents and add plugin deployment
 metadata, but graph identity, runtime paths, routes, output paths, and owner
@@ -187,6 +260,38 @@ one fixed config, CoreGraph, BuildPlan, plugin-hook set, generated IR image,
 and bundler controller; adapters are never asked to replace those inputs in
 place.
 
+Core also owns a stable API gateway for each Session. The gateway retains the
+public server port while API child processes use a private loopback port. A
+server rebuild suspends new HTTP requests, gives requests already forwarded up
+to 10 seconds to drain, disconnects any remaining exchanges, and replaces the
+child before admitting queued requests after readiness. Request bodies are
+streamed once; interrupted requests are never replayed. Failed startup releases
+waiting requests with a diagnostic 503; closing the Session cancels pending and
+active work.
+HTTPS is preserved on both sides of the gateway so request URLs retain the
+public scheme and Host. Semantic Session replacement still closes the whole
+Session before starting its successor.
+
+The Utoopack adapter keeps one native-owner Worker for the lifetime of
+`ev dev`. That Worker is the only development realm that loads Utoopack's
+native binding: it registers the process-global loader scheduler and owns all
+native Projects. Sessions own a client HMR Project and, when needed, a server
+Project with separate cache locks and private auxiliary output. Only the server
+Project writes canonical server assets. It subscribes to endpoint changes,
+awaits endpoint writes and complete stats, and waits for the host to finish
+publication and API readiness before writing the next batch. The first
+batch publishes even with compile diagnostics so client pages remain available;
+later failing batches keep the last valid server output. Individual Sessions
+fully release their Projects, HTTP server, subscriptions, and cache locks. The host
+exchanges cloneable Session commands with the owner and retains only callbacks
+that cannot cross the Worker boundary, such as function-valued proxy rewrites.
+Successful Utoopack process-exit requests are converted into Session-close
+acknowledgements inside the owner; unexpected exits, scheduler failures, and
+shutdown timeouts poison the owner and prevent an overlapping replacement.
+Production build and development ownership cannot be mixed in one process;
+development also rejects a host-preloaded Utoopack binding before it creates
+the owner Worker.
+
 Framework watchers cover opaque config/plugin inputs, semantic analysis
 dependencies, and Page/API topology. They compare file content and stable
 directory topology, ignore generated output, and fall back from native events
@@ -207,7 +312,7 @@ Supervisor and still require a manual restart.
 ## Programmatic Preparation
 
 `prepareFrameworkBuild()` is the supported pre-bundler API for tooling. It
-loads and resolves config, runs plugin preflight hooks, analyzes the graph,
-reports diagnostics, and returns resolved config, file dependencies, plugin
-watch files, and `dispose()`. It does not run a bundler or emit deployment
-artifacts.
+loads and resolves config, analyzes the graph and generated contributions,
+publishes the successful framework revision, then runs plugin setup. It reports
+diagnostics and returns resolved config, file dependencies, plugin watch files,
+and `dispose()`. It does not run a bundler or emit deployment artifacts.

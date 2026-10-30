@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
   type WebpackConfigs,
-} from "../src/adapter/create-config.js";
+} from "../src/adapter/config/create-config.js";
 
 describe("createWebpackConfigs", () => {
   it("uses a generated pages app entry for framework-managed pages", async () => {
@@ -1222,15 +1222,18 @@ function createResolvedConfig(
       proxy: [],
       cliShortcuts: true,
     },
+    logging: {
+      browserToTerminal: "error",
+    },
     output: {
       client: "dist/client",
       server: "dist/server",
       crossOriginLoading: "anonymous",
     },
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       runtime: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
         ppr: "__evjs/ppr",
       },

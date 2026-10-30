@@ -5,12 +5,12 @@ import type { BundlerAdapter } from "@evjs/ev/_internal/build";
 import { inspectFrameworkBuild } from "@evjs/ev/_internal/build";
 import type { Plugin } from "@evjs/ev/plugin";
 import { afterEach, describe, expect, it } from "vitest";
+import { runInspectCommand } from "../src/commands/inspect/command.js";
 import {
   formatInspectJson,
   formatInspectText,
   hasInspectErrors,
-} from "../src/inspect.js";
-import { runInspectCommand } from "../src/inspect-command.js";
+} from "../src/commands/inspect/report.js";
 
 const tempDirs: string[] = [];
 
@@ -52,7 +52,7 @@ describe("inspect", () => {
 
     const result = await inspectFrameworkBuild(
       {
-        routing: { mode: "spa" },
+        routing: { mode: "spa", basepath: "/next" },
       },
       { cwd },
     );
@@ -62,6 +62,7 @@ describe("inspect", () => {
     expect(result).not.toHaveProperty("command");
     expect(result.routing).toMatchObject({
       routingMode: "spa",
+      basepath: "/next",
       pageRoot: "./src/pages",
     });
     expect(result.pageRoutes).toEqual([
@@ -107,12 +108,13 @@ describe("inspect", () => {
       }),
     ]);
     expect(result.runtime.server).toMatchObject({
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       ppr: "__evjs/ppr",
     });
     const text = formatInspectText(result);
     expect(text).toContain("Mode: production");
+    expect(text).toContain("basepath: /next");
     expect(text).toContain("config=./src/pages/page.config.ts");
     expect(text).toContain(
       'metadata={"title":"Home","meta":{"description":"Inspect metadata"}}',
@@ -130,8 +132,6 @@ describe("inspect", () => {
       "src/pages/users/detail/page.tsx":
         "export default function UserDetail() { return null; }",
       "src/middlewares/middleware.ts":
-        "export default async function middleware(_ctx, next) { await next(); }",
-      "src/apis/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
       "src/apis/health/api.ts":
         "export const GET = async () => Response.json({ ok: true });",
@@ -495,7 +495,44 @@ describe("inspect", () => {
         }),
       ]),
     );
-    expect(events).toEqual(["setup", "emitIR", "dispose"]);
+    expect(events).toEqual(["emitIR", "setup", "dispose"]);
+    await expectPathMissing(path.join(cwd, ".ev"));
+  });
+
+  it("does not set up plugins when contribution planning fails", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/main.tsx": "console.log('app');",
+    });
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      id: "inspect-contribution-failure",
+      setup() {
+        events.push("setup");
+      },
+      emitIR() {
+        events.push("emitIR");
+        throw new Error("inspect contribution failed");
+      },
+    };
+
+    const result = await inspectFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "contributions",
+          message: "inspect contribution failed",
+        }),
+      ]),
+    );
+    expect(events).toEqual(["emitIR"]);
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 

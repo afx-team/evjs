@@ -22,7 +22,7 @@
     "bin"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "dev": "tsc -w",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
@@ -36,7 +36,7 @@
   "devDependencies": {
     "@evjs/shared": "*",
     "@types/node": "^22.19.15",
-    "typescript": "^6.0.2"
+    "typescript": "^7.0.2"
   },
   "homepage": "https://github.com/afx-team/evjs#readme",
   "bugs": {

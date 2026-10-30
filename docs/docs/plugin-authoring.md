@@ -5,24 +5,21 @@ typed configuration contracts, and the framework stages the plugin extends.
 Applications consume the returned factory through `config.plugins`.
 
 The authoring model has three layers: `pluginOptions()` declares plugin-owned
-Application or Page data, descriptor methods declare framework-planning or dev
-CLI contributions, and `setup()` returns imperative lifecycle hooks. A behavior
-should live in only one layer. These are responsibility layers rather than
-adjacent time blocks: `configure()` runs before `setup()`, `emitIR()` runs
-during graph planning, and `cliShortcuts()` is collected once for each immutable
-development Session when the shortcuts engine is enabled. Descriptor methods
-never belong in the object returned by `setup()`, and lifecycle hooks never
-belong on the descriptor.
+Application or Page data, descriptor methods declare configuration, generated
+code, or dev CLI behavior, and `setup()` returns imperative lifecycle hooks. A
+behavior should live in only one layer. `configure()` runs first; evjs then
+resolves `emitIR()` and `emitPageIR()` contributions; `setup()` runs only after
+those contributions succeed. Descriptor methods never belong in the object
+returned by `setup()`, and lifecycle hooks never belong on the descriptor.
 
 `cliShortcuts()` declares terminal keys and actions independently from setup
-state. Session replacement reruns plugin setup; when the engine is enabled, it
-also collects a fresh shortcut set. An ordinary bundler/HMR cycle does neither.
-Shortcut actions receive only the current client origin and a way to shut down
-the entire dev Supervisor. See
-[Plugin CLI Shortcuts](./dev#plugin-cli-shortcuts) for the descriptor and action
+state. Starting or restarting development reruns plugin setup and collects a
+fresh shortcut set; an ordinary bundler/HMR update does neither. Shortcut
+actions receive the current client origin and a way to stop development. See
+[Plugin CLI Shortcuts](./dev#interactive-shortcuts) for the descriptor and action
 contracts.
 
-## Define a Minimal Plugin
+## Define a minimal plugin
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -57,7 +54,7 @@ plugins; declared dependencies and `enforce` tiers may reorder hooks. Factory
 arguments hold Application configuration; there is no parallel top-level
 configuration bag.
 
-## Declare Application and Page Contracts
+## Declare application and page contracts
 
 One descriptor can declare two independent contracts:
 
@@ -122,7 +119,7 @@ enabled `ctx.pages`, whose entries expose `{ page, options }`. Use
 `emitPageIR()` as the per-enabled-Page alternative; it exposes
 `ctx.options`, `ctx.page`, and `ctx.pageOptions` directly.
 
-## Contracts, Defaults, and Validation
+## Contracts, defaults, and validation
 
 `pluginOptions<T>()` declares a required object. Passing
 `pluginOptions<T>({ defaults, validate?, schemaVersion? })` makes the contract
@@ -172,11 +169,11 @@ Plugins explicitly project any runtime data and must never expose Application
 secrets. Prefer an explicit module reference when Page configuration needs to
 select executable runtime code.
 
-## Identity and Ordering
+## Identity and ordering
 
 Every plugin declares one stable, short `id` in lower camel case or lowercase
 kebab-case, such as `analytics`, `errorReporting`, or `error-reporting`. The
-same canonical id identifies dependencies and lifecycle state, owns generated
+same id identifies dependencies and lifecycle state, owns generated
 IR, and—when the plugin declares a Page contract—keys its entry in
 `page.config.ts#plugins`. It is not a package name and has no separate Page
 alias: the package may be `@company/analytics`, while its plugin id is
@@ -197,7 +194,7 @@ Plugin configuration exists only at Application and Page scope. Derive Route or
 Document effects from enabled Pages during graph analysis and emit them through
 [generated contributions](./generated-contributions).
 
-## Modify Framework Configuration Early
+## Modify framework configuration early
 
 Use `configure()` for framework configuration that must be visible before
 framework defaults, route discovery, dev proxy setup, or runtime path
@@ -222,15 +219,15 @@ import { defineConfig } from "@evjs/ev";
 import { merge } from "@evjs/ev/config";
 import { definePlugin, pluginOptions } from "@evjs/ev/plugin";
 
-const serverBasePath = definePlugin({
+const serverBasepath = definePlugin({
   id: "server-base-path",
   application: pluginOptions({
-    defaults: { basePath: "/_framework" },
+    defaults: { basepath: "/_framework" },
   }),
   configure(config, ctx) {
     merge(config, {
       server: {
-        basePath: ctx.options.basePath,
+        basepath: ctx.options.basepath,
       },
     });
     return config;
@@ -238,19 +235,19 @@ const serverBasePath = definePlugin({
 });
 
 export default defineConfig({
-  plugins: [serverBasePath({ basePath: "/_internal" })],
+  plugins: [serverBasepath({ basepath: "/_internal" })],
 });
 ```
 
 Do not use `configureBundler()` for framework protocol paths. Server functions,
-PPR, and RSC endpoints are derived from `server.basePath`.
+PPR, and RSC endpoints are derived from `server.basepath`.
 
 After `configure()` finishes, every later `ctx.config` is typed as a deeply
 read-only view of the resolved framework config. `configureBundler()` may mutate
 only its explicit bundler-config argument. Plugin authors should keep framework
 configuration changes in this one validated phase.
 
-## Initialize Shared State in `setup()`
+## Initialize shared state in `setup()`
 
 Use `setup()` to allocate shared state and return lifecycle hooks. Return a
 hooks object or `undefined`; `null`, arrays, and non-function hook fields are
@@ -273,7 +270,7 @@ normalized `FrameworkView` from `ctx.framework`. Plugin option helpers expose
 `PluginOptionsDefinition`, and `PluginOptionsContext`; internal factory
 inference types are not part of the public authoring API.
 
-## Installation and Execution Modes
+## Configure plugin and page activation
 
 The factory controls Page omission without changing plugin execution or typed
 Application options:
@@ -288,7 +285,7 @@ Application options:
 
 Required Application options stay required in either available factory form.
 
-## Choose the Right Extension Point
+## Choose the right extension point
 
 | Need | API |
 |---|---|
@@ -296,6 +293,7 @@ Required Application options stay required in either available factory form.
 | Declare interactive dev CLI keys and actions | `cliShortcuts()` |
 | Allocate shared state | `setup()` |
 | Run build lifecycle behavior | Hooks returned by `setup()` |
+| Intercept client development requests before fallback | `clientDevMiddleware()` |
 | Consume the actual client origin after the dev listener starts | `devServerReady()` |
 | Generate modules or attach structured behavior | `emitIR()` or `emitPageIR()` |
 | Compile a custom file type or tune optimization | `configureBundler()` |
@@ -306,3 +304,28 @@ Required Application options stay required in either available factory form.
 Keep `emitIR()` deterministic and free of external side effects. evjs
 may evaluate it again when contributed source aliases change the framework
 graph.
+
+## Independent server entries
+
+A protocol plugin can declare a Node server build root through the
+`server.entry` slot with `mode: "create"`.
+The entry participates in the normal build plan and is bundled even when no
+Page or HTTP Route imports it. It does not create an HTTP endpoint.
+
+```ts
+const module = ctx.emit.module({
+  id: "handler",
+  scope: { kind: "server" },
+  source: "export async function invoke(input) { return input; }",
+});
+const entryName = ctx.slot("server.entry").add({
+  id: "entry",
+  mode: "create",
+  module,
+});
+```
+
+The returned name indexes the self-contained server asset group in
+`BuildOutput.assets[entryName]`. Use that group and plugin deployment metadata
+to deliver the entry. Keep protocol naming, schema and host lifecycle inside
+the protocol plugin; the core entry does not install a protocol listener.

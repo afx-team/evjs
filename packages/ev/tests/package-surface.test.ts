@@ -4,11 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import * as serverRuntime from "@evjs/server";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import * as buildTools from "../src/_internal/build/index.js";
+import * as apiAuthoring from "../src/api/index.js";
 import * as publicBuildTools from "../src/build-tools/index.js";
 import * as evRoot from "../src/index.js";
+import * as middlewareAuthoring from "../src/middleware/index.js";
 import * as pluginAuthoring from "../src/plugin/index.js";
+import * as serverContext from "../src/server-context/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,9 +75,22 @@ const expectedPublishedFiles = {
   "@evjs/shared": ["esm"],
 } as const satisfies Record<PackageName, readonly string[]>;
 
+const expectedCleanBuildOutput = {
+  "@evjs/ev": "esm",
+  "@evjs/client": "esm",
+  "@evjs/server": "esm",
+  "@evjs/cli": "dist",
+  "@evjs/create-app": "dist",
+  "@evjs/plugin-qiankun": "esm",
+  "@evjs/bundler-utoopack": "esm",
+  "@evjs/bundler-webpack": "esm",
+  "@evjs/shared": "esm",
+} as const satisfies Record<PackageName, string>;
+
 const expectedPrimaryPackageExports = {
   "@evjs/ev": {
     types: "./esm/index.d.ts",
+    browser: "./esm/browser.js",
     import: "./esm/index.js",
     default: "./esm/index.js",
   },
@@ -242,7 +259,6 @@ const expectedBuildToolsRuntimeExports = [
   "analyzePageComponentExports",
   "applyHtmlTagContributions",
   "applyPluginSettings",
-  "applyRouteScopedMiddlewares",
   "assertBundlerEmittedFiles",
   "assertPortableRelativeArtifactPath",
   "assertPortableRelativeBrowserArtifactPath",
@@ -273,14 +289,19 @@ const expectedBuildToolsRuntimeExports = [
   "loadConfigFile",
   "materializeFrameworkIR",
   "portableArtifactPathsConflict",
+  "preflightBundlerDev",
   "prepareFrameworkBuild",
   "prepareFrameworkIR",
   "publishFrameworkIR",
   "removeOwnedOutputFile",
+  "reserveClientDevMiddlewareUpstreamPort",
   "resolveBuildOutputPaths",
   "resolveBundlerClientEntryAssets",
   "resolveBundlerServerEntryAssets",
+  "resolveClientDevMiddlewareTlsCredentials",
+  "resolveHttpOperationPath",
   "resolvePluginSettingsState",
+  "startClientDevMiddlewareServer",
   "syncPluginTypes",
   "transformRscClientFile",
   "transformServerFile",
@@ -321,6 +342,8 @@ const expectedPackageExportSubpaths = {
     ".",
     "./_internal/build",
     "./_internal/client",
+    "./_internal/client/api",
+    "./_internal/client/api-transport",
     "./_internal/client/page-context",
     "./_internal/client/polyfill",
     "./_internal/client/react-page",
@@ -333,9 +356,11 @@ const expectedPackageExportSubpaths = {
     "./_internal/server/node",
     "./_internal/server/react",
     "./_internal/server/server-reference",
+    "./api",
     "./build-tools",
     "./config",
     "./deployment",
+    "./middleware",
     "./navigation",
     "./plugin",
     "./query",
@@ -345,8 +370,10 @@ const expectedPackageExportSubpaths = {
   ],
   "@evjs/client": [
     ".",
+    "./http-api",
     "./transport",
     "./internal",
+    "./internal/http-api",
     "./internal/page-context",
     "./internal/react-page",
     "./internal/rsc-page-context",
@@ -392,6 +419,15 @@ describe("workspace package surface", () => {
       );
       expect(packageJson.types).toBe(
         expectedPrimaryPackageExports[packageName].types,
+      );
+    }
+  });
+
+  it("cleans compiled package output before rebuilding", async () => {
+    for (const packageName of expectedPackageNames) {
+      const packageJson = await readPackageJsonByName(packageName);
+      expect(packageJson.scripts?.build).toContain(
+        `rm -rf ${expectedCleanBuildOutput[packageName]} &&`,
       );
     }
   });
@@ -508,9 +544,21 @@ describe("workspace package surface", () => {
       expectedPrimaryPackageExports["@evjs/ev"],
     );
     expect(Object.keys(evRoot).sort()).toEqual([
+      "ApiError",
+      "api",
       "defineConfig",
       "definePageConfig",
     ]);
+    expect(evPackageJson.exports?.["./api"]).toEqual({
+      types: "./esm/api/index.d.ts",
+      import: "./esm/api/index.js",
+      default: "./esm/api/index.js",
+    });
+    expect(evPackageJson.exports?.["./middleware"]).toEqual({
+      types: "./esm/middleware/index.d.ts",
+      import: "./esm/middleware/index.js",
+      default: "./esm/middleware/index.js",
+    });
     expect(evPackageJson.exports?.["./route"]).toEqual({
       types: "./esm/route/index.d.ts",
       import: "./esm/route/index.js",
@@ -578,7 +626,7 @@ describe("workspace package surface", () => {
 
     const pluginSource = (
       await Promise.all(
-        ["index.ts", "defined.ts"].map((file) =>
+        ["contracts.ts", "definition.ts"].map((file) =>
           fs.readFile(
             path.join(repoRoot, "packages/ev/src/plugin", file),
             "utf-8",
@@ -716,8 +764,167 @@ describe("workspace package surface", () => {
     );
   });
 
+  it("keeps internal build implementations grouped by capability", async () => {
+    const buildRoot = path.join(repoRoot, "packages/ev/src/_internal/build");
+    const entries = await fs.readdir(buildRoot, { withFileTypes: true });
+    const rootFiles = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+    const domainDirectories = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(rootFiles).toEqual([
+      "commands.ts",
+      "index.ts",
+      "types.ts",
+      "utils.ts",
+    ]);
+    expect(domainDirectories).toEqual([
+      "analysis",
+      "bundler",
+      "config-loading",
+      "conventions",
+      "dev",
+      "discovery",
+      "generated-ir",
+      "graph",
+      "operations",
+      "output",
+      "plan",
+      "plugins",
+      "transforms",
+      "typegen",
+    ]);
+
+    const commandFacade = await fs.readFile(
+      path.join(buildRoot, "commands.ts"),
+      "utf-8",
+    );
+    expect(commandFacade).toContain('from "./operations/commands.js"');
+    expect(commandFacade).not.toContain("function ");
+
+    for (const domain of ["graph", "plan", "transforms"]) {
+      const files = await fs.readdir(path.join(buildRoot, domain));
+      expect(files).toContain("index.ts");
+      expect(files).toContain("types.ts");
+      const facade = await fs.readFile(
+        path.join(buildRoot, domain, "index.ts"),
+        "utf-8",
+      );
+      expect(facade).not.toContain("function ");
+    }
+  });
+
+  it("keeps repository package entries as domain façades", async () => {
+    const sourceRootFiles = {
+      "bundler-utoopack": ["index.ts"],
+      "bundler-webpack": ["index.ts"],
+      cli: ["cli.ts", "index.ts"],
+      client: ["index.ts", "internal.ts", "react-server-dom-webpack.d.ts"],
+      "create-app": ["index.ts"],
+      ev: ["browser.ts", "index.ts"],
+      "plugin-qiankun": ["index.ts", "runtime.ts"],
+      server: ["index.ts"],
+      shared: ["index.ts"],
+    } as const;
+
+    for (const [packageName, expectedFiles] of Object.entries(
+      sourceRootFiles,
+    )) {
+      const entries = await fs.readdir(
+        path.join(repoRoot, "packages", packageName, "src"),
+        { withFileTypes: true },
+      );
+      expect(
+        entries
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name)
+          .sort(),
+      ).toEqual([...expectedFiles].sort());
+    }
+
+    const facadeFiles = [
+      "packages/bundler-utoopack/src/index.ts",
+      "packages/bundler-utoopack/src/adapter/index.ts",
+      "packages/bundler-webpack/src/index.ts",
+      "packages/bundler-webpack/src/adapter/index.ts",
+      "packages/cli/src/cli.ts",
+      "packages/cli/src/index.ts",
+      "packages/client/src/index.ts",
+      "packages/client/src/internal.ts",
+      "packages/create-app/src/index.ts",
+      "packages/ev/src/index.ts",
+      "packages/ev/src/api/index.ts",
+      "packages/ev/src/config/index.ts",
+      "packages/ev/src/deployment/index.ts",
+      "packages/ev/src/middleware/index.ts",
+      "packages/ev/src/navigation/index.ts",
+      "packages/ev/src/plugin/index.ts",
+      "packages/ev/src/query/index.ts",
+      "packages/ev/src/route/index.ts",
+      "packages/ev/src/server-context/index.ts",
+      "packages/ev/src/transport/index.ts",
+      "packages/plugin-qiankun/src/index.ts",
+      "packages/plugin-qiankun/src/runtime.ts",
+      "packages/server/src/index.ts",
+      "packages/server/src/app/app.ts",
+      "packages/server/src/framework-rendering/framework.ts",
+      "packages/server/src/framework-rendering/react.ts",
+      "packages/server/src/runtimes/fetch.ts",
+      "packages/server/src/runtimes/node.ts",
+      "packages/shared/src/index.ts",
+      "packages/shared/src/_internal/static-json.ts",
+      "packages/shared/src/http/index.ts",
+      "packages/shared/src/manifest/index.ts",
+    ];
+
+    for (const relativeFile of facadeFiles) {
+      const source = await fs.readFile(
+        path.join(repoRoot, relativeFile),
+        "utf-8",
+      );
+      expect(source, relativeFile).not.toMatch(
+        /^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:class|const|function|let|var)\s/m,
+      );
+    }
+  });
+
   it("keeps @evjs/ev/build-tools narrowed to config loading", () => {
     expect(Object.keys(publicBuildTools).sort()).toEqual(["loadConfigFile"]);
+  });
+
+  it("separates HTTP handlers, middleware, and request context exports", () => {
+    expect(Object.keys(apiAuthoring)).toEqual(["withMiddlewares"]);
+    expect(apiAuthoring.withMiddlewares).toBe(serverRuntime.withMiddlewares);
+    expectTypeOf<apiAuthoring.RouteHandlerFn>().toEqualTypeOf<serverRuntime.RouteHandlerFn>();
+
+    expect(Object.keys(middlewareAuthoring)).toEqual(["requestLogger"]);
+    expect(middlewareAuthoring.requestLogger).toBe(serverRuntime.requestLogger);
+    expectTypeOf<middlewareAuthoring.MiddlewareHandler>().toEqualTypeOf<serverRuntime.MiddlewareHandler>();
+    expectTypeOf<middlewareAuthoring.MiddlewareChain>().toEqualTypeOf<serverRuntime.MiddlewareChain>();
+    expectTypeOf<middlewareAuthoring.RequestLoggerOptions>().toEqualTypeOf<serverRuntime.RequestLoggerOptions>();
+    expectTypeOf<middlewareAuthoring.RequestLogEntry>().toEqualTypeOf<serverRuntime.RequestLogEntry>();
+    expect(serverContext).not.toHaveProperty("requestLogger");
+
+    // @ts-expect-error MiddlewareHandler belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.MiddlewareHandler>();
+    // @ts-expect-error MiddlewareChain belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.MiddlewareChain>();
+    // @ts-expect-error RequestLoggerOptions belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.RequestLoggerOptions>();
+    // @ts-expect-error RequestLogEntry belongs to @evjs/ev/middleware.
+    expectTypeOf<apiAuthoring.RequestLogEntry>();
+    // @ts-expect-error MiddlewareHandler belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.MiddlewareHandler>();
+    // @ts-expect-error MiddlewareChain belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.MiddlewareChain>();
+    // @ts-expect-error RequestLoggerOptions belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.RequestLoggerOptions>();
+    // @ts-expect-error RequestLogEntry belongs to @evjs/ev/middleware.
+    expectTypeOf<serverContext.RequestLogEntry>();
   });
 
   it("keeps @evjs/ev/build-tools load-time imports out of React runtimes", async () => {
@@ -749,86 +956,75 @@ describe("workspace package surface", () => {
     expect(readme).not.toContain('from "@evjs/shared";');
   });
 
-  it("documents every distributed package role for users and agents", async () => {
-    const architectureDoc = await fs.readFile(
-      path.join(repoRoot, "docs/docs/architecture.md"),
-      "utf-8",
-    );
-
-    for (const packageName of expectedPackageNames) {
-      expect(architectureDoc).toContain(packageName);
-    }
-    expect(architectureDoc).toContain("## Package Ownership");
-    expect(architectureDoc).toContain("Minimal config authoring");
-    expect(architectureDoc).toContain(
-      "`@evjs/ev/route`, `/navigation`, `/query`",
-    );
-    expect(architectureDoc).toContain("`@evjs/ev/_internal/*`");
-    expect(architectureDoc).toContain("CoreGraph");
-    expect(architectureDoc).toContain("BuildPlan");
-    expect(architectureDoc).toContain("BuildOutput");
-    expect(architectureDoc).toContain("DeploymentMetadata");
-    expect(architectureDoc).toContain(
-      "are not scanned by framework conventions",
-    );
-  });
-
-  it("keeps the root agent guide discoverable and package-boundary aware", async () => {
+  it("keeps root agent instructions discoverable and focused", async () => {
     const readme = await fs.readFile(path.join(repoRoot, "README.md"), "utf-8");
-    const agentGuide = await fs.readFile(
+    const agentInstructions = await fs.readFile(
       path.join(repoRoot, "AGENTS.md"),
       "utf-8",
     );
-    expect(readme).toContain("[AGENTS.md](./AGENTS.md)");
-    expect(agentGuide).toContain("[AGENT.md](./AGENT.md)");
-    expect(agentGuide).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
-    expect(agentGuide).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
-    expect(agentGuide).toContain("Keep simple config imports on `@evjs/ev`");
-    expect(agentGuide).toContain(
-      "subpaths (`route`, `navigation`, `query`, `server-context`, `transport`)",
+    const contributing = await fs.readFile(
+      path.join(repoRoot, "CONTRIBUTING.md"),
+      "utf-8",
     );
-    expect(agentGuide).toContain("packages/ev/src/config/index.ts");
-    expect(agentGuide).toContain("packages/ev/src/_internal/build/graph/*");
-    expect(agentGuide).toContain("page-routes.ts");
-    expect(agentGuide).toContain(
+
+    expect(readme).toContain("[AGENTS.md](./AGENTS.md)");
+    expect(readme).not.toContain("[AGENT.md](./AGENT.md)");
+    await expect(fs.access(path.join(repoRoot, "AGENT.md"))).rejects.toThrow();
+    expect(agentInstructions).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
+    expect(agentInstructions).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
+    expect(agentInstructions).toContain("packages/ev/src/config/index.ts");
+    expect(agentInstructions).toContain(
+      "packages/ev/src/_internal/build/graph/*",
+    );
+    expect(agentInstructions).toContain("page-routes.ts");
+    expect(agentInstructions).toContain(
       "packages/ev/tests/build-tools-graph-plan.test.ts",
     );
-    expect(agentGuide).toContain(
+    expect(agentInstructions).toContain(
       "packages/ev/tests/build-tools-page-routes.test.ts",
     );
-    expect(agentGuide).toContain("src/pages/**/page.*");
-    expect(agentGuide).toContain("src/apis/**/api.{ts,tsx,js,jsx}");
-    expect(agentGuide).toContain("same CoreGraph");
-    expect(agentGuide).toContain("`.ev` is generated framework IR");
-    expect(agentGuide).toContain(
-      "Prefer a subpath export on the package that owns a capability",
+    expect(agentInstructions).toContain("`@evjs/ev/_internal/*`");
+    expect(agentInstructions).toContain("`src/pages/**/page.*`");
+    expect(agentInstructions).toContain("`src/apis/**/api.*`");
+    expect(agentInstructions).toContain("`src/middlewares/middleware.*`");
+    expect(agentInstructions).toContain(
+      "withMiddlewares(handler, middlewares)",
     );
-    expect(agentGuide).toContain(
-      "declarative current behavior over migration history",
-    );
+    expect(agentInstructions).toContain("English and Chinese documentation");
+    expect(agentInstructions).not.toContain("## Package Map");
+    expect(agentInstructions).not.toContain("## Common Mistakes");
+    expect(contributing).toContain("## Focused Validation");
+    expect(contributing).toContain("npx turbo run test --filter=@evjs/ev");
+    expect(contributing).toContain("npm --workspace evjs-docs run build");
   });
 
-  it("keeps public package guidance on default app and standalone runtime packages", async () => {
-    const packageTableDocs = [
-      "README.md",
+  it("keeps quick starts on app APIs and direct runtimes in the README", async () => {
+    const quickStartDocs = [
       "docs/docs/quick-start.md",
       "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/quick-start.md",
     ];
     const docsWithoutLegacyFacadeGuidance = [
-      ...packageTableDocs,
+      "README.md",
+      ...quickStartDocs,
       "docs/docs/roadmap.md",
       "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/roadmap.md",
     ];
 
-    for (const doc of packageTableDocs) {
+    const readme = await fs.readFile(path.join(repoRoot, "README.md"), "utf-8");
+    expect(readme).toContain("@evjs/ev");
+    expect(readme).toContain("@evjs/client");
+    expect(readme).toContain("@evjs/server");
+    expect(readme).toContain("@evjs/ev/server-context");
+    expect(readme).toContain("@evjs/ev/transport");
+
+    for (const doc of quickStartDocs) {
       const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
       expect(source).toContain("@evjs/ev");
-      expect(source).toContain("@evjs/client");
-      expect(source).toContain("@evjs/server");
       expect(source).toContain("@evjs/ev/route");
       expect(source).toContain("@evjs/ev/navigation");
       expect(source).toContain("@evjs/ev/query");
-      expect(source).toContain("@evjs/ev/server-context");
+      expect(source).not.toContain("@evjs/client");
+      expect(source).not.toContain("@evjs/server");
       expect(source).not.toContain('"@evjs/client": "<same version>"');
       expect(source).not.toContain('"@evjs/server": "<same version>"');
       expect(source).not.toContain("@evjs/ev/client");
@@ -865,7 +1061,7 @@ describe("workspace package surface", () => {
     expect(rootArchitecture).toContain("## Ownership Boundaries");
     expect(rootArchitecture).toContain("`@evjs/client`");
     expect(rootArchitecture).toContain(
-      "The `@evjs/ev` root is the minimal config-authoring entry",
+      "The `@evjs/ev` root exposes config authoring in Node and a browser-safe HTTP",
     );
     expect(rootArchitecture).toContain("`@evjs/ev/config`");
     expect(rootArchitecture).toContain("Bundler adapters consume `BuildPlan`");
@@ -878,9 +1074,37 @@ describe("workspace package surface", () => {
     expect(rootContributing).toContain("Keep the `@evjs/ev` root small");
     expect(rootContributing).toContain("public application-authoring subpaths");
     expect(rootContributing).toContain("`@evjs/ev/_internal/*`");
-    expect(rootContributing).toContain("create CoreGraph");
-    expect(rootContributing).toContain("derive BuildPlan");
-    expect(rootContributing).toContain("materialize .ev");
+    const pipelineStages = [
+      "run configure hooks and resolve Application plugin settings",
+      "create CoreGraph while resolving Page plugin settings",
+      "collect generated contributions with emitIR/emitPageIR",
+      "derive BuildPlan",
+      "render the complete .ev image in memory",
+      "select the successful revision and publish it on publishing paths",
+      "run setup hooks",
+    ];
+    let previousStageIndex = -1;
+    for (const stage of pipelineStages) {
+      const stageIndex = rootContributing.indexOf(stage);
+      expect(stageIndex).toBeGreaterThan(previousStageIndex);
+      previousStageIndex = stageIndex;
+    }
+    expect(rootContributing).toContain(
+      "`ev inspect` is the write-free exception",
+    );
+    expect(rootContributing).toContain(
+      "Failed and semantically unchanged candidates never run setup",
+    );
+    expect(rootContributing).toContain(
+      "candidate is published and set up as a new immutable Session",
+    );
+    expect(rootArchitecture).toContain(
+      "Publishing paths—build, prepare, and accepted development revisions—complete",
+    );
+    expect(rootArchitecture).toContain(
+      "`inspectFrameworkBuild()` is the exception",
+    );
+    expect(rootArchitecture).toContain("never publishes `.ev` or generated");
   });
 
   it("keeps examples and templates on declared public packages", async () => {
@@ -1148,7 +1372,9 @@ describe("workspace package surface", () => {
     ).sort();
     expect(exportedSubpaths).toEqual([
       ".",
+      "./http-api",
       "./internal",
+      "./internal/http-api",
       "./internal/page-context",
       "./internal/react-page",
       "./internal/rsc-page-context",
@@ -1246,6 +1472,7 @@ type PackageJson = {
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   exports?: Record<string, unknown>;
+  scripts?: Record<string, string>;
 };
 
 async function readPackageJson(packageDir: string): Promise<PackageJson> {

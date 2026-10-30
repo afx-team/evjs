@@ -20,7 +20,7 @@ const jitiMocks = vi.hoisted(() => ({
 
 vi.mock("jiti", () => jitiMocks);
 
-import { loadConfigFile } from "../src/_internal/build/config-module.js";
+import { loadConfigFile } from "../src/_internal/build/config-loading/config-module.js";
 
 const tempDirs: string[] = [];
 

@@ -7,6 +7,14 @@
     "message": "文档",
     "description": "Navbar item with label Docs"
   },
+  "item.label.Guides": {
+    "message": "指南",
+    "description": "Navbar item with label Guides"
+  },
+  "item.label.Configuration": {
+    "message": "配置",
+    "description": "Navbar item with label Configuration"
+  },
   "item.label.npm": {
     "message": "npm",
     "description": "Navbar item with label npm"

@@ -1,9 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { BundlerAdapter } from "../src/_internal/build/bundler.js";
+import type { BundlerAdapter } from "../src/_internal/build/bundler/contracts.js";
 import {
   createNoPageRoutesFoundMessage,
   withPageRoutingDefaults,
-} from "../src/_internal/build/convention-config.js";
+} from "../src/_internal/build/discovery/convention-config.js";
 import type {
   Config,
   ExtractInstalledPlugin,
@@ -149,6 +149,7 @@ declare module "../src/config/index.js" {
 
 const fullBundlerCapabilities = {
   build: { server: true, rsc: true, ppr: true },
+  dev: { clientMiddleware: true },
 } as const;
 
 describe("config authoring", () => {
@@ -466,7 +467,7 @@ describe("resolveConfig", () => {
     expect(resolved.routing).toBeUndefined();
     expect(resolved.conventions).toBe(true);
     expect(resolved.server.runtime).toEqual({
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
       ppr: "__evjs/ppr",
     });
@@ -479,6 +480,7 @@ describe("resolveConfig", () => {
     });
     expect(resolved.dev.proxy).toEqual([]);
     expect(resolved.dev.cliShortcuts).toBe(true);
+    expect(resolved.logging).toEqual({ browserToTerminal: "error" });
   });
 
   it("resolves dev.cliShortcuts as a boolean", () => {
@@ -497,6 +499,54 @@ describe("resolveConfig", () => {
         resolveConfig({ dev: { cliShortcuts } } as unknown as Config),
       ).toThrow("[evjs] dev.cliShortcuts must be a boolean when provided.");
     }
+  });
+
+  it("resolves logging.browserToTerminal with Next.js-compatible values", () => {
+    expect(resolveConfig({}).logging.browserToTerminal).toBe("error");
+    expect(
+      resolveConfig({ logging: { browserToTerminal: "error" } }).logging
+        .browserToTerminal,
+    ).toBe("error");
+    expect(
+      resolveConfig({ logging: { browserToTerminal: "warn" } }).logging
+        .browserToTerminal,
+    ).toBe("warn");
+    expect(
+      resolveConfig({ logging: { browserToTerminal: true } }).logging
+        .browserToTerminal,
+    ).toBe(true);
+    expect(
+      resolveConfig({ logging: { browserToTerminal: false } }).logging
+        .browserToTerminal,
+    ).toBe(false);
+    expect(resolveConfig({ logging: false }).logging.browserToTerminal).toBe(
+      false,
+    );
+  });
+
+  it("rejects invalid logging.browserToTerminal values", () => {
+    for (const browserToTerminal of ["verbose", 0, null, {}, []]) {
+      expect(() =>
+        resolveConfig({
+          logging: { browserToTerminal },
+        } as unknown as Config),
+      ).toThrow(
+        '[evjs] logging.browserToTerminal must be a boolean, "error", or "warn" when provided.',
+      );
+    }
+  });
+
+  it("strictly validates the logging config boundary", () => {
+    expect(() => resolveConfig({ logging: true } as unknown as Config)).toThrow(
+      "[evjs] logging must be a config object.",
+    );
+    expect(() =>
+      resolveConfig({
+        logging: { browserToTerminal: "error", unknown: true },
+      } as unknown as Config),
+    ).toThrow(
+      "[evjs] logging.unknown is not supported. Use browserToTerminal.",
+    );
   });
 
   it("accepts only plain config records at root and nested boundaries", () => {
@@ -654,6 +704,52 @@ describe("resolveConfig", () => {
     });
     expect(resolved.routing).not.toHaveProperty("sourceReader");
     expect(resolved.routing).not.toHaveProperty("entry");
+  });
+
+  it("resolves a concrete SPA basepath and rejects it for MPA", () => {
+    expect(
+      resolveConfig({
+        routing: { mode: "spa", basepath: "/next" },
+      }).routing,
+    ).toEqual({
+      mode: "spa",
+      basepath: "/next",
+      html: "./index.html",
+      mount: "#app",
+      routes: [],
+    });
+
+    expect(() =>
+      resolveConfig({
+        routing: { mode: "mpa", basepath: "/next" },
+      }),
+    ).toThrow(
+      '[evjs] routing.basepath is only supported with routing.mode: "spa".',
+    );
+  });
+
+  it.each([
+    "next",
+    "/next/",
+    "/next?tab=1",
+    "/next#hash",
+    "/next/$id",
+    "/",
+  ])("rejects invalid SPA basepath %s", (basepath) => {
+    expect(() => resolveConfig({ routing: { mode: "spa", basepath } })).toThrow(
+      "routing.basepath",
+    );
+  });
+
+  it("rejects the removed basePath spelling", () => {
+    expect(() =>
+      resolveConfig({
+        routing: { mode: "spa", basePath: "/next" },
+      } as never),
+    ).toThrow("routing.basePath is not supported");
+    expect(() =>
+      resolveConfig({ server: { basePath: "/__evjs" } } as never),
+    ).toThrow("server.basePath is not supported");
   });
 
   it("normalizes one explicit SPA route-tree profile", () => {
@@ -1064,7 +1160,7 @@ describe("resolveConfig", () => {
         proxy: [{ context: ["/api"], target: "https://api.example.com" }],
       },
       server: {
-        basePath: "/_ev",
+        basepath: "/_ev",
         resolve: {
           alias: { "server-sdk": "./src/server/sdk.ts" },
         },
@@ -1078,6 +1174,8 @@ describe("resolveConfig", () => {
       },
       transport: {
         baseUrl: "https://runtime.example.com",
+        credentials: "include",
+        headers: { "X-App": "example" },
       },
     });
 
@@ -1095,9 +1193,9 @@ describe("resolveConfig", () => {
       context: ["/api"],
       target: "https://api.example.com",
     });
-    expect(resolved.server.basePath).toBe("/_ev");
+    expect(resolved.server.basepath).toBe("/_ev");
     expect(resolved.server.runtime).toEqual({
-      basePath: "/_ev",
+      basepath: "/_ev",
       fn: "_ev/fn",
       ppr: "_ev/ppr",
     });
@@ -1113,6 +1211,23 @@ describe("resolveConfig", () => {
       https: { key: "server.key", cert: "server.cert" },
     });
     expect(resolved.transport.baseUrl).toBe("https://runtime.example.com");
+    expect(resolved.transport.credentials).toBe("include");
+    expect(resolved.transport.headers).toEqual({ "x-app": "example" });
+  });
+
+  it("rejects non-serializable transport defaults and invalid credentials", () => {
+    expect(() =>
+      resolveConfig({ transport: { credentials: "invalid" } } as never),
+    ).toThrow("transport.credentials");
+    for (const headers of [
+      new Headers(),
+      [["x-app", "example"]],
+      { "x-app": 1 },
+    ]) {
+      expect(() => resolveConfig({ transport: { headers } } as never)).toThrow(
+        "transport.headers",
+      );
+    }
   });
 
   it("strictly validates server-only build settings", () => {
@@ -1190,7 +1305,7 @@ describe("resolveConfig", () => {
 
     const resolved = resolveConfig({
       server: {
-        basePath: "/_ev",
+        basepath: "/_ev",
         rsc: { endpoint: "/flight" },
       },
     });
@@ -1210,9 +1325,9 @@ describe("resolveConfig", () => {
       "/runtime/../fn",
       "/",
     ] as const;
-    for (const basePath of invalidPaths) {
-      expect(() => resolveConfig({ server: { basePath } })).toThrow(
-        "[evjs] server.basePath must use non-empty ASCII URL-safe segments",
+    for (const basepath of invalidPaths) {
+      expect(() => resolveConfig({ server: { basepath } })).toThrow(
+        "[evjs] server.basepath must use non-empty ASCII URL-safe segments",
       );
     }
     for (const endpoint of invalidPaths) {
@@ -1254,17 +1369,39 @@ describe("resolveConfig", () => {
         } as never,
       }),
     ).toThrow("bundler.capabilities.build.rsc must be a boolean");
+    expect(
+      resolveConfig({
+        bundler: {
+          ...adapter,
+          capabilities: {
+            ...fullBundlerCapabilities,
+            dev: { clientMiddleware: false },
+          },
+        },
+      }).bundler?.capabilities.dev,
+    ).toEqual({ clientMiddleware: false });
     expect(() =>
       resolveConfig({
         bundler: {
           ...adapter,
           capabilities: {
             ...fullBundlerCapabilities,
-            dev: {},
+            dev: { clientMiddleware: "yes" },
           },
         } as never,
       }),
-    ).toThrow("bundler.capabilities.dev is not supported");
+    ).toThrow("bundler.capabilities.dev.clientMiddleware must be a boolean");
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          ...adapter,
+          capabilities: {
+            ...fullBundlerCapabilities,
+            dev: { clientMiddleware: true, websocket: true },
+          },
+        } as never,
+      }),
+    ).toThrow("bundler.capabilities.dev.websocket is not supported");
   });
 
   it("accepts only the single plugin descriptor shape", () => {

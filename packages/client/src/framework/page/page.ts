@@ -18,13 +18,9 @@ import {
   type ClientRuntime,
 } from "../../shared/runtime-config.js";
 import { formatErrorDetail, isRecord } from "../../shared/validation.js";
-import {
-  type AppContext,
-  type AppModule,
-  createPageDriver,
-  createShell,
-  type Shell,
-} from "../shell/index.js";
+import { createPageDriver } from "../shell/drivers.js";
+import { createShell } from "../shell/runtime.js";
+import type { AppContext, AppModule, Shell } from "../shell/types.js";
 
 export interface PageRuntimeOptions {
   document?: Document;

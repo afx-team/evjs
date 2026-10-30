@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createElement, memo, type ReactNode } from "react";
+import { createElement, isValidElement, memo, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPageMetadataController } from "../src/framework/page/page-metadata.js";
@@ -9,8 +9,9 @@ import {
   usePageLoaderData,
   usePageParams,
   usePageSearch,
+  useRouteParams,
 } from "../src/index";
-import { createPagesApp } from "../src/internal";
+import { createPagesApp, PageProvider } from "../src/internal";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -22,6 +23,30 @@ describe("page route hooks", () => {
     expect(usePageParams).toBeTypeOf("function");
     expect(usePageSearch).toBeTypeOf("function");
     expect(usePageLoaderData).toBeTypeOf("function");
+    expect(useRouteParams).toBeTypeOf("function");
+  });
+
+  it("reads Page params without requiring a SPA RouterProvider", () => {
+    function Page() {
+      const params = usePageParams<{ postId: string }>();
+      return createElement("p", undefined, params.postId);
+    }
+
+    const html = renderToStaticMarkup(
+      createElement(
+        PageProvider,
+        {
+          value: {
+            params: { postId: "p1" },
+            search: {},
+            loaderData: undefined,
+          },
+        },
+        createElement(Page),
+      ),
+    );
+
+    expect(html).toBe("<p>p1</p>");
   });
 
   it("exposes standalone CSR APIs without exposing generated bootstrap internals", () => {
@@ -71,6 +96,185 @@ describe("createPagesApp", () => {
     expect(app.queryClient).toBeDefined();
   });
 
+  it("hands the complete Application tree to one external React root owner", async () => {
+    function Home() {
+      return createElement("p", undefined, "component application");
+    }
+    function ApplicationWrapper({ children }: { children?: ReactNode }) {
+      return createElement(
+        "section",
+        { "data-application-wrapper": true },
+        children,
+      );
+    }
+
+    const { app } = createPagesApp({
+      routes: [{ path: "/", module: { default: Home } }],
+      history: { type: "memory" },
+      wrappers: [{ default: ApplicationWrapper }],
+    });
+    const component = app.createComponent();
+
+    expect(component.Component).toBeTypeOf("function");
+    expect(isValidElement(component.element)).toBe(true);
+    await (app.router as { load(): Promise<void> }).load();
+    expect(renderToStaticMarkup(component.element)).toContain(
+      '<section data-application-wrapper="true"><p>component application</p></section>',
+    );
+    expect(() => app.createComponent()).toThrow(
+      "PagesApp createComponent() cannot acquire the Application more than once",
+    );
+    expect(() => app.render("#app")).toThrow(
+      "PagesApp render() cannot create a DOM root while a component handle owns the Application",
+    );
+
+    component.dispose();
+    const remounted = app.createComponent();
+    remounted.dispose();
+  });
+
+  it("releases component-mode ownership when its mount session aborts", () => {
+    function Home() {
+      return null;
+    }
+
+    const { app } = createPagesApp({
+      routes: [{ path: "/", module: { default: Home } }],
+      history: { type: "memory" },
+    });
+    const controller = new AbortController();
+    app.createComponent({ signal: controller.signal });
+    controller.abort();
+
+    const next = app.createComponent();
+    next.dispose();
+    expect(() => app.createComponent({ signal: controller.signal })).toThrow(
+      "cannot acquire the Application with an aborted signal",
+    );
+  });
+
+  it("keeps a component host active while replacing runtime Route overlays", async () => {
+    function Home() {
+      return null;
+    }
+
+    const pagesApp = createPagesApp({
+      routes: [{ id: "home", path: "/", module: { default: Home } }],
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    const component = pagesApp.app.createComponent();
+    const previousRouter = pagesApp.app.router;
+
+    await pagesApp.updateRuntime({
+      routes: [{ id: "runtime", path: "/runtime", kind: "group" }],
+    });
+
+    expect(pagesApp.app.router).not.toBe(previousRouter);
+    await expect(
+      pagesApp.updateRuntime({ history: { type: "memory" } }),
+    ).rejects.toThrow(
+      "cannot replace history while an external React host owns the Application",
+    );
+    component.dispose();
+  });
+
+  it("reserves component ownership while a history update is queued and loading", async () => {
+    let releaseLoad = () => {};
+    let enteredLoad = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredLoad = resolve;
+    });
+    const pagesApp = createPagesApp({
+      routes: [
+        {
+          path: "/",
+          module: {
+            default: () => null,
+            beforeLoad: async () => {
+              enteredLoad();
+              await gate;
+            },
+          },
+        },
+      ],
+      history: { type: "memory", initialEntries: ["/before"] },
+    });
+    const previousRouter = pagesApp.app.router;
+    const update = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    await entered;
+    expect(pagesApp.app.router).toBe(previousRouter);
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    releaseLoad();
+    await update;
+    expect(pagesApp.app.router).not.toBe(previousRouter);
+    pagesApp.app.createComponent().dispose();
+  });
+
+  it("retains the reservation until every queued history update finishes", async () => {
+    let releaseLoad = () => {};
+    let enteredLoad = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredLoad = resolve;
+    });
+    const pagesApp = createPagesApp({
+      routes: [
+        { path: "/", module: { default: () => null } },
+        {
+          path: "/next",
+          module: {
+            default: () => null,
+            beforeLoad: async () => {
+              enteredLoad();
+              await gate;
+            },
+          },
+        },
+      ],
+      history: { type: "memory" },
+    });
+    void pagesApp.app.router;
+    const first = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/"] },
+    });
+    const second = pagesApp.updateRuntime({
+      history: { type: "memory", initialEntries: ["/next"] },
+    });
+    await first;
+    await entered;
+    expect(() => pagesApp.app.createComponent()).toThrow(
+      "history update is queued or pending",
+    );
+    releaseLoad();
+    await second;
+    pagesApp.app.createComponent().dispose();
+  });
+
+  it("releases a history reservation after validation rejects the update", async () => {
+    const pagesApp = createPagesApp({
+      routes: [{ path: "/", module: { default: () => null } }],
+      history: { type: "memory" },
+    });
+    await expect(
+      pagesApp.updateRuntime({ history: { type: "invalid" } } as never),
+    ).rejects.toThrow();
+    pagesApp.app.createComponent().dispose();
+    await pagesApp.updateRuntime({ history: { type: "memory" } });
+    pagesApp.app.createComponent().dispose();
+  });
+
   it("keeps generated SPA search params as raw strings", () => {
     function Home() {
       return null;
@@ -105,6 +309,215 @@ describe("createPagesApp", () => {
     );
     expect(router.latestLocation.pathname).toBe("/home");
     expect(history.location.href).toBe(initialUrl);
+  });
+
+  it("keeps locations outside the SPA basepath unmatched and unchanged", async () => {
+    const beforeLoad = vi.fn();
+    function Console() {
+      return createElement("p", undefined, "console");
+    }
+    function NotFound() {
+      return createElement("h1", undefined, "not found");
+    }
+
+    const initialUrl = "/console?tab=recent#activity";
+    const history = client.createMemoryHistory({
+      initialEntries: [initialUrl],
+    });
+    const { app } = createPagesApp({
+      routes: [
+        {
+          path: "/",
+          module: {
+            default: Console,
+            notFoundComponent: NotFound,
+            beforeLoad,
+          },
+        },
+        { path: "/console", module: { default: Console } },
+        {
+          path: "/$productName/$applicationName",
+          kind: "redirect",
+          redirect: {
+            kind: "path",
+            path: "/$productName/$applicationName/sprints",
+          },
+        },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as {
+      basepath: string;
+      latestLocation: {
+        pathname: string;
+        publicHref: string;
+      };
+      matchRoutes(location: unknown): Array<{
+        routeId: string;
+        globalNotFound?: boolean;
+      }>;
+      buildLocation(options: unknown): { publicHref: string };
+      routeTree: { options: { notFoundComponent?: unknown } };
+      load(): Promise<void>;
+      stores: {
+        matches: {
+          get(): Array<{
+            routeId: string;
+            status: string;
+            globalNotFound?: boolean;
+          }>;
+        };
+      };
+    };
+
+    expect(router.basepath).toBe("/next");
+    expect(router.latestLocation.publicHref).toBe(initialUrl);
+    expect(history.location.href).toBe(initialUrl);
+    expect(router.routeTree.options.notFoundComponent).toBe(NotFound);
+    expect(router.matchRoutes(router.latestLocation)).toEqual([
+      expect.objectContaining({ routeId: "__root__" }),
+      expect.objectContaining({
+        routeId: expect.stringContaining("__evjs_outside_basepath__"),
+      }),
+    ]);
+    expect(
+      router.buildLocation({
+        to: router.latestLocation.pathname,
+        search: true,
+        hash: true,
+      }).publicHref,
+    ).toBe(initialUrl);
+    await expect(router.load()).resolves.toBeUndefined();
+    expect(beforeLoad).not.toHaveBeenCalled();
+    expect(history.location.href).toBe(initialUrl);
+    expect(router.stores.matches.get()).toEqual([
+      expect.objectContaining({ routeId: "__root__", status: "success" }),
+      expect.objectContaining({ status: "notFound" }),
+    ]);
+    expect(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: app.queryClient },
+          createElement(client.RouterProvider, {
+            router: router as client.AnyRouter,
+          }),
+        ),
+      ),
+    ).toContain("not found");
+  });
+
+  it("loads and prefixes application-relative navigation under a strict SPA basepath", async () => {
+    function Console() {
+      return createElement("p", undefined, "console");
+    }
+
+    const history = client.createMemoryHistory({
+      initialEntries: ["/next/console"],
+    });
+    const { app } = createPagesApp({
+      routes: [
+        { path: "/", module: { default: Console } },
+        { path: "/console", module: { default: Console } },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as {
+      latestLocation: { pathname: string; publicHref: string };
+      buildLocation(options: unknown): {
+        pathname: string;
+        publicHref: string;
+      };
+      load(): Promise<void>;
+      stores: {
+        matches: {
+          get(): Array<{ routeId: string; status: string }>;
+        };
+      };
+    };
+
+    expect(router.latestLocation).toMatchObject({
+      pathname: "/console",
+      publicHref: "/next/console",
+    });
+    expect(
+      router.buildLocation({ to: "/console", search: { tab: "recent" } }),
+    ).toMatchObject({
+      pathname: "/console",
+      publicHref: "/next/console?tab=recent",
+    });
+    await expect(router.load()).resolves.toBeUndefined();
+    expect(router.stores.matches.get()).toEqual([
+      expect.objectContaining({ routeId: "__root__", status: "success" }),
+      expect.objectContaining({ routeId: "/console", status: "success" }),
+    ]);
+    expect(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: app.queryClient },
+          createElement(client.RouterProvider, {
+            router: router as client.AnyRouter,
+          }),
+        ),
+      ),
+    ).toContain("console");
+  });
+
+  it("exposes active route params and public hrefs to root layouts", async () => {
+    function RootLayout({ children }: { children?: ReactNode }) {
+      const params = client.useRouteParams<{ deptId?: string }>();
+      const consoleHref = client.useHref({ to: "/console" });
+      const resolveHref = client.useHrefResolver();
+      const teamHref = resolveHref({
+        to: "/teams/$deptId",
+        params: { deptId: "runtime" },
+      });
+      const currentHref = resolveHref({ to: "." });
+      return createElement(
+        "main",
+        {
+          "data-current-href": currentHref,
+          "data-dept-id": params.deptId,
+          "data-team-href": teamHref,
+        },
+        createElement("a", { href: consoleHref }, "console"),
+        children,
+      );
+    }
+    function Page() {
+      return createElement("p", undefined, "team");
+    }
+
+    const history = client.createMemoryHistory({
+      initialEntries: ["/next/teams/platform"],
+    });
+    const { app } = createPagesApp({
+      rootModule: { default: RootLayout },
+      routes: [
+        { path: "/console", module: { default: Page } },
+        { path: "/teams/$deptId", module: { default: Page } },
+      ],
+      basepath: "/next",
+      history,
+    });
+    const router = app.router as client.AnyRouter;
+    await router.load();
+
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: app.queryClient },
+        createElement(client.RouterProvider, { router }),
+      ),
+    );
+
+    expect(html).toContain('data-dept-id="platform"');
+    expect(html).toContain('data-current-href="/next/teams/platform"');
+    expect(html).toContain('href="/next/console"');
+    expect(html).toContain('data-team-href="/next/teams/runtime"');
   });
 
   it("replaces runtime Route overlays without removing generated Routes", async () => {

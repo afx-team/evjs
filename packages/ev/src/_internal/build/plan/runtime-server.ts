@@ -11,7 +11,7 @@ import type {
 import { formatCoreRoutePattern } from "./route-pattern.js";
 
 interface RuntimeServerConfig {
-  basePath: string;
+  basepath: string;
   runtime: {
     fn: string;
     ppr?: string;
@@ -36,22 +36,22 @@ export function createRuntimeServerPlan(
 ): RuntimePlan["server"] {
   const ppr = capabilities.hasPpr
     ? (config.runtime.ppr ??
-      toRuntimeEndpoint(joinPath(config.basePath, "ppr")))
+      toRuntimeEndpoint(joinPath(config.basepath, "ppr")))
     : undefined;
   const rsc = capabilities.hasRsc
     ? (config.runtime.rsc ??
-      toRuntimeEndpoint(joinPath(config.basePath, "rsc")))
+      toRuntimeEndpoint(joinPath(config.basepath, "rsc")))
     : undefined;
 
   const runtimeServer = {
-    basePath: config.basePath,
+    basepath: config.basepath,
     fn: config.runtime.fn,
     ...(ppr ? { ppr } : {}),
     ...(rsc ? { rsc } : {}),
   };
   validateConcreteRuntimeEndpoint(
-    runtimeServer.basePath,
-    "runtime.server.basePath",
+    runtimeServer.basepath,
+    "runtime.server.basepath",
     "absolute",
   );
   validateConcreteRuntimeEndpoint(

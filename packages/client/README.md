@@ -62,6 +62,23 @@ declare module "@evjs/client" {
 app.render("#app");
 ```
 
+An external React host can own the root without creating a hidden or nested DOM
+root. Component mode returns the same Router, QueryClient, and Application
+wrappers used by `render()`:
+
+```tsx
+const application = app.createComponent({ signal: mountController.signal });
+
+hostRoot.render(application.element);
+
+// Stop rendering application.element first, then release the ownership token.
+application.dispose();
+```
+
+Only one rendering owner may be active. Call `app.unmount()` before switching
+from DOM-root mode to component mode, or `dispose()` before switching back to
+`app.render()`.
+
 Use `@evjs/ev` only when the app wants framework composition such as Page
 routing, server-function transforms, manifests, SSR, PPR, RSC, or deployment
 artifacts.
@@ -77,6 +94,12 @@ export default function UserPage() {
   return <h1>User {userId}</h1>;
 }
 ```
+
+`usePageParams()` is Page-scoped and works across SPA, MPA, and RSC rendering.
+In an SPA, root and route layouts use `useRouteParams()` to read the merged
+params of the active route branch. Native anchors and browser APIs can resolve
+application routes, including `routing.basepath`, with `useHref()` or
+`useHrefResolver()` from `@evjs/ev/navigation`.
 
 Use the page hooks for route data in both SPA and MPA output. They are the
 zero-annotation path for page code; `params`, `search`, and `loaderData` are
@@ -136,8 +159,11 @@ Standalone/manual clients can import the same query hooks directly from
 ## API
 
 ### Routing
-- `usePageParams`, `usePageSearch`, and `usePageLoaderData`: Read framework-managed route data from page components.
+- `usePageParams`: Read framework-managed params from page components.
+- `useRouteParams`: Read merged params from the active SPA route branch in root and route layouts.
+- `usePageSearch` and `usePageLoaderData`: Read framework-managed route data from page components.
 - `Link`, `Navigate`, `useNavigate`, and `redirect`: Navigation helpers for page components and route lifecycle exports.
+- `useHref` and `useHrefResolver`: Resolve application-relative routes to public browser hrefs for native anchors and browser APIs.
 
 ### Query
 - `useQuery(fn, ...args)` and `useSuspenseQuery(fn, ...args)`: Call compiler-generated server function stubs with inferred argument and result types.

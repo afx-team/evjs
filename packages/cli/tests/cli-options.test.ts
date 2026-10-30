@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCliFlags } from "../src/cli-options.js";
+import { parseCliFlags } from "../src/program/options.js";
 
 describe("CLI options", () => {
   it("collects multiple plugin flags from command arguments", () => {

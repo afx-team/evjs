@@ -21,7 +21,7 @@ describe("defineConfig", () => {
 
   it("handles full config", () => {
     const server: ServerConfig = {
-      basePath: "/api",
+      basepath: "/api",
       dev: { port: 4000 },
     };
     const config: Config = {
@@ -44,8 +44,9 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.html).toBe("./index.html");
     expect(CONFIG_DEFAULTS.port).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
-    expect(CONFIG_DEFAULTS.serverBasePath).toBe("/__evjs");
+    expect(CONFIG_DEFAULTS.serverBasepath).toBe("/__evjs");
     expect(CONFIG_DEFAULTS.crossOriginLoading).toBe("anonymous");
+    expect(CONFIG_DEFAULTS.browserToTerminal).toBe("error");
   });
 
   it("is readonly", () => {
@@ -55,12 +56,13 @@ describe("CONFIG_DEFAULTS", () => {
       html: "./index.html",
       port: 3000,
       serverPort: 3001,
-      serverBasePath: "/__evjs",
+      serverBasepath: "/__evjs",
       crossOriginLoading: "anonymous",
       outputClientDir: "dist/client",
       outputServerDir: "dist/server",
       pageRoot: "./src/pages",
       mount: "#app",
+      browserToTerminal: "error",
     });
   });
 });

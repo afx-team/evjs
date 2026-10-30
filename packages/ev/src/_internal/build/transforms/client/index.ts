@@ -1,6 +1,6 @@
 import { type Module, parseSync } from "@swc/core";
-import { formatModuleExportName } from "../../module-exports.js";
-import type { ServerFunctionExport } from "../../server-fns.js";
+import { formatModuleExportName } from "../../analysis/module-exports.js";
+import type { ServerFunctionExport } from "../../analysis/server-fns.js";
 import {
   SERVER_FUNCTION_TRANSFORM_RUNTIME,
   type TransformOptions,

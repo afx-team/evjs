@@ -1,23 +1,29 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPagesApp, startPagesApp } from "../src/internal.js";
 import type { App } from "../src/standalone/app.js";
 
 const reactRootCalls: string[] = [];
+const renderedTrees: ReactNode[] = [];
 
 vi.mock("react-dom/client", () => ({
   createRoot() {
     reactRootCalls.push("createRoot");
     return {
-      render() {
+      render(element: ReactNode) {
         reactRootCalls.push("render");
+        renderedTrees.push(element);
       },
       unmount() {
         reactRootCalls.push("unmount");
       },
     };
   },
-  hydrateRoot() {
+  hydrateRoot(_container: HTMLElement, element: ReactNode) {
     reactRootCalls.push("hydrateRoot");
+    renderedTrees.push(element);
     return {
       unmount() {
         reactRootCalls.push("unmount");
@@ -28,10 +34,28 @@ vi.mock("react-dom/client", () => ({
 
 afterEach(() => {
   reactRootCalls.length = 0;
+  renderedTrees.length = 0;
   vi.unstubAllGlobals();
 });
 
 describe("SPA page bootstrap", () => {
+  it.each([
+    null,
+    1,
+    "signal",
+    false,
+    {},
+    { aborted: "false" },
+  ])("diagnoses malformed component signals without acquiring ownership: %j", (signal) => {
+    const { app } = createTestPagesApp();
+    expect(() => app.createComponent({ signal } as never)).toThrow(
+      "[evjs] App component options.signal must be an AbortSignal when provided.",
+    );
+    const handle = app.createComponent();
+    handle.dispose();
+    expect(reactRootCalls).toEqual([]);
+  });
+
   it("hydrates only after the router finishes its initial load", async () => {
     const { app } = createTestPagesApp();
     const load = createDeferred<void>();
@@ -64,6 +88,22 @@ describe("SPA page bootstrap", () => {
     expect(reactRootCalls).toEqual([]);
   });
 
+  it("releases render ownership when initial hydration loading fails", async () => {
+    const { app } = createTestPagesApp();
+    vi.spyOn(
+      app.router as unknown as { load(): Promise<void> },
+      "load",
+    ).mockRejectedValue(new Error("initial route failed"));
+
+    await expect(
+      app.render({} as HTMLElement, { hydrate: true }),
+    ).rejects.toThrow("initial route failed");
+
+    const component = app.createComponent();
+    component.dispose();
+    expect(reactRootCalls).toEqual([]);
+  });
+
   it("remounts a loaded replacement Router after runtime configuration changes", async () => {
     function Home() {
       return null;
@@ -85,6 +125,33 @@ describe("SPA page bootstrap", () => {
       "createRoot",
       "render",
     ]);
+  });
+
+  it("places Application wrappers outside all CSR providers in stable order", () => {
+    function Outer({ children }: { children?: ReactNode }) {
+      return children;
+    }
+    function Inner({ children }: { children?: ReactNode }) {
+      return children;
+    }
+    function Home() {
+      return null;
+    }
+    const { app } = createPagesApp({
+      wrappers: [{ default: Outer }, { default: Inner }],
+      routes: [{ path: "/", module: { default: Home } }],
+    });
+
+    app.render({} as HTMLElement);
+
+    const outer = requireElement(renderedTrees[0]);
+    const inner = requireElement(outer.props.children);
+    const queryProvider = requireElement(inner.props.children);
+    const routerProvider = requireElement(queryProvider.props.children);
+    expect(outer.type).toBe(Outer);
+    expect(inner.type).toBe(Inner);
+    expect(queryProvider.type).toBe(QueryClientProvider);
+    expect(routerProvider.type).toBe(RouterProvider);
   });
 
   it("stays unmounted when unmount runs while a replacement Router loads", async () => {
@@ -221,6 +288,9 @@ function createBootstrapApp(): App {
     router: {},
     queryClient: {} as App["queryClient"],
     render,
+    createComponent() {
+      throw new Error("not used by page bootstrap tests");
+    },
     unmount() {},
   };
 }
@@ -239,4 +309,13 @@ function createDeferred<T>() {
     resolve = next;
   });
   return { promise, resolve };
+}
+
+function requireElement(
+  value: ReactNode,
+): ReactElement<{ children?: ReactNode }> {
+  if (!isValidElement<{ children?: ReactNode }>(value)) {
+    throw new Error("Expected a React element.");
+  }
+  return value;
 }

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ROUTE_SOURCE_EXTENSIONS } from "../route-conventions.js";
+import { ROUTE_SOURCE_EXTENSIONS } from "../conventions/route-conventions.js";
 import { isInsideCwd } from "../utils.js";
 
 export const PROJECT_SOURCE_EXTENSIONS = ROUTE_SOURCE_EXTENSIONS;

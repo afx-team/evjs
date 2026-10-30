@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  collectClientDevMiddlewares,
   collectPluginCliShortcuts,
   collectPluginHooks,
   createLatePluginContext,
@@ -7,14 +8,14 @@ import {
   runAfterBuildHooks,
   runBeforeBuildHooks,
   runDevServerReadyHooks,
-} from "../src/_internal/build/plugin-lifecycle.js";
+} from "../src/_internal/build/plugins/lifecycle.js";
 import { resolveConfig } from "../src/config/index.js";
 import {
   createPluginApplicationSettingContext,
   definePlugin,
   pluginOptions,
   prepareDefinedPluginApplicationSetting,
-} from "../src/plugin/defined.js";
+} from "../src/plugin/definition.js";
 import type {
   BuildResult,
   Plugin,
@@ -232,7 +233,7 @@ describe("collectPluginHooks", () => {
           (ctx.config.plugins as Plugin[]).splice(0, 1);
         }).toThrow(TypeError);
         expect(() => {
-          (ctx.config.server as { basePath: string }).basePath = "/mutated";
+          (ctx.config.server as { basepath: string }).basepath = "/mutated";
         }).toThrow(TypeError);
         return {
           beforeBuild(buildContext) {
@@ -249,7 +250,7 @@ describe("collectPluginHooks", () => {
     const dependency: Plugin = { id: "dependency" };
     const config = resolveConfig({
       plugins: [dependency, plugin],
-      server: { basePath: "/api" },
+      server: { basepath: "/api" },
       dev: {
         proxy: [
           {
@@ -275,7 +276,7 @@ describe("collectPluginHooks", () => {
     expect(observedConfigs).toHaveLength(3);
     expect(new Set(observedConfigs).size).toBe(1);
     expect(observedConfigs[0]).not.toBe(config);
-    expect(config.server.basePath).toBe("/api");
+    expect(config.server.basepath).toBe("/api");
     expect(config.plugins.map((installed) => installed.id)).toEqual([
       "dependency",
       "immutable-context",
@@ -372,7 +373,7 @@ describe("collectPluginHooks", () => {
 
   it("rejects accessors in a resolved plugin config snapshot", () => {
     const config = resolveConfig();
-    Object.defineProperty(config.server, "basePath", {
+    Object.defineProperty(config.server, "basepath", {
       configurable: true,
       enumerable: true,
       get() {
@@ -381,7 +382,7 @@ describe("collectPluginHooks", () => {
     });
 
     expect(() => createPluginConfigView(config)).toThrow(
-      "[evjs] Resolved plugin context config.server.basePath must be a data property, not an accessor.",
+      "[evjs] Resolved plugin context config.server.basepath must be a data property, not an accessor.",
     );
   });
 });
@@ -648,6 +649,74 @@ describe("runDevServerReadyHooks", () => {
         context,
       ),
     ).rejects.toThrow('Use "devServerReady" instead');
+  });
+});
+
+describe("collectClientDevMiddlewares", () => {
+  it("flattens middleware in plugin order with a frozen session context", async () => {
+    const abortController = new AbortController();
+    const events: string[] = [];
+    const firstMiddleware = vi.fn();
+    const secondMiddleware = vi.fn();
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    const middlewares = await collectClientDevMiddlewares(
+      [
+        {
+          clientDevMiddleware(ctx) {
+            events.push("first");
+            expect(ctx.signal).toBe(abortController.signal);
+            expect(Object.isFrozen(ctx)).toBe(true);
+            return [firstMiddleware, secondMiddleware];
+          },
+        },
+        {
+          async clientDevMiddleware() {
+            events.push("second");
+            return () => {};
+          },
+        },
+      ],
+      context,
+      abortController.signal,
+    );
+
+    expect(events).toEqual(["first", "second"]);
+    expect(middlewares).toHaveLength(3);
+    expect(middlewares.slice(0, 2)).toEqual([
+      firstMiddleware,
+      secondMiddleware,
+    ]);
+  });
+
+  it("rejects invalid middleware contributions", async () => {
+    const context = {
+      mode: "development",
+      cwd: "/project",
+      config: resolveConfig(),
+      logger: {} as PluginSetupContext["logger"],
+      addWatchFile() {},
+    } satisfies PluginSetupContext;
+
+    await expect(
+      collectClientDevMiddlewares(
+        [
+          {
+            clientDevMiddleware: (() => ["invalid"]) as never,
+          },
+        ],
+        context,
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(
+      "clientDevMiddleware hook must return a middleware function",
+    );
   });
 });
 

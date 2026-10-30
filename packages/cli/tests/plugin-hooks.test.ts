@@ -78,7 +78,7 @@ const TEST_OUTPUT: BuildOutput = {
   publicPath: "/",
   runtime: {
     server: {
-      basePath: "/__evjs",
+      basepath: "/__evjs",
       fn: "__evjs/fn",
     },
   },

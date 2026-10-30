@@ -21,8 +21,8 @@ import type {
   FrameworkServerRenderer,
   RscCoordinator,
   RscFlightContext,
-} from "./framework.js";
-import { getFrameworkRuntimeRoutes } from "./framework.js";
+} from "./runtime.js";
+import { getFrameworkRuntimeRoutes } from "./runtime.js";
 
 const PAGE_METADATA_ATTRIBUTE = "data-evjs-page-metadata";
 const PAGE_METADATA_CREATED_ATTRIBUTE = "data-evjs-page-metadata-created";
@@ -695,7 +695,7 @@ function createRscBootstrap(
       buildId: string;
       pageId: string;
       endpoint: string;
-      basePath?: string;
+      basepath?: string;
       publicPath: FrameworkRuntime["publicPath"];
       mount: string;
       page: {
@@ -714,7 +714,7 @@ function createRscBootstrap(
     buildId: ctx.runtime.buildId,
     pageId: ctx.pageId,
     endpoint,
-    basePath: ctx.runtime.runtime.server?.basePath,
+    basepath: ctx.runtime.runtime.server?.basepath,
     publicPath: ctx.runtime.publicPath,
     mount:
       mount.attribute === "id"

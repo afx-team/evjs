@@ -43,6 +43,7 @@
     "husky": "^9.1.7",
     "tailwindcss": "^4.1.10",
     "turbo": "^2.4.2",
+    "typescript": "^7.0.2",
     "vitest": "^4.0.18"
   }
 }

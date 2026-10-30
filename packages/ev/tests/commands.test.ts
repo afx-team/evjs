@@ -11,31 +11,31 @@ import {
 } from "@evjs/shared/manifest";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createPageClientBuildEntryName,
-  createPageServerBuildEntryName,
-  createPprShellBuildEntryName,
-  createRscPageBuildEntryName,
-} from "../src/_internal/build/build-entry-conventions.js";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
   BundlerDevController,
-} from "../src/_internal/build/bundler.js";
+} from "../src/_internal/build/bundler/contracts.js";
 import {
   build,
   dev,
   prepareFrameworkBuild,
 } from "../src/_internal/build/commands.js";
 import {
+  createPageClientBuildEntryName,
+  createPageServerBuildEntryName,
+  createPprShellBuildEntryName,
+  createRscPageBuildEntryName,
+} from "../src/_internal/build/conventions/build-entry-conventions.js";
+import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/conventions/page-route-conventions.js";
+import {
   prepareFrameworkIR,
   publishFrameworkIR,
-} from "../src/_internal/build/generated-contributions.js";
-import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
+} from "../src/_internal/build/generated-ir/generated-contributions.js";
 import {
   PAGE_ROUTE_TYPES_MARKER,
   PAGE_ROUTE_TYPES_USAGE_HINT,
-} from "../src/_internal/build/page-route-types.js";
+} from "../src/_internal/build/typegen/page-route-types.js";
 import type { Config } from "../src/config/index.js";
 import type {
   BuildResult,
@@ -507,6 +507,10 @@ describe("prepareFrameworkBuild", () => {
         events.push(`config:${ctx.mode}`);
         return config;
       },
+      emitIR(ctx) {
+        expect(ctx.config.bundler).toBeUndefined();
+        events.push(`emitIR:${ctx.mode}`);
+      },
       setup(ctx) {
         expect(ctx.config.bundler).toBeUndefined();
         ctx.addWatchFile("./framework-extra.json");
@@ -540,13 +544,18 @@ describe("prepareFrameworkBuild", () => {
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
-    expect(events).toEqual(["config:production", "setup:production"]);
+    expect(events).toEqual([
+      "config:production",
+      "emitIR:production",
+      "setup:production",
+    ]);
 
     await prepared.dispose();
     await prepared.dispose();
 
     expect(events).toEqual([
       "config:production",
+      "emitIR:production",
       "setup:production",
       "dispose",
     ]);
@@ -604,9 +613,14 @@ describe("prepareFrameworkBuild", () => {
     const generatedRoot = path.join(cwd, ".ev");
     const initialSnapshot = await readDirectorySnapshot(generatedRoot);
     const initialRootEntries = await readSortedDirectoryEntries(cwd);
+    const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       id: "render-failure",
+      setup() {
+        events.push("setup");
+      },
       emitIR(ctx) {
+        events.push("emitIR");
         ctx.emit.module({
           id: "throws-while-rendering",
           scope: { kind: "application" },
@@ -624,6 +638,7 @@ describe("prepareFrameworkBuild", () => {
       ),
     ).rejects.toThrow("injected generated IR render failure");
 
+    expect(events).toEqual(["emitIR"]);
     expect(await readDirectorySnapshot(generatedRoot)).toEqual(initialSnapshot);
     expect(await readSortedDirectoryEntries(cwd)).toEqual(initialRootEntries);
   });
@@ -1050,6 +1065,9 @@ describe("prepareFrameworkBuild", () => {
     ).rejects.toThrow("setup blocked");
 
     expect(events).toEqual(["setup:first", "setup:second", "dispose:first"]);
+    await expect(
+      fs.promises.access(path.join(cwd, ".ev", "manifest.json")),
+    ).resolves.toBeUndefined();
   });
 
   it("disposes plugins in reverse order and continues after failures", async () => {
@@ -1222,6 +1240,7 @@ describe("prepareFrameworkBuild", () => {
     expect(frameworkGraph.graph.rootDir).toBe(cwd);
     expect(frameworkPlan.plan.entries[0]?.import).toBe("./.ev/entries/main.ts");
     expect(manifest.generated?.frameworkFiles).toEqual([
+      { id: "api-client", file: "./.ev/framework/api-client.ts" },
       {
         id: "core-graph",
         file: "./.ev/framework/core-graph.json",
@@ -1446,7 +1465,7 @@ describe("prepareFrameworkBuild", () => {
       server: {},
       runtime: {
         publicPath: "auto",
-        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+        server: { basepath: "/__evjs", fn: "__evjs/fn" },
       },
       dev: {
         clientRoutes: [],
@@ -1463,7 +1482,7 @@ describe("prepareFrameworkBuild", () => {
         target: { android: 5, ios: 8 },
         polyfill: { coreJs: "bundled" },
       } as never,
-      graph: {} as CoreGraph,
+      graph: { applications: {} } as CoreGraph,
       plan,
       plugins: [],
       pluginContext: {} as never,
@@ -1630,6 +1649,140 @@ describe("prepareFrameworkBuild", () => {
       expect(source).toContain(
         "wrappers: [routeWrapperModule0_0, routeWrapperModule0_1]",
       );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("projects Application wrappers outside the generated CSR root", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      id: "application-wrappers",
+      emitIR(ctx) {
+        const first = ctx.emit.module({
+          id: "first-application-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function First({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        const second = ctx.emit.module({
+          id: "second-application-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function Second({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("application.wrapper").add({
+          id: "first",
+          module: first,
+          target: { kind: "application", applicationId: "default" },
+        });
+        ctx.slot("application.wrapper").add({ id: "second", module: second });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const first = manifest.generated?.modules.find(
+        (module) => module.id === "first-application-wrapper",
+      );
+      const second = manifest.generated?.modules.find(
+        (module) => module.id === "second-application-wrapper",
+      );
+      const main = manifest.entries.find((entry) => entry.name === "main");
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/main.ts"),
+        "utf-8",
+      );
+
+      expect(
+        main?.metadata?.type === "pages-app"
+          ? main.metadata.wrappers
+          : undefined,
+      ).toEqual([second?.file, first?.file]);
+      expect(source).toContain(
+        "wrappers: [applicationWrapperModule0, applicationWrapperModule1]",
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("projects Application wrappers into plugin-owned entry facades", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      id: "wrapped-entry-facade",
+      emitIR(ctx) {
+        const entry = ctx.framework.getApplicationEntry();
+        if (!entry) throw new Error("missing Application entry");
+        const boundary = ctx.emit.module({
+          id: "boundary",
+          scope: { kind: "application" },
+          source:
+            "export default function Boundary({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("application.wrapper").add({
+          id: "boundary-slot",
+          module: boundary,
+        });
+        const original = ctx.emit.entryFacade({
+          id: "original-entry",
+          entry,
+          autoStart: false,
+        });
+        ctx.slot("client.entry").add({
+          id: "entry-replacement",
+          module: original,
+          position: "before-main",
+          mode: "replace",
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/plugins/wrapped-entry-facade/original-entry.ts"),
+        "utf-8",
+      );
+      expect(source).toContain(
+        'import * as applicationWrapperModule0 from "./boundary";',
+      );
+      expect(source).toContain("wrappers: [applicationWrapperModule0]");
     } finally {
       await prepared.dispose();
     }
@@ -2361,6 +2514,7 @@ describe("prepareFrameworkBuild", () => {
       fs.promises.access(path.join(cwd, ".ev/framework/app-graph.json")),
     ).rejects.toThrow();
     expect(generatedManifest.generated?.frameworkFiles).toEqual([
+      { id: "api-client", file: "./.ev/framework/api-client.ts" },
       {
         id: "core-graph",
         file: "./.ev/framework/core-graph.json",
@@ -2727,7 +2881,7 @@ describe("prepareFrameworkBuild", () => {
       {
         target: { android: 5, ios: 8 },
         polyfill: {},
-        routing: { mode: "spa" },
+        routing: { mode: "spa", basepath: "/next" },
         output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
       },
@@ -2753,6 +2907,7 @@ describe("prepareFrameworkBuild", () => {
 
     expect(originalEntry).toContain("createPagesApp");
     expect(originalEntry).toContain("export const pagesApp = createPagesApp");
+    expect(originalEntry).toContain('basepath: "/next"');
     expect(originalEntry).toContain("startPagesApp");
     expect(originalEntry).toContain("../../src/pages/page");
     expect(
@@ -2760,6 +2915,7 @@ describe("prepareFrameworkBuild", () => {
     ).toBeLessThan(originalEntry.indexOf("createPagesApp"));
     expect(deferredEntry).toContain("createPagesApp");
     expect(deferredEntry).toContain("export const pagesApp = createPagesApp");
+    expect(deferredEntry).toContain('basepath: "/next"');
     expect(deferredEntry).toContain("export const start =");
     expect(deferredEntry).not.toContain('startPagesApp(app, "#app");');
     expect(
@@ -3349,7 +3505,7 @@ describe("prepareFrameworkBuild", () => {
     );
     expect(serverEntry).not.toContain('from "src/apis/hello/api.ts"');
     expect(serverEntry).toContain(
-      "const middlewares = [contributedMiddleware0];",
+      "const middlewares = [...contributedMiddleware0Chain];",
     );
     expect(serverEntry).toContain(
       ["const routeDefinition0 = {", "  GET: routeModule0.GET,", "};"].join(
@@ -3626,6 +3782,9 @@ describe("build", () => {
 
     const plugin: Plugin<Record<string, never>> = {
       id: "records-lifecycle",
+      emitIR() {
+        events.push("emitIR:production");
+      },
       setup(ctx) {
         expect(ctx.config.bundler?.name).toBe("mock");
         events.push(`setup:${ctx.mode}`);
@@ -3672,6 +3831,7 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
+      "emitIR:production",
       "setup:production",
       "bundler.build",
       "bundler.entries:main",
@@ -5661,11 +5821,6 @@ describe("build", () => {
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "src/apis/admin/middleware.ts"),
-      "export default async function middleware(_ctx, next) { await next(); }",
-      "utf-8",
-    );
-    await writeFile(
       path.join(cwd, "src/apis/admin/health/api.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
@@ -6777,7 +6932,7 @@ describe("build", () => {
         events.push(`config:${ctx.mode}`);
         config.server = {
           ...(typeof config.server === "object" ? config.server : {}),
-          basePath: "/api",
+          basepath: "/api",
         };
         return config;
       },
@@ -7736,7 +7891,7 @@ describe("build", () => {
       build(
         {
           server: {
-            basePath: "api",
+            basepath: "api",
           },
         },
         {
@@ -7744,11 +7899,11 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow('[evjs] server.basePath must start with "/".');
+    ).rejects.toThrow('[evjs] server.basepath must start with "/".');
     expect(events).not.toContain("bundler.build");
   });
 
-  it("discovers default server routes and middleware conventions", async () => {
+  it("discovers API anchors and global middleware without inheriting API helper files", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/apis/api"), {
       recursive: true,
@@ -7756,7 +7911,7 @@ describe("build", () => {
     await writeFile(
       path.join(cwd, "src/middlewares/middleware.ts"),
       [
-        'import type { MiddlewareChain } from "@evjs/ev/server-context";',
+        'import type { MiddlewareChain } from "@evjs/ev/middleware";',
         "const tracing = async (_ctx, next) => next();",
         "const authentication = async (_ctx, next) => next();",
         "export default [tracing, authentication] satisfies MiddlewareChain;",
@@ -7810,14 +7965,6 @@ describe("build", () => {
               path: "/api/health",
               methods: ["GET"],
               moduleSegments: ["api", "health"],
-              middlewares: [
-                {
-                  id: "src/apis/api/middleware.ts:route-middleware",
-                  module: "src/apis/api/middleware.ts",
-                  scope: "route",
-                  scopeSegments: ["api"],
-                },
-              ],
             },
           ],
         },
@@ -7825,9 +7972,10 @@ describe("build", () => {
     );
     await expect(
       fs.promises.readFile(path.join(cwd, ".ev/entries/server.ts"), "utf-8"),
-    ).resolves.toContain(
-      "const middlewares = [...(Array.isArray(middleware0) ? middleware0 : [middleware0])];",
-    );
+    ).resolves.toContain("const middlewares = [...middleware0Chain];");
+    await expect(
+      fs.promises.readFile(path.join(cwd, ".ev/entries/server.ts"), "utf-8"),
+    ).resolves.not.toContain("apis/api/middleware");
   });
 
   it("fails on invalid default api anchors before running the bundler", async () => {
@@ -7843,7 +7991,7 @@ describe("build", () => {
     await expect(build({}, { cwd, bundler })).rejects.toThrow(
       [
         "[evjs] Server route discovery failed.",
-        "src/apis/users/api.ts - api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+        "src/apis/users/api.ts - api.ts, api.tsx, api.js, api.jsx, http.ts, http.tsx, http.js, or http.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
         'src/apis/users/api.ts - Server route module exports lowercase method "get". Use uppercase "GET".',
       ].join("\n"),
     );

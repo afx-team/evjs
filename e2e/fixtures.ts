@@ -42,6 +42,7 @@ type FrameworkRuntimeOutput = NonNullable<BuildResult["frameworkRuntime"]>;
 type BuildExampleResult = {
   frameworkRuntime?: FrameworkRuntimeOutput;
 };
+type ExampleConfigOverrides = Pick<Config<unknown>, "transport" | "plugins">;
 
 /**
  * Content-type mapping for static file serving.
@@ -310,11 +311,12 @@ async function loadExampleConfig(
  *
  * Loads the example's own ev.config.ts so that per-example settings
  * (plugins, output structure, etc.) are picked up during the build.
- * Only the bundler adapter is overridden by the test configuration.
+ * Tests may also supply transport defaults and additional plugins.
  */
 export async function buildExample(
   exampleDir: string,
   bundlerName: string,
+  overrides: ExampleConfigOverrides = {},
 ): Promise<BuildExampleResult> {
   const { build } = await import("@evjs/cli");
   const bundler = await resolveBundler(bundlerName);
@@ -346,8 +348,10 @@ export async function buildExample(
     await runBuild(
       {
         ...exampleConfig,
+        ...overrides,
         plugins: [
           ...((exampleConfig?.plugins as Plugin<unknown>[]) ?? []),
+          ...((overrides.plugins as Plugin<unknown>[]) ?? []),
           captureFrameworkRuntimePlugin,
         ],
         ...(bundler ? { bundler } : {}),
@@ -384,7 +388,10 @@ async function resolveBundler(
  * Builds with the bundler specified in the Playwright project config,
  * starts the server bundle via a CJS bootstrap, serves client on a random port.
  */
-export function createExampleTest(exampleName: string) {
+export function createExampleTest(
+  exampleName: string,
+  overrides: ExampleConfigOverrides = {},
+) {
   const exampleDir = path.resolve(
     import.meta.dirname,
     "..",
@@ -400,7 +407,11 @@ export function createExampleTest(exampleName: string) {
           (workerInfo.project.use as unknown as { bundlerName?: string })
             .bundlerName ?? "utoopack";
 
-        const buildResult = await buildExample(exampleDir, bundlerName);
+        const buildResult = await buildExample(
+          exampleDir,
+          bundlerName,
+          overrides,
+        );
         const { frameworkRuntime } = buildResult;
         if (!frameworkRuntime) {
           throw new Error("Built example did not produce FrameworkRuntime.");

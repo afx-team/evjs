@@ -3,6 +3,13 @@
  */
 
 export type {
+  ApiCall,
+  ApiClient,
+  ApiRequestOptions,
+} from "@evjs/client/http-api";
+export { ApiError } from "@evjs/client/http-api";
+export { api } from "./_internal/generated/client/api.js";
+export type {
   Config,
   PageFileConfig,
   PageMetadata,

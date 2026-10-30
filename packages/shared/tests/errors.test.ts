@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ServerError, ServerFunctionError } from "../src/errors.js";
+import { ServerError, ServerFunctionError } from "../src/runtime/errors.js";
 
 describe("ServerError", () => {
   it("creates with message and default status 500", () => {

@@ -1,7 +1,7 @@
 import type { PluginHooks } from "@evjs/ev/plugin";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { merge, utoopack } from "../src/plugin-helper.js";
+import { merge, utoopack } from "../src/plugin/configure.js";
 
 describe("utoopack plugin helpers", () => {
   it("keeps adapter narrowing inside a bundler-agnostic hook", () => {

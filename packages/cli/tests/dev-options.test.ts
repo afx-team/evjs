@@ -12,7 +12,7 @@ vi.mock("@evjs/ev/_internal/build", async (importOriginal) => {
   return { ...actual, dev: devMocks.frameworkDev };
 });
 
-vi.mock("../src/load-config.js", () => ({
+vi.mock("../src/config/load.js", () => ({
   loadConfig: devMocks.defaultLoadConfig,
 }));
 

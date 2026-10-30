@@ -1,51 +1,51 @@
 {
-  "link.title.Docs": {
-    "message": "文档",
-    "description": "The title of the footer links column with label Docs"
+  "link.title.Learn": {
+    "message": "学习",
+    "description": "The footer column with learning links"
   },
   "link.title.Reference": {
     "message": "参考",
-    "description": "The title of the footer links column with label Reference"
+    "description": "The footer column with reference links"
   },
-  "link.title.Community": {
-    "message": "社区",
-    "description": "The title of the footer links column with label Community"
+  "link.title.Project": {
+    "message": "项目",
+    "description": "The footer column with project links"
   },
   "link.item.label.Quick Start": {
     "message": "快速开始",
-    "description": "The label of footer link with label Quick Start linking to /docs/quick-start"
+    "description": "Footer link to Quick Start"
   },
-  "link.item.label.Architecture": {
-    "message": "架构",
-    "description": "The label of footer link with label Architecture linking to /docs/architecture"
+  "link.item.label.Pages and Routing": {
+    "message": "页面与路由",
+    "description": "Footer link to Pages and Routing"
   },
-  "link.item.label.Server Functions": {
-    "message": "服务端函数",
-    "description": "The label of footer link with label Server Functions linking to /docs/server-functions"
-  },
-  "link.item.label.Routing": {
-    "message": "客户端路由",
-    "description": "The label of footer link with label Client Routes linking to /docs/client-routes"
+  "link.item.label.Rendering": {
+    "message": "渲染",
+    "description": "Footer link to Rendering"
   },
   "link.item.label.Configuration": {
     "message": "配置",
-    "description": "The label of footer link with label Configuration linking to /docs/config"
+    "description": "Footer link to Configuration"
   },
-  "link.item.label.Build": {
-    "message": "构建",
-    "description": "The label of footer link with label Build linking to /docs/build"
+  "link.item.label.File Conventions": {
+    "message": "文件约定",
+    "description": "Footer link to File Conventions"
   },
-  "link.item.label.Deploy": {
+  "link.item.label.Deployment": {
     "message": "部署",
-    "description": "The label of footer link with label Deploy linking to /docs/deploy"
+    "description": "Footer link to Deployment"
   },
   "link.item.label.GitHub": {
     "message": "GitHub",
-    "description": "The label of footer link with label GitHub linking to https://github.com/afx-team/evjs"
+    "description": "Footer link to GitHub"
   },
   "link.item.label.npm": {
     "message": "npm",
-    "description": "The label of footer link with label npm linking to https://www.npmjs.com/package/@evjs/cli"
+    "description": "Footer link to npm"
+  },
+  "link.item.label.Contributing": {
+    "message": "参与贡献",
+    "description": "Footer link to Contributing"
   },
   "copyright": {
     "message": "Copyright (c) 2015-present <a href=\"https://xtech.antfin.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Ant UED</a>",

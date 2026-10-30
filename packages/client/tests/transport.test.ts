@@ -645,6 +645,28 @@ describe("default fetch adapter", () => {
     expect(headers.get("x-source")).toBe("runtime");
   });
 
+  it("keeps deployment endpoints when application config only supplies request defaults", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_TRANSPORT__", {
+      baseUrl: "https://webgw.example.com/app/version",
+      credentials: "include",
+      headers: { "x-webgw-appid": "app", "x-source": "deployment" },
+    } satisfies RuntimeTransportOptions);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "fn");
+    initTransportFromRuntime({
+      runtime: { transport: { headers: { "X-Source": "application" } } },
+    });
+    await callServer("myFn", []);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://webgw.example.com/app/version/fn"),
+      expect.objectContaining({ credentials: "include" }),
+    );
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-webgw-appid")).toBe("app");
+    expect(headers.get("x-source")).toBe("application");
+  });
+
   it("keeps explicit initTransport ahead of global transport config", async () => {
     const mockFetch = createSuccessfulFetchMock({ result: "ok" });
     vi.stubGlobal("fetch", mockFetch);

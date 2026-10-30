@@ -6,6 +6,243 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Refresh Utoopack development HTML and asset metadata after client rebuilds
+  change entry chunks, so new visits and browser reloads load the latest code
+  without restarting the development server. Preserve the native server-build
+  publication and API readiness lifecycle.
+
+---
+
+## [0.3.26] — 2026-10-30
+
+### Features
+
+- Add `src/apis/**/http.*` domain entries with multiple named HTTP operations.
+  Each operation declares a static uppercase `method` and an optional `path`
+  suffix under the directory URL prefix.
+- Export `HttpOperation`, `HttpRouteMetadata` and `HttpMethod` authoring types.
+  Keep HTTP middleware, streaming, dynamic parameters, HEAD and OPTIONS on the
+  existing runtime pipeline.
+
+### Bug Fixes
+
+- Reject shorthand `path` and `method` metadata instead of ignoring routing
+  fields and publishing a handler at the wrong URL. Shorthand `handler` remains
+  supported.
+
+### Upgrade
+
+- Upgrade installed `@evjs/*` packages together to `0.3.26` and rebuild.
+- Keep one `api.*` or `http.*` anchor per route directory. Ordinary helpers
+  named `http.*` under `src/apis` need renaming. Existing `api.*` behavior is
+  unchanged.
+
+---
+
+## [0.3.23] — 2026-09-21
+
+### ✨ Features
+
+- **Application HTTP client** — Import `api` from `@evjs/ev` to call application
+  routes with native Fetch options, a `json` request shorthand, and a typed
+  `.json<T>()` response helper. Preserve raw `Response` access, cancellation,
+  streaming, and binary responses without retries or response pre-reading.
+- **Application transport binding** — Bind the HTTP client to an application
+  and build before business modules execute. Preserve complete deployment URL
+  prefixes and merge request headers and credentials. Share request and response
+  DTOs through ordinary `import type` modules without API type generation.
+
+### 🐛 Bug Fixes
+
+- **Server Function startup configuration** — Initialize configured transport
+  before client business imports so application headers and credentials apply
+  to module-level calls. Preserve explicit `initTransport()` overrides.
+- **Utoopack production filenames** — Shorten production JavaScript chunk and
+  CSS filenames.
+
+### Upgrade
+
+- Upgrade installed `@evjs/*` packages together to `0.3.23` and rebuild.
+- Replace application API calls with `api` to use framework transport defaults.
+  Upgrading does not change the behavior of native `fetch`.
+
+---
+
+## [0.3.22] — 2026-09-18
+
+### 🐛 Bug Fixes
+
+- **Qiankun standalone startup diagnostics** — Report failures while loading or
+  mounting an independently running slave application with the original error
+  and stack. Preserve lifecycle Promise rejection and queue recovery, and avoid
+  duplicate reporting when the qiankun host owns startup.
+
+---
+
+## [0.3.21] — 2026-09-03
+
+### ⚠️ Breaking Changes
+
+- **Explicit API middleware policies** — Stop discovering and inheriting
+  `src/apis/**/middleware.*`. These files are ordinary source modules. Import
+  shared policies and compose each target HTTP method with
+  `withMiddlewares(handler, middlewares)`. Move policies that must cover
+  automatic OPTIONS or 405 responses to `src/middlewares/middleware.*`.
+  Existing applications must explicitly register any authentication or other
+  policy previously applied by directory inheritance.
+- **Dedicated middleware authoring entry** — Import `MiddlewareHandler`,
+  `MiddlewareChain`, `requestLogger`, `RequestLoggerOptions`, and `RequestLogEntry`
+  from `@evjs/ev/middleware`. These exports are no longer available from
+  `@evjs/ev/server-context` or `@evjs/ev/api`; no compatibility re-exports remain.
+  `@evjs/ev/api` exports `withMiddlewares` and `RouteHandlerFn`, while
+  `@evjs/ev/server-context` exports request, cookie, and server-function error
+  helpers. Standalone `@evjs/server` imports are unchanged.
+
+### ✨ Features
+
+- **Rootless Application component mode** — `@evjs/client` applications can
+  hand their complete Router, QueryClient, and Application-wrapper tree to one
+  external React root through `app.createComponent()`. DOM-root and component
+  ownership are mutually exclusive, AbortSignal disposal is supported, and
+  framework-managed route overlays keep the external host mounted.
+- **API middleware composition** — `withMiddlewares(handler, middlewares)`
+  composes a single HTTP method with the handler first, preserving
+  Hono context and validation input types.
+  `@evjs/ev/api` also exports `RouteHandlerFn`; standalone applications can use
+  `withMiddlewares` from `@evjs/server`.
+
+### 🐛 Bug Fixes
+
+- **Explicit HEAD handlers** — Honor declared HEAD handlers and their method
+  middleware, with GET fallback when HEAD is absent and no final response body.
+- **Middleware diagnostics** — Report malformed resolved exports with their
+  source module and zero-based array index before server startup.
+
+---
+
+## [0.3.20] — 2026-09-02
+
+### ✨ Features
+
+- **Application-aware browser hrefs** — `useHref()` and `useHrefResolver()`
+  resolve typed application-relative navigation targets to public browser URLs,
+  including an SPA's configured `routing.basepath`.
+- **Layout route params** — SPA root and route layouts can use the new
+  `useRouteParams()` API to read merged params from the active route branch
+  without changing the render-mode-neutral semantics of Page data hooks.
+
+### 🐛 Bug Fixes
+
+- **Outside-basepath route lifecycles** — Locations outside an SPA's strict
+  `routing.basepath` no longer execute generated root Page `beforeLoad`
+  callbacks before reaching the not-found boundary.
+
+---
+
+## [0.3.19] — 2026-08-31
+
+### 🐛 Bug Fixes
+
+- **Nested Pages below directory index Pages** — SPA Pages nested below a
+  directory that owns both `layout.tsx` and `page.tsx` now remain children of
+  the layout Route, so deep URLs match instead of falling through to the
+  application's not-found boundary.
+
+---
+
+## [0.3.18] — 2026-08-31
+
+### 🐛 Bug Fixes
+
+- **Strict SPA basepath mounts** — Browser locations outside
+  `routing.basepath` now remain unchanged and resolve through the application's
+  not-found boundary instead of being normalized into the mounted SPA.
+
+---
+
+## [0.3.17] — 2026-08-31
+
+### ⚠️ Breaking Changes
+
+- **Consistent basepath spelling** — Framework server configuration, resolved
+  config, runtime manifests, and RSC bootstrap data now use `basepath` instead
+  of `basePath`. The removed spelling is rejected rather than aliased.
+
+### ✨ Features
+
+- **SPA route basepaths** — `routing.basepath` mounts a file-convention SPA
+  below one static browser prefix while keeping Page files, typed paths,
+  navigation targets, and CoreGraph route identity application-relative.
+  Generated router entries, development and SSR routing, linked output paths,
+  and deployment fallbacks receive the prefix. MPA configuration rejects it.
+
+---
+
+## [0.3.16] — 2026-08-24
+
+### ✨ Features
+
+- **Browser logs in the development terminal** — Applications can configure
+  `logging.browserToTerminal` as `"error"`, `"warn"`, `true`, or `false`.
+  Utoopack forwards browser console output with source-mapped locations during
+  `ev dev`, defaulting to errors only; Webpack remains unchanged.
+
+### ✨ Improvements
+
+- **TypeScript 7 toolchain** — The repository compiler baseline, published
+  workspace development toolchain, documentation, examples, and create-app
+  templates now consistently target TypeScript 7.0.2. Compiler-invoking tests
+  use the public TypeScript package surface.
+
+### 🐛 Bug Fixes
+
+- **Single-realm Utoopack native ownership** — `ev dev` now keeps Utoopack's
+  native binding, process-global loader scheduler, loader-worker pool, and all
+  sequential Projects in one long-lived Worker. Immutable Session replacement
+  runs complete Project, server, subscription, and persistent-cache cleanup
+  without moving native callbacks across Worker environments; owner and
+  shutdown failures remain fail-stop instead of starting overlapping Projects.
+
+---
+
+## [0.3.15] — 2026-08-20
+
+### ✨ Features
+
+- **Client development middleware** — Plugins can install ordered asynchronous
+  middleware in front of the public development server with request-origin,
+  Session abort, and cleanup lifecycles. Utoopack and Webpack both support the
+  capability, including HTTP, HTTPS, and HMR/WebSocket forwarding.
+- **Application root wrappers** — Plugins can contribute stable, ordered
+  `application.wrapper` Framework IR around the complete CSR application root
+  without replacing framework-owned entry source.
+
+### ✨ Improvements
+
+- **Domain-oriented framework sources** — Reorganized Core, shared contracts,
+  bundler adapters, runtimes, CLI, scaffolding, and plugin implementations by
+  capability while preserving supported package entry points as thin façades.
+  Published package builds now clean compiled output first so removed physical
+  paths cannot remain in release tarballs.
+
+---
+
+## [0.3.14] — 2026-08-18
+
+### 🐛 Bug Fixes
+
+- **Aligned plugin planning lifecycle** — Development, inspect, prepare, and
+  production builds now finish deterministic `emitIR()` / `emitPageIR()`
+  planning before plugin `setup()`. Development and production publish a
+  selected generated revision before setup, failed planning no longer allocates
+  imperative plugin state, and accepted Sessions retain reverse-order cleanup.
+
+---
+
+## [0.3.13] — 2026-08-17
+
 ### ⚠️ Breaking Changes
 
 - **Explicit global middleware composition** — The global server middleware
@@ -25,6 +262,21 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   modules at ordered positions around an exact Page-owned `page-server` entry.
   Import contributions compose with the existing replacement mode without
   changing other server renderer kinds.
+
+### ✨ Improvements
+
+- **Faster framework development startup** — Development dependency collection
+  collapses ordered source-resolution probes into directory topology watches,
+  reuses prepared watcher plans, and shares Page-config loading sessions while
+  preserving higher-priority candidate invalidation and package-scoped module
+  resolution.
+
+### 🐛 Bug Fixes
+
+- **Complete Session watch coverage during startup** — Plugin and bundler watch
+  files become observable as soon as they are registered, preventing edits
+  during adapter startup from leaving the active immutable Session on stale
+  input. Replacement Sessions also reconcile final watcher ownership.
 
 ---
 

@@ -1,15 +1,16 @@
-# 高级约定控制
+# 自定义路由与运行时
 
-canonical client Page 与 Route 使用 positive `src/pages/**/page.*` 锚点，
-server request Route 使用 positive `src/apis/**/api.*` 锚点；两棵树都由所在
-目录决定 URL。Middleware 来自 `src/middlewares/middleware.*` 与
-`src/apis/**/middleware.ts`。
+大多数应用都应使用标准文件约定：`src/pages/**/page.*` 创建页面，
+`src/apis/**/api.*` 创建 API 路由，所在目录决定 URL。全局中间件来自
+`src/middlewares/middleware.*`；HTTP 方法策略使用 `@evjs/ev/api` 的
+`withMiddlewares(handler, middlewares)` 组合。
 
-只有当应用有意自己持有运行时组合，或需要使用显式 SPA route tree 时，才使用本页的控制项。
+只有在应用明确需要关闭文件发现、自行维护程序化 SPA 路由树，或直接使用客户端与
+服务端运行时时，才使用本页介绍的替代方式。
 
 ## 关闭文件约定
 
-文件约定发现只有一个项目级开关：
+文件约定只有一个项目级总开关：
 
 ```ts
 // ev.config.ts
@@ -20,29 +21,25 @@ export default defineConfig({
 });
 ```
 
-`conventions: false` 会一次性关闭所有框架文件发现：
+`conventions: false` 会一次性关闭以下文件发现：
 
-- `src/pages` 下的 Page 与客户端 route 锚点；
-- `src/apis` 下的 server request-route `api.*` 锚点；
-- 全局 `src/middlewares/middleware.*` 与 route-scoped
-  `src/apis/**/middleware.ts`。
+- `src/pages` 下的 `page.*` 文件和客户端路由；
+- `src/apis` 下的 `api.*` 文件和 API 路由；
+- 全局 `src/middlewares/middleware.*`。
 
-框架不提供 client、server、route、middleware 或 facet 级关闭开关。不要把
-`conventions: false` 与显式客户端 `routing` 声明一起配置。文件约定启用时，
-服务端路由目录固定为 `src/apis`。
+框架不提供分别关闭页面、API 路由或中间件的开关。不要把
+`conventions: false` 与 `routing` 同时配置。启用文件约定时，页面固定放在
+`src/pages`，API 路由固定放在 `src/apis`。
 
-仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不属于文件约定。
-reachable 且带 `"use server";` 的模块，以及插件 contribution 生成的模块，
-同样不属于文件约定；关闭文件发现后它们仍然可用。
+仅支持 SPA 的 `application.routes`、被应用引用且带 `"use server";` 的模块，以及
+插件生成的模块，都不属于文件发现范围；关闭约定后它们仍然可用。
 
-手动 browser bootstrap 使用下方 standalone runtime；它不是第二套 canonical
-routing model。
+下面的直接运行时示例用于替代框架管理的文件路由，不会引入另一种自动发现的入口文件。
 
 ## 程序化浏览器应用
 
-当浏览器应用自己持有路由时，直接使用 standalone client runtime。该 entry 由应用
-自己的 standalone bundler 持有；evjs Framework config 不会发现或构建 magic
-`src/main.tsx`：
+当浏览器应用自行维护路由和启动逻辑时，直接使用客户端运行时。该入口必须由应用自己的
+构建器处理；evjs 不会自动发现或构建 `src/main.tsx`：
 
 ```tsx
 // src/main.tsx
@@ -82,13 +79,43 @@ declare module "@evjs/client" {
 app.render("#app");
 ```
 
-这条路径适合明确自行持有 browser router 与 bootstrap 的应用，与框架
-Page-and-Route 模型相互独立。
+这种方式与框架的文件页面模型相互独立。
+
+### 在已有 React 树中嵌入 Application
+
+当 DOM root 由其他 React 宿主管理时，使用 `app.createComponent()`，不要调用
+`app.render()`。返回的句柄包含稳定的 `Component`、对应的 `element` 和幂等的
+`dispose()`。组件会渲染完整 Application，包括 Router、QueryClientProvider 和已配置的
+wrappers；创建句柄本身不会渲染，也不会创建 DOM root。
+
+```tsx
+import { flushSync } from "react-dom";
+
+const controller = new AbortController();
+const application = app.createComponent({ signal: controller.signal });
+
+// hostRoot 由集成方应用拥有。
+hostRoot.render(application.element);
+
+// 先从宿主树中移除 Application，再释放它的所有权。
+flushSync(() => hostRoot.render(null));
+application.dispose(); // controller.abort() 也会释放句柄。
+```
+
+同一时间只允许一个渲染所有者。从 DOM 渲染切换到组件模式前，先调用 `app.unmount()`；
+再次调用 `app.render()` 前，先移除组件并 dispose 句柄。dispose 或 signal abort 不会替
+外部宿主卸载 React 树。已 abort 的 signal 会被拒绝。宿主和嵌入的 Application 必须使用
+同一个 React renderer。
+
+通过 `pagesApp.updateRuntime()` 集成框架时，必须先配置并等待 history 更新完成，
+再取得组件句柄。排队中或尚未完成的 history 更新会阻止取得句柄；已有组件所有者时也
+不能更新 history。仅修改路由的更新会保持外层组件稳定，在替换后的树提交后释放旧
+Application 句柄。
 
 ## 程序化服务端应用
 
-程序化服务端应用直接使用 `@evjs/server`。它们是运行时原语，不是框架文件路由输入，
-因此 evjs 不会扫描源码中的 `createRoute()` 声明。
+程序化服务端应用直接使用 `@evjs/server`。这些路由由应用代码显式创建，不属于框架的
+文件路由，因此 evjs 不会扫描源码中的 `createRoute()` 声明。
 
 ```ts
 // src/server.ts
@@ -106,5 +133,4 @@ const app = createApp({
 serve(app, { port: 3001 });
 ```
 
-如果服务端运行时是程序化的，请把它作为普通 Node、Fetch、Bun、Deno 或平台入口
-运行在服务端文件路由发现之外。
+请像普通 Node、Fetch、Bun、Deno 或平台应用一样启动该入口，不要依赖服务端文件路由发现。

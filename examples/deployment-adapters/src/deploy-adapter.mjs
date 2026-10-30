@@ -14,7 +14,7 @@ export const deploymentExampleAdapter = definePlugin({
             app: Object.keys(output.apps).length > 0,
             pages: Object.keys(output.pages),
             rscPages: Object.keys(output.rsc?.pages ?? {}),
-            serverBasePath: output.runtime.server?.basePath,
+            serverBasepath: output.runtime.server?.basepath,
           },
         };
       },

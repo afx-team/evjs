@@ -1,12 +1,12 @@
-# 插件配方
+# 插件实践
 
-这些聚焦配方建立在[插件开发](./plugin-authoring)与[插件 Hooks](./plugin-hooks)之上。
-生成模块、entry composition、wrapper、middleware、HTML tag 与 resolution 变更应使用
-[Generated Contributions IR](./generated-contributions)。
+这些小型示例建立在[插件开发](./plugin-authoring)与[插件生命周期钩子](./plugin-hooks)
+之上。生成模块、组合入口、包装页面、添加中间件或 HTML 标签，以及修改模块解析时，
+请使用[生成代码](./generated-contributions)。
 
-## 添加 Deployment Metadata
+## 添加部署元数据
 
-Deployment adapter 需要 plugin-owned metadata 时，使用 `transformOutput()`：
+部署适配器需要写入插件专属元数据时，使用 `transformOutput()`：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -26,13 +26,13 @@ export const deployMetadata = definePlugin({
 });
 ```
 
-`transformOutput()` 只能修改 linked `AssetGroup` 内容与 `deployment` metadata。框架持有
-字段见[插件 Hooks](./plugin-hooks)中的 Build Output 所有权说明。Deployment metadata
-只能包含普通、可无损 JSON 序列化的值；evjs 会在每个 output hook 后进行校验。
+`transformOutput()` 只能修改已关联的 `AssetGroup` 内容与 `deployment` 元数据。框架
+保留字段见[插件生命周期钩子](./plugin-hooks)中的构建产物说明。部署元数据只能包含普通、
+可无损序列化为 JSON 的值；evjs 会在每次输出转换后进行校验。
 
-## 添加 Page Metadata
+## 添加页面元数据
 
-使用 `ctx.owner.kind` 定位 Page-owned document：
+使用 `ctx.owner.kind` 定位页面对应的文档：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -53,12 +53,12 @@ export const pageMetadata = definePlugin({
 });
 ```
 
-Static HTML file 与 Page-specific request-time document shell 都会经过
-`transformHtml()`。不要从文件名推断 ownership。
+静态 HTML 文件和页面专属的请求时文档外壳都会经过 `transformHtml()`。不要根据文件名
+猜测文档归属。
 
-## 添加 CSP Nonce
+## 添加 CSP nonce
 
-`transformHtml()` 暴露解析后的 bundler-independent document：
+`transformHtml()` 提供与构建器无关、已经解析的文档对象：
 
 ```ts
 import crypto from "node:crypto";
@@ -79,5 +79,4 @@ export const cspNonce = definePlugin({
 });
 ```
 
-生产环境的 CSP response header 必须使用与 document transform 相同的 nonce。该值的
-传递机制取决于 deployment runtime。
+生产环境的 CSP 响应头必须使用与文档转换相同的 nonce。该值如何传递取决于部署运行时。

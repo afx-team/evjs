@@ -65,8 +65,8 @@ Release automation replaces them with the release version before publishing.
    documented responsibilities. Reserve `@evjs/ev/_internal/*` for the CLI,
    adapters, and generated code.
 4. Framework Pages use `src/pages/**/page.*`; server request Routes use
-   `src/apis/**/api.*`. The containing directory owns scope and URL
-   in both trees.
+   `src/apis/**/api.*` or `src/apis/**/http.*`. The containing directory owns scope
+   and the URL prefix; `http.*` operations can add a path suffix.
 5. Put Page metadata, rendering settings, and the generated plugin map keyed by
    canonical plugin id in adjacent `page.config.ts`. Configure plugins at
    Application scope through factory calls in `config.plugins`; do not add Route
@@ -79,6 +79,15 @@ Release automation replaces them with the release version before publishing.
    a distributed package.
 9. Update English and Chinese docs together when behavior changes. Keep release
    history in `CHANGELOG.md` and active implementation gaps in `ROADMAP.md`.
+10. Keep package roots, public subpath `index.ts` files, and executable entry
+    modules as stable façades. Put implementation in a named capability domain,
+    and import focused leaf modules inside that domain instead of its barrel.
+11. Name middleware list fields and arguments `middlewares`, matching
+    `createApp()`, `createRoute()`, and `withMiddlewares(handler, middlewares)`.
+    Use `MiddlewareHandler` for one function and `MiddlewareChain` for an
+    ordered chain. Capability, hook, and module names stay singular:
+    `server.request.middleware`, `clientDevMiddleware`, and `middleware.*`.
+    Name concrete middleware factories by behavior, such as `requestLogger()`.
 
 ## Common Tasks
 
@@ -101,17 +110,21 @@ Release automation replaces them with the release version before publishing.
 ### Add a server request Route
 
 1. Create the URL directory below `src/apis`.
-2. Add one `api.ts`, `api.tsx`, `api.js`, or `api.jsx` anchor.
+2. Add one `api.*` or `http.*` anchor with a `ts`, `tsx`, `js`, or `jsx` extension.
 3. Export uppercase HTTP method handlers.
-4. Put helpers in other colocated modules and scoped middleware in
-   `middleware.ts`.
+4. Put helpers and shared middleware chains in ordinary colocated modules.
+5. Compose individual methods with `withMiddlewares(handler, middlewares)`
+   from `@evjs/ev/api`.
+   That entry also exports `RouteHandlerFn`. Import middleware types and
+   `requestLogger` from `@evjs/ev/middleware`, and request context helpers
+   from `@evjs/ev/server-context`.
 
 ### Add global server middleware
 
 1. Put individual middleware modules in `src/middlewares`.
 2. Default-export one handler or an ordered non-empty list from
    `src/middlewares/middleware.ts`; use `satisfies MiddlewareChain` to type a
-   list in TypeScript.
+   list in TypeScript, imported from `@evjs/ev/middleware`.
 3. Keep ordering explicit in that anchor; `index.*` and other sibling modules
    are ordinary source and are not auto-discovered.
 
@@ -137,17 +150,23 @@ Release automation replaces them with the release version before publishing.
 
 ## Build Pipeline
 
-`ev prepare`, `ev build`, and `ev dev` share the same semantic preparation:
+`ev prepare`, `ev build`, and `ev dev` complete semantic planning before
+plugin setup:
 
 ```txt
 load config
 run configure hooks and resolve Application plugin settings
-run setup hooks
 create CoreGraph while resolving Page plugin settings
 collect generated contributions with emitIR/emitPageIR
 derive BuildPlan
-materialize .ev
+render the complete .ev image in memory
+select the successful revision and publish it on publishing paths
+run setup hooks
 ```
+
+`ev inspect` is the write-free exception: it completes the same planning in
+memory, then runs setup and dispose without publishing `.ev` or generated
+types. A planning failure therefore never reaches setup on any path.
 
 `ev build` then asks the selected bundler for fresh build facts, runs
 `beforeBuild`, links and transforms `BuildOutput`, writes
@@ -158,9 +177,9 @@ output is published. `prepare` and `inspect` do not run the before/after pair.
 Supervisor watches framework-owned inputs and prepares candidate revisions
 without writing `.ev`. It compares a stable semantic fingerprint of config,
 graph, plan, generated IR, plugin settings, and opaque dependency content.
-Semantic no-ops keep the active immutable Session; semantic changes close it
-and start a new Session with fixed config, graph, plan, hooks, and adapter
-inputs.
+Failed and semantically unchanged candidates never run setup. Only an accepted
+candidate is published and set up as a new immutable Session with fixed config,
+graph, plan, hooks, and adapter inputs; semantic no-ops keep the active Session.
 
 Preparation errors keep the active Session and wait for another real input
 change instead of retrying automatically. After replacement starts, errors are
@@ -170,6 +189,39 @@ changes remain a manual `ev dev` restart. Dev adapters implement one immutable
 closable controller, and leave ordinary module watching and HMR adapter-owned.
 Generated `.ev` state is disposable and must be reconstructible directly from
 authored inputs.
+
+## Focused Validation
+
+Use Turbo filters while editing so workspace dependencies build through the
+repository graph:
+
+```bash
+npx turbo run test --filter=@evjs/ev
+npx turbo run test --filter=@evjs/shared
+npx turbo run test --filter=@evjs/client
+npx turbo run test --filter=@evjs/server
+npx turbo run test --filter=@evjs/bundler-utoopack
+npx turbo run test --filter=@evjs/bundler-webpack
+```
+
+For a single test file, build the package graph first, then invoke that
+workspace directly:
+
+```bash
+npx turbo run build --filter=@evjs/ev
+npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts
+```
+
+| Change area | Primary implementation | Focused validation |
+| --- | --- | --- |
+| Pages, routes, graph, and build plan | `packages/ev/src/_internal/build/discovery/page-routes.ts`, `graph/*`, `plan/*` | `npx turbo run test --filter=@evjs/ev` |
+| API routes and middleware | `packages/ev/src/_internal/build/conventions/server-route-conventions.ts`, `discovery/server-routes.ts`, `discovery/server-conventions.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Configuration and package exports | `packages/ev/src/config`, package manifests | `npx turbo run test --filter=@evjs/ev` |
+| Shared output contracts | `packages/shared/src/manifest` | `npx turbo run test --filter=@evjs/shared` |
+| Server functions | `packages/ev/src/_internal/build/analysis/server-fns.ts`, client and server runtimes | `npx turbo run test --filter=@evjs/client --filter=@evjs/server` |
+| SSR, SSG, PPR, and RSC | graph and plan code, client RSC, server rendering | `npx turbo run test --filter=@evjs/ev --filter=@evjs/client --filter=@evjs/server` |
+| Bundler mapping | `packages/bundler-*/src/adapter/{config,development,execution,output}` | Test the affected bundler package. |
+| Documentation | `docs/docs`, Chinese translations, package and example READMEs | `npm run lint`, `npm --workspace evjs-docs run build`, `git diff --check` |
 
 ## Commands
 

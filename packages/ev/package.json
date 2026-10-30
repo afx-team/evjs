@@ -10,6 +10,7 @@
   "exports": {
     ".": {
       "types": "./esm/index.d.ts",
+      "browser": "./esm/browser.js",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
     },
@@ -22,6 +23,16 @@
       "types": "./esm/plugin/index.d.ts",
       "import": "./esm/plugin/index.js",
       "default": "./esm/plugin/index.js"
+    },
+    "./api": {
+      "types": "./esm/api/index.d.ts",
+      "import": "./esm/api/index.js",
+      "default": "./esm/api/index.js"
+    },
+    "./middleware": {
+      "types": "./esm/middleware/index.d.ts",
+      "import": "./esm/middleware/index.js",
+      "default": "./esm/middleware/index.js"
     },
     "./route": {
       "types": "./esm/route/index.d.ts",
@@ -62,6 +73,16 @@
       "types": "./esm/_internal/build/index.d.ts",
       "import": "./esm/_internal/build/index.js",
       "default": "./esm/_internal/build/index.js"
+    },
+    "./_internal/client/api": {
+      "types": "./esm/_internal/generated/client/api.d.ts",
+      "import": "./esm/_internal/generated/client/api.js",
+      "default": "./esm/_internal/generated/client/api.js"
+    },
+    "./_internal/client/api-transport": {
+      "types": "./esm/_internal/generated/client/api-transport.d.ts",
+      "import": "./esm/_internal/generated/client/api-transport.js",
+      "default": "./esm/_internal/generated/client/api-transport.js"
     },
     "./_internal/client": {
       "types": "./esm/_internal/generated/client/index.d.ts",
@@ -177,7 +198,7 @@
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",
     "react-server-dom-webpack": "^19.2.5",
-    "typescript": "^6.0.2"
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "evjs",

@@ -513,7 +513,7 @@ describe("React RSC runtime", () => {
           buildId: "test",
           pageId: "insights",
           endpoint: "__evjs/rsc",
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           publicPath: "/assets/",
           mount: "#app",
           page: {
@@ -601,7 +601,7 @@ describe("React RSC runtime", () => {
           buildId: "test",
           pageId: "insights",
           endpoint: "__evjs/rsc",
-          basePath: "/__evjs",
+          basepath: "/__evjs",
           mount: "#app",
         },
       }),
@@ -749,13 +749,13 @@ describe("React RSC runtime", () => {
             buildId: "test",
             pageId: "insights",
             endpoint: "__evjs/rsc",
-            basePath: " /__evjs ",
+            basepath: " /__evjs ",
             mount: "#app",
           },
         }),
       }),
     ).rejects.toThrow(
-      '[evjs] RSC bootstrap "__EVJS_RSC_BOOTSTRAP__" basePath must not contain leading or trailing whitespace.',
+      '[evjs] RSC bootstrap "__EVJS_RSC_BOOTSTRAP__" basepath must not contain leading or trailing whitespace.',
     );
 
     await expect(
@@ -780,12 +780,12 @@ describe("React RSC runtime", () => {
             buildId: "test",
             pageId: "insights",
             endpoint: "__evjs/rsc",
-            basePath: "/运行时",
+            basepath: "/运行时",
             mount: "#app",
           },
         }),
       }),
-    ).rejects.toThrow("basePath must use non-empty ASCII URL-safe segments");
+    ).rejects.toThrow("basepath must use non-empty ASCII URL-safe segments");
 
     await expect(
       startReactRscPageRuntime({
@@ -970,7 +970,7 @@ function createBootstrap(
     buildId: "test",
     pageId: "insights",
     endpoint: "__evjs/rsc",
-    basePath: "/__evjs",
+    basepath: "/__evjs",
     mount: "#app",
     ...overrides,
   };

@@ -1,22 +1,26 @@
 {
-  "sidebar.guideSidebar.category.Introduction": {
-    "message": "入门",
-    "description": "The label for category Introduction in sidebar guideSidebar"
+  "sidebar.guideSidebar.category.Getting Started": {
+    "message": "快速上手",
+    "description": "The Getting Started category in the documentation sidebar"
   },
-  "sidebar.guideSidebar.category.Core Concepts": {
-    "message": "核心概念",
-    "description": "The label for category Core Concepts in sidebar guideSidebar"
+  "sidebar.guideSidebar.category.Guides": {
+    "message": "使用指南",
+    "description": "The Guides category in the documentation sidebar"
   },
-  "sidebar.guideSidebar.category.Plugins": {
-    "message": "插件",
-    "description": "The label for category Plugins in sidebar guideSidebar"
+  "sidebar.guideSidebar.category.Framework Design": {
+    "message": "框架设计",
+    "description": "The Framework Design category in the documentation sidebar"
   },
   "sidebar.guideSidebar.category.Reference": {
     "message": "参考",
-    "description": "The label for category Reference in sidebar guideSidebar"
+    "description": "The Reference category in the documentation sidebar"
   },
-  "sidebar.guideSidebar.category.Community": {
-    "message": "社区",
-    "description": "The label for category Community in sidebar guideSidebar"
+  "sidebar.guideSidebar.category.Plugin Development": {
+    "message": "插件开发",
+    "description": "The Plugin Development category in the documentation sidebar"
+  },
+  "sidebar.guideSidebar.category.Project": {
+    "message": "项目",
+    "description": "The Project category in the documentation sidebar"
   }
 }

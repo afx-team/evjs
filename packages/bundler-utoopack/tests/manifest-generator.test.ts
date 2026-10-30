@@ -13,7 +13,7 @@ import type {
 } from "@evjs/shared/manifest";
 import { linkBuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
-import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
+import { UtoopackManifestGenerator } from "../src/adapter/output/manifest-generator.js";
 
 const tempDirs: string[] = [];
 
@@ -103,7 +103,7 @@ function createPrototypeEntryPlan(
     server: environment === "server" ? { entry: "./src/server.ts" } : {},
     runtime: {
       publicPath: "/",
-      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      server: { basepath: "/__evjs", fn: "__evjs/fn" },
     },
     dev: {
       clientRoutes: [],
@@ -1286,7 +1286,7 @@ function createPlan(
     runtime: {
       publicPath: "/",
       server: {
-        basePath: "/__evjs",
+        basepath: "/__evjs",
         fn: "__evjs/fn",
       },
     },

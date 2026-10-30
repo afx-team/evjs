@@ -1,21 +1,20 @@
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import type { ConfigComplete } from "@utoo/pack";
-import { describe, expect, it } from "vitest";
-import { startUtoopackDevWorker } from "../src/adapter/dev-worker-client.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { __testing as modeTesting } from "../src/adapter/development/dev-process-mode.js";
+import {
+  __testing as ownerTesting,
+  startUtoopackDevWorker,
+} from "../src/adapter/development/dev-worker-client.js";
 
 const fixtureUrl = new URL("./fixtures/dev-worker-client.mjs", import.meta.url);
-const require = createRequire(import.meta.url);
-const { PersistentCacheLock } = require("@utoo/pack/cjs/utils/lockfile.js") as {
-  PersistentCacheLock: {
-    tryAcquire(
-      lockPath: string,
-      content: string,
-    ): { unlockSync(): void } | undefined;
-  };
-};
+
+afterEach(async () => {
+  await ownerTesting.disposeNativeOwner();
+  modeTesting.reset();
+});
 
 function createOptions(
   rewrite: (path: string) => string,
@@ -41,7 +40,6 @@ function createOptions(
   return {
     cwd: process.cwd(),
     config,
-    workerSchedulerBindingPath: "/virtual/@utoo/pack/cjs/binding.js",
     spaHistoryFallbackRuleIndex: 1,
     server: {
       port: 3000,
@@ -53,6 +51,44 @@ function createOptions(
 }
 
 describe("Utoopack dev worker client", () => {
+  it("acknowledges server builds only after host publication and returns failures", async () => {
+    let release!: () => void;
+    const publishing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const onServerBuild = vi.fn(async () => {
+      if (onServerBuild.mock.calls.length === 1) await publishing;
+      else throw new Error("publication failed");
+    });
+    const onServerError = vi.fn();
+    const handle = startUtoopackDevWorker(
+      {
+        ...createOptions((requestPath) => requestPath, {
+          TEST_SERVER_BUILD: "true",
+        }),
+        onServerBuild,
+        onServerError,
+      },
+      fixtureUrl,
+    );
+    try {
+      await handle.ready;
+      await vi.waitFor(() => expect(onServerBuild).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(onServerBuild).toHaveBeenCalledOnce();
+      release();
+      await vi.waitFor(() =>
+        expect(onServerError).toHaveBeenCalledWith(
+          expect.objectContaining({ message: "publication failed" }),
+        ),
+      );
+      expect(onServerBuild).toHaveBeenCalledTimes(2);
+    } finally {
+      release();
+      await handle.close();
+    }
+  });
+
   it("bridges closure-backed path rewrites and updates the worker-owned fallback", async () => {
     const prefix = "/closed";
     const handle = startUtoopackDevWorker(
@@ -90,6 +126,7 @@ describe("Utoopack dev worker client", () => {
     } finally {
       await throwing.close();
     }
+    const ownerThreadId = ownerTesting.getNativeOwnerThreadId();
 
     const oversized = startUtoopackDevWorker(
       createOptions(() => "x".repeat(300_000)),
@@ -99,12 +136,13 @@ describe("Utoopack dev worker client", () => {
       await expect(oversized.ready).resolves.toMatchObject({
         rewrite: { error: expect.stringContaining("exceeds 262144 bytes") },
       });
+      expect(ownerTesting.getNativeOwnerThreadId()).toBe(ownerThreadId);
     } finally {
       await oversized.close();
     }
   });
 
-  it("releases worker-owned native cache locks before close resolves", async () => {
+  it("releases owner-Worker resources before Session close resolves", async () => {
     const cwd = await fs.promises.mkdtemp(
       path.join(os.tmpdir(), "evjs-utoopack-worker-close-"),
     );
@@ -118,14 +156,14 @@ describe("Utoopack dev worker client", () => {
 
     try {
       await handle.ready;
-      expect(PersistentCacheLock.tryAcquire(lockPath, "contender")).toBe(
-        undefined,
-      );
+      await expect(fs.promises.open(lockPath, "wx")).rejects.toMatchObject({
+        code: "EEXIST",
+      });
       await handle.close();
       await expect(handle.done).resolves.toBeUndefined();
-      const reacquired = PersistentCacheLock.tryAcquire(lockPath, "reacquired");
-      expect(reacquired).toBeDefined();
-      reacquired?.unlockSync();
+      const reacquired = await fs.promises.open(lockPath, "wx");
+      await reacquired.close();
+      await fs.promises.unlink(lockPath);
     } finally {
       try {
         await handle.close();
@@ -146,11 +184,9 @@ describe("Utoopack dev worker client", () => {
 
     await handle.ready;
     await expect(handle.close()).rejects.toThrow(
-      "Timed out after 25ms while waiting for the Utoopack development worker",
+      "Timed out after 25ms while waiting for the Utoopack native owner",
     );
-    await expect(handle.done).rejects.toThrow(
-      "before confirming graceful shutdown",
-    );
+    await expect(handle.done).rejects.toThrow("Timed out after 25ms");
   });
 
   it("rejects a clean exit that did not accept graceful shutdown", async () => {
@@ -163,10 +199,10 @@ describe("Utoopack dev worker client", () => {
 
     await handle.ready;
     await expect(handle.close()).rejects.toThrow(
-      "exited with code 0 before confirming graceful shutdown",
+      "exited with code 0 before confirming Session",
     );
     await expect(handle.done).rejects.toThrow(
-      "exited with code 0 before confirming graceful shutdown",
+      "exited with code 0 before confirming Session",
     );
   });
 
@@ -177,7 +213,7 @@ describe("Utoopack dev worker client", () => {
     );
     await handle.ready;
     await expect(handle.done).rejects.toThrow(
-      "worker exited unexpectedly with code 0",
+      "native-owner Worker exited unexpectedly with code 0",
     );
     await expect(handle.close()).resolves.toBeUndefined();
   });

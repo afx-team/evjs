@@ -30,25 +30,50 @@ import {
 import type {
   Context as HonoContext,
   Env as HonoEnv,
+  Input,
   MiddlewareHandler,
 } from "hono";
+import type { BlankInput } from "hono/types";
+import { assertMiddlewareArray } from "../middleware/middleware-chain.js";
+import { createHeadHandler } from "./api-handler.js";
 
 /**
  * A route handler function.
  * Receives a standard Web `Request` and the Hono `Context`.
  * Access route params via `ctx.req.param()`.
  */
-export type RouteHandlerFn<TPath extends string = string> = (
+export type RouteHandlerFn<
+  TPath extends string = string,
+  E extends HonoEnv = HonoEnv,
+  I extends Input = BlankInput,
+> = (
   request: Request,
-  ctx: HonoContext<HonoEnv, TPath>,
+  ctx: HonoContext<E, TPath, I>,
 ) => Response | Promise<Response>;
+
+/** A method export may carry build-time metadata beside its callable handler. */
+export interface RouteHandlerDescriptor<
+  TPath extends string = string,
+  E extends HonoEnv = HonoEnv,
+  I extends Input = BlankInput,
+> {
+  handler: RouteHandlerFn<TPath, E, I>;
+}
+
+export type RouteHandlerInput<
+  TPath extends string = string,
+  E extends HonoEnv = HonoEnv,
+  I extends Input = BlankInput,
+> = RouteHandlerFn<TPath, E, I> | RouteHandlerDescriptor<TPath, E, I>;
 
 /**
  * Route handler definition — HTTP method handlers + optional middleware.
  */
-export type RouteHandlerDefinition<TPath extends string = string> = Partial<
-  Record<HttpMethod, RouteHandlerFn<TPath>>
-> & {
+export type RouteHandlerDefinition<
+  TPath extends string = string,
+  E extends HonoEnv = HonoEnv,
+  I extends Input = BlankInput,
+> = Partial<Record<HttpMethod, RouteHandlerInput<TPath, E, I>>> & {
   /**
    * Optional per-route middleware stack. Runs before any handler.
    */
@@ -61,7 +86,7 @@ export type RouteHandlerDefinition<TPath extends string = string> = Partial<
 export interface RouteHandler {
   /** The path pattern for this handler (e.g. `/api/users/:id`). */
   path: string;
-  /** The normalized HTTP method handlers. */
+  /** The normalized HTTP method handlers, including automatic HEAD/OPTIONS. */
   methods: Readonly<Partial<Record<HttpMethod, RouteHandlerFn<string>>>>;
   /** Route-level middleware. */
   middlewares: MiddlewareHandler[];
@@ -93,9 +118,39 @@ const SUPPORTED_DEFINITION_KEYS = `${HTTP_METHOD_LIST_DESCRIPTION} or "middlewar
  * });
  * ```
  */
-export function createRoute<const T extends string>(
+export function createRoute<
+  const T extends string,
+  GetEnv extends HonoEnv = HonoEnv,
+  GetInput extends Input = BlankInput,
+  PostEnv extends HonoEnv = HonoEnv,
+  PostInput extends Input = BlankInput,
+  PutEnv extends HonoEnv = HonoEnv,
+  PutInput extends Input = BlankInput,
+  PatchEnv extends HonoEnv = HonoEnv,
+  PatchInput extends Input = BlankInput,
+  DeleteEnv extends HonoEnv = HonoEnv,
+  DeleteInput extends Input = BlankInput,
+  HeadEnv extends HonoEnv = HonoEnv,
+  HeadInput extends Input = BlankInput,
+  OptionsEnv extends HonoEnv = HonoEnv,
+  OptionsInput extends Input = BlankInput,
+>(
   path: T & (string extends T ? never : T),
-  definition: RouteHandlerDefinition<T>,
+  // Infer each method independently: one method's middleware cannot provide
+  // variables or validated input to another method on the same route.
+  definition: {
+    GET?: RouteHandlerInput<NoInfer<T>, GetEnv, GetInput>;
+    POST?: RouteHandlerInput<NoInfer<T>, PostEnv, PostInput>;
+    PUT?: RouteHandlerInput<NoInfer<T>, PutEnv, PutInput>;
+    PATCH?: RouteHandlerInput<NoInfer<T>, PatchEnv, PatchInput>;
+    DELETE?: RouteHandlerInput<NoInfer<T>, DeleteEnv, DeleteInput>;
+    HEAD?: RouteHandlerInput<NoInfer<T>, HeadEnv, HeadInput>;
+    OPTIONS?: RouteHandlerInput<NoInfer<T>, OptionsEnv, OptionsInput>;
+  } & Pick<RouteHandlerDefinition<T>, "middlewares">,
+): RouteHandler;
+export function createRoute(
+  path: string,
+  definition: RouteHandlerDefinition,
 ): RouteHandler {
   const pathError = getCreateRoutePathError(path);
   if (pathError) {
@@ -103,8 +158,15 @@ export function createRoute<const T extends string>(
   }
 
   assertRouteDefinition(definition);
-  const routeDefinition = definition as RouteHandlerDefinition<T>;
-  const { middlewares = [], ...methods } = routeDefinition;
+  const { middlewares = [], ...entries } = definition;
+  const methods = Object.fromEntries(
+    Object.entries(entries).map(([method, value]) => [
+      method,
+      typeof value === "function"
+        ? value
+        : (value as RouteHandlerDescriptor).handler,
+    ]),
+  ) as Partial<Record<HttpMethod, RouteHandlerFn<string>>>;
 
   if (collectRouteMethods(methods).length === 0) {
     throw new Error(
@@ -112,7 +174,7 @@ export function createRoute<const T extends string>(
     );
   }
 
-  // Auto-implement OPTIONS if not explicitly defined.
+  // Keep automatic methods available to callers before the route is mounted.
   if (!methods.OPTIONS) {
     methods.OPTIONS = () =>
       new Response(null, {
@@ -120,17 +182,8 @@ export function createRoute<const T extends string>(
         headers: { Allow: collectRouteMethods(methods).join(", ") },
       });
   }
-
-  // Auto-derive HEAD from GET if GET is defined but HEAD is not.
   if (methods.GET && !methods.HEAD) {
-    const getHandler = methods.GET;
-    methods.HEAD = async (req, ctx) => {
-      const res = await getHandler(req, ctx);
-      return new Response(null, {
-        status: res.status,
-        headers: res.headers,
-      });
-    };
+    methods.HEAD = createHeadHandler(methods.GET);
   }
 
   return {
@@ -142,9 +195,7 @@ export function createRoute<const T extends string>(
   };
 }
 
-function collectRouteMethods(
-  methods: Partial<Record<HttpMethod, RouteHandlerFn<string>>>,
-): HttpMethod[] {
+function collectRouteMethods(methods: Record<string, unknown>): HttpMethod[] {
   return Object.entries(methods)
     .filter(
       (entry): entry is [HttpMethod, RouteHandlerFn<string>] =>
@@ -210,14 +261,7 @@ function assertRouteDefinition(
     }
 
     if (key === "middlewares") {
-      if (
-        !Array.isArray(value) ||
-        value.some((middleware) => typeof middleware !== "function")
-      ) {
-        throw new Error(
-          "[evjs] createRoute() middlewares must be an array of functions.",
-        );
-      }
+      assertMiddlewareArray(value, "createRoute() middlewares");
       continue;
     }
 
@@ -227,7 +271,14 @@ function assertRouteDefinition(
       );
     }
 
-    if (typeof value !== "function") {
+    if (
+      typeof value !== "function" &&
+      !(
+        value &&
+        typeof value === "object" &&
+        typeof (value as RouteHandlerDescriptor).handler === "function"
+      )
+    ) {
       throw new Error(
         `[evjs] createRoute() ${key} handler must be a function.`,
       );

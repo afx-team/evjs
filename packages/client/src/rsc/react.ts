@@ -12,7 +12,7 @@ import {
   type PageProps,
   PageProvider,
 } from "../framework/page/page-context.js";
-import type { AppContext, AppModule } from "../framework/shell/index.js";
+import type { AppContext, AppModule } from "../framework/shell/types.js";
 import {
   assertFetchResponseObject,
   getFetchResponseContentType,

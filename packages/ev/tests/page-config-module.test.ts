@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { analyzePageModuleExports } from "../src/_internal/build/analysis/page-module-exports.js";
+import { resolvePageConfigModules } from "../src/_internal/build/config-loading/page-config-module.js";
 import type { GraphConfig } from "../src/_internal/build/graph/index.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
-import { resolvePageConfigModules } from "../src/_internal/build/page-config-module.js";
-import { analyzePageModuleExports } from "../src/_internal/build/page-module-exports.js";
 import type {
   PageAnchorMetadata,
   PageRouteDiscoveryMetadata,

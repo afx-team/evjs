@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DevApiProcessController } from "../src/_internal/build/dev-api-process.js";
+import { DevApiProcessController } from "../src/_internal/build/dev/api-process.js";
 
 interface FakeApiProcess {
   id: string;

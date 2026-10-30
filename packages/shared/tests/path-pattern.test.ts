@@ -5,7 +5,7 @@ import {
   getPathPatternValidationError,
   isPathPattern,
   pathPatternMatches,
-} from "../src/path-pattern.js";
+} from "../src/routing/path-pattern.js";
 
 describe("path pattern helpers", () => {
   it("accepts slash-prefixed path patterns without query, hash, or whitespace", () => {

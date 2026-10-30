@@ -1,13 +1,6 @@
+import { api } from "@evjs/ev";
 import { useState } from "react";
-
-// ── Types ──
-
-interface Post {
-  id: string;
-  title: string;
-  body: string;
-  createdAt: string;
-}
+import type { CreatePostInput, Post } from "@/shared/posts";
 
 // ── Posts Page ──
 
@@ -24,9 +17,7 @@ export default function PostsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/posts");
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
-      const data = await res.json();
+      const data = await api.get("/api/posts").json<Post[]>();
       setPosts(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -42,12 +33,8 @@ export default function PostsPage() {
 
     setIsCreating(true);
     try {
-      const res = await fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body }),
-      });
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const input: CreatePostInput = { title, body };
+      await api.post("/api/posts", { json: input }).json<Post>();
       setTitle("");
       setBody("");
       await fetchPosts();
@@ -61,7 +48,7 @@ export default function PostsPage() {
   // Delete a post via DELETE
   async function handleDelete(id: string) {
     try {
-      const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+      const res = await api.delete(`/api/posts/${encodeURIComponent(id)}`);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       await fetchPosts();
     } catch (err) {
@@ -209,7 +196,7 @@ function HealthCheck() {
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
 
   async function checkHealth() {
-    const res = await fetch("/api/health");
+    const res = await api.get("/api/health");
     setHealth(await res.json());
   }
 

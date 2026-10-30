@@ -37,7 +37,7 @@ const txtPlugin = definePlugin({
   configure(config) {
     config.server = {
       ...(typeof config.server === "object" ? config.server : {}),
-      basePath: "/api",
+      basepath: "/api",
     };
     return config;
   },

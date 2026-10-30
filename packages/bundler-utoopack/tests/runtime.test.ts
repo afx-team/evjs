@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   runUtoopackBuild,
   runUtoopackDevServer,
-} from "../src/adapter/runtime.js";
+} from "../src/adapter/execution/utoopack.js";
 
 const PROJECT_PATH = "/workspace/apps/example";
 const config = {} as ConfigComplete;

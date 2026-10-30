@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { generateHtml } from "../src/_internal/build/html.js";
-import { applyPageMetadataToHtmlDocument } from "../src/_internal/build/page-metadata-html.js";
+import { generateHtml } from "../src/_internal/build/output/html/html.js";
+import { applyPageMetadataToHtmlDocument } from "../src/_internal/build/output/html/page-metadata-html.js";
 
 const FIXTURES_DIR = path.join(import.meta.dirname, "__fixtures__");
 const TEMPLATE_PATH = path.join(FIXTURES_DIR, "template.html");
