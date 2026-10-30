@@ -38,9 +38,8 @@ import {
   type UtoopackDevWorkerHandle,
 } from "./development/dev-worker-client.js";
 import {
-  readStatsVersion,
-  startUtoopackStatsWatcher,
-  type UtoopackStatsWatcher,
+  readClientStatsVersion,
+  watchClientStats,
 } from "./development/stats-watcher.js";
 import { runUtoopackBuild } from "./execution/utoopack.js";
 import { UtoopackManifestGenerator } from "./output/manifest-generator.js";
@@ -112,10 +111,10 @@ interface DevBuildSnapshot {
   clientStatsVersion: string | undefined;
 }
 
-function getClientStatsPaths(cwd: string, plan: BuildPlan): string[] {
+function getClientStatsPath(cwd: string, plan: BuildPlan): string | undefined {
   return plan.entries.some((entry) => entry.environment === "client")
-    ? [path.join(resolveBuildOutputPaths(cwd, plan).clientDir, "stats.json")]
-    : [];
+    ? path.join(resolveBuildOutputPaths(cwd, plan).clientDir, "stats.json")
+    : undefined;
 }
 
 async function collectDevBuildSnapshot(
@@ -123,13 +122,11 @@ async function collectDevBuildSnapshot(
   plan: BuildPlan,
   clientOnly = false,
 ): Promise<DevBuildSnapshot> {
-  const statsPaths = getClientStatsPaths(cwd, plan);
-  const clientStatsVersion = await readStatsVersion(statsPaths);
+  const statsPath = getClientStatsPath(cwd, plan);
+  const clientStatsVersion = await readClientStatsVersion(statsPath);
   const generator = new UtoopackManifestGenerator(cwd, plan);
-  const facts = await (clientOnly
-    ? generator.collectClientBuildFacts()
-    : generator.collectBuildFacts());
-  if (clientStatsVersion !== (await readStatsVersion(statsPaths))) {
+  const facts = await generator.collectBuildFacts({ clientOnly });
+  if (clientStatsVersion !== (await readClientStatsVersion(statsPath))) {
     throw new Error("[evjs] Utoopack client stats changed while being read.");
   }
   return { facts, clientStatsVersion };
@@ -421,7 +418,7 @@ class UtoopackDevController implements BundlerDevController {
   private hasEmittedDevArtifacts = false;
   private acceptedFacts: BundlerBuildFacts | undefined;
   private lastPublishedClientVersion: string | undefined;
-  private clientStatsWatcher: UtoopackStatsWatcher | undefined;
+  private clientStatsWatcher: ReturnType<typeof watchClientStats> | undefined;
   private closed = false;
   private closePromise: Promise<void> | undefined;
   private readonly closingController = new AbortController();
@@ -481,16 +478,20 @@ class UtoopackDevController implements BundlerDevController {
   }
 
   startClientStatsWatcher(): void {
-    const statsPaths = getClientStatsPaths(this.options.cwd, this.options.plan);
-    if (this.closed || statsPaths.length === 0) return;
-    this.clientStatsWatcher = startUtoopackStatsWatcher({
-      statsPaths,
-      initialVersion: this.lastPublishedClientVersion,
-      onChange: () => this.processClientBuild(),
-      onError(error) {
+    const statsPath = getClientStatsPath(this.options.cwd, this.options.plan);
+    if (this.closed || !statsPath) return;
+    const onError = (error: unknown) => {
+      if (!this.closed) {
         logger.error`Failed to process Utoopack client rebuild: ${error}`;
+      }
+    };
+    this.clientStatsWatcher = watchClientStats(
+      statsPath,
+      () => {
+        if (!this.closed) void this.processClientBuild().catch(onError);
       },
-    });
+      onError,
+    );
   }
 
   async close(): Promise<void> {
@@ -532,20 +533,15 @@ class UtoopackDevController implements BundlerDevController {
     });
   }
 
-  private processClientBuild(): Promise<boolean> {
+  private processClientBuild(): Promise<void> {
     return this.enqueueDevWork(async () => {
-      if (this.closed) return false;
+      if (this.closed) return;
       // The native server endpoint owns the first publication and API ACK.
-      if (hasServerEntries(this.options.plan) && !this.acceptedFacts)
-        return false;
-      const version = await readStatsVersion(
-        getClientStatsPaths(this.options.cwd, this.options.plan),
+      if (hasServerEntries(this.options.plan) && !this.acceptedFacts) return;
+      const version = await readClientStatsVersion(
+        getClientStatsPath(this.options.cwd, this.options.plan),
       );
-      if (!version) return false;
-      if (version === this.lastPublishedClientVersion) {
-        this.clientStatsWatcher?.advance(version);
-        return true;
-      }
+      if (!version || version === this.lastPublishedClientVersion) return;
       let snapshot: DevBuildSnapshot;
       try {
         snapshot = await collectDevBuildSnapshot(
@@ -555,7 +551,7 @@ class UtoopackDevController implements BundlerDevController {
         );
       } catch {
         // A partial/invalid client write must not block a server endpoint ACK.
-        return false;
+        return;
       }
       if (this.acceptedFacts) {
         snapshot.facts = {
@@ -569,7 +565,7 @@ class UtoopackDevController implements BundlerDevController {
           },
         };
       }
-      return (await this.publishBuildFacts(snapshot, false)) === "published";
+      await this.publishBuildFacts(snapshot, false);
     });
   }
 
@@ -616,7 +612,6 @@ class UtoopackDevController implements BundlerDevController {
       }
       this.acceptedFacts = snapshot.facts;
       this.lastPublishedClientVersion = snapshot.clientStatsVersion;
-      this.clientStatsWatcher?.advance(snapshot.clientStatsVersion);
     }
     return disposition;
   }

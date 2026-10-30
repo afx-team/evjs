@@ -2,123 +2,39 @@ import fs from "node:fs";
 import path from "node:path";
 import { watch } from "chokidar";
 
-export interface UtoopackStatsWatcher {
-  /** Advance the authoritative baseline after an out-of-band publication. */
-  advance(version: string | undefined): void;
-  close(): Promise<void>;
-}
-
-interface StartUtoopackStatsWatcherOptions {
-  statsPaths: readonly string[];
-  initialVersion: string | undefined;
-  /** Return true only when the observed version was consumed or discarded. */
-  onChange(version: string): Promise<boolean>;
-  onError(error: unknown): void;
-}
-
-async function readStatsFileVersion(
-  statsPath: string,
+export async function readClientStatsVersion(
+  statsPath: string | undefined,
 ): Promise<string | undefined> {
+  if (!statsPath) return undefined;
   try {
     const stats = await fs.promises.stat(statsPath, { bigint: true });
     return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}`;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-      return undefined;
-    }
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
     throw error;
   }
 }
 
-export async function readStatsVersion(
-  statsPaths: readonly string[],
-): Promise<string | undefined> {
-  const versions = await Promise.all(statsPaths.map(readStatsFileVersion));
-  if (versions.every((version) => version === undefined)) return undefined;
-  return versions
-    .map((version, index) => `${index}:${version ?? "missing"}`)
-    .join("|");
-}
-
-/**
- * Observe settled stats writes without owning the native build lifecycle.
- *
- * `@utoo/pack` invokes `onReady` for the initial build and server startup, not
- * later completed rebuilds. Watch the authoritative `stats.json` files and
- * wait for atomic writes to settle before evjs relinks build facts. A ready
- * scan closes the watcher-attachment race without a perpetual polling task.
- */
-export function startUtoopackStatsWatcher(
-  options: StartUtoopackStatsWatcherOptions,
-): UtoopackStatsWatcher {
-  let currentVersion = options.initialVersion;
-  let baselineRevision = 0;
-  let closed = false;
-  let scheduled = false;
-  let queue = Promise.resolve();
-  let closePromise: Promise<void> | undefined;
-  const statsPaths = new Set(
-    options.statsPaths.map((value) => path.resolve(value)),
-  );
-  const statsDirectories = [
-    ...new Set([...statsPaths].map((value) => path.dirname(value))),
-  ];
-  const watcher = watch(statsDirectories, {
+/** Notify the host queue when settled client stats change, including startup. */
+export function watchClientStats(
+  statsPath: string,
+  onChange: () => void,
+  onError: (error: unknown) => void,
+) {
+  const resolvedPath = path.resolve(statsPath);
+  const watcher = watch(path.dirname(resolvedPath), {
     atomic: true,
-    awaitWriteFinish: {
-      stabilityThreshold: 50,
-      pollInterval: 10,
-    },
+    awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 10 },
     depth: 0,
     disableGlobbing: true,
     ignoreInitial: true,
   });
-
-  function scheduleStatsChange(changedPath: string): void {
-    if (statsPaths.has(path.resolve(changedPath))) scheduleChange();
-  }
-
-  function scheduleChange(): void {
-    if (closed || scheduled) return;
-    scheduled = true;
-    queue = queue.then(processChange, processChange);
-  }
-
-  async function processChange(): Promise<void> {
-    scheduled = false;
-    if (closed) return;
-    try {
-      const observedRevision = baselineRevision;
-      const nextVersion = await readStatsVersion(options.statsPaths);
-      if (closed || !nextVersion || nextVersion === currentVersion) return;
-      const consumed = await options.onChange(nextVersion);
-      if (consumed && observedRevision === baselineRevision) {
-        currentVersion = nextVersion;
-      }
-    } catch (error) {
-      if (!closed) options.onError(error);
-    }
-  }
-
-  watcher.on("add", scheduleStatsChange);
-  watcher.on("change", scheduleStatsChange);
-  watcher.on("error", (error) => {
-    if (!closed) options.onError(error);
-  });
-  watcher.on("ready", scheduleChange);
-
-  return {
-    advance(version) {
-      baselineRevision += 1;
-      currentVersion = version;
-    },
-    close() {
-      closePromise ??= (async () => {
-        closed = true;
-        await watcher.close();
-        await queue;
-      })();
-      return closePromise;
-    },
+  const onFile = (file: string) => {
+    if (path.resolve(file) === resolvedPath) onChange();
   };
+  watcher.on("add", onFile);
+  watcher.on("change", onFile);
+  watcher.on("ready", onChange);
+  watcher.on("error", onError);
+  return watcher;
 }

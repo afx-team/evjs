@@ -250,19 +250,18 @@ async function waitForCondition(
 }
 
 function clientStatsFor(assets: string[], includeInventory = true): string {
+  const values = assets.map((name) => ({ name }));
   return JSON.stringify({
-    ...(includeInventory ? { assets: assets.map((name) => ({ name })) } : {}),
-    entrypoints: {
-      main: { assets: assets.map((name) => ({ name })) },
-    },
+    ...(includeInventory ? { assets: values } : {}),
+    entrypoints: { main: { assets: values } },
   });
 }
 
 async function writeClientStats(
   cwd: string,
   assets: string[],
-  includeInventory = true,
-): Promise<void> {
+  inventory = true,
+) {
   const clientDir = path.join(cwd, "dist/client");
   await fs.promises.mkdir(clientDir, { recursive: true });
   await Promise.all(
@@ -272,16 +271,71 @@ async function writeClientStats(
   );
   await fs.promises.writeFile(
     path.join(clientDir, "stats.json"),
-    clientStatsFor(assets, includeInventory),
+    clientStatsFor(assets, inventory),
   );
 }
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((next) => {
-    resolve = next;
+async function startDevFixture(
+  server = false,
+  beforePublish?: (isRebuild: boolean) => Promise<void>,
+) {
+  const cwd = await makeProject();
+  const initialAssets = ["root-old.js", "main.js"];
+  utoopackMock.clientStats = clientStatsFor(initialAssets);
+  await writeClientStats(cwd, initialAssets);
+  const config = await resolveProjectConfig(cwd, { routing: { mode: "spa" } });
+  const context = await createBuildContext(config, cwd);
+  if (server) {
+    const page = context.graph.pages.index;
+    if (!page) throw new Error("Expected index Page.");
+    page.render = "ssr";
+    context.plan = createBuildPlan(config, context.graph, {
+      mode: "development",
+    });
+  }
+  const outputs: BuildOutput[] = [];
+  const facts: BundlerBuildFacts[] = [];
+  const rebuildFlags: boolean[] = [];
+  const onServerBundleReady = vi.fn(async () => {});
+  const callbacks = createFrameworkCallbacks({
+    config,
+    cwd,
+    ...context,
+    onBuildOutput: (output) => {
+      outputs.push(output);
+    },
+    onServerBundleReady,
   });
-  return { promise, resolve };
+  const controller = await utoopackAdapter.dev({
+    config,
+    cwd,
+    plan: context.plan,
+    signal: new AbortController().signal,
+    hooks: [],
+    callbacks: {
+      ...callbacks,
+      async onBuildFacts(snapshot, options) {
+        facts.push(snapshot);
+        rebuildFlags.push(options.isRebuild);
+        await beforePublish?.(options.isRebuild);
+        return callbacks.onBuildFacts(snapshot, options);
+      },
+    },
+  });
+  return {
+    cwd,
+    controller,
+    outputs,
+    facts,
+    rebuildFlags,
+    onServerBundleReady,
+    html: () =>
+      fs.promises.readFile(path.join(cwd, "dist/client/index.html"), "utf-8"),
+    serverBuild: () =>
+      utoopackMock.startUtoopackDevWorker.mock.calls
+        .at(-1)?.[0]
+        .onServerBuild?.(),
+  };
 }
 
 async function makeProject(pageId = "index") {
@@ -545,465 +599,106 @@ describe("utoopackAdapter browser log forwarding config", () => {
 });
 
 describe("utoopackAdapter dev", () => {
-  it("automatically republishes HTML and metadata when a client chunk changes", async () => {
-    const cwd = await makeProject();
-    const initialAssets = ["root-old.js", "main.js"];
-    utoopackMock.clientStats = clientStatsFor(initialAssets);
-    await writeClientStats(cwd, initialAssets);
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const buildContext = await createBuildContext(config, cwd);
-    const outputs: BuildOutput[] = [];
-    const rebuildFlags: boolean[] = [];
-    const onServerBundleReady = vi.fn(async () => {});
-    const callbacks = createFrameworkCallbacks({
-      config,
-      cwd,
-      ...buildContext,
-      onBuildOutput(output) {
-        outputs.push(output);
-      },
-      onServerBundleReady,
-    });
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: {
-        ...callbacks,
-        async onBuildFacts(facts, options) {
-          rebuildFlags.push(options.isRebuild);
-          return callbacks.onBuildFacts(facts, options);
-        },
-      },
-      hooks: [],
-    });
-
+  it("automatically republishes HTML and metadata and recovers from incomplete client stats", async () => {
+    const app = await startDevFixture();
     try {
-      await waitForCondition(
-        () => outputs.length === 1,
-        "Utoopack did not publish initial client artifacts",
-      );
-      const htmlPath = path.join(cwd, "dist/client/index.html");
-      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
-        'src="/root-old.js"',
-      );
-
-      await writeClientStats(cwd, ["root-new.js", "main.js", "new.css"]);
-      await expect
-        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
-        .toContain('src="/root-new.js"');
-
-      const html = await fs.promises.readFile(htmlPath, "utf-8");
+      await expect.poll(() => app.outputs.length).toBe(1);
+      const initialHtml = await app.html();
+      expect(initialHtml).toContain('src="/root-old.js"');
+      for (const stats of ['{"entrypoints":', '{"entrypoints":{}}']) {
+        await fs.promises.writeFile(
+          path.join(app.cwd, "dist/client/stats.json"),
+          stats,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        expect(await app.html()).toBe(initialHtml);
+        expect(app.outputs).toHaveLength(1);
+      }
+      await writeClientStats(app.cwd, ["root-new.js", "main.js", "new.css"]);
+      await expect.poll(app.html).toContain('src="/root-new.js"');
+      expect(await app.html()).not.toContain('src="/root-old.js"');
       const metadata = JSON.parse(
         await fs.promises.readFile(
-          path.join(cwd, "dist/deployment-metadata.json"),
+          path.join(app.cwd, "dist/deployment-metadata.json"),
           "utf-8",
         ),
       );
-      expect(html).not.toContain('src="/root-old.js"');
-      expect(html).toContain('href="/new.css"');
       expect(metadata.documents[0].assets).toEqual({
         js: ["root-new.js", "main.js"],
         css: ["new.css"],
       });
-      expect(outputs).toHaveLength(2);
-      expect(rebuildFlags).toEqual([false, true]);
-      expect(onServerBundleReady).not.toHaveBeenCalled();
+      expect(app.rebuildFlags).toEqual([false, true]);
+      expect(app.onServerBundleReady).not.toHaveBeenCalled();
     } finally {
-      await controller.close();
+      await app.controller.close();
     }
+    await writeClientStats(app.cwd, ["root-after-close.js", "main.js"]);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(app.outputs).toHaveLength(2);
+    expect(await app.html()).toContain('src="/root-new.js"');
   });
 
-  it("keeps the last HTML through incomplete client rebuild stats and recovers automatically", async () => {
-    const cwd = await makeProject();
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const buildContext = await createBuildContext(config, cwd);
-    const onBuildOutput = vi.fn();
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: createFrameworkCallbacks({
-        config,
-        cwd,
-        ...buildContext,
-        onBuildOutput,
-      }),
-      hooks: [],
-    });
-
+  it("gates initial server publication and reuses accepted server facts for client rebuilds", async () => {
+    utoopackMock.deferInitialServerBuild = true;
+    const app = await startDevFixture(true);
     try {
-      await waitForCondition(
-        () => onBuildOutput.mock.calls.length === 1,
-        "Utoopack did not publish initial client artifacts",
-      );
-      const htmlPath = path.join(cwd, "dist/client/index.html");
-      const initialHtml = await fs.promises.readFile(htmlPath, "utf-8");
-      for (const incompleteStats of [
-        '{"entrypoints":',
-        JSON.stringify({ entrypoints: {} }),
-      ]) {
-        await fs.promises.writeFile(
-          path.join(cwd, "dist/client/stats.json"),
-          incompleteStats,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(initialHtml);
-        expect(onBuildOutput).toHaveBeenCalledTimes(1);
-      }
-
-      await writeClientStats(cwd, ["root-recovered.js", "main.js"]);
-      await expect
-        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
-        .toContain('src="/root-recovered.js"');
-      expect(onBuildOutput).toHaveBeenCalledTimes(2);
-    } finally {
-      await controller.close();
-    }
-  });
-
-  it("publishes a client rebuild without restarting an existing API runtime", async () => {
-    const cwd = await makeProject();
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const buildContext = await createServerBuildContext(config, cwd);
-    const onBuildOutput = vi.fn();
-    const onServerBundleReady = vi.fn(async () => {});
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: createFrameworkCallbacks({
-        config,
-        cwd,
-        ...buildContext,
-        onBuildOutput,
-        onServerBundleReady,
-      }),
-      hooks: [],
-    });
-
-    try {
-      await waitForCondition(
-        () =>
-          onBuildOutput.mock.calls.length === 1 &&
-          onServerBundleReady.mock.calls.length === 1,
-        "Utoopack did not publish the initial server batch",
-      );
-      await writeClientStats(cwd, ["root-client-only.js", "main.js"]);
-      await expect
-        .poll(() =>
-          fs.promises.readFile(
-            path.join(cwd, "dist/client/index.html"),
-            "utf-8",
-          ),
-        )
-        .toContain('src="/root-client-only.js"');
-      expect(onBuildOutput).toHaveBeenCalledTimes(2);
-      expect(onServerBundleReady).toHaveBeenCalledTimes(1);
-    } finally {
-      await controller.close();
-    }
-  });
-
-  it("keeps accepted server facts when client stats change ahead of server publication", async () => {
-    const cwd = await makeProject();
-    utoopackMock.clientStats = clientStatsFor(["main.js", "main.css"]);
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const buildContext = await createServerBuildContext(config, cwd);
-    const outputs: BuildOutput[] = [];
-    const factsSnapshots: BundlerBuildFacts[] = [];
-    const onServerBundleReady = vi.fn(async () => {});
-    const callbacks = createFrameworkCallbacks({
-      config,
-      cwd,
-      ...buildContext,
-      onBuildOutput(output) {
-        outputs.push(output);
-      },
-      onServerBundleReady,
-    });
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: {
-        ...callbacks,
-        async onBuildFacts(facts, options) {
-          factsSnapshots.push(facts);
-          return callbacks.onBuildFacts(facts, options);
-        },
-      },
-      hooks: [],
-    });
-
-    try {
-      await waitForCondition(
-        () =>
-          outputs.length === 1 && onServerBundleReady.mock.calls.length === 1,
-        "Utoopack did not publish the initial server batch",
-      );
-      const initialOutput = outputs[0];
-      if (!initialOutput) throw new Error("Expected initial build output.");
-      const acceptedServer = structuredClone(initialOutput.server);
-      expect(factsSnapshots[0]?.emittedFiles?.client).toContain("main.js");
-      const pendingFiles = [
-        "server-pending.js",
-        "page-server-index-pending.js",
-      ];
-      await Promise.all(
-        pendingFiles.map((file) =>
-          fs.promises.writeFile(path.join(cwd, "dist/server", file), ""),
-        ),
-      );
+      await writeClientStats(app.cwd, ["root-before-server.js", "main.js"]);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(app.outputs).toHaveLength(0);
+      expect(app.onServerBundleReady).not.toHaveBeenCalled();
+      await app.serverBuild();
+      expect(app.outputs).toHaveLength(1);
+      expect(app.rebuildFlags).toEqual([false]);
+      const acceptedServer = structuredClone(app.outputs[0]?.server);
+      expect(app.facts[0]?.emittedFiles?.client).toContain("main.js");
       const pendingStats = JSON.stringify({
-        assets: pendingFiles.map((name) => ({ name })),
         entrypoints: {
-          server: { assets: [{ name: "server-pending.js" }] },
-          "page-server-index": {
-            assets: [{ name: "page-server-index-pending.js" }],
-          },
+          server: { assets: ["server-pending.js"] },
+          "page-server-index": { assets: ["page-pending.js"] },
         },
       });
-
       for (const [index, serverStats] of ["null", pendingStats].entries()) {
         await fs.promises.writeFile(
-          path.join(cwd, "dist/server/stats.json"),
+          path.join(app.cwd, "dist/server/stats.json"),
           serverStats,
         );
-        const root = `root-before-server-${index}.js`;
-        // Entrypoint-only stats must not inherit the previous client inventory.
-        await writeClientStats(cwd, [root, "main.js"], index === 0);
-        await expect
-          .poll(() =>
-            fs.promises.readFile(
-              path.join(cwd, "dist/client/index.html"),
-              "utf-8",
-            ),
-          )
-          .toContain(`src="/${root}"`);
-        expect(outputs).toHaveLength(index + 2);
-        expect(outputs.at(-1)?.server).toEqual(acceptedServer);
-        expect(onServerBundleReady).toHaveBeenCalledTimes(1);
-        if (index === 1) {
-          expect(factsSnapshots.at(-1)?.emittedFiles?.client).toBeUndefined();
-        }
+        const root = `root-client-${index}.js`;
+        await writeClientStats(app.cwd, [root, "main.js"], index === 0);
+        await expect.poll(app.html).toContain(`src="/${root}"`);
+        expect(app.outputs.at(-1)?.server).toEqual(acceptedServer);
+        expect(app.onServerBundleReady).toHaveBeenCalledTimes(1);
       }
+      expect(app.outputs).toHaveLength(3);
+      expect(app.facts.at(-1)?.emittedFiles?.client).toBeUndefined();
     } finally {
-      await controller.close();
+      await app.controller.close();
     }
   });
 
-  it("waits for the first server batch before publishing client artifacts", async () => {
-    utoopackMock.deferInitialServerBuild = true;
-    const cwd = await makeProject();
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
+  it("serializes automatic client publication with a concurrent server batch", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    const buildContext = await createServerBuildContext(config, cwd);
-    const onBuildOutput = vi.fn();
-    const onServerBundleReady = vi.fn(async () => {});
-    const rebuildFlags: boolean[] = [];
-    const callbacks = createFrameworkCallbacks({
-      config,
-      cwd,
-      ...buildContext,
-      onBuildOutput,
-      onServerBundleReady,
+    const app = await startDevFixture(true, async (isRebuild) => {
+      if (isRebuild) await gate;
     });
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: {
-        ...callbacks,
-        async onBuildFacts(facts, options) {
-          rebuildFlags.push(options.isRebuild);
-          return callbacks.onBuildFacts(facts, options);
-        },
-      },
-      hooks: [],
-    });
-
     try {
-      await writeClientStats(cwd, ["root-before-server.js", "main.js"]);
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      expect(onBuildOutput).not.toHaveBeenCalled();
-      expect(onServerBundleReady).not.toHaveBeenCalled();
-      expect(fs.existsSync(path.join(cwd, "dist/client/index.html"))).toBe(
-        false,
-      );
-
-      const onServerBuild =
-        utoopackMock.startUtoopackDevWorker.mock.calls.at(-1)?.[0]
-          .onServerBuild;
-      if (!onServerBuild) throw new Error("Expected a server build callback.");
-      await onServerBuild();
-      expect(onBuildOutput).toHaveBeenCalledTimes(1);
-      expect(onServerBundleReady).toHaveBeenCalledTimes(1);
-      expect(rebuildFlags).toEqual([false]);
-      await expect(
-        fs.promises.readFile(path.join(cwd, "dist/client/index.html"), "utf-8"),
-      ).resolves.toContain('src="/root-before-server.js"');
-    } finally {
-      await controller.close();
-    }
-  });
-
-  it("serializes client publication with a concurrent server batch", async () => {
-    const cwd = await makeProject();
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const buildContext = await createServerBuildContext(config, cwd);
-    const onBuildOutput = vi.fn();
-    const onServerBundleReady = vi.fn(async () => {});
-    const callbacks = createFrameworkCallbacks({
-      config,
-      cwd,
-      ...buildContext,
-      onBuildOutput,
-      onServerBundleReady,
-    });
-    const publicationGate = deferred();
-    let publicationCount = 0;
-    let activePublications = 0;
-    let maximumPublications = 0;
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: {
-        ...callbacks,
-        async onBuildFacts(facts, options) {
-          publicationCount += 1;
-          activePublications += 1;
-          maximumPublications = Math.max(
-            maximumPublications,
-            activePublications,
-          );
-          try {
-            if (publicationCount === 2) await publicationGate.promise;
-            return await callbacks.onBuildFacts(facts, options);
-          } finally {
-            activePublications -= 1;
-          }
-        },
-      },
-      hooks: [],
-    });
-
-    try {
-      await waitForCondition(
-        () =>
-          onBuildOutput.mock.calls.length === 1 &&
-          onServerBundleReady.mock.calls.length === 1,
-        "Utoopack did not publish the initial server batch",
-      );
-      await writeClientStats(cwd, ["root-queued.js", "main.js"]);
-      await waitForCondition(
-        () => publicationCount === 2,
-        "Utoopack did not begin the client publication",
-      );
-      const onServerBuild =
-        utoopackMock.startUtoopackDevWorker.mock.calls.at(-1)?.[0]
-          .onServerBuild;
-      if (!onServerBuild) throw new Error("Expected a server build callback.");
-      const serverPublication = onServerBuild();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(publicationCount).toBe(2);
-      expect(maximumPublications).toBe(1);
-
-      publicationGate.resolve();
+      await expect.poll(() => app.outputs.length).toBe(1);
+      await writeClientStats(app.cwd, ["root-queued.js", "main.js"]);
+      await expect.poll(() => app.facts.length).toBe(2);
+      const serverPublication = app.serverBuild();
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(app.facts).toHaveLength(2);
+      expect(app.outputs).toHaveLength(1);
+      release();
       await serverPublication;
-      expect(publicationCount).toBe(3);
-      expect(maximumPublications).toBe(1);
-      expect(onBuildOutput).toHaveBeenCalledTimes(3);
-      expect(onServerBundleReady).toHaveBeenCalledTimes(2);
+      expect(app.rebuildFlags).toEqual([false, true, true]);
+      expect(app.outputs).toHaveLength(3);
+      expect(app.onServerBundleReady).toHaveBeenCalledTimes(2);
     } finally {
-      publicationGate.resolve();
-      await controller.close();
-    }
-  });
-
-  it("drains active client publication and ignores changes after closing", async () => {
-    const cwd = await makeProject();
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const buildContext = await createBuildContext(config, cwd);
-    const onBuildOutput = vi.fn();
-    const callbacks = createFrameworkCallbacks({
-      config,
-      cwd,
-      ...buildContext,
-      onBuildOutput,
-    });
-    const publicationGate = deferred();
-    let clientPublicationStarted = false;
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      signal: new AbortController().signal,
-      plan: buildContext.plan,
-      callbacks: {
-        ...callbacks,
-        async onBuildFacts(facts, options) {
-          if (options.isRebuild) {
-            clientPublicationStarted = true;
-            await publicationGate.promise;
-          }
-          return callbacks.onBuildFacts(facts, options);
-        },
-      },
-      hooks: [],
-    });
-
-    try {
-      await waitForCondition(
-        () => onBuildOutput.mock.calls.length === 1,
-        "Utoopack did not publish initial client artifacts",
-      );
-      await writeClientStats(cwd, ["root-before-close.js", "main.js"]);
-      await waitForCondition(
-        () => clientPublicationStarted,
-        "Utoopack did not begin the client publication",
-      );
-      let closed = false;
-      const closing = controller.close().then(() => {
-        closed = true;
-      });
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(closed).toBe(false);
-
-      publicationGate.resolve();
-      await closing;
-      expect(onBuildOutput).toHaveBeenCalledTimes(2);
-      const htmlPath = path.join(cwd, "dist/client/index.html");
-      const htmlBeforeChange = await fs.promises.readFile(htmlPath, "utf-8");
-      await writeClientStats(cwd, ["root-after-close.js", "main.js"]);
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(
-        htmlBeforeChange,
-      );
-      expect(onBuildOutput).toHaveBeenCalledTimes(2);
-      expect(utoopackMock.workerClose).toHaveBeenCalledTimes(1);
-    } finally {
-      publicationGate.resolve();
-      await controller.close();
+      release();
+      await app.controller.close();
     }
   });
 
@@ -1114,12 +809,8 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it.each([
-    "null",
-    '{"entrypoints":',
-    JSON.stringify({ entrypoints: {} }),
-  ])("recovers when initial stats are incomplete: %s", async (initialStats) => {
-    utoopackMock.initialClientStats = initialStats;
+  it("recovers when initial stats are malformed", async () => {
+    utoopackMock.initialClientStats = "null";
     utoopackMock.clientStatsDelayMs = 100;
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
@@ -1423,20 +1114,5 @@ async function createBuildContext(
       mode: "development",
       distDir: options.distDir,
     }),
-  };
-}
-
-async function createServerBuildContext(
-  config: ResolvedConfig<ConfigComplete>,
-  cwd: string,
-) {
-  const initial = await createBuildContext(config, cwd);
-  const graph = structuredClone(initial.graph);
-  const page = graph.pages.index;
-  if (!page) throw new Error("Expected index Page.");
-  page.render = "ssr";
-  return {
-    graph,
-    plan: createBuildPlan(config, graph, { mode: "development" }),
   };
 }

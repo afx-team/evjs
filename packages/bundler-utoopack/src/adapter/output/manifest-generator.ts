@@ -173,43 +173,32 @@ export class UtoopackManifestGenerator {
     this.serverEmittedFiles = readEmittedFiles(stats);
   }
 
-  /** Collect client output without reading a server batch awaiting host ACK. */
-  async collectClientBuildFacts(): Promise<BundlerBuildFacts> {
+  async collectBuildFacts({
+    clientOnly = false,
+  } = {}): Promise<BundlerBuildFacts> {
     await this.loadClientStats();
-    const facts: BundlerBuildFacts = {
+    if (!clientOnly) await this.loadServerStats();
+    const emittedFiles = {
       ...(this.clientEmittedFiles
-        ? {
-            emittedFiles: {
-              client: includeAdapterStatsFile(this.clientEmittedFiles),
-            },
-          }
+        ? { client: includeAdapterStatsFile(this.clientEmittedFiles) }
         : {}),
+      ...(!clientOnly && this.serverEmittedFiles
+        ? { server: includeAdapterStatsFile(this.serverEmittedFiles) }
+        : {}),
+    };
+
+    const facts: BundlerBuildFacts = {
+      ...(Object.keys(emittedFiles).length > 0 ? { emittedFiles } : {}),
       clientEntryAssets: cloneEntryAssets(this.clientEntryAssets),
+      ...(!clientOnly
+        ? { serverEntryAssets: cloneEntryAssets(this.serverEntryAssets) }
+        : {}),
     };
     assertBundlerEmittedFiles(facts.emittedFiles);
     assertBuildOutputLinkInputClientAssets({
       plan: this.plan,
       clientEntryAssets: facts.clientEntryAssets,
     });
-    return facts;
-  }
-
-  async collectBuildFacts(): Promise<BundlerBuildFacts> {
-    const clientFacts = await this.collectClientBuildFacts();
-    await this.loadServerStats();
-    const facts: BundlerBuildFacts = {
-      ...clientFacts,
-      ...(this.serverEmittedFiles
-        ? {
-            emittedFiles: {
-              ...clientFacts.emittedFiles,
-              server: includeAdapterStatsFile(this.serverEmittedFiles),
-            },
-          }
-        : {}),
-      serverEntryAssets: cloneEntryAssets(this.serverEntryAssets),
-    };
-    assertBundlerEmittedFiles(facts.emittedFiles);
     return facts;
   }
 
