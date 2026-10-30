@@ -4,6 +4,11 @@
  */
 import type { ConfigComplete } from "@utoo/pack";
 
+export interface UtoopackClientBuildContext {
+  clientPaths: string[];
+  isRebuild: boolean;
+}
+
 type UtoopackBuildRuntime = Pick<typeof import("@utoo/pack"), "build">;
 // This bridge uses the void-returning serve overload; Session teardown is
 // owned by the native-owner Worker rather than the optional dev server handle.
@@ -14,7 +19,9 @@ type UtoopackDevRuntime = {
 };
 type UtoopackServerOptions = NonNullable<
   Parameters<UtoopackDevRuntime["serve"]>[3]
->;
+> & {
+  onClientBuild?(context: UtoopackClientBuildContext): void | Promise<void>;
+};
 
 export function runUtoopackBuild(
   runtime: UtoopackBuildRuntime,

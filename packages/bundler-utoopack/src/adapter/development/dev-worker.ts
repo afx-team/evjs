@@ -1,7 +1,10 @@
 import { createRequire } from "node:module";
 import { parentPort } from "node:worker_threads";
 import type { DevServerReadyContext } from "@utoo/pack";
-import { runUtoopackDevServer } from "../execution/utoopack.js";
+import {
+  runUtoopackDevServer,
+  type UtoopackClientBuildContext,
+} from "../execution/utoopack.js";
 import {
   PATH_REWRITE_BUFFER_BYTES,
   PATH_REWRITE_HEADER_INTS,
@@ -30,12 +33,9 @@ interface ActiveSession {
   options: UtoopackDevWorkerSessionOptions;
   serverProject?: Awaited<ReturnType<typeof startUtoopackServerProject>>;
   closing: boolean;
+  clientClosed?: boolean;
   nextBuildId: number;
-  publication?: {
-    id: number;
-    resolve(): void;
-    reject(error: Error): void;
-  };
+  publications: Map<number, { resolve(): void; reject(error: Error): void }>;
 }
 
 type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve">;
@@ -70,22 +70,28 @@ function observeSchedulerFailure(
 function enqueueCommand(command: UtoopackDevWorkerCommand): void {
   // Publication acknowledgements must bypass start/close, which can themselves
   // be waiting for the current publication to finish.
-  if (command.type === "server-published") {
+  if (
+    command.type === "server-published" ||
+    command.type === "client-published"
+  ) {
     const session = activeSession;
-    if (
-      session?.id === command.sessionId &&
-      session.publication?.id === command.buildId
-    ) {
-      if (command.error) session.publication.reject(new Error(command.error));
-      else session.publication.resolve();
+    const publication =
+      session?.id === command.sessionId
+        ? session.publications.get(command.buildId)
+        : undefined;
+    if (publication) {
+      if (command.error) publication.reject(new Error(command.error));
+      else publication.resolve();
     }
     return;
   }
   if (command.type === "close" && activeSession?.id === command.sessionId) {
     activeSession.closing = true;
-    activeSession.publication?.reject(
-      new Error("[evjs] Utoopack Session closed during server publication."),
-    );
+    for (const publication of activeSession.publications.values()) {
+      publication.reject(
+        new Error("[evjs] Utoopack Session closed during build publication."),
+      );
+    }
   }
   commandQueue = commandQueue
     .then(() => executeCommand(command))
@@ -93,7 +99,10 @@ function enqueueCommand(command: UtoopackDevWorkerCommand): void {
 }
 
 async function executeCommand(
-  command: Exclude<UtoopackDevWorkerCommand, { type: "server-published" }>,
+  command: Exclude<
+    UtoopackDevWorkerCommand,
+    { type: "server-published" | "client-published" }
+  >,
 ): Promise<void> {
   if (ownerExiting) return;
   if (command.type === "start") {
@@ -125,6 +134,7 @@ async function startSession(
     options,
     closing: false,
     nextBuildId: 0,
+    publications: new Map(),
   };
   activeSession = session;
   installPathRewriteBridges(sessionId, options);
@@ -133,7 +143,7 @@ async function startSession(
     session.serverProject = await startUtoopackServerProject({
       cwd: options.cwd,
       config: options.config,
-      onBuild: () => publishServerBuild(session),
+      onBuild: () => publishBuild(session),
       onError(error) {
         if (!session.closing) {
           postMessage({
@@ -150,18 +160,40 @@ async function startSession(
   }
   let readyContext: DevServerReadyContext | undefined;
   let spaHistoryFallbackUpdated = false;
-  await runUtoopackDevServer(
-    runtime,
-    createUtoopackClientDevConfig(options.config, options.cwd),
-    options.cwd,
-    {
-      ...options.server,
-      async onReady(context: DevServerReadyContext) {
-        spaHistoryFallbackUpdated = updateSpaHistoryFallback(options, context);
-        readyContext = context;
+  let clientBuildReceived = false;
+  try {
+    await runUtoopackDevServer(
+      runtime,
+      createUtoopackClientDevConfig(options.config, options.cwd),
+      options.cwd,
+      {
+        ...options.server,
+        onClientBuild(context) {
+          clientBuildReceived = true;
+          return publishBuild(session, context);
+        },
+        async onReady(context: DevServerReadyContext) {
+          if (context.clientPaths.length && !clientBuildReceived) {
+            throw new Error(
+              "[evjs] This @utoo/pack version does not support onClientBuild. Upgrade to a version that provides the client build callback.",
+            );
+          }
+          spaHistoryFallbackUpdated = updateSpaHistoryFallback(
+            options,
+            context,
+          );
+          readyContext = context;
+        },
       },
-    },
-  );
+    );
+  } catch (error) {
+    if (!session.closing) throw error;
+    // serve() has already awaited its own cleanup after the callback rejected.
+    // Its SIGTERM handler is gone, so do not run the normal lifecycle twice.
+    session.clientClosed = true;
+    session.lifecycle.dispose();
+  }
+  if (session.closing) return;
 
   if (!readyContext) {
     throw new Error(
@@ -186,7 +218,7 @@ async function closeSession(sessionId: number): Promise<void> {
 
   const errors = await rejections([
     session.serverProject?.close(),
-    session.lifecycle.close(),
+    session.clientClosed ? undefined : session.lifecycle.close(),
   ]);
   if (errors.length) {
     throw new AggregateError(
@@ -198,14 +230,21 @@ async function closeSession(sessionId: number): Promise<void> {
   postMessage({ type: "closed", sessionId });
 }
 
-function publishServerBuild(session: ActiveSession): Promise<void> {
+function publishBuild(
+  session: ActiveSession,
+  context?: UtoopackClientBuildContext,
+): Promise<void> {
   if (session.closing || activeSession !== session) return Promise.resolve();
   const buildId = ++session.nextBuildId;
   return new Promise<void>((resolve, reject) => {
-    session.publication = { id: buildId, resolve, reject };
-    postMessage({ type: "server-build", sessionId: session.id, buildId });
+    session.publications.set(buildId, { resolve, reject });
+    postMessage(
+      context
+        ? { type: "client-build", sessionId: session.id, buildId, context }
+        : { type: "server-build", sessionId: session.id, buildId },
+    );
   }).finally(() => {
-    if (session.publication?.id === buildId) session.publication = undefined;
+    session.publications.delete(buildId);
   });
 }
 

@@ -6,6 +6,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Refresh Utoopack development HTML and asset metadata after client rebuilds
+  change entry chunks, so new visits and browser reloads load the latest code
+  without restarting the development server. Preserve the native server-build
+  publication and API readiness lifecycle.
+
 ---
 
 ## [0.3.27] — 2026-10-30
