@@ -8,6 +8,23 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.27] — 2026-10-30
+
+### Bug Fixes
+
+- Reject uppercase HTTP verb exports such as `GET` and `POST` in `http.*`
+  operation entries. Export a business operation name and declare the HTTP verb
+  in the static `method` field.
+
+### Upgrade
+
+- Upgrade installed `@evjs/*` packages together to `0.3.27` and rebuild.
+- Rename `http.*` exports such as `POST` to business names such as `queryOrder`,
+  retaining `method: 'POST'` and the existing URL metadata.
+- Existing `api.*` method exports retain their current behavior.
+
+---
+
 ## [0.3.26] — 2026-10-30
 
 ### Features
