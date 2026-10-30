@@ -49,6 +49,27 @@ describe("discoverServerRoutes", () => {
   });
 
   it.each([
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+  ])("rejects %s as an http.* operation export instead of using it as the HTTP method", async (name) => {
+    const cwd = await createFixture({
+      "src/apis/orders/http.ts": `export const ${name} = { method: 'POST', handler: () => new Response() };`,
+    });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(result.routes).toEqual([]);
+    expect(result.diagnostics).toContainEqual({
+      level: "error",
+      file: "src/apis/orders/http.ts",
+      message: `http.* export "${name}" must use a business operation name such as "listOrders"; declare the HTTP verb in the method field.`,
+    });
+  });
+
+  it.each([
     [
       "path",
       "const path = '/:id'; export const read = { method: 'GET', path, handler() { return new Response(); } };",
@@ -131,7 +152,7 @@ describe("discoverServerRoutes", () => {
     const module = `src/apis/(internal)/orders/$id/http.${extension}`;
     const cwd = await createFixture({
       [module]:
-        "export const GET = { method: 'GET', handler: () => Response.json({ ok: true }) };",
+        "export const readOrder = { method: 'GET', handler: () => Response.json({ ok: true }) };",
       "src/apis/health/api.ts":
         "export function GET() { return new Response('ok'); }",
       "src/apis/orders/helper.ts":
@@ -157,7 +178,7 @@ describe("discoverServerRoutes", () => {
       "src/apis/orders/api.ts":
         "export const GET = () => new Response('legacy');",
       "src/apis/orders/http.ts":
-        "export const POST = { method: 'POST', handler: () => new Response('native') };",
+        "export const createOrder = { method: 'POST', handler: () => new Response('native') };",
     });
     const discovery = await discoverServerRoutes(cwd, { dir: "src/apis" });
     expect(discovery.routes).toHaveLength(1);
