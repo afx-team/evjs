@@ -8,6 +8,32 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.3.26] — 2026-10-30
+
+### Features
+
+- Add `src/apis/**/http.*` domain entries with multiple named HTTP operations.
+  Each operation declares a static uppercase `method` and an optional `path`
+  suffix under the directory URL prefix.
+- Export `HttpOperation`, `HttpRouteMetadata` and `HttpMethod` authoring types.
+  Keep HTTP middleware, streaming, dynamic parameters, HEAD and OPTIONS on the
+  existing runtime pipeline.
+
+### Bug Fixes
+
+- Reject shorthand `path` and `method` metadata instead of ignoring routing
+  fields and publishing a handler at the wrong URL. Shorthand `handler` remains
+  supported.
+
+### Upgrade
+
+- Upgrade installed `@evjs/*` packages together to `0.3.26` and rebuild.
+- Keep one `api.*` or `http.*` anchor per route directory. Ordinary helpers
+  named `http.*` under `src/apis` need renaming. Existing `api.*` behavior is
+  unchanged.
+
+---
+
 ## [0.3.23] — 2026-09-21
 
 ### ✨ Features
