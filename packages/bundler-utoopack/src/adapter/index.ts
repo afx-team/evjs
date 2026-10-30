@@ -9,7 +9,6 @@
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path";
 import type {
   BundlerAdapter,
   BundlerBuildContext,
@@ -25,16 +24,19 @@ import {
   IncompleteClientStatsError,
   UtoopackManifestGenerator,
 } from "../manifest-generator.js";
-import {
-  type ClientStatsWatcher,
-  readClientStatsVersion,
-  watchClientStats,
-} from "./client-stats-watcher.js";
 import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 const require = createRequire(import.meta.url);
 type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build" | "serve">;
+type UtoopackServerOptions = NonNullable<
+  Parameters<UtoopackRuntime["serve"]>[3]
+> & {
+  onClientBuild(context: {
+    clientPaths: string[];
+    isRebuild: boolean;
+  }): Promise<void>;
+};
 
 async function cleanServerOutput(
   cwd: string,
@@ -46,29 +48,6 @@ async function cleanServerOutput(
     recursive: true,
     force: true,
   });
-}
-
-async function generateDevArtifacts(
-  config: ResolvedConfig<ConfigComplete>,
-  cwd: string,
-  plan: BuildPlan,
-  onBuildFacts: (
-    facts: BundlerBuildFacts,
-    options?: { isRebuild?: boolean },
-  ) => void | Promise<void>,
-  options: { isRebuild?: boolean } = {},
-  facts?: BundlerBuildFacts,
-): Promise<boolean> {
-  const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
-  const clientStatsPath = path.join(outputPaths.clientDir, "stats.json");
-  if (!fs.existsSync(clientStatsPath)) return false;
-
-  logger.info`Generating development manifest and HTML...`;
-  const buildFacts =
-    facts ??
-    (await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts());
-  await onBuildFacts(buildFacts, options);
-  return true;
 }
 
 function requireUtoopack(): UtoopackRuntime {
@@ -112,12 +91,33 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     const { serve } = requireUtoopack();
     let devServerOrigin = formatDevServerOrigin(config, config.dev.port);
-    await serve({ config: utoopackConfig }, undefined, undefined, {
+    const controller = new UtoopackDevController({
+      cwd,
+      plan,
+      onBuildFacts: callbacks.onBuildFacts,
+      closeWatcher() {
+        serverReadyWatcher?.close();
+      },
+    });
+    let clientBuildReceived = false;
+    const serverOptions: UtoopackServerOptions = {
       port: config.dev.port,
       https: config.dev.https !== false,
       hostname: "0.0.0.0",
       logServerInfo: false,
+      async onClientBuild({ isRebuild }) {
+        clientBuildReceived = true;
+        await controller.onClientBuild(isRebuild);
+      },
       onReady({ port, hostname }) {
+        if (
+          !clientBuildReceived &&
+          plan.entries.some((entry) => entry.environment === "client")
+        ) {
+          throw new Error(
+            "[evjs] Utoopack dev requires @utoo/pack with onClientBuild support. Upgrade @utoo/pack before starting ev dev.",
+          );
+        }
         devServerOrigin = formatDevServerOrigin(config, port, hostname);
         const fallbackUpdated = updateSpaHistoryFallbackTarget(
           utoopackConfig,
@@ -130,20 +130,15 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
           logger.warn`Reserved client port ${config.dev.port} became unavailable during startup; Utoopack is listening on ${port}.${fallbackStatus}`;
         }
       },
-    });
-
-    const controller = new UtoopackDevController({
-      config,
-      cwd,
-      plan,
-      onBuildFacts: callbacks.onBuildFacts,
-      closeWatcher() {
-        serverReadyWatcher?.close();
-      },
-    });
+    };
 
     try {
-      await controller.initialize();
+      await serve(
+        { config: utoopackConfig },
+        undefined,
+        undefined,
+        serverOptions,
+      );
       await callbacks.onDevServerReady?.({ origin: devServerOrigin });
       if (!hasRuntimeServerEntry(plan)) return controller;
 
@@ -207,16 +202,12 @@ function formatDevServerOrigin(
 
 class UtoopackDevController implements BundlerDevController {
   private plan: BuildPlan;
-  private clientStatsWatcher: ClientStatsWatcher | undefined;
-  private publishedClientStatsVersion: string | undefined;
-  private hasPublishedArtifacts = false;
   private publicationQueue: Promise<void> = Promise.resolve();
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
   constructor(
     private options: {
-      config: ResolvedConfig<ConfigComplete>;
       cwd: string;
       plan: BuildPlan;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
@@ -226,32 +217,14 @@ class UtoopackDevController implements BundlerDevController {
     this.plan = options.plan;
   }
 
-  private get clientStatsPath(): string {
-    return path.join(
-      getOutputPaths(
-        this.options.cwd,
-        this.options.config.output,
-        this.plan.distDir,
-      ).clientDir,
-      "stats.json",
-    );
-  }
-
-  async initialize(): Promise<void> {
-    await this.enqueue(() => this.publishArtifacts(this.plan, false));
-    if (this.closed) return;
-    this.clientStatsWatcher = watchClientStats({
-      statsPath: this.clientStatsPath,
-      initialVersion: this.publishedClientStatsVersion,
-      onChange: () =>
-        this.enqueue(async () => {
-          const version = await readClientStatsVersion(this.clientStatsPath);
-          if (!version || version === this.publishedClientStatsVersion) return;
-          await this.publishArtifacts(this.plan, this.hasPublishedArtifacts);
-        }),
-      onError(error) {
-        logger.warn`Failed to publish Utoopack client rebuild: ${error}`;
-      },
+  async onClientBuild(isRebuild: boolean): Promise<void> {
+    await this.enqueue(async () => {
+      const emitted = await this.publishArtifacts(this.plan, isRebuild);
+      if (!emitted && !this.closed) {
+        throw new Error(
+          "[evjs] Utoopack completed a client build without complete client stats.",
+        );
+      }
     });
   }
 
@@ -259,7 +232,6 @@ class UtoopackDevController implements BundlerDevController {
     this.closePromise ??= (async () => {
       this.closed = true;
       this.options.closeWatcher?.();
-      await this.clientStatsWatcher?.close();
       await this.publicationQueue;
     })();
     return this.closePromise;
@@ -279,8 +251,6 @@ class UtoopackDevController implements BundlerDevController {
     isRebuild: boolean,
   ): Promise<boolean> {
     if (this.closed) return false;
-    const versionBefore = await readClientStatsVersion(this.clientStatsPath);
-    if (!versionBefore) return false;
     let facts: BundlerBuildFacts;
     try {
       facts = await new UtoopackManifestGenerator(
@@ -291,23 +261,10 @@ class UtoopackDevController implements BundlerDevController {
       if (error instanceof IncompleteClientStatsError) return false;
       throw error;
     }
-    const versionAfter = await readClientStatsVersion(this.clientStatsPath);
-    if (this.closed || versionBefore !== versionAfter) return false;
-
-    const emitted = await generateDevArtifacts(
-      this.options.config,
-      this.options.cwd,
-      plan,
-      this.options.onBuildFacts,
-      { isRebuild },
-      facts,
-    );
-    if (emitted) {
-      this.hasPublishedArtifacts = true;
-      this.publishedClientStatsVersion = versionAfter;
-      this.clientStatsWatcher?.advance(versionAfter);
-    }
-    return emitted;
+    if (this.closed) return false;
+    logger.info`Generating development manifest and HTML...`;
+    await this.options.onBuildFacts(facts, { isRebuild });
+    return true;
   }
 
   async updatePlan(update: BuildPlanUpdate): Promise<void> {
