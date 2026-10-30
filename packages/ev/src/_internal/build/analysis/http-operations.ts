@@ -59,8 +59,7 @@ export function analyzeHttpOperations(
           fail(`HTTP operation "${name}" cannot spread routing metadata.`);
           continue;
         }
-        if (property.type === "Identifier") continue;
-        const key = property.key;
+        const key = property.type === "Identifier" ? property : property.key;
         if (key.type !== "Identifier" && key.type !== "StringLiteral") {
           fail(`HTTP operation "${name}" requires static property names.`);
           continue;

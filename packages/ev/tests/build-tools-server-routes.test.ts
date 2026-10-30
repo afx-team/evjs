@@ -50,6 +50,47 @@ describe("discoverServerRoutes", () => {
 
   it.each([
     [
+      "path",
+      "const path = '/:id'; export const read = { method: 'GET', path, handler() { return new Response(); } };",
+    ],
+    [
+      "method",
+      "const method = 'GET'; export const read = { method, path: '/:id', handler() { return new Response(); } };",
+    ],
+  ])("rejects shorthand %s metadata without publishing a fallback route", async (field, source) => {
+    const cwd = await createFixture({ "src/apis/orders/http.ts": source });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(result.routes).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "error",
+          message: expect.stringContaining(`requires a static ${field} string`),
+        }),
+      ]),
+    );
+  });
+
+  it("allows shorthand handlers with literal routing metadata", async () => {
+    const cwd = await createFixture({
+      "src/apis/orders/http.ts": `
+        const handler = () => new Response('ok');
+        export const read = { method: 'GET', path: '/:id', handler };
+      `,
+    });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.routes).toMatchObject([
+      {
+        path: "/orders/:id",
+        methods: ["GET"],
+        handlerExports: { GET: "read" },
+      },
+    ]);
+  });
+
+  it.each([
+    [
       "export const read = { handler: () => new Response() };",
       "requires an uppercase method",
     ],
