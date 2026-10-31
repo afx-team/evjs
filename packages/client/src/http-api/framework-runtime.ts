@@ -3,7 +3,7 @@ import {
   type ClientRuntimeTransport,
 } from "../shared/runtime-config.js";
 import { createApiClient, createLazyApiClient } from "./client.js";
-import type { ApiClient } from "./types.js";
+import type { ApiClient, ApiClientOptions } from "./types.js";
 
 export interface ApiRuntimeScope {
   buildId: string;
@@ -34,7 +34,7 @@ export function createFrameworkApiClient(
   transport: ClientRuntimeTransport = {},
   resolveDefaults: (
     scope: ApiRuntimeScope,
-  ) => ClientRuntimeTransport | undefined = readApplicationTransport,
+  ) => ApiClientOptions | undefined = readApplicationTransport,
 ): ApiClient {
   // Capture defaults during module evaluation, before consumer modules run.
   // A missing browser bootstrap must not prevent SSR from importing a Page;
@@ -50,6 +50,7 @@ export function createFrameworkApiClient(
       baseUrl: overrides.baseUrl ?? defaults?.baseUrl,
       credentials: overrides.credentials ?? defaults?.credentials,
       headers,
+      fetch: defaults?.fetch,
     });
   } catch (error) {
     return createLazyApiClient(() => {

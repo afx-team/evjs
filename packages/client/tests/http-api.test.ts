@@ -285,6 +285,62 @@ describe("application-scoped HTTP transport", () => {
     );
   });
 
+  it("preserves resolver fetch hooks and native request options per scope", async () => {
+    const fetchA = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(Response.json({ source: "a" }));
+    const fetchB = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(Response.json({ source: "b" }));
+    const globalFetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", globalFetch);
+    const resolveDefaults = vi.fn((scope: { buildId: string }) => ({
+      baseUrl: `https://${scope.buildId}.test/version`,
+      credentials: "include" as const,
+      headers: { "x-source": scope.buildId, "x-custom": "deployment" },
+      fetch: scope.buildId === "a" ? fetchA : fetchB,
+    }));
+    const scopeA = { buildId: "a", applicationId: "app" };
+    const scopeB = { buildId: "b", applicationId: "app" };
+    const apiA = createFrameworkApiClient(
+      scopeA,
+      { headers: { "X-Custom": "application" } },
+      resolveDefaults,
+    );
+    const apiB = createFrameworkApiClient(scopeB, {}, resolveDefaults);
+    const controller = new AbortController();
+    const call = apiA.post("/orders", {
+      json: { id: "1" },
+      signal: controller.signal,
+      credentials: "omit",
+      headers: { "X-Custom": "request" },
+    });
+    const response = await call;
+    expect(response.bodyUsed).toBe(false);
+    await expect(call.json()).resolves.toEqual({ source: "a" });
+    await expect(apiB.get("/health").json()).resolves.toEqual({ source: "b" });
+    expect(resolveDefaults.mock.calls).toEqual([[scopeA], [scopeB]]);
+    expect(fetchA).toHaveBeenCalledTimes(1);
+    expect(fetchB).toHaveBeenCalledTimes(1);
+    expect(globalFetch).not.toHaveBeenCalled();
+    expect(fetchA.mock.calls[0][0]).toBe("https://a.test/version/orders");
+    expect(fetchB.mock.calls[0][0]).toBe("https://b.test/version/health");
+    expect(fetchA.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: '{"id":"1"}',
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    expect(
+      Object.fromEntries(new Headers(fetchA.mock.calls[0][1]?.headers)),
+    ).toEqual({
+      "content-type": "application/json",
+      "x-source": "a",
+      "x-custom": "request",
+    });
+    expect(fetchB.mock.calls[0][1]?.credentials).toBe("include");
+  });
+
   it("honors explicit application baseUrl and never uses legacy global defaults", async () => {
     vi.stubGlobal("__EVJS_TRANSPORT__", { baseUrl: "https://wrong.test" });
     const fetch = vi
