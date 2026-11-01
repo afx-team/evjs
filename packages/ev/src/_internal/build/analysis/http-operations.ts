@@ -1,5 +1,5 @@
 import { HTTP_METHODS } from "@evjs/shared";
-import type { Module } from "@swc/types";
+import type { Expression, Module, ObjectExpression } from "@swc/types";
 import { resolveHttpOperationPath } from "../conventions/http-operation-path.js";
 import type {
   DiscoveredServerRouteNode,
@@ -29,6 +29,8 @@ export function analyzeHttpOperations(
   >();
   const exports = collectModuleExportNames(ast.body);
   const definitions = new Set<string>();
+  const helperBindings = collectHttpBindings(ast);
+  const helperHandlers = new Map<string, Expression>();
   const fail = (message: string) =>
     diagnostics.push({ level: "error", file, message });
   if (hasDefaultExport(ast)) fail("http.* requires named operation exports.");
@@ -49,18 +51,45 @@ export function analyzeHttpOperations(
         );
         continue;
       }
-      const object = unwrapExpression(declaration.init);
-      if (object.type !== "ObjectExpression") {
+      const value = unwrapExpression(declaration.init);
+      const helper = readHttpBinding(value, helperBindings);
+      let object: ObjectExpression | undefined;
+      let method: string | undefined;
+      if (helper) {
+        const args = helper.call.arguments;
+        const handler = args[0];
+        if (
+          !handler ||
+          args.length > 2 ||
+          args.some((arg) => arg.spread)
+        ) {
+          fail(
+            `HTTP operation "${name}" requires a handler and optional static options.`,
+          );
+          continue;
+        }
+        helperHandlers.set(name, unwrapExpression(handler.expression));
+        method = helper.method;
+        if (args[1]) {
+          const options = unwrapExpression(args[1].expression);
+          if (options.type !== "ObjectExpression") {
+            fail(`HTTP operation "${name}" requires a static options object.`);
+            continue;
+          }
+          object = options;
+        }
+      } else if (value.type === "ObjectExpression") {
+        object = value;
+      } else {
         fail(
-          `HTTP operation "${name}" requires a static { method, path?, handler } object.`,
+          `HTTP operation "${name}" requires http.get/post/put/patch/delete/head/options(handler, options?) from @evjs/ev/api or a static { method, path?, handler } object.`,
         );
         continue;
       }
-      let method: string | undefined;
       let suffix = "/";
       const fields = new Set<string>();
       const errorsBefore = diagnostics.length;
-      for (const property of object.properties) {
+      for (const property of object?.properties ?? []) {
         if (property.type === "SpreadElement") {
           fail(`HTTP operation "${name}" cannot spread routing metadata.`);
           continue;
@@ -71,6 +100,12 @@ export function analyzeHttpOperations(
           continue;
         }
         if (key.value !== "method" && key.value !== "path") continue;
+        if (helper && key.value === "method") {
+          fail(
+            `HTTP operation "${name}" gets its method from http.${helper.method.toLowerCase()}(); omit method from options.`,
+          );
+          continue;
+        }
         if (fields.has(key.value))
           fail(`HTTP operation "${name}" repeats "${key.value}".`);
         fields.add(key.value);
@@ -133,9 +168,11 @@ export function analyzeHttpOperations(
   }
   if (!definitions.size)
     fail("http.* requires at least one named operation descriptor.");
-  for (const message of validateServerRouteMethodExports(ast.body, [
-    ...definitions,
-  ]))
+  for (const message of validateServerRouteMethodExports(
+    ast.body,
+    [...definitions],
+    helperHandlers,
+  ))
     fail(message);
   for (const route of routes.values()) {
     route.methods = HTTP_METHODS.filter((method) =>
@@ -144,4 +181,59 @@ export function analyzeHttpOperations(
     route.id = `${file}:${route.path}:${route.methods.join(",")}`;
   }
   return { routes: [...routes.values()], diagnostics };
+}
+
+interface HttpBindings {
+  named: Set<string>;
+  namespaces: Set<string>;
+}
+
+function collectHttpBindings(ast: Module): HttpBindings {
+  const bindings: HttpBindings = { named: new Set(), namespaces: new Set() };
+  for (const item of ast.body) {
+    if (
+      item.type !== "ImportDeclaration" ||
+      item.typeOnly ||
+      !["@evjs/ev/api", "@alipay/evjs/api"].includes(item.source.value)
+    )
+      continue;
+    for (const specifier of item.specifiers) {
+      if (specifier.type === "ImportNamespaceSpecifier") {
+        bindings.namespaces.add(specifier.local.value);
+      } else if (
+        specifier.type === "ImportSpecifier" &&
+        !specifier.isTypeOnly &&
+        (specifier.imported?.value ?? specifier.local.value) === "http"
+      ) {
+        bindings.named.add(specifier.local.value);
+      }
+    }
+  }
+  return bindings;
+}
+
+function readHttpBinding(value: Expression, bindings: HttpBindings) {
+  if (
+    value.type !== "CallExpression" ||
+    value.callee.type !== "MemberExpression"
+  )
+    return;
+  const callee = value.callee;
+  if (callee.property.type !== "Identifier") return;
+  const method = callee.property.value.toUpperCase();
+  if (
+    callee.property.value !== method.toLowerCase() ||
+    !HTTP_METHODS.some((candidate) => candidate === method)
+  )
+    return;
+  const receiver = unwrapExpression(callee.object);
+  const known =
+    receiver.type === "Identifier"
+      ? bindings.named.has(receiver.value)
+      : receiver.type === "MemberExpression" &&
+        receiver.property.type === "Identifier" &&
+        receiver.property.value === "http" &&
+        receiver.object.type === "Identifier" &&
+        bindings.namespaces.has(receiver.object.value);
+  if (known) return { method, call: value };
 }

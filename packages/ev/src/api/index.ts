@@ -16,3 +16,5 @@ export interface HttpRouteMetadata<Path extends string = string> {
 /** Typed HTTP operation declared by one named export in a domain module. */
 export type HttpOperation<Path extends string = string> =
   RouteHandlerDescriptor<Path> & HttpRouteMetadata<Path>;
+
+export { http } from "./http.js";

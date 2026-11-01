@@ -83,7 +83,7 @@ src/pages/orders/$orderId/
 | `<页面>/index.html` | 单个 MPA 页面的 HTML 模板 | 不创建页面或客户端入口。 |
 | `index.html` 或 `routing.html` | 共享应用 HTML 模板 | 默认使用 `index.html`。 |
 | 以 `"use server";` 开头且被应用导入的模块 | 服务端函数模块 | 只能命名导出可调用值，不要求固定目录。 |
-| `src/apis/**/{api,http}.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一个锚点；`api.*` 导出大写方法，`http.*` 导出具名 `{ method, path?, handler }` 操作；策略使用 `withMiddlewares(handler, middlewares)`。 |
+| `src/apis/**/{api,http}.{ts,tsx,js,jsx}` | 公共 HTTP 路由 | 每个目录一个锚点；`api.*` 导出大写方法，`http.*` 导出具名 `http.get/post/...` 绑定或 `{ method, path?, handler }` 操作；策略使用 `withMiddlewares(handler, middlewares)`。 |
 | API 路由目录中的其他文件 | 路由拥有的源码 | 辅助文件和 `index.*` 不创建端点。 |
 | `src/middlewares/middleware.*` | 全局中间件组合 | 默认导出一个中间件或显式排序的非空列表；动态计算的全局链可以在禁用时返回 `[]`。 |
 | `src/middlewares` 中的其他文件 | 中间件实现模块 | 显式导入，文件名不决定顺序。 |
@@ -230,4 +230,4 @@ export const GET = {
 };
 ```
 
-`src/apis/**/http.*` 用多个具名 `{ method, path?, handler }` 描述对象组织领域操作。目录提供 URL 前缀，每个操作声明路径后缀（默认 `/`）；同一文件可发布多个路径，同一路径可声明不同 HTTP 动词。中间件和运行时复用 `api.*` 的执行链。每个路由目录只保留一个 `api.*` 或 `http.*` 锚点。两者进入同一开发服务器、路由类型、HTTP 客户端元信息及生产构建图，框架插件可以根据文件名区分部署策略。导出名使用 `listOrders`、`createOrder` 等业务名称，不接受 `GET`、`POST` 等大写 HTTP 动词作为导出名。
+`src/apis/**/http.*` 用来自 `@evjs/ev/api` 的具名 `http.get/post/...` 绑定组织领域操作，也支持已有 `{ method, path?, handler }` 描述对象。目录提供 URL 前缀，每个操作声明路径后缀（默认 `/`）；同一文件可发布多个路径，同一路径可声明不同 HTTP 动词。中间件和运行时复用 `api.*` 的执行链。每个路由目录只保留一个 `api.*` 或 `http.*` 锚点。两者进入同一开发服务器、路由类型、HTTP 客户端元信息及生产构建图，框架插件可以根据文件名区分部署策略。导出名使用 `listOrders`、`createOrder` 等业务名称，不接受 `GET`、`POST` 等大写 HTTP 动词作为导出名。

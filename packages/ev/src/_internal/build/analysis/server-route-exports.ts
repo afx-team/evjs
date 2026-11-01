@@ -28,6 +28,7 @@ type MethodExportTarget =
 export function validateServerRouteMethodExports(
   body: ModuleItem[],
   methods: readonly string[],
+  handlers?: ReadonlyMap<string, Expression>,
 ): string[] {
   const methodSet = new Set<string>(methods);
   const targets = collectMethodExportTargets(body, methodSet);
@@ -44,8 +45,10 @@ export function validateServerRouteMethodExports(
     }
 
     const [target] = methodTargets;
-    const resolution =
-      target?.kind === "local"
+    const handler = handlers?.get(method);
+    const resolution = handler
+      ? resolveExpression(handler, locals, new Set(), false)
+      : target?.kind === "local"
         ? resolveLocalBinding(target.localName, locals, new Set())
         : "unknown";
     const diagnostic = formatCallableDiagnostic(method, resolution);

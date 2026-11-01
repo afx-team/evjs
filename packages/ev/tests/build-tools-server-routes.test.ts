@@ -18,6 +18,125 @@ afterEach(async () => {
 });
 
 describe("discoverServerRoutes", () => {
+  it.each([
+    ["@evjs/ev/api", "import { http }", "http"],
+    ["@evjs/ev/api", "import { http as endpoint }", "endpoint"],
+    ["@evjs/ev/api", "import * as api", "api.http"],
+    ["@alipay/evjs/api", "import { http }", "http"],
+    ["@alipay/evjs/api", "import { http as endpoint }", "endpoint"],
+    ["@alipay/evjs/api", "import * as api", "api.http"],
+  ])("discovers HTTP helper operations from %s with %s", async (provider, declaration, helper) => {
+    const cwd = await createFixture({
+      "src/apis/orders/http.ts": `
+        ${declaration} from '${provider}';
+        const handler = () => new Response('ok');
+        export const list = ${helper}.get(handler);
+        export const create = ${helper}.post(handler);
+        export const read = ${helper}.get(handler, { path: '/:id', timeout: 1000 });
+      `,
+    });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.routes).toMatchObject([
+      {
+        path: "/orders",
+        methods: ["GET", "POST"],
+        handlerExports: { GET: "list", POST: "create" },
+      },
+      {
+        path: "/orders/:id",
+        methods: ["GET"],
+        handlerExports: { GET: "read" },
+      },
+    ]);
+  });
+
+  it("discovers all helper methods and ignores erased contract type arguments", async () => {
+    const methods = [
+      "get",
+      "post",
+      "put",
+      "patch",
+      "delete",
+      "head",
+      "options",
+    ];
+    const cwd = await createFixture({
+      "src/apis/orders/http.ts": `
+        import { http } from '@alipay/evjs/api';
+        ${methods.map((method) => `export const ${method}Order = http.${method}<{response: void}>(() => new Response());`).join("\n")}
+      `,
+    });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.routes).toHaveLength(1);
+    expect(result.routes[0]?.methods).toEqual(
+      expect.arrayContaining(methods.map((method) => method.toUpperCase())),
+    );
+    expect(Object.keys(result.routes[0]?.handlerExports ?? {})).toHaveLength(7);
+  });
+
+  it.each([
+    ["export const read = http.get();", "requires a handler"],
+    [
+      "export const read = http.get(() => new Response(), {}, {});",
+      "requires a handler",
+    ],
+    [
+      "const options = {path: '/:id'}; export const read = http.get(() => new Response(), options);",
+      "static options object",
+    ],
+    [
+      "const path = '/:id'; export const read = http.get(() => new Response(), {path});",
+      "static path string",
+    ],
+    [
+      "export const read = http.get(() => new Response(), {path: (() => { throw Error('evaluated'); })()});",
+      "static path string",
+    ],
+    [
+      "export const read = http.get(() => new Response(), {path: '/../escape'});",
+      "Invalid HTTP operation path",
+    ],
+    [
+      "export const read = http.get(() => new Response(), {method: 'POST'});",
+      "gets its method from http.get",
+    ],
+    ["export const read = http.get(42);", "must resolve to a function"],
+    [
+      "export const read = http.get({handler: () => new Response()});",
+      "must resolve to a function",
+    ],
+    ["export const read = http.get(function* () {});", "cannot be a generator"],
+    [
+      "export const one = http.get(() => new Response()); export const two = http.get(() => new Response());",
+      "Duplicate HTTP operation GET /orders",
+    ],
+  ])("validates HTTP helper declarations without evaluating handlers: %s", async (source, message) => {
+    const cwd = await createFixture({
+      "src/apis/orders/http.ts": `import { http } from '@evjs/ev/api'; ${source}`,
+    });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(
+      result.diagnostics.some((item) => item.message.includes(message)),
+    ).toBe(true);
+  });
+
+  it.each([
+    "import { http } from './application-api';",
+    "import type { http } from '@evjs/ev/api';",
+  ])("does not treat unrelated or type-only imports as HTTP bindings: %s", async (declaration) => {
+    const cwd = await createFixture({
+      "src/apis/orders/http.ts": `${declaration} export const read = http.get(() => new Response());`,
+    });
+    const result = await discoverServerRoutes(cwd, { dir: "src/apis" });
+    expect(result.routes).toEqual([]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("requires http.get/post"),
+      }),
+    );
+  });
   it("expands a domain HTTP module into paths and explicit handler exports", async () => {
     const cwd = await createFixture({
       "src/apis/orders/http.ts": `

@@ -273,12 +273,23 @@ Hono 的错误处理行为：异常转成错误响应，中间件退出时可通
 
 ## HTTP 路由锚点别名
 
-可以使用 `http.ts`、`http.tsx`、`http.js` 或 `http.jsx`，它们与 `api.*` 复用同一编译器和运行时，目录提供 URL 前缀，http.* 的具名操作使用 method/path 声明各自的路由。每个路由目录只能保留其中一个锚点，同时声明两者会报重复路由错误。其他同目录源码仍为普通私有模块。
+可以使用 `http.ts`、`http.tsx`、`http.js` 或 `http.jsx`，它们与 `api.*` 复用同一编译器和运行时，目录提供 URL 前缀，http.* 的具名操作通过 HTTP helper 和可选 path 声明各自的路由。每个路由目录只能保留其中一个锚点，同时声明两者会报重复路由错误。其他同目录源码仍为普通私有模块。
 
 ## 领域 HTTP 操作
 
-`http.*` 在同一领域文件中导出多个具名描述对象，每个导出显式声明大写 `method`，可选 `path` 为目录路径下的后缀。省略 path 时对应领域根路径。例如 orders/http.ts 中 listOrders 的 GET 对应 /orders，createOrder 的 POST 也对应 /orders，getOrder 的 GET 和 path: '/:id' 对应 /orders/:id。导出名使用 `listOrders`、`createOrder` 等业务名称，不接受 `GET`、`POST` 等大写 HTTP 动词作为导出名。
+`http.*` 在同一领域文件中导出多个具名操作。导出名使用 `listOrders`、`createOrder` 等业务名称，不接受大写 HTTP 动词。使用 `@evjs/ev/api` 的 `http.get/post/put/patch/delete/head/options` 选择方法，目录提供 URL 前缀，可选 `path` 指定后缀。
 
-`satisfies HttpOperation`（从 `@evjs/ev/api` 导入）提供编写提示；带动态后缀时使用 `HttpOperation<"/:id">`。
+```ts
+import { http } from "@evjs/ev/api";
 
-method/path 必须是静态字符串，不通过业务函数体推断。相同 URL 下可声明不同动词，重复动词会报错。handler、中间件、SSE、HEAD 和 OPTIONS 复用既有 HTTP 执行链。每个目录保留一个 api.* 或 http.* 锚点，部署策略和资源拆分由框架插件管理。
+export const listOrders = http.get(() => Response.json([]));
+export const createOrder = http.post(async (request) => Response.json(await request.json()));
+export const getOrder = http.get(
+  (_request, ctx) => Response.json({ id: ctx.req.param("id") }),
+  { path: "/:id" },
+);
+```
+
+helper 只返回现有 handler 描述对象，不包装 Request/Response，也不改变 middleware、SSE、HEAD 和 OPTIONS 的执行。HTTP 方法来自 helper，options 中不再声明 method。支持具名导入别名和 namespace 访问；options 必须是静态对象，path 必须是字符串字面量。
+
+已有 `{ method, path?, handler }` 声明仍可使用。相同 URL 下重复动词会报错，每个目录保留一个 api.* 或 http.* 锚点，部署策略和资源拆分仍由框架插件管理。

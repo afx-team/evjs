@@ -68,11 +68,11 @@ describe("generated server middleware", () => {
     const server = await loadServer({
       "src/middlewares/middleware.ts": `export default async (ctx, next) => { await next(); ctx.header('x-global', 'yes'); };`,
       "src/apis/orders/http.ts": `
-        import { withMiddlewares } from '@evjs/ev/api';
+        import { http, withMiddlewares } from '@evjs/ev/api';
         export const list = { method: 'GET', handler: () => Response.json({ operation: 'list' }) };
-        export const create = { method: 'POST', async handler(req) { return Response.json({ operation: 'create', body: await req.json() }); } };
-        export const read = { method: 'GET', path: '/:id', handler: withMiddlewares((_req, ctx) => Response.json({ id: ctx.req.param('id') }), async (ctx, next) => { await next(); ctx.header('x-method', 'read'); }) };
-        export const stream = { method: 'GET', path: '/stream', handler: () => new Response('data: ready\\n\\n', { headers: { 'content-type': 'text/event-stream' } }) };
+        export const create = http.post(async req => Response.json({ operation: 'create', body: await req.json() }));
+        export const read = http.get(withMiddlewares((_req, ctx) => Response.json({ id: ctx.req.param('id') }), async (ctx, next) => { await next(); ctx.header('x-method', 'read'); }), { path: '/:id' });
+        export const stream = http.get(() => new Response('data: ready\\n\\n', { headers: { 'content-type': 'text/event-stream' } }), { path: '/stream' });
       `,
     });
     const read = await server.fetch(new Request("http://app.test/orders/42"));
