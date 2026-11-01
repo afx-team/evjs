@@ -312,27 +312,22 @@ short-circuit derived `HEAD`, whose final response is always bodyless.
 
 ## Domain HTTP operations
 
-`http.*` groups named operation descriptors in one domain module. Export names express business operations, such as `listOrders` or `createOrder`; uppercase HTTP verbs such as `GET` and `POST` are rejected as export names. Each export declares an uppercase `method` and an optional `path` suffix; the directory supplies the URL prefix. A missing suffix maps to the domain root. Handler functions, middleware, streaming, HEAD and OPTIONS use the same HTTP runtime as `api.*`.
+`http.*` groups named operations in one domain module. Use business export names such as `listOrders` or `createOrder`, and select the HTTP method with `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.head`, or `http.options` from `@evjs/ev/api`. The directory supplies the URL prefix; an optional static `path` adds a suffix.
 
 ```ts
 // src/apis/orders/http.ts
-import type { HttpOperation } from "@evjs/ev/api";
+import { http } from "@evjs/ev/api";
 
-export const listOrders = {
-  method: "GET",
-  handler: () => Response.json([]),
-} satisfies HttpOperation;
-export const createOrder = {
-  method: "POST",
-  async handler(request: Request) {
-    return Response.json(await request.json());
-  },
-} satisfies HttpOperation;
-export const getOrder = {
-  method: "GET",
-  path: "/:id",
-  handler: (_request, ctx) => Response.json({ id: ctx.req.param("id") }),
-} satisfies HttpOperation<"/:id">;
+export const listOrders = http.get(() => Response.json([]));
+export const createOrder = http.post(async (request) => {
+  return Response.json(await request.json());
+});
+export const getOrder = http.get(
+  (_request, ctx) => Response.json({ id: ctx.req.param("id") }),
+  { path: "/:id" },
+);
 ```
 
-These exports publish GET /orders, POST /orders, and GET /orders/:id. Method and path metadata must be static string literals; duplicate methods at the same URL are rejected. Keep one api.* or http.* anchor per directory. Framework plugins own deployment metadata; source-file grouping does not prescribe a deployment resource boundary.
+These exports publish GET /orders, POST /orders, and GET /orders/:id. Helpers return the existing handler descriptor and preserve the standard Request/Response and middleware runtime, including streaming. Method metadata comes from the helper and must not be repeated in options. Named and namespace import aliases are supported; routing options must be a static object with a literal path.
+
+Existing `{ method, path?, handler }` declarations remain supported. Duplicate methods at the same URL are rejected. Keep one api.* or http.* anchor per directory. Framework plugins own deployment metadata; source-file grouping does not prescribe a deployment resource boundary.

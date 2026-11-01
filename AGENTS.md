@@ -45,8 +45,8 @@ the implementation rather than preserving the mismatch.
    uses `routes` for nesting.
 3. Publish API routes only with `src/apis/**/api.*` or `src/apis/**/http.*`,
    and keep exactly one supported anchor file in each route directory. `api.*` exports
-   uppercase HTTP methods; `http.*` exports named `{ method, path?, handler }` domain
-   operations with a directory URL prefix. Put global middleware in `src/middlewares/middleware.*`,
+   uppercase HTTP methods; `http.*` exports named `http.get/post/...` bindings
+   (or existing `{ method, path?, handler }` domain operations) with a directory URL prefix. Put global middleware in `src/middlewares/middleware.*`,
    default-exporting one handler or an ordered non-empty array. Compose HTTP
    method policies with `withMiddlewares(handler, middlewares)` from
    `@evjs/ev/api`; share chains through ordinary imports. `RouteHandlerFn`

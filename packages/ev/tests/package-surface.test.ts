@@ -897,7 +897,10 @@ describe("workspace package surface", () => {
   });
 
   it("separates HTTP handlers, middleware, and request context exports", () => {
-    expect(Object.keys(apiAuthoring)).toEqual(["withMiddlewares"]);
+    expect(Object.keys(apiAuthoring).sort()).toEqual([
+      "http",
+      "withMiddlewares",
+    ]);
     expect(apiAuthoring.withMiddlewares).toBe(serverRuntime.withMiddlewares);
     expectTypeOf<apiAuthoring.RouteHandlerFn>().toEqualTypeOf<serverRuntime.RouteHandlerFn>();
 

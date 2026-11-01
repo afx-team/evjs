@@ -111,7 +111,8 @@ Release automation replaces them with the release version before publishing.
 
 1. Create the URL directory below `src/apis`.
 2. Add one `api.*` or `http.*` anchor with a `ts`, `tsx`, `js`, or `jsx` extension.
-3. Export uppercase HTTP method handlers.
+3. In `api.*`, export uppercase HTTP method handlers; in `http.*`, export named
+   business operations bound with `http.get/post/...` from `@evjs/ev/api`.
 4. Put helpers and shared middleware chains in ordinary colocated modules.
 5. Compose individual methods with `withMiddlewares(handler, middlewares)`
    from `@evjs/ev/api`.
