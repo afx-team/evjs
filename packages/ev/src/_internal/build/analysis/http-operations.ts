@@ -58,11 +58,7 @@ export function analyzeHttpOperations(
       if (helper) {
         const args = helper.call.arguments;
         const handler = args[0];
-        if (
-          !handler ||
-          args.length > 2 ||
-          args.some((arg) => arg.spread)
-        ) {
+        if (!handler || args.length > 2 || args.some((arg) => arg.spread)) {
           fail(
             `HTTP operation "${name}" requires a handler and optional static options.`,
           );
