@@ -6,12 +6,24 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.2.18] — 2026-11-02
+
 ### 🐛 Bug Fixes
 
-- **Client development HTML updates** — Regenerate Utoopack development HTML and
-  manifests when client rebuilds change the entry assets, so adding a component
-  dependency no longer leaves refreshes loading an older chunk. Preserve the
-  last published HTML while build stats are incomplete.
+- **Client development HTML updates** — Await Utoopack's client-build completion
+  callback to regenerate development HTML and manifests when rebuilds change the
+  entry assets, so adding a component dependency no longer leaves refreshes
+  loading an older chunk. Preserve the last published HTML while build stats are
+  incomplete.
+- **Utoopack callback support** — Require `@utoo/pack ^1.5.36` and report a clear
+  startup error when the installed bundler lacks client-build callbacks.
+
+### Upgrade
+
+- Upgrade installed `@evjs/*` packages together to `0.2.18` and refresh the
+  application lockfile. The 0.2 maintenance line uses the npm `legacy` tag.
 
 ---
 
