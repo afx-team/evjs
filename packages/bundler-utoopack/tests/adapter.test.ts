@@ -29,7 +29,13 @@ import { utoopackAdapter } from "../src/adapter/index.js";
 
 const utoopackMock = vi.hoisted(() => ({
   initialClientAssets: undefined as string[] | undefined,
-  initialClientStats: undefined as string | undefined,
+  supportsClientBuild: true,
+  onClientBuild: undefined as
+    | ((context: {
+        clientPaths: string[];
+        isRebuild: boolean;
+      }) => Promise<void>)
+    | undefined,
   requireUtoopack: vi.fn(() => ({
     serve: vi.fn(async ({ config }, _projectPath, _rootPath, serverOptions) => {
       const fs = await import("node:fs");
@@ -46,15 +52,14 @@ const utoopackMock = vi.hoisted(() => ({
       }
       await fs.promises.writeFile(
         path.join(clientOutDir, "stats.json"),
-        utoopackMock.initialClientStats ??
-          JSON.stringify({
-            entrypoints: Object.fromEntries(
-              config.entry.map((entry: { name: string }) => [
-                entry.name,
-                { assets: clientAssets.map((name) => ({ name })) },
-              ]),
-            ),
-          }),
+        JSON.stringify({
+          entrypoints: Object.fromEntries(
+            config.entry.map((entry: { name: string }) => [
+              entry.name,
+              { assets: clientAssets.map((name) => ({ name })) },
+            ]),
+          ),
+        }),
       );
 
       if (config.server) {
@@ -71,6 +76,13 @@ const utoopackMock = vi.hoisted(() => ({
             },
           }),
         );
+      }
+      if (utoopackMock.supportsClientBuild) {
+        utoopackMock.onClientBuild = serverOptions.onClientBuild;
+        await utoopackMock.onClientBuild?.({
+          clientPaths: clientAssets,
+          isRebuild: false,
+        });
       }
       await serverOptions?.onReady?.({
         port: 3210,
@@ -120,7 +132,8 @@ async function makeProject() {
 
 afterEach(async () => {
   utoopackMock.initialClientAssets = undefined;
-  utoopackMock.initialClientStats = undefined;
+  utoopackMock.supportsClientBuild = true;
+  utoopackMock.onClientBuild = undefined;
   await Promise.all(
     tempDirs.splice(0).map((dir) =>
       fs.promises.rm(dir, {
@@ -149,6 +162,7 @@ async function writeClientStats(
       },
     }),
   );
+  await utoopackMock.onClientBuild?.({ clientPaths: assets, isRebuild: true });
 }
 
 function createFrameworkCallbacks(options: {
@@ -307,55 +321,25 @@ async function expectRejectedMessage(action: () => void | Promise<void>) {
 }
 
 describe("utoopackAdapter dev", () => {
-  it.each([
-    ["truncated JSON", '{"entrypoints":'],
-    ["empty entrypoints", JSON.stringify({ entrypoints: {} })],
-  ])("waits for complete initial client stats after %s", async (_name, stats) => {
+  it("rejects Utoopack versions without client build callbacks", async () => {
     const cwd = await makeProject();
-    utoopackMock.initialClientStats = stats;
+    utoopackMock.supportsClientBuild = false;
     const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
     const buildContext = await createBuildContext(config, cwd);
-    const onBuildOutput = vi.fn();
-    const rebuildFlags: boolean[] = [];
-    const framework = createFrameworkCallbacks({
-      config,
-      cwd,
-      ...buildContext,
-      onBuildOutput,
-    });
-    const controller = await utoopackAdapter.dev({
-      config,
-      cwd,
-      ...buildContext,
-      callbacks: {
-        ...framework,
-        async onBuildFacts(facts, options) {
-          rebuildFlags.push(options?.isRebuild ?? false);
-          await framework.onBuildFacts(facts);
+    const onBuildFacts = vi.fn();
+    await expect(
+      utoopackAdapter.dev({
+        config,
+        cwd,
+        ...buildContext,
+        callbacks: {
+          onBuildFacts,
+          onServerBundleReady: vi.fn(),
         },
-      },
-      hooks: [],
-    });
-
-    try {
-      const htmlPath = path.join(cwd, "dist/client/index.html");
-      expect(fs.existsSync(htmlPath)).toBe(false);
-      expect(onBuildOutput).not.toHaveBeenCalled();
-
-      await writeClientStats(cwd, ["root-initial.js", "main.js"]);
-      await expect
-        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
-        .toContain('src="/root-initial.js"');
-      expect(rebuildFlags).toEqual([false]);
-
-      await writeClientStats(cwd, ["root-rebuilt.js", "main.js"]);
-      await expect
-        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
-        .toContain('src="/root-rebuilt.js"');
-      expect(rebuildFlags).toEqual([false, true]);
-    } finally {
-      await controller?.close?.();
-    }
+        hooks: [],
+      }),
+    ).rejects.toThrow("requires @utoo/pack with onClientBuild support");
+    expect(onBuildFacts).not.toHaveBeenCalled();
   });
 
   it("rejects initialization when publishing initial client artifacts fails", async () => {
@@ -415,10 +399,6 @@ describe("utoopackAdapter dev", () => {
       );
 
       await writeClientStats(cwd, ["root-new.js", "main.js", "new.css"]);
-      await expect
-        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
-        .toContain('src="/root-new.js"');
-
       const html = await fs.promises.readFile(htmlPath, "utf-8");
       const manifest = JSON.parse(
         await fs.promises.readFile(
@@ -450,7 +430,7 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it("keeps published HTML while client stats are incomplete and recovers", async () => {
+  it("publishes only completed client builds and recovers after a publication error", async () => {
     const cwd = await makeProject();
     const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
     const buildContext = await createBuildContext(config, cwd);
@@ -479,16 +459,21 @@ describe("utoopackAdapter dev", () => {
           path.join(cwd, "dist/client/stats.json"),
           incompleteStats,
         );
-        await new Promise((resolve) => setTimeout(resolve, 200));
         expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(initialHtml);
         expect(onBuildOutput).toHaveBeenCalledTimes(1);
       }
 
+      onBuildOutput.mockRejectedValueOnce(new Error("publish failed"));
+      await expect(
+        writeClientStats(cwd, ["root-failed.js", "main.js"]),
+      ).rejects.toThrow("publish failed");
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(initialHtml);
+
       await writeClientStats(cwd, ["root-recovered.js", "main.js"]);
-      await expect
-        .poll(() => fs.promises.readFile(htmlPath, "utf-8"))
-        .toContain('src="/root-recovered.js"');
-      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+      expect(await fs.promises.readFile(htmlPath, "utf-8")).toContain(
+        'src="/root-recovered.js"',
+      );
+      expect(onBuildOutput).toHaveBeenCalledTimes(3);
     } finally {
       await controller?.close?.();
     }
@@ -517,7 +502,6 @@ describe("utoopackAdapter dev", () => {
       const initialHtml = await fs.promises.readFile(htmlPath, "utf-8");
       await controller?.close?.();
       await writeClientStats(cwd, ["root-after-close.js", "main.js"]);
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(await fs.promises.readFile(htmlPath, "utf-8")).toBe(initialHtml);
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
@@ -536,7 +520,12 @@ describe("utoopackAdapter dev", () => {
     const onBuildOutput = vi.fn((output: BuildOutput) => {
       output.assets.devHook = { js: ["dev-hook.js"], css: [] };
     });
-    const onDevServerReady = vi.fn();
+    const onDevServerReady = vi.fn(async () => {
+      expect(
+        await fs.promises.readFile(path.join(cwd, "dist/index.html"), "utf-8"),
+      ).toContain('src="/main.js"');
+      expect(onBuildOutput).toHaveBeenCalledTimes(1);
+    });
     const buildContext = await createBuildContext(config, cwd);
     const hooks: PluginHooks<ConfigComplete>[] = [
       {
@@ -736,11 +725,9 @@ describe("utoopackAdapter dev", () => {
         "dist",
         "home",
       );
-      await expect
-        .poll(() =>
-          fs.promises.readFile(path.join(cwd, "dist/home.html"), "utf-8"),
-        )
-        .toContain('src="/root-next-plan.js"');
+      expect(
+        await fs.promises.readFile(path.join(cwd, "dist/home.html"), "utf-8"),
+      ).toContain('src="/root-next-plan.js"');
       expect(
         await fs.promises.readFile(path.join(cwd, "dist/home.html"), "utf-8"),
       ).toContain("next-shell");
