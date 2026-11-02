@@ -51,38 +51,55 @@ function createOptions(
 }
 
 describe("Utoopack dev worker client", () => {
-  it("acknowledges server builds only after host publication and returns failures", async () => {
+  it.each([
+    "server",
+    "client",
+  ] as const)("acknowledges %s builds only after host publication and returns failures", async (target) => {
     let release!: () => void;
     const publishing = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const onServerBuild = vi.fn(async () => {
-      if (onServerBuild.mock.calls.length === 1) await publishing;
+    const onBuild = vi.fn(async () => {
+      if (onBuild.mock.calls.length === 1) await publishing;
       else throw new Error("publication failed");
     });
     const onServerError = vi.fn();
     const handle = startUtoopackDevWorker(
       {
         ...createOptions((requestPath) => requestPath, {
-          TEST_SERVER_BUILD: "true",
+          TEST_BUILD_TARGET: target,
         }),
-        onServerBuild,
+        ...(target === "client"
+          ? { onClientBuild: onBuild }
+          : { onServerBuild: onBuild }),
         onServerError,
       },
       fixtureUrl,
     );
     try {
       await handle.ready;
-      await vi.waitFor(() => expect(onServerBuild).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(onBuild).toHaveBeenCalledOnce());
       await new Promise((resolve) => setTimeout(resolve, 25));
-      expect(onServerBuild).toHaveBeenCalledOnce();
+      expect(onBuild).toHaveBeenCalledOnce();
+      if (target === "client") {
+        expect(onBuild).toHaveBeenLastCalledWith({
+          clientPaths: ["main-1.js"],
+          isRebuild: false,
+        });
+      }
       release();
       await vi.waitFor(() =>
         expect(onServerError).toHaveBeenCalledWith(
           expect.objectContaining({ message: "publication failed" }),
         ),
       );
-      expect(onServerBuild).toHaveBeenCalledTimes(2);
+      expect(onBuild).toHaveBeenCalledTimes(2);
+      if (target === "client") {
+        expect(onBuild).toHaveBeenLastCalledWith({
+          clientPaths: ["main-2.js"],
+          isRebuild: true,
+        });
+      }
     } finally {
       release();
       await handle.close();

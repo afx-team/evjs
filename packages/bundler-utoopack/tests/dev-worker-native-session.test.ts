@@ -74,12 +74,14 @@ describe("Utoopack single native-owner Session replacement", () => {
       buildModeRejected: boolean;
       serverPublicationClosed: boolean;
       serverSessionReused: boolean;
+      clientPublicationClosed: boolean;
     };
     expect(result).toMatchObject({
       hostLoadedBinding: false,
       buildModeRejected: true,
       serverPublicationClosed: true,
       serverSessionReused: true,
+      clientPublicationClosed: true,
     });
     expect(result.firstOwnerThreadId).toBeGreaterThan(0);
     expect(result.secondOwnerThreadId).toBe(result.firstOwnerThreadId);

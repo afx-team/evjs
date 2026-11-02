@@ -13,7 +13,8 @@ parentPort.on("message", (message) => {
   }
   if (message?.type === "close") closeSession(message.sessionId);
   if (
-    message?.type === "server-published" &&
+    (message?.type === "server-published" ||
+      message?.type === "client-published") &&
     activeSession?.id === message.sessionId
   ) {
     if (message.error) {
@@ -23,11 +24,7 @@ parentPort.on("message", (message) => {
         message: message.error,
       });
     } else if (message.buildId === 1) {
-      parentPort.postMessage({
-        type: "server-build",
-        sessionId: message.sessionId,
-        buildId: 2,
-      });
+      sendBuild(activeSession, 2);
     }
   }
 });
@@ -78,13 +75,30 @@ function startSession(sessionId, options) {
     spaHistoryFallbackUpdated: Boolean(fallbackRule),
   });
 
-  if (options.config.define?.TEST_SERVER_BUILD === "true") {
-    parentPort.postMessage({ type: "server-build", sessionId, buildId: 1 });
+  if (options.config.define?.TEST_BUILD_TARGET) {
+    sendBuild(activeSession, 1);
   }
 
   if (options.config.define?.TEST_EXIT === "true") {
     process.exit(0);
   }
+}
+
+function sendBuild(session, buildId) {
+  const target = session.options.config.define.TEST_BUILD_TARGET;
+  parentPort.postMessage({
+    type: `${target}-build`,
+    sessionId: session.id,
+    buildId,
+    ...(target === "client"
+      ? {
+          context: {
+            clientPaths: [`main-${buildId}.js`],
+            isRebuild: buildId > 1,
+          },
+        }
+      : {}),
+  });
 }
 
 function closeSession(sessionId) {

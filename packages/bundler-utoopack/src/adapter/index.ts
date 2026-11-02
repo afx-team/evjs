@@ -1,1 +1,1 @@
-export { __testing, utoopackAdapter } from "./adapter.js";
+export { utoopackAdapter } from "./adapter.js";
