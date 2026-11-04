@@ -1,0 +1,30 @@
+packages/evjs/src/shandie/generated.ts
+  s_be98679b1df329::t_88056bb8d6182e 87
+packages/evjs/test/exports.test.ts
+  s_be98679b1df329::t_88056bb8d6182e 261-262
+packages/evjs/test/plugins/shandie/generated-api.test.ts
+  s_be98679b1df329::t_88056bb8d6182e 54-75
+packages/evjs/src/plugins/shandie/codegen.ts
+  s_be98679b1df329::t_0f19ae12cd7c32 36
+  s_be98679b1df329::t_929a6cae0506dd 31-32
+packages/evjs/test/plugins/shandie/typegen.test.ts
+  s_be98679b1df329::t_c3788433d1d196 79-82,155-156,167-168,172
+  s_be98679b1df329::t_85cf8a1dd24df9 66,83,151-154
+  s_be98679b1df329::t_d8cd4f3432495d 71-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2313b4bb9cab08ed0cc9e94cd13cdf487b327a9f",
+  "prompts": {},
+  "sessions": {
+    "s_be98679b1df329": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15d29-7a9f-7a30-92c1-3a4727dc1280",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
