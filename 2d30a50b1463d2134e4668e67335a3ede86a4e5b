@@ -1,0 +1,30 @@
+packages/db-next/docs/usage-collection.md
+  h_b6699d0af61243 19,21,35
+packages/db-next/src/usage-monitor.ts
+  h_b6699d0af61243 124,134,156-157,166-167,194
+packages/db-next/src/usage-version.cts
+  h_b6699d0af61243 5-6
+packages/db-next/src/usage.ts
+  h_b6699d0af61243 11-14,40,95-98
+packages/db-next/test/usage-monitor-process.test.ts
+  h_b6699d0af61243 12,35-104
+packages/db-next/test/usage-monitor-tls.test.ts
+  h_b6699d0af61243 9-24,26,28-35,38,40-64
+packages/db-next/test/usage-monitor.test.ts
+  h_b6699d0af61243 93-112,150-153,155
+packages/db-next/test/usage-version.test.ts
+  h_b6699d0af61243 1-57
+packages/db-next/test/usage.test.ts
+  h_b6699d0af61243 3,165-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2d30a50b1463d2134e4668e67335a3ede86a4e5b",
+  "prompts": {},
+  "humans": {
+    "h_b6699d0af61243": {
+      "author": "真寻 <zhenxin.lcx@antgroup.com>"
+    }
+  }
+}
