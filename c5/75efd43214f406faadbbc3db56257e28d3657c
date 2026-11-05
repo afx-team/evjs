@@ -1,0 +1,61 @@
+packages/evjs/assets/config-tracker/evjs.json
+  s_b26407b55e13f8::t_567f331dfc3e2a 1-8
+packages/evjs/src/config-tracking/identity.ts
+  s_b26407b55e13f8::t_567f331dfc3e2a 65
+  s_b26407b55e13f8::t_70129f73599993 62-63
+  s_b26407b55e13f8::t_5d25792b8465e4 1-61,64,66-75
+packages/evjs/src/config-tracking/observer.ts
+  s_b26407b55e13f8::t_51ee480795d23d 6-11,92-93
+  s_b26407b55e13f8::t_70129f73599993 120-122
+  s_b26407b55e13f8::t_567f331dfc3e2a 91
+  s_b26407b55e13f8::t_5d25792b8465e4 1-5,12-90,94-119,123-136
+packages/evjs/README.md
+  s_b26407b55e13f8::t_398d3b1ede0cb8 14-15
+packages/evjs/src/config-tracking/command.ts
+  s_b26407b55e13f8::t_567f331dfc3e2a 1-2,6-11,23-24,30-32,37-41,43-45
+  s_b26407b55e13f8::t_51ee480795d23d 3-5,12-22,25-29,33-36
+  s_b26407b55e13f8::t_70129f73599993 42
+packages/evjs/docs/config-tracking.en.md
+  s_b26407b55e13f8::t_70129f73599993 39
+  s_b26407b55e13f8::t_398d3b1ede0cb8 1-2,4,6-38,40-41,45-48
+  s_b26407b55e13f8::t_19c5e37bad64ac 3,5
+  s_b26407b55e13f8::t_51ee480795d23d 42-44
+packages/evjs/package.json
+  s_b26407b55e13f8::t_567f331dfc3e2a 155
+packages/evjs/docs/config-tracking.md
+  s_b26407b55e13f8::t_70129f73599993 39
+  s_b26407b55e13f8::t_398d3b1ede0cb8 1-2,4,6-38,40-41,45-48
+  s_b26407b55e13f8::t_19c5e37bad64ac 3,5
+  s_b26407b55e13f8::t_51ee480795d23d 42-44
+packages/evjs/src/config/define-config.ts
+  s_b26407b55e13f8::t_5d25792b8465e4 29,232-233
+packages/evjs/bin/ev.js
+  s_b26407b55e13f8::t_567f331dfc3e2a 3-6
+packages/evjs/src/plugins/uboa/index.ts
+  s_b26407b55e13f8::t_c1bf56cdaeb861 149
+  s_b26407b55e13f8::t_19c5e37bad64ac 151-152,172
+  s_b26407b55e13f8::t_5d25792b8465e4 30-35,64-65,84,144-147,270-271
+packages/evjs/test/config-tracking.test.ts
+  s_b26407b55e13f8::t_3ae86dab24d42a 214-253
+  s_b26407b55e13f8::t_567f331dfc3e2a 1-6,8-53,77,84-125,131-151,158-213,254,256-257,259-260,291-303,310,314,321-327,331-337
+  s_b26407b55e13f8::t_70129f73599993 54-76,78-83,126-130,304-309,311-313,315-320,328-330
+  s_b26407b55e13f8::t_51ee480795d23d 7,255,258,261-276,286-290
+  s_b26407b55e13f8::t_fe3e9456970014 277-285
+  s_b26407b55e13f8::t_19c5e37bad64ac 152-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c575efd43214f406faadbbc3db56257e28d3657c",
+  "prompts": {},
+  "sessions": {
+    "s_b26407b55e13f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a997-916c-7113-90ee-223b58ce83a5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
