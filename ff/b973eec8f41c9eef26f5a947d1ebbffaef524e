@@ -1,0 +1,19 @@
+packages/skill-dev/SKILL.md
+  s_c2ab2a5e37888f::t_0cd47b105dfaa9 3,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ffb973eec8f41c9eef26f5a947d1ebbffaef524e",
+  "prompts": {},
+  "sessions": {
+    "s_c2ab2a5e37888f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1aaa6-b4a5-7c23-810a-0df2da4e3939",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
