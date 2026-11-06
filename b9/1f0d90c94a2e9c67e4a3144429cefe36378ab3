@@ -1,0 +1,19 @@
+packages/skill-dev/references/fullstack/integrations/rpc-devunit.md
+  s_cbfde0e6bc9948::t_ba648c9e8dd120 13-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b91f0d90c94a2e9c67e4a3144429cefe36378ab3",
+  "prompts": {},
+  "sessions": {
+    "s_cbfde0e6bc9948": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ab09-8cc8-7b82-9964-f608b7ffe608",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}
