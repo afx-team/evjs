@@ -1,0 +1,23 @@
+packages/evjs/src/plugins/tern/development/minnow-preflight.ts
+  s_c811fcdc69f031::t_2a8470992896e3 2,32,34,43,49-70
+packages/evjs/docs/plugins/tern.md
+  s_c811fcdc69f031::t_2a8470992896e3 417
+packages/evjs/test/plugins/tern/local-dev.test.ts
+  s_c811fcdc69f031::t_1b9b9a7b036433 196-203,207-215,222,228-229,236-240,242-243,257,263-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "df61b1f4f8b987c4376bd9feb81dfd0efcb974dc",
+  "prompts": {},
+  "sessions": {
+    "s_c811fcdc69f031": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ab99-6357-72e3-a214-036e77b95c1b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
