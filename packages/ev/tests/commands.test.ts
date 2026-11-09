@@ -28,10 +28,12 @@ import {
   createRscPageBuildEntryName,
 } from "../src/_internal/build/conventions/build-entry-conventions.js";
 import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/conventions/page-route-conventions.js";
+import { acquireDevSessionLock } from "../src/_internal/build/dev/runtime.js";
 import {
   prepareFrameworkIR,
   publishFrameworkIR,
 } from "../src/_internal/build/generated-ir/generated-contributions.js";
+import { analyzeFrameworkBuild } from "../src/_internal/build/operations/analyze.js";
 import {
   PAGE_ROUTE_TYPES_MARKER,
   PAGE_ROUTE_TYPES_USAGE_HINT,
@@ -3696,6 +3698,142 @@ describe("prepareFrameworkBuild", () => {
     ).rejects.toThrow(
       'invalid-contribution:entry.position must be one of: "polyfill", "before-main-imports", "after-main-imports", "before-main", "after-main"',
     );
+  });
+});
+
+describe("analyzeFrameworkBuild", () => {
+  it("analyzes generated production entries without changing build output or running build hooks", async () => {
+    const cwd = await createServerOutputProject();
+    const events: string[] = [];
+    const dist = path.join(cwd, "dist");
+    const outputPath = "reports/bundle-before";
+    await writeFile(path.join(dist, "client", "stats.json"), '{"prior":true}');
+    await writeFile(path.join(dist, "server", "main.js"), "existing bundle");
+    const before = await readDirectorySnapshot(dist);
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      ...createMockBundler(events),
+      async analyze({ cwd, plan, hooks, outputPath }) {
+        events.push("bundler.analyze");
+        expect(plan.mode).toBe("production");
+        expect(plan.entries).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ environment: "client" }),
+            expect.objectContaining({ environment: "server" }),
+          ]),
+        );
+        const { plan: generatedPlan } = JSON.parse(
+          await fs.promises.readFile(
+            path.join(cwd, ".ev/framework/build-plan.json"),
+            "utf-8",
+          ),
+        ) as { plan: BuildPlan };
+        expect(generatedPlan.entries).toEqual(plan.entries);
+        for (const entry of plan.entries) {
+          await fs.promises.access(path.resolve(cwd, entry.import));
+        }
+        expect(hooks.some((hook) => hook.configureBundler)).toBe(true);
+        const reportDir = path.resolve(cwd, outputPath ?? ".utoo/analyze");
+        await writeFile(path.join(reportDir, "index.html"), "Analysis report");
+        return { outputPath: reportDir };
+      },
+    };
+
+    const report = await analyzeFrameworkBuild(
+      {
+        bundler,
+        routing: { mode: "spa" },
+        plugins: [
+          {
+            id: "analysis-lifecycle",
+            setup(ctx) {
+              events.push(`setup:${ctx.mode}:${ctx.flags?.profile}`);
+              return {
+                configureBundler() {},
+                beforeBuild() {
+                  events.push("beforeBuild");
+                },
+                afterBuild() {
+                  events.push("afterBuild");
+                },
+                dispose() {
+                  events.push("dispose");
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, flags: { profile: "preview" }, outputPath },
+    );
+
+    expect(report.outputPath).toBe(path.join(cwd, outputPath));
+    await expect(
+      fs.promises.readFile(path.join(report.outputPath, "index.html"), "utf-8"),
+    ).resolves.toBe("Analysis report");
+    expect(events).toEqual([
+      "setup:production:preview",
+      "bundler.analyze",
+      "dispose",
+    ]);
+    expect(await readDirectorySnapshot(dist)).toEqual(before);
+  });
+
+  it("reports unsupported adapters and disposes prepared hooks", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    await expect(
+      analyzeFrameworkBuild(
+        {
+          routing: { mode: "spa" },
+          plugins: [
+            {
+              id: "analysis-cleanup",
+              setup() {
+                return {
+                  dispose() {
+                    events.push("dispose");
+                  },
+                };
+              },
+            },
+          ],
+        },
+        { cwd, bundler: createMockBundler(events) },
+      ),
+    ).rejects.toThrow('The "mock" bundler does not support ev analyze');
+    expect(events).toEqual(["dispose"]);
+  });
+
+  it.each([
+    "dist",
+    "dist/report",
+    ".",
+  ])("rejects a report at %s that overlaps canonical build output", async (outputPath) => {
+    const cwd = await createSpaProject();
+    const analyze = vi.fn();
+    await expect(
+      analyzeFrameworkBuild(
+        { routing: { mode: "spa" } },
+        { cwd, bundler: { ...createMockBundler([]), analyze }, outputPath },
+      ),
+    ).rejects.toThrow(/Analyzer output directory .* must not overlap/);
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("rejects analysis while dev owns the project's generated entries", async () => {
+    const cwd = await createSpaProject();
+    const release = await acquireDevSessionLock(cwd);
+    try {
+      await expect(analyzeFrameworkBuild(undefined, { cwd })).rejects.toThrow(
+        /Cannot analyze .* because ev dev is running/,
+      );
+      await expect(fs.promises.access(path.join(cwd, ".ev"))).rejects.toThrow(
+        "ENOENT",
+      );
+    } finally {
+      await release();
+    }
   });
 });
 

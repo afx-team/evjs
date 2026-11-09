@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import * as serverRuntime from "@evjs/server";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import * as buildTools from "../src/_internal/build/index.js";
+import * as analyzeTools from "../src/_internal/build/operations/analyze.js";
 import * as apiAuthoring from "../src/api/index.js";
 import * as publicBuildTools from "../src/build-tools/index.js";
 import * as evRoot from "../src/index.js";
@@ -341,6 +342,7 @@ const expectedPackageExportSubpaths = {
   "@evjs/ev": [
     ".",
     "./_internal/build",
+    "./_internal/build/analyze",
     "./_internal/client",
     "./_internal/client/api",
     "./_internal/client/api-transport",
@@ -384,7 +386,7 @@ const expectedPackageExportSubpaths = {
   "@evjs/cli": ["."],
   "@evjs/create-app": ["."],
   "@evjs/plugin-qiankun": [".", "./runtime"],
-  "@evjs/bundler-utoopack": ["."],
+  "@evjs/bundler-utoopack": [".", "./_internal/analyze"],
   "@evjs/bundler-webpack": ["."],
   "@evjs/shared": [".", "./_internal/static-json", "./manifest"],
 } as const satisfies Record<PackageName, readonly string[]>;
@@ -762,6 +764,16 @@ describe("workspace package surface", () => {
     expect(runtimeExports).not.toEqual(
       expect.arrayContaining([...privateBuildToolsRuntimeExports]),
     );
+  });
+
+  it("exposes bundle analysis through its own narrow CLI subpath", async () => {
+    const evPackageJson = await readPackageJson("ev");
+    expect(evPackageJson.exports?.["./_internal/build/analyze"]).toEqual({
+      types: "./esm/_internal/build/operations/analyze.d.ts",
+      import: "./esm/_internal/build/operations/analyze.js",
+      default: "./esm/_internal/build/operations/analyze.js",
+    });
+    expect(Object.keys(analyzeTools)).toEqual(["analyzeFrameworkBuild"]);
   });
 
   it("keeps internal build implementations grouped by capability", async () => {

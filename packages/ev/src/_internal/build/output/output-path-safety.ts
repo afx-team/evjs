@@ -8,6 +8,38 @@ export interface ResolvedBuildOutputPaths {
   serverDir: string;
 }
 
+/** Keep Analyzer reports separate from canonical framework build output. */
+export async function assertAnalysisOutputOutsideDist(
+  cwd: string,
+  distDir: string,
+  outputPath: string,
+): Promise<void> {
+  const dist = path.resolve(cwd, distDir);
+  const report = path.resolve(cwd, outputPath);
+  const overlaps = (a: string, b: string) =>
+    isSameOrDescendantPath(path.relative(a, b)) ||
+    isSameOrDescendantPath(path.relative(b, a));
+  const [realDist, realReport] = await Promise.all([
+    resolveOutputPath(dist),
+    resolveOutputPath(report),
+  ]);
+  if (overlaps(dist, report) || overlaps(realDist, realReport)) {
+    throw new Error(
+      `[evjs] Analyzer output directory "${outputPath}" must not overlap build output "${distDir}".`,
+    );
+  }
+}
+
+async function resolveOutputPath(absolute: string): Promise<string> {
+  try {
+    return await fs.realpath(absolute);
+  } catch (error) {
+    const parent = path.dirname(absolute);
+    if (!isMissingPathError(error) || parent === absolute) throw error;
+    return path.join(await resolveOutputPath(parent), path.basename(absolute));
+  }
+}
+
 /**
  * Fail closed before a bundler recursively cleans framework-owned output.
  *

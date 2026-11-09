@@ -2,6 +2,10 @@ import type { Config } from "@evjs/ev/config";
 import type { CliFlags } from "@evjs/ev/plugin";
 import { Command, CommanderError } from "commander";
 import {
+  type BundleAnalysisActions,
+  registerAnalyzeCommand,
+} from "../commands/analyze/command.js";
+import {
   formatInspectCommandErrorJson,
   type InspectCommandOptions,
   type InspectCommandResult,
@@ -39,6 +43,7 @@ export interface CliProgramDependencies {
   loadConfig: ConfigLoader;
   dev: DevFrameworkCommand;
   build: FrameworkCommand;
+  analysis: BundleAnalysisActions;
   prepare: FrameworkCommand;
   inspect(options: InspectCommandOptions): Promise<InspectCommandResult>;
   writeStdout(output: string): void;
@@ -114,6 +119,8 @@ export async function runCliProgram(
         await dependencies.build(config, { cwd, flags });
       });
     });
+
+  registerAnalyzeCommand(program, dependencies, runCommand);
 
   program
     .command("prepare")

@@ -18,6 +18,8 @@ export {
 } from "./bundler/client-compatibility.js";
 export {
   type BundlerAdapter,
+  type BundlerAnalyzeContext,
+  type BundlerAnalyzeResult,
   type BundlerBuildCapability,
   type BundlerBuildContext,
   type BundlerBuildFacts,

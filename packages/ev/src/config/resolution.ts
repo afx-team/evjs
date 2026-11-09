@@ -681,6 +681,7 @@ const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
   "capabilities",
   "build",
   "dev",
+  "analyze",
 ]);
 const PUBLIC_BUNDLER_CAPABILITY_KEYS = new Set(["build", "dev"]);
 const PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS = new Set(["server", "rsc", "ppr"]);
@@ -1041,6 +1042,12 @@ function assertBundlerAdapter<TBundlerCfg = unknown>(
     bundlerConfig.dev,
     `${path}.dev`,
   );
+  if (bundlerConfig.analyze !== undefined) {
+    assertFunction<NonNullable<BundlerAdapter<TBundlerCfg>["analyze"]>>(
+      bundlerConfig.analyze,
+      `${path}.analyze`,
+    );
+  }
 }
 
 function validateBundlerConfigKeys(
@@ -1051,7 +1058,7 @@ function validateBundlerConfigKeys(
     bundler,
     PUBLIC_BUNDLER_CONFIG_KEYS,
     path,
-    "name, capabilities, build, or dev",
+    "name, capabilities, build, dev, or analyze",
   );
 }
 
