@@ -1,0 +1,85 @@
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/build.md
+  s_9866b691db6f9b::t_0afee110b15818 18-19,21-39
+packages/ev/src/config/resolution.ts
+  s_9866b691db6f9b::t_85ee919c8da883 684,1045-1050,1061
+packages/bundler-utoopack/package.json
+  s_9866b691db6f9b::t_7a551fab728695 16-20
+packages/cli/src/program/run.ts
+  s_9866b691db6f9b::t_54689caa3bda7f 7,66
+packages/bundler-utoopack/src/adapter/execution/analyze.ts
+  s_9866b691db6f9b::t_7a551fab728695 1-96
+packages/cli/tests/cli.test.ts
+  s_9866b691db6f9b::t_3bd2b52b88fb6e 1,268-271,278
+  s_9866b691db6f9b::t_4850a758be1d57 25-32,185-267,272-277,279,285-298
+  s_9866b691db6f9b::t_749630422f1fd9 284
+  s_9866b691db6f9b::t_ddbd19e5badf22 280-283
+  s_9866b691db6f9b::t_ea3dca863375eb 299
+packages/cli/src/commands/analyze/command.ts
+  s_9866b691db6f9b::t_ddbd19e5badf22 24,63-67,106-109
+  s_9866b691db6f9b::t_54689caa3bda7f 1-12,19-23,25-62,68,87,89,93-97,99-105,110,124,145
+  s_9866b691db6f9b::t_e84ff559cdda87 69-86,88,90-92,111-123,125-144
+  s_9866b691db6f9b::t_b2c3c3928f0edd 13-18,98
+packages/ev/src/_internal/build/output/output-path-safety.ts
+  s_9866b691db6f9b::t_dfd952acbf835d 11-42
+packages/cli/src/commands/analyze/runtime.ts
+  s_9866b691db6f9b::t_ec5953b144e3f1 6
+  s_9866b691db6f9b::t_54689caa3bda7f 1-5,7-46
+packages/ev/src/_internal/build/bundler/contracts.ts
+  s_9866b691db6f9b::t_85ee919c8da883 196-204,277-280
+  s_9866b691db6f9b::t_91711946fbf428 281
+packages/bundler-utoopack/src/adapter/adapter.ts
+  s_9866b691db6f9b::t_7a551fab728695 14,149-151
+  s_9866b691db6f9b::t_b0cec348416a7d 152-153
+packages/ev/src/_internal/build/dev/runtime.ts
+  s_9866b691db6f9b::t_85ee919c8da883 47,672-675,684,690,697
+packages/ev/src/_internal/build/index.ts
+  s_9866b691db6f9b::t_85ee919c8da883 21-22
+packages/ev/tests/commands.test.ts
+  s_9866b691db6f9b::t_dfd952acbf835d 3758
+  s_9866b691db6f9b::t_e7abfdf8dee3b5 31,3639-3659,3661-3664,3666-3742,3759-3771
+  s_9866b691db6f9b::t_097f20f2d906c4 36
+  s_9866b691db6f9b::t_21980d2c8e3a79 3660,3665
+  s_9866b691db6f9b::t_c531c135a82111 3743-3757,3772
+  s_9866b691db6f9b::t_61b26bf528d6e2 3773-3774
+packages/bundler-utoopack/tests/adapter.test.ts
+  s_9866b691db6f9b::t_a3175fad48e1dd 36-44,126-128,552-554,578-581,593-595,613-615
+  s_9866b691db6f9b::t_de3b156ba8e909 35,394-395,549-551,555-577,582-592,596-612,616-625
+  s_9866b691db6f9b::t_09ae0cf6c3ed9e 626-627
+packages/ev/package.json
+  s_9866b691db6f9b::t_097f20f2d906c4 77-81
+packages/ev/src/_internal/build/operations/analyze.ts
+  s_9866b691db6f9b::t_097f20f2d906c4 1-4
+packages/ev/src/_internal/build/operations/commands.ts
+  s_9866b691db6f9b::t_85ee919c8da883 18,171-175,418-441,448-453,455-466
+  s_9866b691db6f9b::t_dfd952acbf835d 42,442-447,454
+  s_9866b691db6f9b::t_a672211ee7f054 467
+packages/bundler-utoopack/tests/analyze-export.test.ts
+  s_9866b691db6f9b::t_eadef0135db89d 1-26,29-33,38-45
+  s_9866b691db6f9b::t_9a6120c5b1c92d 27-28,34-37
+packages/ev/tests/package-surface.test.ts
+  s_9866b691db6f9b::t_097f20f2d906c4 10,345,389,769-776
+  s_9866b691db6f9b::t_19cc7ff6993ef0 777-778
+packages/bundler-utoopack/src/analysis/index.ts
+  s_9866b691db6f9b::t_7a551fab728695 1-4
+docs/docs/build.md
+  s_9866b691db6f9b::t_0afee110b15818 18-19,21-43
+packages/cli/src/program/command-program.ts
+  s_9866b691db6f9b::t_54689caa3bda7f 5-7,46,123
+  s_9866b691db6f9b::t_375be0597fb8be 4,124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1517bc3bcfddd18e5a15d75fd7a66f51c9e64e53",
+  "prompts": {},
+  "sessions": {
+    "s_9866b691db6f9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1af71-5078-72d2-a666-e23473ecef0a",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
