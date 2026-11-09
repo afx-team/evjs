@@ -1,0 +1,19 @@
+packages/skill-dev/references/fullstack/integrations/drm.md
+  s_954a35a9cb120c::t_2c247e5747f82c 11,21-23,26,29-33,35,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "251b4ab1406723a791ca3f1da2a024a15fe6e90f",
+  "prompts": {},
+  "sessions": {
+    "s_954a35a9cb120c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1beff-c169-70f0-8e89-19724f66ea23",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}
