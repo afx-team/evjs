@@ -1,0 +1,86 @@
+packages/evjs/src/shandie/index.ts
+  s_be98679b1df329::t_5acbc2f56ece63 4-9
+packages/evjs/src/shandie/generated.ts
+  s_be98679b1df329::t_52ab02a02de496 66
+  s_be98679b1df329::t_1d475275d7a558 81,85-86,88-91,96-97,101-104
+  s_be98679b1df329::t_5acbc2f56ece63 1-38,41-65,67-80,82-84,92-95,98,100,105,107-108
+  s_be98679b1df329::t_695a4a8deaa1d1 87
+  s_be98679b1df329::t_f07c000c1720bb 99,106,109
+  s_be98679b1df329::t_8dc6f139fc4ab5 39-40
+packages/evjs/docs/shandie-smallfish-migration.md
+  s_be98679b1df329::t_ac913a8b5cc5b3 5,17-23
+  s_be98679b1df329::t_88bfd94ca15905 9-16
+packages/evjs/test/plugins/shandie/typegen.test.ts
+  s_be98679b1df329::t_ab94d3a85fd32f 44,53-56,65-66,83,94,124-136,138-143,148-149,151-158
+  s_be98679b1df329::t_5c46a99eaac276 150
+  s_be98679b1df329::t_e841c47bf4490e 144-147
+  s_be98679b1df329::t_341a70f2453cb9 67-70,84-93
+  s_be98679b1df329::t_79b0c84b8c21c7 137
+packages/evjs/docs/shandie.md
+  s_be98679b1df329::t_ac913a8b5cc5b3 5,62,65,71,74-80,86-88,93,95,101,116
+  s_be98679b1df329::t_0448a0ee91deaa 81-85
+packages/evjs/test/plugins/shandie/fixtures/documentation-examples/app/src/pages/index/delivery.tsx
+  s_be98679b1df329::t_53a8c3abbe6060 2-5
+packages/evjs/test/plugins/shandie/integration.test.ts
+  s_be98679b1df329::t_7782dbcc0ad749 323
+  s_be98679b1df329::t_7b5c99823834ed 53,56-58,350,353,545-547,557-558,560,583,585,594,596,720-721,728
+  s_be98679b1df329::t_083558ae002e48 280-283,288-322,324-326,330-332,336-338
+  s_be98679b1df329::t_ba7a019f7ed438 327-329
+  s_be98679b1df329::t_b2fcadff613f8e 284-287,333-335
+packages/evjs/docs/shandie.en.md
+  s_be98679b1df329::t_ac913a8b5cc5b3 5,62,65,71,74-80,86-88,93,95,101,116
+  s_be98679b1df329::t_638316a27db20c 81-85
+packages/evjs/test/plugins/shandie/generated-api.test.ts
+  s_be98679b1df329::t_52ab02a02de496 31
+  s_be98679b1df329::t_1d475275d7a558 47-48
+  s_be98679b1df329::t_6461946bdb2084 93-112
+  s_be98679b1df329::t_43fc06b32c81fd 1-30,32-46,49-86,90-92,113-155
+  s_be98679b1df329::t_195ebcd0293ab2 87-89
+packages/evjs/test/plugins/shandie/documentation-examples.test.ts
+  s_be98679b1df329::t_53a8c3abbe6060 72-75,82-85,156-160,177,215,372-374
+packages/evjs/src/plugins/shandie/typegen.ts
+  s_be98679b1df329::t_cf22c6494c5699 20-22,54-55
+packages/evjs/test/plugins/shandie/fixtures/ap-transport.fixture.ts
+  s_be98679b1df329::t_26931f945ef18e 59,75-87,103
+packages/evjs/src/plugins/shandie/codegen.ts
+  s_be98679b1df329::t_6ba8d5929bd3a9 14-15,63,65,193-210,212-222,224-231
+  s_be98679b1df329::t_391888bbd8b02a 2,25-43,109-124,211,223
+  s_191422fe0e37f4::t_e1604948dc91c9 125-126
+packages/evjs/src/plugins/shandie/plugin.ts
+  s_be98679b1df329::t_a81a80272ef152 183,218,224
+  s_be98679b1df329::t_af13288daad753 184,209
+  s_be98679b1df329::t_2e20c484473f61 208,210-214,219,225
+  s_be98679b1df329::t_341a70f2453cb9 182
+packages/evjs/docs/shandie-smallfish-migration.en.md
+  s_be98679b1df329::t_ac913a8b5cc5b3 5,17-23
+  s_be98679b1df329::t_5f56f677915281 9-16
+packages/evjs/test/plugins/shandie/fixtures/documentation-examples/app/src/pages/index/page.tsx
+  s_be98679b1df329::t_d1ce90e8c8cb7e 28
+  s_be98679b1df329::t_53a8c3abbe6060 2,13-14,17,26-27,29,51
+packages/evjs/src/plugins/shandie/runtime/expose.ts
+  s_be98679b1df329::t_5acbc2f56ece63 54-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ac554523902c092c4f326cd7b47209e8605295a1",
+  "prompts": {},
+  "sessions": {
+    "s_191422fe0e37f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18aae-dfef-76f0-af69-e92956662113",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    },
+    "s_be98679b1df329": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15d29-7a9f-7a30-92c1-3a4727dc1280",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

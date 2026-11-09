@@ -1,0 +1,29 @@
+vitest.config.mts
+  s_66505028c262b8::t_c10ef101e50ee0 9
+packages/evjs/docs/plugins/smallfish-compat.md
+  s_66505028c262b8::t_28fbe5077fd2dd 23,29
+packages/skill-dev/references/application/h5/smallfish-compat.md
+  s_66505028c262b8::t_16297a8e8f36f2 32
+  s_66505028c262b8::t_28fbe5077fd2dd 38
+packages/evjs/test/plugins/smallfish-compat/build.integration.test.ts
+  s_66505028c262b8::t_9fee0ed24fb464 1,12,28-30,71-73
+  s_66505028c262b8::t_c10ef101e50ee0 2-11,13-27,31-70,74-81
+packages/evjs/src/plugins/smallfish-compat/index.ts
+  s_66505028c262b8::t_28fbe5077fd2dd 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ebe97a352037891b404d295ad1a3f6f093f37e68",
+  "prompts": {},
+  "sessions": {
+    "s_66505028c262b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1aa77-27a4-70c1-94f3-1fa2d5f8eb59",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
