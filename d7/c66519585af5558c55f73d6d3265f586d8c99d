@@ -1,0 +1,79 @@
+packages/ev/src/_internal/build/generated-ir/module-references.ts
+  s_fc70035ec6ca69::t_bbff7a0de07747 40-42,83-85
+  s_fc70035ec6ca69::t_c5836fb65cbbd0 1-31,33-39,43-48,50-60,62-65,67-82,86-91,93-97,99-104
+  s_fc70035ec6ca69::t_d5355be7b8fa50 32,49,61,66,92,98,105-108
+packages/bundler-utoopack/src/adapter/config/module-references.ts
+  s_fc70035ec6ca69::t_808bbe3d635a67 1-45
+packages/bundler-utoopack/src/adapter/development/dev-worker.ts
+  s_fc70035ec6ca69::t_808bbe3d635a67 4,42-44,133
+packages/bundler-webpack/src/adapter/config/create-config.ts
+  s_fc70035ec6ca69::t_808bbe3d635a67 68-72
+packages/bundler-utoopack/src/adapter/execution/utoopack.ts
+  s_fc70035ec6ca69::t_808bbe3d635a67 6,13-15,19,35,45
+packages/shared/src/manifest/index.ts
+  s_fc70035ec6ca69::t_c5836fb65cbbd0 150-153
+packages/ev/tests/module-references.test.ts
+  s_fc70035ec6ca69::t_b08f2e9b7be0b0 91-93,96-98
+  s_fc70035ec6ca69::t_3c34c266d222b2 1-12,14-18,20-24,26-33,36-38,40-50,52-54,56-69,71-78,80-82,84-86,101-105,107-110,112-117,119-124,126-131,133-137,139-141
+  s_fc70035ec6ca69::t_fbd16ec1a65ac2 87-90,94-95,99-100
+  s_fc70035ec6ca69::t_4ba176474fbf82 13,19,25,34-35,39,51,55,70,79,83,106,111,118,125,132,138
+packages/bundler-utoopack/tests/runtime.test.ts
+  s_fc70035ec6ca69::t_31554e4216a0f7 14,42,44
+  s_fc70035ec6ca69::t_3c34c266d222b2 13,15-23,25,28,32-38,40-41,45-54,56-58,60-62
+  s_fc70035ec6ca69::t_3cc26e61624b1b 3,24,26-27,29-31,39,43,55,59
+packages/ev/tests/commands.test.ts
+  s_fc70035ec6ca69::t_3c34c266d222b2 1110-1115,1117-1128,1130,1133-1135,1137-1142,1144-1147,1153-1157,1161,1163-1169,1172-1174
+  s_fc70035ec6ca69::t_31554e4216a0f7 1148,1151-1152,1162
+  s_fc70035ec6ca69::t_e1e61d1e6e09f3 1116
+  s_fc70035ec6ca69::t_db341b6a1ca403 1129
+  s_fc70035ec6ca69::t_43e7281611d03a 1131-1132
+  s_fc70035ec6ca69::t_91469fa5abe580 1136
+  s_fc70035ec6ca69::t_90c4b21cf8be88 1143
+  s_fc70035ec6ca69::t_e8c55f72e57c67 1149-1150
+  s_fc70035ec6ca69::t_12d05710fe8a0d 1158-1160
+  s_fc70035ec6ca69::t_32c2c16453ab56 1170-1171
+packages/ev/src/plugin/contracts.ts
+  s_fc70035ec6ca69::t_c5836fb65cbbd0 10,40,586-591
+packages/bundler-utoopack/tests/create-config.test.ts
+  s_fc70035ec6ca69::t_3c34c266d222b2 72-81,83,86-89,91-99,103-105
+  s_fc70035ec6ca69::t_17832daa67f216 82,84-85,90,100-102
+packages/shared/src/manifest/contracts.ts
+  s_fc70035ec6ca69::t_c5836fb65cbbd0 46,144-145
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/generated-contributions.md
+  s_fc70035ec6ca69::t_c9f0cd5f217f33 48-97
+packages/bundler-utoopack/src/adapter/config/create-config.ts
+  s_fc70035ec6ca69::t_808bbe3d635a67 39-43,160-161,163-165,283,295
+packages/plugin-qiankun/tests/plugin.test.ts
+  s_fc70035ec6ca69::t_31554e4216a0f7 574-576
+packages/shared/src/manifest/module-references.ts
+  s_fc70035ec6ca69::t_bbff7a0de07747 11
+  s_fc70035ec6ca69::t_c5836fb65cbbd0 1-10,12-25
+packages/bundler-webpack/tests/create-config.test.ts
+  s_fc70035ec6ca69::t_3c34c266d222b2 23-27,29-38,41,44-45,47-49
+  s_fc70035ec6ca69::t_4936e7ad258779 28,39-40,42-43,46
+docs/docs/generated-contributions.md
+  s_fc70035ec6ca69::t_c9f0cd5f217f33 56-113
+packages/ev/src/_internal/build/generated-ir/generated-contributions.ts
+  s_fc70035ec6ca69::t_bbff7a0de07747 568-569
+  s_fc70035ec6ca69::t_c5836fb65cbbd0 60,560-565,567,570-571,573-577
+  s_fc70035ec6ca69::t_f03bad1d6cc087 566
+  s_fc70035ec6ca69::t_211090fcd1449a 572
+packages/ev/src/plugin/index.ts
+  s_fc70035ec6ca69::t_41b62e42073244 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d7c66519585af5558c55f73d6d3265f586d8c99d",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
