@@ -12,7 +12,8 @@ export function createApiClientSource(
   return [
     'import { createFrameworkApiClient } from "@evjs/client/internal/http-api";',
     'import { resolveApiTransport } from "@evjs/ev/_internal/client/api-transport";',
-    `export const api = createFrameworkApiClient(${JSON.stringify({ buildId: plan.buildId, applicationId: applications[0] ?? "app" })}, ${JSON.stringify(plan.runtime.transport ?? {})}, resolveApiTransport);`,
+    `export const apiRuntimeScope = Object.freeze(${JSON.stringify({ buildId: plan.buildId, applicationId: applications[0] ?? "app" })});`,
+    `export const api = createFrameworkApiClient(apiRuntimeScope, ${JSON.stringify(plan.runtime.transport ?? {})}, resolveApiTransport);`,
     "",
   ].join("\n");
 }
