@@ -2,20 +2,43 @@ import { isDeepStrictEqual } from "node:util";
 import type { BuildPlan, ClientModuleReference } from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
 
-// Kept structural until the native capability is available in a published
-// @utoo/pack release. Execution must also verify moduleReferencesVersion.
+type MutableReferenceData =
+  | null
+  | boolean
+  | number
+  | string
+  | MutableReferenceData[]
+  | { [key: string]: MutableReferenceData };
+
+type UtoopackModuleReference = Omit<ClientModuleReference, "references"> & {
+  references: Array<
+    Omit<ClientModuleReference["references"][number], "data"> & {
+      data: MutableReferenceData;
+    }
+  >;
+};
+
+// Keep framework ownership independent of the installed native package version.
+// Execution must also verify moduleReferencesVersion.
 export type UtoopackModuleReferenceConfig = ConfigComplete & {
   module?: NonNullable<ConfigComplete["module"]> & {
-    references?: ClientModuleReference[];
+    references?: UtoopackModuleReference[];
   };
 };
 
 export function createUtoopackModuleReferences(
   plan: BuildPlan,
-): ClientModuleReference[] | undefined {
+): UtoopackModuleReference[] | undefined {
   if (!plan.clientModuleReferences?.length) return undefined;
-  return plan.clientModuleReferences.map(({ resource, references, exports }) =>
-    structuredClone({ resource, references, exports }),
+  return plan.clientModuleReferences.map(
+    ({ resource, references, exports }) =>
+      // structuredClone creates mutable arrays and objects even when the plan
+      // snapshot is deeply readonly. Native package types describe that copy.
+      structuredClone({
+        resource,
+        references,
+        exports,
+      }) as UtoopackModuleReference,
   );
 }
 

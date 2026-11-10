@@ -103,6 +103,39 @@ describe("createUtoopackConfig", () => {
     ).rejects.toThrow("module.references must remain");
   });
 
+  it("copies readonly reference arrays into mutable native configuration without changing the plan", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const data = Object.freeze(["/greetings"]);
+    plan.clientModuleReferences = [
+      {
+        id: "greeting",
+        pluginId: "fixture",
+        resource: "/workspace/src/greeting.ts",
+        references: [
+          {
+            id: "greeting",
+            factory: {
+              module: "/workspace/src/runtime.ts",
+              export: "createReference",
+            },
+            data,
+          },
+        ],
+        exports: [{ name: "Greeting", reference: "greeting" }],
+      },
+    ];
+    const result = await createUtoopackConfig(config, plan, process.cwd(), []);
+    const copy = result.module?.references?.[0].references[0].data;
+    expect(copy).not.toBe(data);
+    expect(Object.isFrozen(copy)).toBe(false);
+    if (!Array.isArray(copy))
+      throw new Error("Expected a native array payload");
+    copy.push("/second");
+    expect(copy).toEqual(["/greetings", "/second"]);
+    expect(data).toEqual(["/greetings"]);
+  });
+
   it("passes resolved dev server options and SPA fallback to Utoopack", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
