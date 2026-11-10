@@ -57,6 +57,7 @@ import {
 } from "../output/portable-artifact-path.js";
 import { createPluginConfigView } from "../plugins/lifecycle.js";
 import { toPosixPath } from "../utils.js";
+import { normalizeClientModuleReference } from "./module-references.js";
 import {
   API_CLIENT_FILE,
   API_CLIENT_MODULE,
@@ -556,6 +557,24 @@ class ContributionCollector<TBundlerCfg> {
 
   private createEmitApi(pluginId: string, namespace?: string): EmitApi {
     const emit: EmitApi = {
+      moduleReference: (input) => {
+        const id = validateContributionId(input.id, pluginId);
+        this.reserveKey(pluginId, id, "module reference", namespace);
+        const reference = normalizeClientModuleReference(
+          this.options.cwd,
+          pluginId,
+          input,
+        );
+        this.options.plan.clientModuleReferences ??= [];
+        const references = this.options.plan.clientModuleReferences;
+        if (references.some((item) => item.resource === reference.resource)) {
+          throw new Error(
+            `[evjs] Source module "${reference.resource}" has multiple module reference contributions.`,
+          );
+        }
+        references.push(reference);
+        this.options.pluginContext.addWatchFile(reference.resource);
+      },
       module: (input) => {
         const id = validateContributionId(input.id, pluginId);
         return this.emitGeneratedModule(

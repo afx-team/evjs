@@ -20,6 +20,33 @@ import {
 } from "../src/adapter/config/create-config.js";
 
 describe("createWebpackConfigs", () => {
+  it("rejects module references instead of bundling the original source", async () => {
+    const config = createResolvedConfig();
+    const plan = await createGeneratedPlan(
+      config,
+      createGraph(config),
+      "development",
+    );
+    plan.clientModuleReferences = [
+      {
+        id: "greeting",
+        pluginId: "fixture",
+        resource: "/workspace/greeting.ts",
+        references: [
+          {
+            id: "greeting",
+            factory: { module: "runtime", export: "createReference" },
+            data: null,
+          },
+        ],
+        exports: [{ name: "Greeting", reference: "greeting" }],
+      },
+    ];
+    await expect(
+      createWebpackConfigs(config, plan, process.cwd(), []),
+    ).rejects.toThrow("does not support browser module references");
+  });
+
   it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);

@@ -65,6 +65,11 @@ export async function createWebpackConfigs(
     addWatchFile?: (file: string) => void;
   } = {},
 ): Promise<WebpackConfigs> {
+  if (plan.clientModuleReferences?.length) {
+    throw new Error(
+      "[evjs] The Webpack adapter does not support browser module references. Select a Utoopack build with native module reference support. Refusing to bundle the original source modules.",
+    );
+  }
   const outputPaths = resolveBuildOutputPaths(cwd, plan);
   await assertSafeBuildOutputPaths(cwd, outputPaths);
   const configs: WebpackConfigs = [];

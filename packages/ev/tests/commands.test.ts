@@ -1107,6 +1107,71 @@ describe("prepareFrameworkBuild", () => {
     expect(events).toEqual(["dispose:second", "dispose:first"]);
   });
 
+  it("plans plugin module references, watches their source, and rejects duplicate ownership", async () => {
+    const cwd = await createProject();
+    const resource = path.join(cwd, "src/greeting.ts");
+    await writeFile(
+      resource,
+      'throw new Error("source must not execute");',
+      "utf-8",
+    );
+    const plugin: Plugin = {
+      id: "reference-fixture",
+      emitIR({ emit }) {
+        emit.moduleReference({
+          id: "greeting",
+          resource,
+          references: [
+            {
+              id: "greeting",
+              factory: {
+                module: "./src/runtime.ts",
+                export: "createReference",
+              },
+              data: { endpoint: "/greetings" },
+            },
+          ],
+          exports: [
+            { name: "Greeting", reference: "greeting" },
+            { name: "default", reference: "greeting" },
+          ],
+        });
+      },
+    };
+    const prepared = await prepareFrameworkBuild(
+      { plugins: [plugin] },
+      { cwd },
+    );
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/framework/build-plan.json"),
+          "utf-8",
+        ),
+      ) as { plan: BuildPlan };
+      expect(manifest.plan.clientModuleReferences).toMatchObject([
+        {
+          pluginId: plugin.id,
+          resource: fs.realpathSync(resource),
+          exports: [
+            { name: "Greeting", reference: "greeting" },
+            { name: "default", reference: "greeting" },
+          ],
+        },
+      ]);
+      expect(prepared.pluginWatchFiles).toContain(fs.realpathSync(resource));
+      expect(JSON.stringify(manifest)).not.toContain("source must not execute");
+    } finally {
+      await prepared.dispose();
+    }
+    await expect(
+      prepareFrameworkBuild(
+        { plugins: [plugin, { ...plugin, id: "other-reference-fixture" }] },
+        { cwd },
+      ),
+    ).rejects.toThrow("multiple module reference contributions");
+  });
+
   it("generates .ev framework IR and plugin contributions", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });

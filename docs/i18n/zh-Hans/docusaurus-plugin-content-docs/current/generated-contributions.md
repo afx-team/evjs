@@ -45,6 +45,56 @@ scope: { kind: "server" }
 
 生成项的 id 只需在插件内部唯一。`emitPageIR()` 中的 id 还限定在当前页面，因此每个启用页面都可以安全复用相同 id。`@evjs/` 前缀由框架保留。
 
+## 将浏览器模块替换为运行时引用
+
+`emit.moduleReference()` 为一个精确的源码文件声明仅用于浏览器的替换。它没有返回值，
+也不需要挂到槽位。插件提供导出映射和允许进入浏览器的数据，运行时工厂决定每个引用的行为。
+evjs 不解析装饰器，也不解释协议。
+
+```ts
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const references = definePlugin({
+  id: "greeting-references",
+  emitIR({ emit }) {
+    emit.moduleReference({
+      id: "greeting",
+      resource: "./src/greeting.ts",
+      references: [{
+        id: "greeting",
+        factory: {
+          module: "./src/greeting-client.ts",
+          export: "createGreetingReference",
+        },
+        data: { endpoint: "/greetings" },
+      }],
+      exports: [
+        { name: "Greeting", reference: "greeting" },
+        { name: "default", reference: "greeting" },
+      ],
+    });
+  },
+});
+```
+
+浏览器中的两个导出共享 `createGreetingReference(data)` 的结果。如果工厂返回构造函数，
+业务可以继续写 `import { Greeting } from "./greeting"; new Greeting()`。
+该浏览器替换不包含原模块的初始化逻辑和依赖，服务端编译继续使用原模块。
+工厂及其依赖必须适用于浏览器；这项能力不会改写静态类型。
+
+源码必须是应用根目录内已存在的文件。相对源码和运行时路径均从应用根目录解析，
+运行时也可以使用包说明符。导出名和工厂导出当前支持 ASCII JavaScript 标识符，
+包括 `default`。多个导出可以共享同一引用。一个源码文件只能对应一项贡献，
+该限制也覆盖符号链接别名和不同插件。无效或冲突的贡献会在规划阶段报错。
+
+数据必须是严格 JSON，只能包含准备向浏览器公开的信息。完整构建计划保留在 `.ev`，
+不是公开部署 manifest。源码变化会自动被监听；插件读取其他元数据文件时，
+必须通过 `ctx.addWatchFile()` 注册这些文件。
+
+该能力需要 Utoopack 的原生绑定报告 `moduleReferencesVersion = 1`。
+正式版本提供该能力之前，需要使用匹配的开发构建。旧版 Utoopack 和 Webpack 适配器
+会明确报错，避免将原模块编译进浏览器。bundler 钩子不能替换框架拥有的引用列表。
+
 ## 向客户端入口添加代码
 
 生成安装器，并在应用主入口后导入：
