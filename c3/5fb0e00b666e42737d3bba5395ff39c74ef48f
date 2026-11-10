@@ -1,0 +1,25 @@
+packages/bundler-utoopack/tests/create-config.test.ts
+  s_fc70035ec6ca69::t_73fea401383392 106-109,128-131,134-138
+  s_fc70035ec6ca69::t_c96834ceae0683 110-127,132-133
+packages/bundler-utoopack/src/adapter/config/module-references.ts
+  s_fc70035ec6ca69::t_68495b357542bf 21-22
+  s_fc70035ec6ca69::t_c96834ceae0683 33-41
+  s_fc70035ec6ca69::t_5adb5204272236 5-11,13-19
+  s_fc70035ec6ca69::t_73fea401383392 12,20,25,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c35fb0e00b666e42737d3bba5395ff39c74ef48f",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
