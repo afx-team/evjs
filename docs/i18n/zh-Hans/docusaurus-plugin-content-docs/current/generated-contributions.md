@@ -91,8 +91,8 @@ export const references = definePlugin({
 不是公开部署 manifest。源码变化会自动被监听；插件读取其他元数据文件时，
 必须通过 `ctx.addWatchFile()` 注册这些文件。
 
-该能力需要 Utoopack 的原生绑定报告 `moduleReferencesVersion = 1`。
-正式版本提供该能力之前，需要使用匹配的开发构建。旧版 Utoopack 和 Webpack 适配器
+该能力需要 `@utoo/pack` 1.6.0 或更新版本，并加载报告 `moduleReferencesVersion = 1`
+的配套原生绑定。旧版 Utoopack 和 Webpack 适配器
 会明确报错，避免将原模块编译进浏览器。bundler 钩子不能替换框架拥有的引用列表。
 
 ## 向客户端入口添加代码

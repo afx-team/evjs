@@ -105,11 +105,10 @@ browser. The complete build plan stays in `.ev`; it is not a public deployment
 manifest. Source changes are watched automatically. Plugins reading additional
 metadata files must register those files with `ctx.addWatchFile()`.
 
-This capability requires a Utoopack build reporting native
-`moduleReferencesVersion = 1`. Until that capability is released, use a matching
-development build. Older Utoopack builds and the Webpack adapter fail explicitly
-instead of compiling the original module into the browser. Bundler hooks cannot
-replace the framework-owned reference list.
+This capability requires `@utoo/pack` 1.6.0 or newer with a matching native binding
+reporting `moduleReferencesVersion = 1`. Older Utoopack builds and the Webpack
+adapter fail explicitly instead of compiling the original module into the browser.
+Bundler hooks cannot replace the framework-owned reference list.
 
 ## Add code to the client entry
 

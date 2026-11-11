@@ -1,34 +1,12 @@
 import { isDeepStrictEqual } from "node:util";
 import type { BuildPlan, ClientModuleReference } from "@evjs/shared/manifest";
-import type { ConfigComplete } from "@utoo/pack";
+import type { ConfigComplete, ModuleReferenceConfig } from "@utoo/pack";
 
-type MutableReferenceData =
-  | null
-  | boolean
-  | number
-  | string
-  | MutableReferenceData[]
-  | { [key: string]: MutableReferenceData };
-
-type UtoopackModuleReference = Omit<ClientModuleReference, "references"> & {
-  references: Array<
-    Omit<ClientModuleReference["references"][number], "data"> & {
-      data: MutableReferenceData;
-    }
-  >;
-};
-
-// Keep framework ownership independent of the installed native package version.
-// Execution must also verify moduleReferencesVersion.
-export type UtoopackModuleReferenceConfig = ConfigComplete & {
-  module?: NonNullable<ConfigComplete["module"]> & {
-    references?: UtoopackModuleReference[];
-  };
-};
+export type UtoopackModuleReferenceConfig = ConfigComplete;
 
 export function createUtoopackModuleReferences(
   plan: BuildPlan,
-): UtoopackModuleReference[] | undefined {
+): ModuleReferenceConfig[] | undefined {
   if (!plan.clientModuleReferences?.length) return undefined;
   return plan.clientModuleReferences.map(
     ({ resource, references, exports }) =>
@@ -38,7 +16,7 @@ export function createUtoopackModuleReferences(
         resource,
         references,
         exports,
-      }) as UtoopackModuleReference,
+      }) as ModuleReferenceConfig,
   );
 }
 
@@ -62,7 +40,7 @@ export function assertUtoopackModuleReferenceSupport(
     runtime.moduleReferencesVersion !== 1
   ) {
     throw new Error(
-      "[evjs] This build requires @utoo/pack moduleReferencesVersion=1. Install a Utoopack build with native module reference support before using emit.moduleReference(). Refusing to bundle the original source modules.",
+      "[evjs] This build requires @utoo/pack moduleReferencesVersion=1. Install @utoo/pack 1.6.0 or newer with its matching native binding before using emit.moduleReference(). Refusing to bundle the original source modules.",
     );
   }
 }
