@@ -1,0 +1,19 @@
+packages/ev/tests/dev-watch.test.ts
+  s_fc70035ec6ca69::t_62f1b687cad90b 659,664-671,683,687,689
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f445295fb7c5ff4fcce3f5c2dfc89e503f996a00",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
