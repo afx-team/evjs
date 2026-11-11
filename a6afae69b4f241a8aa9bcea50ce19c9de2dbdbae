@@ -1,0 +1,119 @@
+packages/evjs/src/plugins/server-class/build-state.ts
+  s_fc70035ec6ca69::t_2566f6caf35943 1-10
+packages/evjs/test/plugins/server-class/discovery.test.ts
+  s_fc70035ec6ca69::t_90832871501aaf 133,138-144,239-247,252-256,261-266,271,288-295
+  s_fc70035ec6ca69::t_7cfe84c6786641 90,101,112,158,168
+  s_fc70035ec6ca69::t_fbdf76d7c909f0 1-19,26,33-42,46-49,60-68,72-75,78-82,87-89,95,100,102-106,111,113-115,129-132,145,149-152,155-157,159,169-180,191-192,197-200,229-236,238,296-313,321-324
+  s_fc70035ec6ca69::t_3f8d4210f0384f 201,206-213
+  s_fc70035ec6ca69::t_5ec49099ee1c3c 20-25,27-32,43-45,50-59,69-71,76-77,83-86,91-94,96-99,107-110,116-128,146-148,153-154,160-167,181-190,193-196,237,314-320
+  s_fc70035ec6ca69::t_e8d56610006f1d 134-137,248-251,257-260,267-270,272-287
+  s_fc70035ec6ca69::t_225a46b11fb2b6 202-205,215,221-224
+  s_fc70035ec6ca69::t_9d9ecd4c2ffecd 214,216-220,225-228
+packages/evjs/src/plugins/server-class/runtime-types.ts
+  s_fc70035ec6ca69::t_dd22e05f2b7d1f 37
+  s_fc70035ec6ca69::t_be4441fc055dc0 5-6
+packages/evjs/test/plugins/server-class/plugin.test.ts
+  s_fc70035ec6ca69::t_157d72d09ab431 210-217
+  s_fc70035ec6ca69::t_d3b503b8620a47 12
+  s_fc70035ec6ca69::t_850faf36e7b6a6 90-118
+  s_fc70035ec6ca69::t_30ad5818412183 119-148,150-157,159-180,183,186-209,218-239
+  s_fc70035ec6ca69::t_d29b72489d200e 4,18-21,424
+  s_fc70035ec6ca69::t_d42214232e43e8 455,457
+  s_fc70035ec6ca69::t_c6ab13d64fe810 70-89
+  s_fc70035ec6ca69::t_f78f2f4d0dda19 149,158,181-182,184-185
+  s_fc70035ec6ca69::t_2af63672d3d0c6 452,456
+packages/evjs/test/plugins/uboa/runtime.test.ts
+  s_fc70035ec6ca69::t_daa79e22b0638a 263,265-270,272-273,295-341,368-373,380-384,389-391,398-399,402
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_39cee0fa8700f7 19,40,45-46,54
+  s_fc70035ec6ca69::t_b9dae014f995de 24,29,76
+  s_fc70035ec6ca69::t_f78f2f4d0dda19 42-44
+  s_fc70035ec6ca69::t_c6ab13d64fe810 80
+  s_fc70035ec6ca69::t_18f6b4b83a6022 78-79,97,101
+  s_fc70035ec6ca69::t_7c40dfb605a109 41
+  s_fc70035ec6ca69::t_6471032bea1b3a 77
+packages/evjs/src/plugins/server-class/config.ts
+  s_fc70035ec6ca69::t_d3b52d016f07bc 21-22
+packages/evjs/src/plugins/server-class/client/protocols/http.ts
+  s_fc70035ec6ca69::t_be4441fc055dc0 7,111,142-150,156,158
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_18f6b4b83a6022 78-79,97,101
+  s_fc70035ec6ca69::t_c6ab13d64fe810 80
+  s_fc70035ec6ca69::t_39cee0fa8700f7 19,40,45-46,54
+  s_fc70035ec6ca69::t_b9dae014f995de 24,29,76
+  s_fc70035ec6ca69::t_f78f2f4d0dda19 42-44
+  s_fc70035ec6ca69::t_909cf3f25ee00b 41
+  s_fc70035ec6ca69::t_f245659c0aceac 77
+packages/evjs/src/plugins/server-class/client/protocols/webgw.ts
+  s_fc70035ec6ca69::t_dd22e05f2b7d1f 19-22,33-38
+  s_fc70035ec6ca69::t_a6397d7ee6e590 26
+  s_fc70035ec6ca69::t_be4441fc055dc0 3,47,59-67,73,75
+packages/evjs/src/plugins/server-class/protocols/metadata-types.ts
+  s_fc70035ec6ca69::t_4cc9e7138ce315 42,45-46
+packages/evjs/test/plugins/server-class/protocol-registry.test.ts
+  s_fc70035ec6ca69::t_1eb821c51adc87 23
+packages/evjs/src/plugins/uboa/transport-runtime.ts
+  s_fc70035ec6ca69::t_daa79e22b0638a 3-17,20-21,27,54,64-116,171-186,188-190,214-219,232
+packages/evjs/src/plugins/uboa/index.ts
+  s_fc70035ec6ca69::t_2566f6caf35943 14,53,71,176-182
+  s_fc70035ec6ca69::t_c6ab13d64fe810 55-57,87-95,121-123,206-207,209-215
+packages/evjs/src/plugins/server-class/client/reference.ts
+  s_fc70035ec6ca69::t_be4441fc055dc0 20-22,36
+packages/evjs/src/plugins/server-class/transport.ts
+  s_fc70035ec6ca69::t_339446d09298e3 9-13,26,65-66,79,82,84-98,100
+packages/evjs/src/plugins/server-class/discovery.ts
+  s_fc70035ec6ca69::t_3f8d4210f0384f 38-46,254,315-319,323
+  s_fc70035ec6ca69::t_e8d56610006f1d 258-268,280-287,290-292,296-297,300-301
+  s_fc70035ec6ca69::t_b98742adeccb39 228-230
+  s_fc70035ec6ca69::t_225a46b11fb2b6 235-237
+  s_fc70035ec6ca69::t_89142db565d355 2,47-50,53-60,62-67,69-73,80-83,142,144,205-207,209-222,238
+  s_fc70035ec6ca69::t_9d9ecd4c2ffecd 187-196,234,241
+  s_fc70035ec6ca69::t_4d80d37ea551e5 197,255-257,269,278-279,288,293-295,298-299,302-303,333,335-336
+  s_fc70035ec6ca69::t_6cf2ba0d5a995c 1,3-23,28-37,68,84-118,123-138,143,145-146,154-157,164-167,170,177-186,198-200,223-224,239-240,242-245,252-253,270-277,310-314,320,325-332,334,337-342
+  s_fc70035ec6ca69::t_5ec49099ee1c3c 24-27,51-52,61,74-79,119-122,139-141,147-153,158-163,168-169,171-176,201-204,208,225-227,231-233,246-251,289,304-309,321-322,324
+packages/evjs/src/plugins/server-class/client/registry.ts
+  s_fc70035ec6ca69::t_be4441fc055dc0 3-6,11-15
+packages/evjs/test/plugins/server-class/gateway-transport.test.ts
+  s_fc70035ec6ca69::t_850faf36e7b6a6 220-264
+  s_fc70035ec6ca69::t_8de67691f7ff2d 217-219
+  s_fc70035ec6ca69::t_62cbbc42e9c7c2 265-267
+packages/evjs/src/plugins/server-class/production-transport.ts
+  s_fc70035ec6ca69::t_a6397d7ee6e590 2,33-39,49,94-97,99-100,102-103,105,107,112-114
+  s_fc70035ec6ca69::t_3329b96affcba0 145
+  s_fc70035ec6ca69::t_339446d09298e3 1,3-11,26-32,40-42,44-48,50,55-82,84-86,101,104,106,108-111,115,164-184,186-197
+  s_fc70035ec6ca69::t_4a0bd3ea65e13f 12-21,83,87-93,116-120,128-144,146-163
+  s_fc70035ec6ca69::t_95f5a537af47f0 51-54
+  s_fc70035ec6ca69::t_a9e7a9a4198128 121-127
+  s_fc70035ec6ca69::t_850faf36e7b6a6 22-25,43,98,185
+packages/evjs/test/plugins/server-class/webgw-metadata.test.ts
+  s_fc70035ec6ca69::t_4cc9e7138ce315 1-93
+packages/evjs/test/plugins/uboa/uboa.test.ts
+  s_fc70035ec6ca69::t_6e13de22ddad5f 14,321-324,326,384-403
+  s_fc70035ec6ca69::t_57c58bcb5d233c 325,404-405
+packages/evjs/src/plugins/server-class/protocols/build/webgw.ts
+  s_fc70035ec6ca69::t_4cc9e7138ce315 24,26-29,41-44,55
+packages/evjs/src/plugins/server-class/plugin.ts
+  s_fc70035ec6ca69::t_b4864c3d19c0a5 87,191-192
+  s_fc70035ec6ca69::t_2566f6caf35943 10,73,122-125,128-133,139-151,153,157,172-174,178-179
+  s_fc70035ec6ca69::t_850faf36e7b6a6 134-138,154-156
+  s_fc70035ec6ca69::t_d29b72489d200e 19,25-27,152,175-177
+  s_fc70035ec6ca69::t_d3b52d016f07bc 9,37,39-42,45,74-86,88,98,120
+  s_fc70035ec6ca69::t_fb5df49697c3e4 102-103
+  s_fc70035ec6ca69::t_c5f6a1368156e5 28-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a6afae69b4f241a8aa9bcea50ce19c9de2dbdbae",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
