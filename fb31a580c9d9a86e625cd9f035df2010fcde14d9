@@ -1,0 +1,41 @@
+packages/evjs/test/plugins/server-class/source-analysis.test.ts
+  s_fc70035ec6ca69::t_4a9422f42b74bb 157
+packages/evjs/test/plugins/server-class/identity.test.ts
+  s_fc70035ec6ca69::t_8948fd2d23242f 1-53
+packages/evjs/test/plugins/server-class/plugin.test.ts
+  s_fc70035ec6ca69::t_8948fd2d23242f 23,71-104
+packages/evjs/src/plugins/server-class/identity.ts
+  s_fc70035ec6ca69::t_4a9422f42b74bb 1-32
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_dd08f8f6b5408d 39-40
+  s_fc70035ec6ca69::t_cb0e95db9aaf7e 118
+packages/evjs/src/plugins/server-class/config.ts
+  s_fc70035ec6ca69::t_4a9422f42b74bb 8-11,27,29
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_cb0e95db9aaf7e 118
+  s_fc70035ec6ca69::t_dd08f8f6b5408d 39-40
+packages/evjs/src/plugins/server-class/plugin.ts
+  s_fc70035ec6ca69::t_4a9422f42b74bb 11,17-21,100-105,110-111,114,123,138,209,217
+packages/evjs/src/plugins/server-class/development/host.ts
+  s_fc70035ec6ca69::t_4a9422f42b74bb 109-112,230
+  s_fc70035ec6ca69::t_3283f5cab6ea12 8
+packages/evjs/src/plugins/server-class/source-analysis.ts
+  s_fc70035ec6ca69::t_26c10220a15b5c 7
+  s_fc70035ec6ca69::t_4a9422f42b74bb 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fb31a580c9d9a86e625cd9f035df2010fcde14d9",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
