@@ -1,0 +1,25 @@
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_790ac67d54cab5 66-68
+  s_fc70035ec6ca69::t_31738cbfba574f 1,5,7,9,11,13,20,24,26,30,35,37,39-41,43,45,54,56,58,60-64,76,78,80,82,84,86,88,90-95,97
+  s_fc70035ec6ca69::t_cd7af52273f238 3
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_31738cbfba574f 1,5,7,13-15,22,26,28,30,34,43,45-47,49,51,60,62,64,66-70,84,86,88,90,92,94,96,98,100-105,107
+  s_fc70035ec6ca69::t_cd7af52273f238 3
+  s_fc70035ec6ca69::t_790ac67d54cab5 9,11,39,41,72-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "412e780fa6ec71e8b0e23944d995a16b03d9de78",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
