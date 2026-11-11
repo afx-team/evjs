@@ -147,6 +147,10 @@ export {
   coreRoutePatternsEqual,
   isCoreRoutePatternPrefix,
 } from "./graph/route-pattern.js";
+export type {
+  ClientModuleReference,
+  ClientModuleReferencePlan,
+} from "./module-references.js";
 export {
   assertPortableRelativeArtifactPath,
   assertPortableRelativeBrowserArtifactPath,

@@ -5,6 +5,9 @@ The default utoopack (`@utoo/pack`) bundler adapter for the evjs framework.
 This package exports `utoopackAdapter`, which implements the `BundlerAdapter`
 interface for `ev build` and `ev dev`.
 
+The adapter requires `@utoo/pack` 1.6.0 or newer. Plugin-contributed browser
+module references also check the loaded native binding's capability at runtime.
+
 The adapter integrates with Utoopack's programmatic API, compiles the concrete
 entries in `BuildPlan`, and returns build facts for framework output linking.
 Its declared capabilities are the authoritative boundary: conventional

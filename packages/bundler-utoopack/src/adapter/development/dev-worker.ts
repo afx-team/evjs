@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { parentPort } from "node:worker_threads";
 import type { DevServerReadyContext } from "@utoo/pack";
+import { assertUtoopackModuleReferenceSupport } from "../config/module-references.js";
 import {
   runUtoopackDevServer,
   type UtoopackClientBuildContext,
@@ -38,7 +39,9 @@ interface ActiveSession {
   publications: Map<number, { resolve(): void; reject(error: Error): void }>;
 }
 
-type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve">;
+type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve"> & {
+  moduleReferencesVersion?: number;
+};
 
 const require = createRequire(import.meta.url);
 const port = requireParentPort();
@@ -127,6 +130,7 @@ async function startSession(
     );
   }
 
+  assertUtoopackModuleReferenceSupport(runtime, options.config);
   const lifecycle = createUtoopackReusableSessionLifecycle();
   const session: ActiveSession = {
     id: sessionId,

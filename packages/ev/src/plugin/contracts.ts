@@ -7,6 +7,7 @@ import type {
   BuildEnvironment,
   BuildOutput,
   ClientContributionRuntime,
+  ClientModuleReference,
   ComponentModel,
   ContributionRuntime,
   ContributionTarget,
@@ -36,6 +37,7 @@ import type { Config, ResolvedFrameworkConfig } from "../config/resolution.js";
 
 export type {
   ClientContributionRuntime,
+  ClientModuleReference,
   ContributionRuntime,
   ContributionTarget,
   CorePageScope,
@@ -581,6 +583,12 @@ export interface PluginEmitIRContext<TBundlerCfg = unknown>
 }
 
 export interface EmitApi {
+  /** Replace this exact module in browser builds with runtime-created references.
+   * The plugin owns export discovery and the browser-safe payload. This does not
+   * execute or compile the original module. Relative filenames use the app root.
+   */
+  moduleReference(input: ClientModuleReference & { id: string }): void;
+
   module(input: {
     id: string;
     scope: GeneratedScope;

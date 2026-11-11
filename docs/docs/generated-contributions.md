@@ -53,6 +53,63 @@ Contribution ids are local to the plugin. In `emitPageIR()`, ids are also local
 to the current page, so the same id can be reused safely for every enabled
 page. The `@evjs/` prefix is reserved by the framework.
 
+## Replace a browser module with runtime references
+
+`emit.moduleReference()` declares a browser-only replacement for one exact source
+file. It returns nothing and does not attach to a slot. The plugin supplies the
+export mapping and browser-safe data; the runtime factory decides what each
+reference does. evjs does not parse decorators or interpret protocols.
+
+```ts
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const references = definePlugin({
+  id: "greeting-references",
+  emitIR({ emit }) {
+    emit.moduleReference({
+      id: "greeting",
+      resource: "./src/greeting.ts",
+      references: [{
+        id: "greeting",
+        factory: {
+          module: "./src/greeting-client.ts",
+          export: "createGreetingReference",
+        },
+        data: { endpoint: "/greetings" },
+      }],
+      exports: [
+        { name: "Greeting", reference: "greeting" },
+        { name: "default", reference: "greeting" },
+      ],
+    });
+  },
+});
+```
+
+The browser receives the result of `createGreetingReference(data)` for both
+exports. If the factory returns a constructor, application code can keep
+`import { Greeting } from "./greeting"; new Greeting()`. Original module
+initialization and dependencies are excluded from this browser replacement.
+Server compilation continues to use the original module. The factory and its
+dependencies must themselves be browser-safe; static types are not rewritten.
+
+Source files must exist inside the application root. Relative source and runtime
+filenames resolve from that root; runtime package specifiers are also supported.
+Export names and factory exports currently use ASCII JavaScript identifiers,
+including `default`. Several exports can share one reference identity. A source
+file may have only one contribution, including across symlink aliases and
+plugins. Invalid or conflicting contributions fail during planning.
+
+Payloads must be strict JSON and should contain only information meant for the
+browser. The complete build plan stays in `.ev`; it is not a public deployment
+manifest. Source changes are watched automatically. Plugins reading additional
+metadata files must register those files with `ctx.addWatchFile()`.
+
+This capability requires `@utoo/pack` 1.6.0 or newer with a matching native binding
+reporting `moduleReferencesVersion = 1`. Older Utoopack builds and the Webpack
+adapter fail explicitly instead of compiling the original module into the browser.
+Bundler hooks cannot replace the framework-owned reference list.
+
 ## Add code to the client entry
 
 Generate an installer and import it after the main application entry:

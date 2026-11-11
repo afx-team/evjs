@@ -43,6 +43,7 @@ import {
   getUrlStringValidationError,
   type UrlStringValidationError,
 } from "../urls/validation.js";
+import type { ClientModuleReferencePlan } from "./module-references.js";
 import { assertBuildOutputServerArtifacts } from "./output/server-artifacts.js";
 import { assertPageMetadata, type PageMetadata } from "./page/metadata.js";
 
@@ -140,6 +141,8 @@ export interface BuildPlan {
   };
   resolve?: ResolvePlan;
   generated?: GeneratedFrameworkPlan;
+  /** Browser-only source replacements. Server compilation retains the source. */
+  clientModuleReferences?: ClientModuleReferencePlan[];
   entries: BuildEntry[];
   html: HtmlPlan[];
   server: ServerBuildPlan;

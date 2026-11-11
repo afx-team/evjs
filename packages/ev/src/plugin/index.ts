@@ -8,6 +8,7 @@ export {
   type ClientDevMiddlewareSetupContext,
   type ClientDevRequestContext,
   type ClientEntryContribution,
+  type ClientModuleReference,
   type CliFlags,
   type CliFlagValue,
   type ConfigureBundlerContext,

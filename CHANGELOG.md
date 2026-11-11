@@ -6,6 +6,20 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### Features
+
+- Let plugins declare browser module references through `emit.moduleReference()`.
+  Core validates and watches the references, and Utoopack replaces the original
+  browser modules with runtime factory results while retaining server source.
+- Expose the generated application's frozen `apiRuntimeScope` so integration
+  runtimes can use the same application and build identity as the API client.
+
+### Dependencies
+
+- Require `@utoo/pack` 1.6.0 or newer in the default bundler adapter and use its
+  published module-reference configuration types. Browser module references
+  continue to validate the capability of the loaded native binding.
+
 ### Bug Fixes
 
 - Refresh Utoopack development HTML and asset metadata after client rebuilds

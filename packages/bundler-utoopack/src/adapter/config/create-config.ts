@@ -36,6 +36,11 @@ import {
   assertSafeUtoopackCleanOutput,
   assertUtoopackOutputPathsMatchPlan,
 } from "../output/output-paths.js";
+import {
+  assertUtoopackModuleReferencesMatchPlan,
+  createUtoopackModuleReferences,
+  type UtoopackModuleReferenceConfig,
+} from "./module-references.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 const lessImplementation = require.resolve("less");
@@ -152,8 +157,12 @@ export async function createUtoopackConfig(
       : {}),
   };
 
-  const utoopackConfig: ConfigComplete = {
+  const moduleReferences = createUtoopackModuleReferences(plan);
+  const utoopackConfig: UtoopackModuleReferenceConfig = {
     mode,
+    ...(moduleReferences
+      ? { module: { references: structuredClone(moduleReferences) } }
+      : {}),
     // Keep concurrent dev and production Projects on separate databases and locks.
     cacheDirectory: `.turbopack/evjs/${mode}`,
     ...(isProduction && config.target !== undefined && clientEntries.length > 0
@@ -271,6 +280,7 @@ export async function createUtoopackConfig(
   for (const h of hooks) {
     if (h.configureBundler) {
       await h.configureBundler(utoopackConfig, ctx);
+      assertUtoopackModuleReferencesMatchPlan(utoopackConfig, moduleReferences);
       assertUtoopackServerEntryMatchesPlan(utoopackConfig, expectedServerEntry);
       assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
         requireServerOutput: finalServerEntry !== undefined,
@@ -282,6 +292,7 @@ export async function createUtoopackConfig(
   }
 
   assertUtoopackServerEntryMatchesPlan(utoopackConfig, expectedServerEntry);
+  assertUtoopackModuleReferencesMatchPlan(utoopackConfig, moduleReferences);
   assertUtoopackOutputPathsMatchPlan(cwd, utoopackConfig, outputPaths, {
     requireServerOutput: finalServerEntry !== undefined,
   });
