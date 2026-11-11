@@ -656,10 +656,18 @@ describe("watchFiles", () => {
     expect(changes).toEqual([]);
   });
 
-  it("deduplicates polling writes with unchanged file content", async () => {
+  it("deduplicates polling replacements with unchanged file content", async () => {
     const root = await createTemporaryDirectory();
     const file = path.join(root, "stable.ts");
     await writeFile(file);
+
+    const replaceContents = async (contents: string) => {
+      const temporaryFile = path.join(root, "replacement.ts");
+      await fs.promises.writeFile(temporaryFile, contents, "utf-8");
+      // Publish complete contents: an in-place write can briefly expose an
+      // empty file, which is a different snapshot and a valid invalidation.
+      await fs.promises.rename(temporaryFile, file);
+    };
 
     const changes: string[] = [];
     const stop = watchFiles(
@@ -672,13 +680,13 @@ describe("watchFiles", () => {
     );
 
     try {
-      await fs.promises.writeFile(file, "test", "utf-8");
+      await replaceContents("test");
       await new Promise((resolve) => setTimeout(resolve, 250));
       expect(changes).toEqual([]);
 
-      await fs.promises.writeFile(file, "changed", "utf-8");
+      await replaceContents("changed");
       await waitForChange(changes, file);
-      await fs.promises.writeFile(file, "changed", "utf-8");
+      await replaceContents("changed");
       await new Promise((resolve) => setTimeout(resolve, 250));
       expect(changes).toEqual([file]);
     } finally {
