@@ -1,0 +1,35 @@
+package.json
+  s_fc70035ec6ca69::t_75008232083ef8 63-67
+packages/skill-dev/references/migration/versioning.md
+  s_fc70035ec6ca69::t_75008232083ef8 16
+packages/evjs/package.json
+  s_fc70035ec6ca69::t_804cd5b312d959 171-174,206,214
+packages/layotto/package.json
+  s_fc70035ec6ca69::t_804cd5b312d959 15
+packages/oneapi/package.json
+  s_fc70035ec6ca69::t_804cd5b312d959 17
+packages/db-next/package.json
+  s_fc70035ec6ca69::t_804cd5b312d959 14,25
+packages/evjs/test/exports.test.ts
+  s_fc70035ec6ca69::t_804cd5b312d959 128-131,137-138
+packages/evjs/test/plugins/hd/hd.test.ts
+  s_fc70035ec6ca69::t_804cd5b312d959 196,204
+packages/db-next/test/consumer-package.mjs
+  s_fc70035ec6ca69::t_804cd5b312d959 257-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "23bd22cdd1d61b7100a2d7a37431babf9290d17f",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
