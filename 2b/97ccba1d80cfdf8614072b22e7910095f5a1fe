@@ -1,0 +1,40 @@
+packages/bundler-utoopack/src/adapter/config/module-references.ts
+  s_fc70035ec6ca69::t_358aa43706cf20 3,5,9,19,43
+packages/bundler-utoopack/package.json
+  s_fc70035ec6ca69::t_358aa43706cf20 38
+packages/bundler-utoopack/tests/fixtures/module-references-native-harness.mjs
+  s_fc70035ec6ca69::t_4b808f10415836 1-12,18-90,93-116,122-123,127-131,134,143-147,151-154,161-165,174-175,195-197
+  s_fc70035ec6ca69::t_5167a2e8162c92 132-133,135-142,148-150,157,166-173
+  s_fc70035ec6ca69::t_b8c9b0ff809c8e 92
+  s_fc70035ec6ca69::t_d586da74bcd2d3 91
+  s_fc70035ec6ca69::t_71e0d01306f86f 13-17,117-121,124-126,155-156,158-160,176-194
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/generated-contributions.md
+  s_fc70035ec6ca69::t_99f08014f95f6f 94-95
+docs/docs/generated-contributions.md
+  s_fc70035ec6ca69::t_173f4a44f39bf1 109-111
+  s_fc70035ec6ca69::t_99f08014f95f6f 108
+packages/bundler-utoopack/README.md
+  s_fc70035ec6ca69::t_99f08014f95f6f 8-10
+CHANGELOG.md
+  s_fc70035ec6ca69::t_358aa43706cf20 17-22
+  s_fc70035ec6ca69::t_173f4a44f39bf1 9-16
+packages/bundler-utoopack/tests/module-references-native.test.ts
+  s_fc70035ec6ca69::t_71e0d01306f86f 27-36
+  s_fc70035ec6ca69::t_4b808f10415836 1-26,37-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2b97ccba1d80cfdf8614072b22e7910095f5a1fe",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
