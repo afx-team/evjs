@@ -1,0 +1,31 @@
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_8e5ff00dbb7005 58-59
+  s_fc70035ec6ca69::t_72b6e7365af09c 60
+packages/evjs/src/plugins/server-class/config.ts
+  s_fc70035ec6ca69::t_c5dfd2f7380c5c 31
+packages/evjs/src/plugins/server-class/source-analysis.ts
+  s_fc70035ec6ca69::t_c5dfd2f7380c5c 26-28
+packages/evjs/src/plugins/server-class/plugin.ts
+  s_fc70035ec6ca69::t_c5dfd2f7380c5c 42,115
+packages/evjs/test/plugins/server-class/plugin.test.ts
+  s_fc70035ec6ca69::t_bcc9bb9d242b87 80
+  s_fc70035ec6ca69::t_c5dfd2f7380c5c 12,19-22,28,77-79,81-107,546-552,557
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_8e5ff00dbb7005 58-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e410519bc911a0b2304db10c9347a9dfa345ce1",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
