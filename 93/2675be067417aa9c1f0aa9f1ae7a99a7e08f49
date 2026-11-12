@@ -1,0 +1,19 @@
+packages/evjs/test/exports.test.ts
+  s_fc70035ec6ca69::t_241306b1269e2f 57,60-63,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "932675be067417aa9c1f0aa9f1ae7a99a7e08f49",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
