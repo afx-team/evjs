@@ -3,7 +3,7 @@ import path from "node:path";
 import { execa } from "execa";
 import { createJiti } from "jiti";
 
-const [cwd, signal, failDispose] = process.argv.slice(2);
+const [cwd, failDispose] = process.argv.slice(2);
 const jiti = createJiti(import.meta.url);
 const { dev } = await jiti.import(
   new URL("../../src/_internal/build/commands.ts", import.meta.url).href,
@@ -15,12 +15,7 @@ const disposeGate = new Promise((resolve) => {
   releaseDispose = resolve;
 });
 process.on("message", (message) => {
-  if (message === "repeat") {
-    process.emit(signal);
-    process.send({ type: "repeated" });
-  } else if (message === "release") {
-    releaseDispose();
-  }
+  if (message === "release") releaseDispose();
 });
 
 let disposed = 0;

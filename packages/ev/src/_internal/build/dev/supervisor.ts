@@ -543,9 +543,15 @@ export async function runDevSupervisor<TBundlerCfg>(
       (error) => rejectCompletion(error),
     );
   }
+  let interrupted = false;
+  function onInterrupt(): void {
+    if (interrupted) process.exit(130);
+    interrupted = true;
+    onSignal();
+  }
   // Keep ownership of the signal until asynchronous disposal has finished.
   // Child-process exit handlers may otherwise restore the signal's default exit.
-  process.on("SIGINT", onSignal);
+  process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onSignal);
 
   async function stop(): Promise<void> {
@@ -584,7 +590,7 @@ export async function runDevSupervisor<TBundlerCfg>(
           throw new AggregateError(errors, "[evjs] Failed to stop dev.");
         }
       } finally {
-        process.off("SIGINT", onSignal);
+        process.off("SIGINT", onInterrupt);
         process.off("SIGTERM", onSignal);
       }
     })();

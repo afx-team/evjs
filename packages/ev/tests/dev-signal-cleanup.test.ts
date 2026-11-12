@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -33,10 +34,13 @@ function nextMessage<T>(child: ChildProcess): Promise<T> {
 // Windows child.kill() terminates the process without delivering a JS signal event.
 describe.skipIf(process.platform === "win32")("dev signal disposal", () => {
   it.each([
-    { signal: "SIGTERM", failDispose: false },
-    { signal: "SIGINT", failDispose: true },
-  ] as const)("awaits disposal with execa on $signal (failure: $failDispose)", async ({
+    { signal: "SIGINT", repeatedSignal: null, failDispose: false },
+    { signal: "SIGTERM", repeatedSignal: "SIGTERM", failDispose: false },
+    { signal: "SIGTERM", repeatedSignal: "SIGTERM", failDispose: true },
+    { signal: "SIGINT", repeatedSignal: "SIGINT", failDispose: false },
+  ] as const)("handles $signal then $repeatedSignal with execa (failure: $failDispose)", async ({
     signal,
+    repeatedSignal,
     failDispose,
   }) => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-dev-signal-"));
@@ -45,13 +49,9 @@ describe.skipIf(process.platform === "win32")("dev signal disposal", () => {
     const fixture = fileURLToPath(
       new URL("./fixtures/dev-signal-cleanup.mjs", import.meta.url),
     );
-    const child = spawn(
-      process.execPath,
-      [fixture, cwd, signal, String(failDispose)],
-      {
-        stdio: ["ignore", "ignore", "pipe", "ipc"],
-      },
-    );
+    const child = spawn(process.execPath, [fixture, cwd, String(failDispose)], {
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
     let stderr = "";
     child.stderr?.on("data", (chunk) => {
       stderr += chunk;
@@ -75,10 +75,32 @@ describe.skipIf(process.platform === "win32")("dev signal disposal", () => {
       child.kill(signal);
       expect((await disposing).type).toBe("disposing");
 
-      // A repeated signal must share the in-flight cleanup, not interrupt it.
-      const repeated = nextMessage<{ type: string }>(child);
-      child.send("repeat");
-      expect((await repeated).type).toBe("repeated");
+      if (repeatedSignal) child.kill(repeatedSignal);
+      if (repeatedSignal === "SIGINT") {
+        expect(await exited, stderr).toEqual({ code: 130, signal: null });
+        await expect(
+          fs.readFile(path.join(cwd, "disposed"), "utf8"),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+        // Forced exit still invokes execa's process-exit child cleanup.
+        await expect
+          .poll(() => {
+            try {
+              process.kill(ready.resourcePid, 0);
+              return true;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ESRCH")
+                throw error;
+              return false;
+            }
+          })
+          .toBe(false);
+        return;
+      }
+
+      // Leave disposal pending long enough to observe a repeated OS signal.
+      if (repeatedSignal) await delay(100);
+      expect(child.exitCode, stderr).toBeNull();
+      expect(child.signalCode, stderr).toBeNull();
       child.send("release");
       expect(await exited, stderr).toEqual({
         code: failDispose ? 1 : 0,
