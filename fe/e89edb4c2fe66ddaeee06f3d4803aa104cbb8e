@@ -1,0 +1,26 @@
+CHANGELOG.md
+  s_fc70035ec6ca69::t_27cd3e70f073f8 25-26
+packages/ev/tests/fixtures/dev-signal-cleanup.mjs
+  s_fc70035ec6ca69::t_27cd3e70f073f8 6,18
+packages/ev/src/_internal/build/dev/supervisor.ts
+  s_fc70035ec6ca69::t_27cd3e70f073f8 546-551,554,593
+packages/ev/tests/dev-signal-cleanup.test.ts
+  s_fc70035ec6ca69::t_cd9533592f4af5 52-54,85-96
+  s_fc70035ec6ca69::t_1d3fd532a919be 5,37-41,43,78-84,97-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fee89edb4c2fe66ddaeee06f3d4803aa104cbb8e",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
