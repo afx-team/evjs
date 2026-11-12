@@ -437,6 +437,7 @@ async function emitFrameworkArtifacts(options: {
     rscManifests: options.facts.rscManifests,
   });
   frameworkRuntimeByOutput.set(output, frameworkRuntime);
+  await options.onBuildOutput?.(output);
 
   const rootDir = path.join(options.cwd, options.plan.distDir);
   const clientDir = path.resolve(options.cwd, options.plan.output.clientDir);
@@ -499,7 +500,6 @@ async function emitFrameworkArtifacts(options: {
     await fs.writeFile(outPath, finalHtml, "utf-8");
   }
 
-  await options.onBuildOutput?.(output);
   return output;
 }
 
