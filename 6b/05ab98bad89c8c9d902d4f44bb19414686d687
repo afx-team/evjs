@@ -1,0 +1,23 @@
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_5003250f031402 1,7
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_5003250f031402 1,7
+packages/evjs/README.md
+  s_fc70035ec6ca69::t_5003250f031402 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6b05ab98bad89c8c9d902d4f44bb19414686d687",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
