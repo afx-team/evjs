@@ -1,0 +1,19 @@
+packages/bundler-webpack/tests/adapter.test.ts
+  s_fc70035ec6ca69::t_891951212c3e18 502
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9343cf0da4e42ec762c685734d7909e9a9c14e9c",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
