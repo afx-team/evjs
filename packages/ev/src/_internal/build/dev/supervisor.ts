@@ -543,54 +543,58 @@ export async function runDevSupervisor<TBundlerCfg>(
       (error) => rejectCompletion(error),
     );
   }
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  // Keep ownership of the signal until asynchronous disposal has finished.
+  // Child-process exit handlers may otherwise restore the signal's default exit.
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
 
   async function stop(): Promise<void> {
     stopPromise ??= (async () => {
-      stopping = true;
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = undefined;
-      watcher?.stop();
-      watcher = undefined;
-      process.off("SIGINT", onSignal);
-      process.off("SIGTERM", onSignal);
-      while (reconcileRunning) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      }
-      const errors: unknown[] = [];
       try {
-        await detachCLIShortcuts(0);
-      } catch (error) {
-        errors.push(error);
-      }
-      const current = active;
-      active = undefined;
-      try {
-        await current?.session.close();
-      } catch (error) {
-        errors.push(error);
-      }
-      try {
-        await ports?.release();
-      } catch (error) {
-        errors.push(error);
+        stopping = true;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+        watcher?.stop();
+        watcher = undefined;
+        while (reconcileRunning) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+        const errors: unknown[] = [];
+        try {
+          await detachCLIShortcuts(0);
+        } catch (error) {
+          errors.push(error);
+        }
+        const current = active;
+        active = undefined;
+        try {
+          await current?.session.close();
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          await ports?.release();
+        } catch (error) {
+          errors.push(error);
+        } finally {
+          unregisterPortsExitCleanup();
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) {
+          throw new AggregateError(errors, "[evjs] Failed to stop dev.");
+        }
       } finally {
-        unregisterPortsExitCleanup();
-      }
-      if (errors.length === 1) throw errors[0];
-      if (errors.length > 1) {
-        throw new AggregateError(errors, "[evjs] Failed to stop dev.");
+        process.off("SIGINT", onSignal);
+        process.off("SIGTERM", onSignal);
       }
     })();
     return stopPromise;
   }
 
-  refreshWatcher(fixedDependencies);
-  reconcileRequested = true;
-  requestReconcile();
-
   try {
+    refreshWatcher(fixedDependencies);
+    reconcileRequested = true;
+    requestReconcile();
     await completion;
   } finally {
     if (!stopping) await stop();

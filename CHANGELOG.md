@@ -22,6 +22,8 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### Bug Fixes
 
+- Wait for asynchronous plugin disposal when development shutdown receives a
+  signal, including when plugins manage child processes.
 - Refresh Utoopack development HTML and asset metadata after client rebuilds
   change entry chunks, so new visits and browser reloads load the latest code
   without restarting the development server. Preserve the native server-build
