@@ -1,0 +1,18 @@
+packages/skill-dev/references/delivery/ecosystem-skills.md
+  h_a1aea638c4491d 19-21,31
+packages/skill-dev/references/delivery/runtime-diagnostics.md
+  h_a1aea638c4491d 49-54
+packages/skill-dev/references/fullstack/data/database-changes.md
+  h_a1aea638c4491d 11-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "94b1d05b567209f525afec00aac2ce8aae79bd1d",
+  "prompts": {},
+  "humans": {
+    "h_a1aea638c4491d": {
+      "author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}

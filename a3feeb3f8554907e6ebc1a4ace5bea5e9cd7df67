@@ -1,0 +1,40 @@
+packages/evjs/test/plugins/evdb-migration-check/check.test.ts
+  s_c7bed06562e1d5::t_5ae5dbab093682 346-348,363-369,389-391
+  s_c7bed06562e1d5::t_ec82d06d052c41 38,43-44,94,111
+  s_c7bed06562e1d5::t_063d90f3a79521 95,101-103
+  s_c7bed06562e1d5::t_b5481d1fefb717 61-62,66-69,96-100,112-114,338-345,349-362,370-388,392-393
+packages/evjs/test/plugins/evdb-migration-check/dev.integration.test.ts
+  s_c7bed06562e1d5::t_5ae5dbab093682 151-154,204-209,211,215-218,220-228,242-245
+  s_c7bed06562e1d5::t_ec82d06d052c41 167-168,181-184
+  s_c7bed06562e1d5::t_b5481d1fefb717 2,70,146-150,155-156,192-203,210,212-214,219,229-241,246-250
+packages/evjs/docs/plugins/evdb-migration-check.md
+  s_c7bed06562e1d5::t_ec82d06d052c41 11-12,14
+  s_c7bed06562e1d5::t_dec09ccefd916a 13
+packages/evjs/src/plugins/evdb-migration-check/index.ts
+  s_c7bed06562e1d5::t_475e756733ad28 3-4,33,50-51
+  s_c7bed06562e1d5::t_063d90f3a79521 7-8,55-57
+  s_c7bed06562e1d5::t_8b9740035c6331 1,6,9-32,34-49,52-54
+packages/evjs/src/plugins/evdb-migration-check/inputs.ts
+  s_c7bed06562e1d5::t_475e756733ad28 1,8-13,15-20,22-31,34-37,39,43-45,48,54-59,63-65,67-69,72-74,76,79-83,89,97,102-103,129-130
+  s_c7bed06562e1d5::t_5094ef90b41f82 128
+  s_c7bed06562e1d5::t_72b44c0fe702e4 131-133
+packages/evjs/test/plugins/evdb-migration-check/inputs.test.ts
+  s_c7bed06562e1d5::t_ec82d06d052c41 1,4,6-7,9,11-13,16-18,24-26,38,42-45,47,50-51,53-55,61,63-64,76-78,81,83,88-90,93,95,100-108,111,113-118,121,127-134,137,139,144-147,150,153-156,159,161-166,169,171-174,177-179,182,184-189
+  s_c7bed06562e1d5::t_61732875804080 56-58,65-75,85-86,96-98,125,140-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a3feeb3f8554907e6ebc1a4ace5bea5e9cd7df67",
+  "prompts": {},
+  "sessions": {
+    "s_c7bed06562e1d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f8c-b022-7f70-a67f-bb37c21cdb30",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "真寻 <zhenxin.lcx@antgroup.com>"
+    }
+  }
+}
