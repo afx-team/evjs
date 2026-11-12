@@ -1,0 +1,19 @@
+package.json
+  s_c7bed06562e1d5::t_d700ffc14f6f4d 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "12a6935f6a474020e053b9d4daf1fe988bb0f5c0",
+  "prompts": {},
+  "sessions": {
+    "s_c7bed06562e1d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f8c-b022-7f70-a67f-bb37c21cdb30",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "真寻 <zhenxin.lcx@antgroup.com>"
+    }
+  }
+}

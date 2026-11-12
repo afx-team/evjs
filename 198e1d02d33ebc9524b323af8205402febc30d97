@@ -1,0 +1,177 @@
+packages/evjs/test/plugins/server-class/webgw-metadata.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-111
+packages/oneapi/package.json
+  s_fc70035ec6ca69::t_cb6131078a9fa6 17
+packages/evjs/src/plugins/server-class/client/protocols/webgw.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-77
+packages/evjs/src/plugins/server-class/development/process-tree.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-39
+packages/evjs/test/plugins/server-class/legacy-transport.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-156
+packages/evjs/src/plugins/server-class/source-metadata.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-23
+packages/evjs/src/plugins/server-class/client/protocols/mgw.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-44
+packages/evjs/test/plugins/server-class/metadata-fixtures.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-82
+packages/evjs/test/plugins/server-class/source-analysis.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-293
+packages/evjs/src/config/define-config.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 38,53,147,178
+packages/evjs/src/plugins/uboa/index.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 9,15,17,45,56,58-60,74,90-98,124-126,166-177,214-215
+packages/evjs/docs/plugins/uboa.md
+  s_fc70035ec6ca69::t_cb6131078a9fa6 128-146
+packages/evjs/src/plugins/server-class/protocols/build/webgw.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-62
+packages/evjs/test/plugins/hd/hd.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 196,204
+packages/evjs/test/plugins/server-class/development-fixtures.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-29
+packages/evjs/test/plugins/server-class/gateway-transport.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-226
+packages/evjs/test/plugins/uboa/uboa.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 15,322-327,334,385-404
+packages/evjs/package.json
+  s_fc70035ec6ca69::t_cb6131078a9fa6 125-129,171-174,206,211,214
+packages/evjs/src/plugins/server-class/client/reference.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-53
+packages/evjs/test/plugins/server-class/metadata.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-214
+packages/evjs/src/plugins/server-class/identity.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-32
+packages/evjs/src/plugins/server-class/protocols/build/index.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-42
+packages/evjs/src/plugins/server-class/runtime.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-13
+packages/evjs/test/workspace-dependencies.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-37
+packages/evjs/src/plugins/server-class/metadata.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-326
+packages/evjs/src/plugins/uboa/chair-dev.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-39
+packages/evjs/src/plugins/server-class/runtime-http.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-11
+packages/evjs/src/plugins/server-class/source-analysis.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-187
+packages/skill-dev/references/migration/versioning.md
+  s_fc70035ec6ca69::t_cb6131078a9fa6 16
+packages/evjs/src/plugins/server-class/transport.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-101
+packages/evjs/test/plugins/server-class/chair-bin-tr.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-160
+packages/evjs/test/plugins/server-class/mgw-native-sdk.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-113
+packages/evjs/src/plugins/server-class/plugin.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-247
+packages/evjs/src/plugins/factories.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 12,35,187-191,205-206
+packages/evjs/src/plugins/server-class/source-analysis-entry.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-80
+packages/evjs/src/plugins/server-class/development/chair-bin-tr.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-88
+packages/evjs/src/plugins/server-class/protocols/build/mgw.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-53
+packages/evjs/src/plugins/server-class/client/protocols/http.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-160
+packages/evjs/test/plugins/server-class/discovery.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-293
+packages/evjs/src/plugins/server-class/runtime-types.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-55
+packages/evjs/test/plugins/server-class/process-tree.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-45
+packages/evjs/src/plugins/uboa/types.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-4,20-21
+packages/evjs/test/plugins/server-class/plugin.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-413
+packages/evjs/test/plugins/server-class/runtime.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-167
+packages/evjs/src/plugins/server-class/protocols/build/chair-mgw-metadata.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-155
+packages/evjs/src/plugins/server-class/client/registry.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-16
+packages/evjs/src/index.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 32,48,57-58
+packages/evjs/src/plugins/server-class/protocols/build/http.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-65
+packages/evjs/src/plugins/server-class/production-transport.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-197
+package.json
+  s_fc70035ec6ca69::t_cb6131078a9fa6 38,53,63-68
+packages/evjs/src/plugins/server-class/discovery.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-342
+packages/evjs/src/plugins/server-class/development/source-tree.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-24
+packages/evjs/test/plugins/server-class/identity.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-37
+packages/evjs/test/plugins/server-class/mgw-bundle-compatibility.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-37
+packages/evjs/src/config/types.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 13,26-27,201,212,236,253
+packages/evjs/test/plugins/server-class/source-tree.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-41
+packages/evjs/src/plugins/server-class/build-state.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-10
+packages/evjs/src/plugins/server-class/development/webgw.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-192
+packages/evjs/src/plugins/server-class/protocols/metadata-types.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-54
+packages/evjs/src/plugins/server-class/protocols/build/types.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-36
+packages/evjs/src/plugins/uboa/chair-session.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-204
+packages/evjs/src/plugins/server-class/development/types.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-9
+packages/db-next/package.json
+  s_fc70035ec6ca69::t_cb6131078a9fa6 14,25
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-112
+packages/evjs/test/plugins/services/build.integration.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 866
+packages/evjs/README.md
+  s_fc70035ec6ca69::t_cb6131078a9fa6 16-17
+packages/evjs/test/exports.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 57,60-63,69,131-134,140-141
+packages/evjs/test/plugins/server-class/chair-mgw-metadata.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-117
+packages/evjs/test/plugins/server-class/protocol-registry.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-45
+packages/evjs/test/plugins/uboa/chair-dev.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-231
+packages/evjs/test/plugins/server-class/mgw-runtime.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-71
+packages/evjs/src/plugins/server-class/protocols/build/common.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-54
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-102
+packages/evjs/src/plugins/server-class/index.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-2
+packages/evjs/test/plugins/server-class/webgw-development.test.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-165
+packages/layotto/package.json
+  s_fc70035ec6ca69::t_cb6131078a9fa6 15
+packages/db-next/test/consumer-package.mjs
+  s_fc70035ec6ca69::t_cb6131078a9fa6 257
+packages/evjs/test/plugins/server-class/runtime-fixtures.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-107
+packages/evjs/src/plugins/server-class/config.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-43
+packages/evjs/src/plugins/server-class/client/protocols/shared.ts
+  s_fc70035ec6ca69::t_cb6131078a9fa6 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "198e1d02d33ebc9524b323af8205402febc30d97",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
