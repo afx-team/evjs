@@ -1,0 +1,31 @@
+packages/ev/tests/dev-signal-cleanup.test.ts
+  s_fc70035ec6ca69::t_f642db83031190 1-7,16-23,27-37,52,71,77,104
+  s_fc70035ec6ca69::t_b4271bad51789b 24-26,38-51,53-70,72-76,78-98,100-103
+  s_fc70035ec6ca69::t_6600caf703f2f8 8-15,99
+packages/ev/src/_internal/build/dev/supervisor.ts
+  s_fc70035ec6ca69::t_158a2ef4936000 546-549,554-585,587-588
+  s_fc70035ec6ca69::t_0b555f437e8d58 595-597
+CHANGELOG.md
+  s_fc70035ec6ca69::t_7126886a82deb1 25-26
+packages/ev/tests/fixtures/dev-signal-cleanup.mjs
+  s_fc70035ec6ca69::t_6600caf703f2f8 78
+  s_fc70035ec6ca69::t_b4271bad51789b 55-56
+  s_fc70035ec6ca69::t_f642db83031190 1-33,35-54,57-77,79-90
+  s_fc70035ec6ca69::t_9702bceb741a85 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d72fcf3872f7772dc3f934aac023f05250eacd3b",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
