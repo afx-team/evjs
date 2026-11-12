@@ -1,0 +1,19 @@
+packages/evjs/test/plugins/services/build.integration.test.ts
+  s_fc70035ec6ca69::t_ed8ddfc4f3cea0 861,865,886
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "06f88718c970265d6d71eebc3dc5afcde10d7d95",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
