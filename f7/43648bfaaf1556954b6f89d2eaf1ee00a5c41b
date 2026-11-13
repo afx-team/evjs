@@ -1,0 +1,48 @@
+packages/bundler-utoopack/tests/adapter.test.ts
+  s_348e456ff5755f::t_1c34eb2c0beaea 125-126
+skills/SKILL.md
+  s_348e456ff5755f::t_1c34eb2c0beaea 23-28
+packages/bundler-utoopack/tests/analyze-export.test.ts
+  s_348e456ff5755f::t_1c34eb2c0beaea 10,15,20
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/build.md
+  s_348e456ff5755f::t_1c34eb2c0beaea 25,35
+packages/bundler-utoopack/src/adapter/execution/analyze.ts
+  s_348e456ff5755f::t_3c592a114313d9 48-49
+  s_348e456ff5755f::t_1c34eb2c0beaea 7-8,25-29,35-40,46,50
+packages/cli/src/commands/analyze/command.ts
+  s_348e456ff5755f::t_1c34eb2c0beaea 28
+CONTRIBUTING.md
+  s_348e456ff5755f::t_a5b0295d0bf321 175-176
+  s_348e456ff5755f::t_10e4dff6d5405e 179-180
+  s_348e456ff5755f::t_1712cc95274579 154-155,177-178
+.gitignore
+  s_348e456ff5755f::t_1712cc95274579 5
+ARCHITECTURE.md
+  s_348e456ff5755f::t_de86f9a27b2051 186-190
+  s_348e456ff5755f::t_26a71dd98ffe0a 185
+  s_348e456ff5755f::t_1712cc95274579 183-184,198-200
+docs/docs/build.md
+  s_348e456ff5755f::t_1c34eb2c0beaea 26,37-38
+CHANGELOG.md
+  s_348e456ff5755f::t_1712cc95274579 11-12
+packages/ev/tests/package-surface.test.ts
+  s_348e456ff5755f::t_a5b0295d0bf321 1117
+.github/workflows/ci.yml
+  s_348e456ff5755f::t_266886d0985d86 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f743648bfaaf1556954b6f89d2eaf1ee00a5c41b",
+  "prompts": {},
+  "sessions": {
+    "s_348e456ff5755f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d3bb-99b2-7410-9f1d-3f798946bb31",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
