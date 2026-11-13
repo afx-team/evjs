@@ -1,0 +1,25 @@
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/build.md
+  s_348e456ff5755f::t_7f5ddf4c534cc5 27-28,38,45
+  s_348e456ff5755f::t_1991fa8cfcec53 25-26,30,34-37,39-44,46-61,63-64,67-76,78-79
+  s_348e456ff5755f::t_c1efd468cd8cf3 29
+docs/docs/build.md
+  s_348e456ff5755f::t_1991fa8cfcec53 26-31,35,39-43,46-49,51-53,55-76,78-93,97-101
+  s_348e456ff5755f::t_7f5ddf4c534cc5 32-33,44-45,50,54
+  s_348e456ff5755f::t_9c34fc7a1bce12 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a1e7d941443d8425871c4b6fc403373ef6d1b733",
+  "prompts": {},
+  "sessions": {
+    "s_348e456ff5755f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d3bb-99b2-7410-9f1d-3f798946bb31",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
