@@ -1,0 +1,31 @@
+packages/skill-dev/references/delivery/runtime-diagnostics.md
+  s_88d7b3a9c0933e::t_75f67cc71ab51a 57
+packages/skill-dev/references/fullstack/integrations/oneapi.md
+  s_88d7b3a9c0933e::t_53164cbadde9a2 35
+packages/skill-dev/references/fullstack/integrations/outbound-http.md
+  s_be54373ece779e::t_9cfc16e0f63120 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4f61ca3bcc9a25975a544f4317fadf65e12efd23",
+  "prompts": {},
+  "sessions": {
+    "s_88d7b3a9c0933e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d463-dc64-73d3-994f-d87e178c9c41",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    },
+    "s_be54373ece779e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cf7d-32a1-7910-b8fd-6632c498b386",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}
