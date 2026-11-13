@@ -260,6 +260,12 @@ one fixed config, CoreGraph, BuildPlan, plugin-hook set, generated IR image,
 and bundler controller; adapters are never asked to replace those inputs in
 place.
 
+Shutdown keeps signal handlers and the process alive while the Supervisor
+closes the Session and releases its ports. Repeated SIGTERM waits for the
+same cleanup. Only the `ev dev` executable opts in to forced process exit
+with code 130 on a second SIGINT; programmatic calls leave that decision to
+the host process.
+
 Core also owns a stable API gateway for each Session. The gateway retains the
 public server port while API child processes use a private loopback port. A
 server rebuild suspends new HTTP requests, gives requests already forwarded up

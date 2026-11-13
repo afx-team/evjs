@@ -51,6 +51,7 @@ export interface DevSupervisorOptions<TBundlerCfg> {
   readonly cwd: string;
   readonly fallbackBundler?: BundlerAdapter<TBundlerCfg>;
   readonly flags?: PluginSetupContext<TBundlerCfg>["flags"];
+  readonly forceExitOnRepeatedInterrupt?: boolean;
   readonly cliShortcuts?: false;
   readonly loadConfig?: (
     cwd: string,
@@ -538,6 +539,7 @@ export async function runDevSupervisor<TBundlerCfg>(
   }
 
   function onSignal(): void {
+    if (stopping) return;
     void stop().then(
       () => settleCompletion(),
       (error) => rejectCompletion(error),
@@ -545,7 +547,7 @@ export async function runDevSupervisor<TBundlerCfg>(
   }
   let interrupted = false;
   function onInterrupt(): void {
-    if (interrupted) process.exit(130);
+    if (interrupted && options.forceExitOnRepeatedInterrupt) process.exit(130);
     interrupted = true;
     onSignal();
   }
@@ -554,18 +556,26 @@ export async function runDevSupervisor<TBundlerCfg>(
   process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onSignal);
 
-  async function stop(): Promise<void> {
+  function stop(): Promise<void> {
     stopPromise ??= (async () => {
+      stopping = true;
+      // After closing the watcher and bundler, a plugin may be waiting on an
+      // unref'ed resource. Keep Node alive until disposal settles.
+      const keepAlive = setInterval(() => {}, 60_000);
       try {
-        stopping = true;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = undefined;
-        watcher?.stop();
+        const errors: unknown[] = [];
+        const currentWatcher = watcher;
         watcher = undefined;
+        try {
+          currentWatcher?.stop();
+        } catch (error) {
+          errors.push(error);
+        }
         while (reconcileRunning) {
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
-        const errors: unknown[] = [];
         try {
           await detachCLIShortcuts(0);
         } catch (error) {
@@ -590,6 +600,7 @@ export async function runDevSupervisor<TBundlerCfg>(
           throw new AggregateError(errors, "[evjs] Failed to stop dev.");
         }
       } finally {
+        clearInterval(keepAlive);
         process.off("SIGINT", onInterrupt);
         process.off("SIGTERM", onSignal);
       }
@@ -598,9 +609,14 @@ export async function runDevSupervisor<TBundlerCfg>(
   }
 
   try {
-    refreshWatcher(fixedDependencies);
-    reconcileRequested = true;
-    requestReconcile();
+    try {
+      refreshWatcher(fixedDependencies);
+      requestReconcile();
+    } catch (error) {
+      // Watcher setup can report an error through onError and also throw it.
+      // Observe the same completion promise in both cases.
+      fail(error);
+    }
     await completion;
   } finally {
     if (!stopping) await stop();

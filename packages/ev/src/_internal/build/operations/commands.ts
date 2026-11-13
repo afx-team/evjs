@@ -160,6 +160,11 @@ export interface DevOptions<TBundlerCfg = unknown> {
     | Promise<Config<TBundlerCfg> | undefined>;
 }
 
+interface DevInvocationOptions<TBundlerCfg> extends DevOptions<TBundlerCfg> {
+  /** The executable can force exit on a second SIGINT. */
+  forceExitOnRepeatedInterrupt?: boolean;
+}
+
 export interface BuildOptions<TBundlerCfg = unknown> {
   cwd?: string;
   bundler?: BundlerAdapter<TBundlerCfg>;
@@ -367,7 +372,7 @@ export async function prepareFrameworkBuild<TBundlerCfg = unknown>(
 
 export async function dev<TBundlerCfg = unknown>(
   userConfig?: Config<TBundlerCfg>,
-  options?: DevOptions<TBundlerCfg>,
+  options?: DevInvocationOptions<TBundlerCfg>,
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   const releaseDevSessionLock = await acquireDevSessionLock(cwd);
@@ -385,6 +390,7 @@ export async function dev<TBundlerCfg = unknown>(
           cwd,
           fallbackBundler: options?.fallbackBundler,
           flags: snapshotPluginFlags(options?.flags),
+          forceExitOnRepeatedInterrupt: options?.forceExitOnRepeatedInterrupt,
           cliShortcuts: options?.cliShortcuts,
           loadConfig: options?.loadConfig,
           reloadInitialConfig: options?.reloadInitialConfig,

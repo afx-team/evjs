@@ -23,7 +23,8 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### Bug Fixes
 
 - Wait for asynchronous plugin disposal on development shutdown, including
-  repeated SIGTERM signals, while preserving forced exit on a second Ctrl+C.
+  repeated SIGTERM signals. A second Ctrl+C still forces `ev dev` to exit;
+  programmatic calls leave forced exit to their host process.
 - Refresh Utoopack development HTML and asset metadata after client rebuilds
   change entry chunks, so new visits and browser reloads load the latest code
   without restarting the development server. Preserve the native server-build
