@@ -1,0 +1,33 @@
+packages/ev/src/_internal/build/dev/supervisor.ts
+  s_f3bfe0c35e9388::t_a812e04608a803 65,386-389,434,567
+packages/ev/tests/dev-supervisor.test.ts
+  s_f3bfe0c35e9388::t_524a9b4c43775d 32,167-185,188-195,199-203,207-214,218-225
+  s_f3bfe0c35e9388::t_d3c0f178e4851b 70-72,186-187,196-198,204-206,215-217
+packages/ev/src/_internal/build/dev/runtime.ts
+  s_f3bfe0c35e9388::t_524a9b4c43775d 690
+  s_f3bfe0c35e9388::t_a812e04608a803 71-74,616-670,683-689,691-696,708-712
+  s_f3bfe0c35e9388::t_d3c0f178e4851b 674
+  s_f3bfe0c35e9388::t_01c50b58cd70f5 671,713
+docs/docs/dev.md
+  s_f3bfe0c35e9388::t_524a9b4c43775d 36-40
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/dev.md
+  s_f3bfe0c35e9388::t_524a9b4c43775d 32
+packages/ev/src/_internal/build/operations/commands.ts
+  s_f3bfe0c35e9388::t_a812e04608a803 398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "725f7f96bc812a5f6f4ce15725e27aaf5dc616f8",
+  "prompts": {},
+  "sessions": {
+    "s_f3bfe0c35e9388": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18b11-f104-7253-848f-9de948d2b970",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
