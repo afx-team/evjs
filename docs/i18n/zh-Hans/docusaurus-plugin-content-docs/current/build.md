@@ -22,7 +22,7 @@ ev build
 
 ## 分析产物体积
 
-使用支持原生 Analyzer 的 Utoopack 版本时，可以运行：
+使用默认的 Utoopack 构建器时，可以运行：
 
 ```bash
 ev analyze
@@ -32,7 +32,7 @@ ev analyze export --report reports/bundle-before --environment client > bundle-b
 
 第一条命令在 `http://127.0.0.1:4000` 提供报告界面。`--port` 可以指定端口，
 `--output` 只保存静态报告，不启动服务。报告默认写到 `.utoo/analyze`，请将其放在
-`dist` 之外。
+`dist` 之外。再次采集到同一报告目录会替换旧报告，因此比较前后结果时请使用不同目录。
 
 分析使用应用的生产配置及框架生成的客户端和服务端入口，保留已有生产产物与 stats。
 导出只读取已有报告，不加载应用配置，也不重新编译。可用 `--entry` 筛选报告入口。

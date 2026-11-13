@@ -2,6 +2,7 @@
 node_modules
 .turbo
 .turbopack
+**/.utoo/analyze/
 dist
 dist-server
 .next

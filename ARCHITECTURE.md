@@ -180,13 +180,14 @@ sequenceDiagram
   EV->>Plugin: dispose()
 ```
 
-Publishing paths—build, prepare, and accepted development revisions—complete
-graph and generated-IR planning, then publish the selected revision before
-plugin setup. `inspectFrameworkBuild()` is the exception: it completes planning
-in memory, runs setup and dispose, and never publishes `.ev` or generated
-types. A planning failure never reaches setup. Development may discard a failed
-or semantically unchanged candidate without replacing the active Session;
-setup runs only while constructing an accepted replacement.
+Publishing paths—build, prepare, analysis capture, and accepted development
+revisions—complete graph and generated-IR planning, then publish the selected
+revision before plugin setup. `inspectFrameworkBuild()` is the exception:
+it completes planning in memory, runs setup and dispose, and
+never publishes `.ev` or generated types. A planning failure never reaches
+setup. Development may discard a failed or semantically unchanged candidate
+without replacing the active Session; setup runs only while constructing an
+accepted replacement.
 
 `transformOutput()` may change asset-group contents and add plugin deployment
 metadata, but graph identity, runtime paths, routes, output paths, and owner
@@ -194,8 +195,9 @@ relationships remain framework-owned.
 
 `beforeBuild()` runs only after fresh bundler facts exist and immediately
 before evjs links/publishes canonical output; it is paired with `afterBuild()`
-for successful initial and rebuild output cycles. `prepare` and `inspect` do
-not trigger either hook.
+for successful initial and rebuild output cycles. `prepare`, `inspect`, and
+`analyze` do not trigger either hook. Analysis capture passes the production
+plan to the adapter and leaves canonical build output intact.
 
 ## Generated IR
 

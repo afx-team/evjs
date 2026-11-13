@@ -25,7 +25,7 @@ export interface BundleAnalysisActions {
   exportReport(
     reportPath: string,
     filters: ExportFilters,
-  ): AsyncIterable<Record<string, unknown>>;
+  ): AsyncIterable<object>;
   writeJsonLine(line: string): void | Promise<void>;
 }
 

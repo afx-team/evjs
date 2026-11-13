@@ -1114,7 +1114,7 @@ describe("workspace package surface", () => {
       "candidate is published and set up as a new immutable Session",
     );
     expect(rootArchitecture).toContain(
-      "Publishing paths—build, prepare, and accepted development revisions—complete",
+      "Publishing paths—build, prepare, analysis capture, and accepted development",
     );
     expect(rootArchitecture).toContain(
       "`inspectFrameworkBuild()` is the exception",

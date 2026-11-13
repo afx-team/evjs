@@ -20,6 +20,12 @@ description: Develop, migrate, review, document, or debug evjs applications and 
 5. Run focused checks for the affected workspace, then lint and run
    `git diff --check`.
 
+Use `ev analyze --output --output-dir reports/bundle` to capture bundle sizes
+and import chains with the default Utoopack bundler. Use
+`ev analyze export --report reports/bundle` to read a saved report as JSONL
+without compiling. See [Build and deployment](../docs/docs/build.md) for
+options and report comparison.
+
 ## Application model
 
 - Enable file-based pages with `routing: { mode: "spa" | "mpa" }`.

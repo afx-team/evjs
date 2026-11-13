@@ -32,7 +32,6 @@ const utoopackMock = vi.hoisted(() => ({
   omitClientStats: false,
   deferInitialServerBuild: false,
   deferInitialClientBuild: false,
-  analyzerAvailable: false,
   analyze:
     vi.fn<
       (
@@ -123,9 +122,8 @@ const utoopackMock = vi.hoisted(() => ({
     },
   ),
   requireUtoopack: vi.fn(() => ({
-    ...(utoopackMock.analyzerAvailable
-      ? { analyze: utoopackMock.analyze }
-      : {}),
+    analyze: utoopackMock.analyze,
+    moduleReferencesVersion: 1,
     serve: vi.fn(async ({ config }, _projectPath, _rootPath, serverOptions) => {
       const fs = await import("node:fs");
       const path = await import("node:path");
@@ -391,7 +389,6 @@ afterEach(async () => {
   utoopackMock.omitClientStats = false;
   utoopackMock.deferInitialServerBuild = false;
   utoopackMock.deferInitialClientBuild = false;
-  utoopackMock.analyzerAvailable = false;
   utoopackMock.analyze.mockReset();
   utoopackMock.workerClose.mockClear();
   utoopackMock.startUtoopackDevWorker.mockClear();
@@ -562,7 +559,6 @@ describe("utoopackAdapter analyze", () => {
     }
     const outputPath = "reports/before";
     const reportPath = path.resolve(cwd, outputPath);
-    utoopackMock.analyzerAvailable = true;
     utoopackMock.analyze.mockResolvedValue({ outputPath: reportPath });
 
     await expect(
@@ -606,22 +602,6 @@ describe("utoopackAdapter analyze", () => {
     expect(await fs.promises.readFile(serverSentinel, "utf-8")).toBe(
       "existing output",
     );
-  });
-
-  it("explains when the installed Pack version does not support analysis", async () => {
-    const cwd = await makeProject();
-    const config = await resolveProjectConfig(cwd, {
-      routing: { mode: "spa" },
-    });
-    const { graph } = await createBuildContext(config, cwd);
-    await expect(
-      utoopackAdapter.analyze?.({
-        config,
-        cwd,
-        plan: createBuildPlan(config, graph, { mode: "production" }),
-        hooks: [],
-      }),
-    ).rejects.toThrow("does not support the native Bundle Analyzer");
   });
 });
 

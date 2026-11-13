@@ -23,7 +23,7 @@ the same project at a time.
 
 ## Analyze bundle size
 
-With a Utoopack version that supports the native Analyzer, run:
+With the default Utoopack bundler, run:
 
 ```bash
 ev analyze
@@ -34,7 +34,8 @@ ev analyze export --report reports/bundle-before --environment client > bundle-b
 The first command serves the report at `http://127.0.0.1:4000`. Use `--port`
 to choose another port or `--output` to save a static report without starting a
 server. The default report directory is `.utoo/analyze`; keep it outside
-`dist`.
+`dist`. Capturing into an existing Analyzer report directory replaces that
+report, so use separate directories for before and after comparisons.
 
 Analysis uses the application's production settings and generated client and
 server entries. It leaves existing production output and stats intact. Export
