@@ -3,14 +3,18 @@ import type { CliProgramDependencies } from "../src/program/command-program.js";
 
 const entryMocks = vi.hoisted(() => ({
   build: vi.fn(async () => {}),
-  dev: vi.fn(async (..._args: Parameters<CliProgramDependencies["dev"]>) => {}),
+  runDev: vi.fn(
+    async (
+      ..._args: [...Parameters<CliProgramDependencies["dev"]>, boolean]
+    ) => {},
+  ),
   loadConfig: vi.fn(async () => undefined),
   prepare: vi.fn(async () => {}),
 }));
 
 vi.mock("../src/api/framework-commands.js", () => ({
   build: entryMocks.build,
-  dev: entryMocks.dev,
+  runDev: entryMocks.runDev,
   prepare: entryMocks.prepare,
 }));
 
@@ -23,19 +27,24 @@ import { runCli } from "../src/cli.js";
 describe("CLI entry", () => {
   beforeEach(() => {
     entryMocks.build.mockClear();
-    entryMocks.dev.mockClear();
+    entryMocks.runDev.mockClear();
     entryMocks.loadConfig.mockClear();
     entryMocks.prepare.mockClear();
   });
 
-  it("forwards the dev dependency observer to config loading", async () => {
+  it("forwards config dependencies and opts the dev executable into forced exit", async () => {
     const onDependency = vi.fn();
-    entryMocks.dev.mockImplementationOnce(async (_config, options) => {
+    entryMocks.runDev.mockImplementationOnce(async (_config, options) => {
       await options.loadConfig(options.cwd, { onDependency });
     });
 
     await expect(runCli(["node", "ev", "dev"])).resolves.toBe(0);
 
+    expect(entryMocks.runDev).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ cwd: process.cwd() }),
+      true,
+    );
     expect(entryMocks.loadConfig).toHaveBeenCalledWith(process.cwd(), {
       onDependency,
     });

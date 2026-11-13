@@ -56,9 +56,17 @@ export function dev<TBundlerCfg>(
   userConfig: Config<TBundlerCfg> | undefined,
   options: DevOptionsWithBundler<TBundlerCfg>,
 ): Promise<void>;
-export async function dev<TBundlerCfg>(
+export function dev<TBundlerCfg>(
   userConfig?: Config<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
+): Promise<void> {
+  return runDev(userConfig, options);
+}
+
+export async function runDev<TBundlerCfg>(
+  userConfig?: Config<TBundlerCfg>,
+  options?: DevOptions<TBundlerCfg>,
+  forceExitOnRepeatedInterrupt = false,
 ): Promise<void> {
   const { loadConfig } = await import("../config/load.js");
   const defaultLoadConfig = loadConfig<TBundlerCfg>;
@@ -72,6 +80,7 @@ export async function dev<TBundlerCfg>(
   if (explicitBundler) {
     await frameworkDev<TBundlerCfg>(userConfig, {
       ...options,
+      forceExitOnRepeatedInterrupt,
       loadConfig: configLoader,
       reloadInitialConfig,
     });
@@ -82,6 +91,7 @@ export async function dev<TBundlerCfg>(
     {
       ...(options as DevOptions<DefaultBundlerConfig> | undefined),
       fallbackBundler: defaultBundler,
+      forceExitOnRepeatedInterrupt,
       loadConfig:
         configLoader as DevOptions<DefaultBundlerConfig>["loadConfig"],
       reloadInitialConfig,
