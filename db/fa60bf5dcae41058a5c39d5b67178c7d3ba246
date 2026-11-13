@@ -1,0 +1,19 @@
+.github/workflows/ci.yml
+  s_348e456ff5755f::t_266886d0985d86 14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dbfa60bf5dcae41058a5c39d5b67178c7d3ba246",
+  "prompts": {},
+  "sessions": {
+    "s_348e456ff5755f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d3bb-99b2-7410-9f1d-3f798946bb31",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
