@@ -1,0 +1,33 @@
+packages/evjs/src/plugins/capr/manifest/compose.ts
+  s_98e59a28e4fef1::t_9ca95ddb63250c 17,61,79
+packages/evjs/src/plugins/capr/manifest/production.ts
+  s_98e59a28e4fef1::t_f91787ea465645 3,10
+packages/evjs/src/plugins/capr/tabbar/manifest.ts
+  s_98e59a28e4fef1::t_ddc7450f2f8cc8 5,8,11
+packages/evjs/test/plugins/capr/manifest-and-runtime.test.ts
+  s_be54373ece779e::t_c398fc45b89c17 8-11,223,278-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cc93f93adf349f0bfb47db2d72337a6cb48d10c1",
+  "prompts": {},
+  "sessions": {
+    "s_98e59a28e4fef1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d2e7-23d6-7b31-a64c-9375107913f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    },
+    "s_be54373ece779e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cf7d-32a1-7910-b8fd-6632c498b386",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}
