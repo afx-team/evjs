@@ -1,0 +1,32 @@
+packages/evjs/test/plugins/server-class/gateway-transport.test.ts
+  s_fc70035ec6ca69::t_8cb5975da677c7 110-111,114,133
+packages/evjs/src/plugins/server-class/development/webgw.ts
+  s_fc70035ec6ca69::t_1f0fb8c139965d 129-130,137-139
+packages/evjs/src/plugins/server-class/client/protocols/webgw.ts
+  s_fc70035ec6ca69::t_2a1a7eec98c626 55
+  s_fc70035ec6ca69::t_1f0fb8c139965d 50-52,59-62,68
+  s_fc70035ec6ca69::t_ce3df7c5b4b5d2 54,56-58
+  s_fc70035ec6ca69::t_15d69e356007b4 53
+packages/evjs/test/plugins/server-class/runtime.test.ts
+  s_fc70035ec6ca69::t_ce3df7c5b4b5d2 89-92,96,103,119,123-128,173-176
+  s_fc70035ec6ca69::t_ce0443f3a51c74 93-95
+packages/evjs/test/plugins/server-class/webgw-development.test.ts
+  s_fc70035ec6ca69::t_ce3df7c5b4b5d2 58-65,73,150-158,160-162
+  s_fc70035ec6ca69::t_d3aa883baba876 66-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "51d8c237cf934485d800ea561b6bb6b83e77572c",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
