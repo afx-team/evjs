@@ -1,0 +1,21 @@
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_4e2dbebb2abb9c 7,97
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_4e2dbebb2abb9c 7,87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "84942cb8f4629a62939dec2ec738a48c94a8235d",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

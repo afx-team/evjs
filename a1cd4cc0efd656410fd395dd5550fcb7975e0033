@@ -1,0 +1,138 @@
+packages/evjs/test/plugins/uboa/chair-build.integration.test.ts
+  s_fc70035ec6ca69::t_0592f8cd3cba38 385-412
+packages/evjs/src/plugins/factories.ts
+  s_fc70035ec6ca69::t_71be5fe7d684bb 7,36,188-191,212
+packages/evjs/src/config/define-config.ts
+  s_fc70035ec6ca69::t_71be5fe7d684bb 8,39,55,148,180
+packages/evjs/test/plugins/uboa/uboa.test.ts
+  s_fc70035ec6ca69::t_0592f8cd3cba38 8-15,23,40-44,217,229-230,248,269-281,304-305,342-694
+  s_fc70035ec6ca69::t_0c9e684230da5f 695
+packages/evjs/src/config/types.ts
+  s_fc70035ec6ca69::t_71be5fe7d684bb 13-21,35,208,220,245,263
+packages/evjs/test/plugins/uboa/chair-dev.test.ts
+  s_fc70035ec6ca69::t_3593d6c7e8bb6b 7,10,16-17,263-380
+  s_fc70035ec6ca69::t_5f0462a416e635 4,98-119,121,231,234-236,241,245,249,255-256
+  s_fc70035ec6ca69::t_5889821950ee19 381
+packages/evjs/docs/plugins/uboa.md
+  s_fc70035ec6ca69::t_cd5d3ba766af4d 128,130-133,135-196,201-207,212-213,215,245-251,396-398
+  s_fc70035ec6ca69::t_a8e946df63536a 426-427
+  s_fc70035ec6ca69::t_6b3f9ac80ff1d0 399
+.aci.yml
+  s_fc70035ec6ca69::t_ae7a6bc4f0f0a6 22
+package.json
+  s_fc70035ec6ca69::t_de98f2d216e0d3 19
+packages/db-next/.mocharc.json
+  s_fc70035ec6ca69::t_cf25a85c793dc8 1-3
+packages/db-next/docs/usage-collection.md
+  s_fc70035ec6ca69::t_cb60bd86997c97 23-28
+packages/db-next/test/consumer-package.mjs
+  s_fc70035ec6ca69::t_f108154fedc154 26,6268-6272,6374-6378
+packages/db-next/test/setup-usage.mjs
+  s_fc70035ec6ca69::t_956b706dcf449f 1-2
+packages/db-next/test/usage-isolation.test.ts
+  s_fc70035ec6ca69::t_2a3ab2c966df75 1-79
+packages/evjs/README.md
+  s_fc70035ec6ca69::t_0371ac11f13cfa 56-62
+packages/evjs/assets/uboa/server-runtime.template.js
+  s_fc70035ec6ca69::t_6c04c396752a0d 21-22,46-61,64,91-92,103-134
+packages/evjs/docs/faas.md
+  s_fc70035ec6ca69::t_2c00c24da23674 1-127
+packages/evjs/docs/plugins/evdb-migration-check.md
+  s_fc70035ec6ca69::t_ee77f235bc092f 1-46
+packages/evjs/package.json
+  s_fc70035ec6ca69::t_e09904d8e9eef3 30-34,156,185
+packages/evjs/src/framework/faas.ts
+  s_fc70035ec6ca69::t_598471efdf2c3f 1-135
+packages/evjs/src/index.ts
+  s_fc70035ec6ca69::t_9b3637d8e59ce5 26,52-54
+packages/evjs/src/plugins/evdb-migration-check/check.ts
+  s_fc70035ec6ca69::t_2a366a26b134c6 1-150
+packages/evjs/src/plugins/evdb-migration-check/index.ts
+  s_fc70035ec6ca69::t_c041e3fa7f3c27 1-57
+packages/evjs/src/plugins/evdb-migration-check/inputs.ts
+  s_fc70035ec6ca69::t_7429c6d07ae4c6 1-138
+packages/evjs/src/plugins/uboa/chair-session.ts
+  s_fc70035ec6ca69::t_7be8e2313da8a6 7,9,11,13
+packages/evjs/src/plugins/uboa/deploy.ts
+  s_fc70035ec6ca69::t_150faec6040e69 26,28,44-45,147-148,168-184,186,188,378,399-414,454,475,526-539,555-556,561
+packages/evjs/src/plugins/uboa/faas-events.ts
+  s_fc70035ec6ca69::t_dec3fc667f6b73 1-106
+packages/evjs/src/plugins/uboa/index.ts
+  s_fc70035ec6ca69::t_e23e60a6e6ce6c 9,17,47-48,165,185,234-241,291-301,335-342
+packages/evjs/src/plugins/uboa/types.ts
+  s_fc70035ec6ca69::t_f61556845e2847 16-29,34-36
+packages/evjs/test/config.test.ts
+  s_fc70035ec6ca69::t_b112ad0ebdff1e 7,27-33,55,90,99,112,143,166-174
+packages/evjs/test/faas-public-types.ts
+  s_fc70035ec6ca69::t_92617326078c98 1-37
+packages/evjs/test/fixtures/apps/evjs-chair-app/events.config.ts
+  s_fc70035ec6ca69::t_8831d61bad1aa2 1-17
+packages/evjs/test/fixtures/apps/evjs-chair-app/src/server/legacy-events.ts
+  s_fc70035ec6ca69::t_73a22e87a035c8 1-5
+packages/evjs/test/fixtures/chair-bin-contract/lib/evjs/dev.js
+  s_fc70035ec6ca69::t_735ed91d76483b 1-18
+packages/evjs/test/fixtures/chair-bin-contract/package.json
+  s_fc70035ec6ca69::t_ea82227ba7be5d 1-6
+packages/evjs/test/fixtures/chair-dev-app/ev.config.ts
+  s_fc70035ec6ca69::t_16460a72e93712 1-3
+packages/evjs/test/fixtures/chair-dev-app/index.html
+  s_fc70035ec6ca69::t_8f196e114d376b 1-2
+packages/evjs/test/fixtures/chair-dev-app/package.json
+  s_fc70035ec6ca69::t_84e817191ed2c1 1-7
+packages/evjs/test/fixtures/chair-dev-app/src/apis/api.config.ts
+  s_fc70035ec6ca69::t_99697f1ce8473f 1
+packages/evjs/test/fixtures/chair-dev-app/src/apis/api/health/api.ts
+  s_fc70035ec6ca69::t_9bec558a86f737 1-3
+packages/evjs/test/fixtures/chair-dev-app/src/chair/http/AgentHttpController.ts
+  s_fc70035ec6ca69::t_5a40f8a53a1199 1-13
+packages/evjs/test/fixtures/chair-dev-app/src/chair/module.yml
+  s_fc70035ec6ca69::t_2a0d3bb0bf1de4 1
+packages/evjs/test/fixtures/chair-dev-app/src/chair/package.json
+  s_fc70035ec6ca69::t_19ab7bed32b978 1-10
+packages/evjs/test/fixtures/chair-dev-app/src/chair/service/Greeting.ts
+  s_fc70035ec6ca69::t_e61680f8ac2af0 1-6
+packages/evjs/test/fixtures/chair-dev-app/src/chair/tr/SimpleFacade.ts
+  s_fc70035ec6ca69::t_81f8bfcbd4420d 1-13
+packages/evjs/test/fixtures/chair-dev-app/src/pages/page.tsx
+  s_fc70035ec6ca69::t_2370bad76275f4 1-3
+packages/evjs/test/framework-faas.test.ts
+  s_fc70035ec6ca69::t_b60292c4e0c973 1-260
+packages/evjs/test/plugins/bakery/production.integration.test.ts
+  s_fc70035ec6ca69::t_7f3bb6c6a34ecb 122,255,263
+packages/evjs/test/plugins/evdb-migration-check/check.test.ts
+  s_fc70035ec6ca69::t_ef087040f8f2e6 1-394
+packages/evjs/test/plugins/evdb-migration-check/dev.integration.test.ts
+  s_fc70035ec6ca69::t_4353578266a235 1-261
+packages/evjs/test/plugins/evdb-migration-check/inputs.test.ts
+  s_fc70035ec6ca69::t_597a2afb7e33c5 1-191
+packages/evjs/test/plugins/uboa/fixtures/dedicated/.unio/output/server-functions/fn/index.js
+  s_fc70035ec6ca69::t_0bfec7f5d06724 21-22,46-61,64,91-92,103-134
+packages/evjs/test/tsconfig.json
+  s_fc70035ec6ca69::t_e88d8916498d74 13,31
+packages/evjs/test/types.test.ts
+  s_fc70035ec6ca69::t_3baa67771b2056 54-58,66-69,310-311,318-319
+packages/skill-dev/SKILL.md
+  s_fc70035ec6ca69::t_94cdca8cce235b 113
+packages/skill-dev/references/delivery/ecosystem-skills.md
+  s_fc70035ec6ca69::t_18c8d8eb0efac2 19-21,31
+packages/skill-dev/references/delivery/runtime-diagnostics.md
+  s_fc70035ec6ca69::t_ab15efb28f5230 33-54
+packages/skill-dev/references/fullstack/data/database-changes.md
+  s_fc70035ec6ca69::t_761342a63916a9 11-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a1cd4cc0efd656410fd395dd5550fcb7975e0033",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
