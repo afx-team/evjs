@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
 import { build, prepare, runDev } from "../api/framework-commands.js";
+import { bundleAnalysisActions } from "../commands/analyze/runtime.js";
 import { runInspectCommand } from "../commands/inspect/command.js";
 import { type DefaultBundlerConfig, loadConfig } from "../config/load.js";
 import { runCliProgram } from "./command-program.js";
@@ -62,6 +63,7 @@ export async function runCli(
       loadConfig<DefaultBundlerConfig>(cwd, options),
     dev: (config, options) => runDev(config, options, true),
     build,
+    analysis: bundleAnalysisActions,
     prepare,
     inspect: runInspectCommand,
     writeStdout: (output) => process.stdout.write(output),

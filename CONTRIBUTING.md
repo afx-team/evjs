@@ -151,8 +151,8 @@ Release automation replaces them with the release version before publishing.
 
 ## Build Pipeline
 
-`ev prepare`, `ev build`, and `ev dev` complete semantic planning before
-plugin setup:
+`ev prepare`, `ev build`, `ev analyze`, and `ev dev` complete semantic planning
+before plugin setup:
 
 ```txt
 load config
@@ -172,7 +172,12 @@ types. A planning failure therefore never reaches setup on any path.
 `ev build` then asks the selected bundler for fresh build facts, runs
 `beforeBuild`, links and transforms `BuildOutput`, writes
 deployment metadata and Documents, and runs `afterBuild` only after canonical
-output is published. `prepare` and `inspect` do not run the before/after pair.
+output is published. `prepare`, `inspect`, and `analyze` do not run the
+before/after pair.
+
+`ev analyze` publishes generated inputs and applies production bundler
+configuration hooks, then captures a separate report without publishing build
+output. `ev analyze export` only reads a saved report.
 
 `ev dev` keeps normal source edits on the bundler watch/HMR path. A long-lived
 Supervisor watches framework-owned inputs and prepares candidate revisions

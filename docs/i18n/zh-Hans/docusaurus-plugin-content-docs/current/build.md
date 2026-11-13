@@ -15,8 +15,28 @@ ev build
 | `ev inspect --json` | 把同一份应用摘要提供给工具 | 否 |
 | `ev prepare` | 不打包，只生成框架入口与声明 | `.ev` 与生成声明 |
 | `ev build` | 生成生产浏览器/服务端产物 | `.ev`、声明与 `dist` |
+| `ev analyze` | 使用 Utoopack 查看产物体积与引入链 | `.ev`、声明与分析报告 |
+| `ev analyze export` | 将已有报告导出为 JSONL | 否；写入标准输出 |
 
-同一项目一次只能有一个 `dev`、`prepare` 或 `build` 操作修改输出。
+同一项目一次只能有一个 `dev`、`prepare`、`build` 或 `analyze` 操作修改输出。
+
+## 分析产物体积
+
+使用默认的 Utoopack 构建器时，可以运行：
+
+```bash
+ev analyze
+ev analyze --output --output-dir reports/bundle-before
+ev analyze export --report reports/bundle-before --environment client > bundle-before.jsonl
+```
+
+第一条命令在 `http://127.0.0.1:4000` 提供报告界面。`--port` 可以指定端口，
+`--output` 只保存静态报告，不启动服务。报告默认写到 `.utoo/analyze`，请将其放在
+`dist` 之外。再次采集到同一报告目录会替换旧报告，因此比较前后结果时请使用不同目录。
+
+分析使用应用的生产配置及框架生成的客户端和服务端入口，保留已有生产产物与 stats。
+导出只读取已有报告，不加载应用配置，也不重新编译。可用 `--entry` 筛选报告入口。
+比较两份报告时，请使用相同的入口、环境和体积口径。
 
 ## 先检查应用
 

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { Config } from "@evjs/ev/config";
 import type { CliFlags } from "@evjs/ev/plugin";
 import { describe, expect, it, vi } from "vitest";
@@ -21,6 +22,14 @@ function createDependencies(overrides: Partial<CliProgramDependencies> = {}) {
     loadConfig: async () => undefined,
     dev: command,
     build: command,
+    analysis: {
+      capture: async () => ({ outputPath: "/project/.utoo/analyze" }),
+      serveReport: async () => ({ url: "http://127.0.0.1:4000" }),
+      async *exportReport() {},
+      writeJsonLine(line) {
+        stdout.push(line);
+      },
+    },
     prepare: command,
     inspect: async () => ({ exitCode: 0, output: "inspect output\n" }),
     writeStdout: (output) => stdout.push(output),
@@ -171,5 +180,120 @@ describe("CLI execution", () => {
     ).resolves.toBe(1);
     expect(stderr.join("")).toContain("unknown command 'unknown'");
     expect(errors).toEqual([]);
+  });
+});
+
+describe("CLI bundle analysis", () => {
+  it("writes a static report with production plugin flags and no server", async () => {
+    const { dependencies, stdout } = createDependencies();
+    const capture = vi.spyOn(dependencies.analysis, "capture");
+    const serveReport = vi.spyOn(dependencies.analysis, "serveReport");
+
+    await expect(
+      runCliProgram(
+        [
+          "node",
+          "ev",
+          "analyze",
+          "--output",
+          "--output-dir",
+          "reports/before",
+          "--profile",
+          "export",
+          "--include-mock=false",
+        ],
+        dependencies,
+      ),
+    ).resolves.toBe(0);
+
+    expect(capture).toHaveBeenCalledWith(undefined, {
+      cwd: "/project",
+      flags: { profile: "export", includeMock: false },
+      outputPath: "reports/before",
+    });
+    expect(serveReport).not.toHaveBeenCalled();
+    expect(stdout).toEqual([
+      "Analyzer report written to /project/.utoo/analyze\n",
+    ]);
+  });
+
+  it("serves the captured report on the requested port", async () => {
+    const { dependencies, stdout } = createDependencies();
+    const serveReport = vi.spyOn(dependencies.analysis, "serveReport");
+
+    await expect(
+      runCliProgram(["node", "ev", "analyze", "--port", "0"], dependencies),
+    ).resolves.toBe(0);
+
+    expect(serveReport).toHaveBeenCalledWith("/project/.utoo/analyze", 0);
+    expect(stdout.join("")).toContain(
+      "Bundle Analyzer available at http://127.0.0.1:4000",
+    );
+  });
+
+  it("streams JSONL from a saved report without loading project config", async () => {
+    const loadConfig = vi.fn(async () => {
+      throw new Error("Project config should not load for export");
+    });
+    const { dependencies, stdout } = createDependencies({ loadConfig });
+    const capture = vi.spyOn(dependencies.analysis, "capture");
+    const exportReport = vi
+      .spyOn(dependencies.analysis, "exportReport")
+      .mockImplementation(async function* () {
+        yield { type: "meta", version: 1 };
+        expect(stdout).toHaveLength(1);
+        yield { type: "entry", name: "api" };
+      });
+
+    await expect(
+      runCliProgram(
+        [
+          "node",
+          "ev",
+          "analyze",
+          "export",
+          "--report",
+          "reports/before",
+          "--entry",
+          "api",
+          "--environment",
+          "server",
+        ],
+        dependencies,
+      ),
+    ).resolves.toBe(0);
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(capture).not.toHaveBeenCalled();
+    expect(exportReport).toHaveBeenCalledWith(
+      path.resolve("/project", "reports/before"),
+      { entry: "api", environment: "server" },
+    );
+    expect(stdout).toEqual([
+      '{"type":"meta","version":1}\n',
+      '{"type":"entry","name":"api"}\n',
+    ]);
+  });
+
+  it.each<[string[], string]>([
+    [["--port", "65536"], "Analyzer port must be an integer"],
+    [
+      ["export", "--environment", "browser"],
+      "Allowed choices are client, server",
+    ],
+    [["export", "--output"], "only supported by ev analyze (capture)"],
+  ])("rejects invalid analysis flags %j before starting work", async (args, diagnostic) => {
+    const loadConfig = vi.fn(async () => undefined);
+    const { dependencies, stderr, stdout } = createDependencies({ loadConfig });
+    const exportReport = vi.spyOn(dependencies.analysis, "exportReport");
+
+    await expect(
+      runCliProgram(["node", "ev", "analyze", ...args], dependencies),
+    ).resolves.toBe(1);
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(exportReport).not.toHaveBeenCalled();
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain(diagnostic);
   });
 });

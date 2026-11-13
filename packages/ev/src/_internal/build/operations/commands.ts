@@ -15,6 +15,7 @@ import type {
 import { withActiveBundler } from "../bundler/config.js";
 import type {
   BundlerAdapter,
+  BundlerAnalyzeResult,
   BundlerBuildFacts,
 } from "../bundler/contracts.js";
 import { preflightBundlerBuild } from "../bundler/contracts.js";
@@ -38,6 +39,7 @@ import {
   linkAndEmitBuildOutput,
   validateHtmlTemplates,
 } from "../output/framework-output.js";
+import { assertAnalysisOutputOutsideDist } from "../output/output-path-safety.js";
 import { createProductionOutputTransaction } from "../output/production-output-transaction.js";
 import type { CreateBuildPlanOptions } from "../plan/types.js";
 import {
@@ -169,6 +171,11 @@ export interface BuildOptions<TBundlerCfg = unknown> {
   cwd?: string;
   bundler?: BundlerAdapter<TBundlerCfg>;
   flags?: CliFlags;
+}
+
+export interface AnalyzeFrameworkBuildOptions<TBundlerCfg = unknown>
+  extends BuildOptions<TBundlerCfg> {
+  outputPath?: string;
 }
 
 export interface PrepareFrameworkBuildOptions<TBundlerCfg = unknown> {
@@ -412,6 +419,56 @@ export async function build<TBundlerCfg = unknown>(
   return withProjectOperationLock(cwd, "build", () =>
     runBuild(userConfig, options, cwd),
   );
+}
+
+export async function analyzeFrameworkBuild<TBundlerCfg = unknown>(
+  userConfig?: Config<TBundlerCfg>,
+  options?: AnalyzeFrameworkBuildOptions<TBundlerCfg>,
+): Promise<BundlerAnalyzeResult> {
+  const cwd = options?.cwd ?? process.cwd();
+  await assertNoActiveDevSessionLock(cwd, "analyze");
+  return withProjectOperationLock(cwd, "analyze", async () => {
+    process.env.NODE_ENV ??= "production";
+    const prepared = await prepareInternalFrameworkBuild(userConfig, {
+      cwd,
+      mode: "production",
+      bundler: options?.bundler,
+      flags: options?.flags,
+      requireBundler: true,
+    });
+    let result: BundlerAnalyzeResult;
+    try {
+      const bundler = prepared.config.bundler;
+      if (!bundler?.analyze) {
+        throw new Error(
+          `[evjs] The "${bundler?.name ?? "configured"}" bundler does not support ev analyze.`,
+        );
+      }
+      preflightBundlerBuild(bundler, prepared.plan);
+      const outputPath = options?.outputPath ?? ".utoo/analyze";
+      await assertAnalysisOutputOutsideDist(
+        cwd,
+        prepared.plan.distDir,
+        outputPath,
+      );
+      result = await bundler.analyze({
+        cwd,
+        config: prepared.config,
+        plan: prepared.plan,
+        hooks: prepared.hooks,
+        addWatchFile: prepared.pluginContext.addWatchFile,
+        outputPath,
+      });
+    } catch (error) {
+      return rethrowAfterCleanup(
+        error,
+        prepared.dispose,
+        "[evjs] Analysis failed and plugin cleanup also failed.",
+      );
+    }
+    await prepared.dispose();
+    return result;
+  });
 }
 
 async function runBuild<TBundlerCfg = unknown>(

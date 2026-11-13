@@ -15,9 +15,33 @@ ev build
 | `ev inspect --json` | Feed the same application summary to tooling | No |
 | `ev prepare` | Generate framework entries and declarations without bundling | `.ev` and generated declarations |
 | `ev build` | Create production browser/server output | `.ev`, declarations, and `dist` |
+| `ev analyze` | Inspect bundle sizes and import chains with Utoopack | `.ev`, declarations, and an analysis report |
+| `ev analyze export` | Export an existing report as JSONL | No; writes to standard output |
 
-Only one `dev`, `prepare`, or `build` operation can change output for the same
-project at a time.
+Only one `dev`, `prepare`, `build`, or `analyze` operation can change output for
+the same project at a time.
+
+## Analyze bundle size
+
+With the default Utoopack bundler, run:
+
+```bash
+ev analyze
+ev analyze --output --output-dir reports/bundle-before
+ev analyze export --report reports/bundle-before --environment client > bundle-before.jsonl
+```
+
+The first command serves the report at `http://127.0.0.1:4000`. Use `--port`
+to choose another port or `--output` to save a static report without starting a
+server. The default report directory is `.utoo/analyze`; keep it outside
+`dist`. Capturing into an existing Analyzer report directory replaces that
+report, so use separate directories for before and after comparisons.
+
+Analysis uses the application's production settings and generated client and
+server entries. It leaves existing production output and stats intact. Export
+reads a saved report without loading application config or compiling again. Use
+`--entry` to select a particular report entry. When comparing two reports, keep
+the entry, environment, and size metric consistent.
 
 ## Inspect the application first
 

@@ -8,6 +8,8 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### Features
 
+- Add `ev analyze` to inspect production client and server bundle sizes and
+  import chains. Use `ev analyze export` to stream a saved report as JSONL.
 - Let plugins declare browser module references through `emit.moduleReference()`.
   Core validates and watches the references, and Utoopack replaces the original
   browser modules with runtime factory results while retaining server source.

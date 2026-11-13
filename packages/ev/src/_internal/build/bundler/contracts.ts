@@ -193,6 +193,15 @@ export interface BundlerBuildContext<TBundlerCfg = unknown> {
   addWatchFile?(file: string): void;
 }
 
+export interface BundlerAnalyzeContext<TBundlerCfg = unknown>
+  extends BundlerBuildContext<TBundlerCfg> {
+  outputPath?: string;
+}
+
+export interface BundlerAnalyzeResult {
+  outputPath: string;
+}
+
 export interface BundlerDevContext<TBundlerCfg = unknown>
   extends BundlerBuildContext<TBundlerCfg> {
   /** Aborted when the immutable framework development session is closing. */
@@ -264,6 +273,11 @@ export interface BundlerAdapter<TBundlerCfg = unknown> {
    * Run a production build.
    */
   build(ctx: BundlerBuildContext<TBundlerCfg>): Promise<BundlerBuildFacts>;
+
+  /** Analyze the production plan without emitting application build output. */
+  analyze?(
+    ctx: BundlerAnalyzeContext<TBundlerCfg>,
+  ): Promise<BundlerAnalyzeResult>;
 
   /**
    * Start a development server.

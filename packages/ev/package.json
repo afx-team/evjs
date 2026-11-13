@@ -74,6 +74,11 @@
       "import": "./esm/_internal/build/index.js",
       "default": "./esm/_internal/build/index.js"
     },
+    "./_internal/build/analyze": {
+      "types": "./esm/_internal/build/operations/analyze.d.ts",
+      "import": "./esm/_internal/build/operations/analyze.js",
+      "default": "./esm/_internal/build/operations/analyze.js"
+    },
     "./_internal/client/api": {
       "types": "./esm/_internal/generated/client/api.d.ts",
       "import": "./esm/_internal/generated/client/api.js",

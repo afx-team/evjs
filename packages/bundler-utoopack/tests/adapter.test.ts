@@ -32,6 +32,15 @@ const utoopackMock = vi.hoisted(() => ({
   omitClientStats: false,
   deferInitialServerBuild: false,
   deferInitialClientBuild: false,
+  analyze:
+    vi.fn<
+      (
+        options: { config: ConfigComplete },
+        projectPath: string,
+        rootPath: undefined,
+        analyzeOptions: { outputPath?: string },
+      ) => Promise<{ outputPath: string }>
+    >(),
   markUtoopackProcessForBuild: vi.fn(),
   workerClose: vi.fn(async () => {}),
   startUtoopackDevWorker: vi.fn(
@@ -113,6 +122,8 @@ const utoopackMock = vi.hoisted(() => ({
     },
   ),
   requireUtoopack: vi.fn(() => ({
+    analyze: utoopackMock.analyze,
+    moduleReferencesVersion: 1,
     serve: vi.fn(async ({ config }, _projectPath, _rootPath, serverOptions) => {
       const fs = await import("node:fs");
       const path = await import("node:path");
@@ -378,6 +389,7 @@ afterEach(async () => {
   utoopackMock.omitClientStats = false;
   utoopackMock.deferInitialServerBuild = false;
   utoopackMock.deferInitialClientBuild = false;
+  utoopackMock.analyze.mockReset();
   utoopackMock.workerClose.mockClear();
   utoopackMock.startUtoopackDevWorker.mockClear();
   utoopackMock.markUtoopackProcessForBuild.mockClear();
@@ -528,6 +540,68 @@ describe("utoopackAdapter build", () => {
     expect(
       utoopackMock.markUtoopackProcessForBuild.mock.invocationCallOrder[0],
     ).toBeLessThan(utoopackMock.requireUtoopack.mock.invocationCallOrder[0]);
+  });
+});
+
+describe("utoopackAdapter analyze", () => {
+  it("uses the final production configuration without touching existing output", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      routing: { mode: "spa" },
+    });
+    const { graph } = await createBuildContext(config, cwd);
+    const plan = createBuildPlan(config, graph, { mode: "production" });
+    const stats = path.resolve(cwd, plan.output.clientDir, "stats.json");
+    const serverSentinel = path.resolve(cwd, plan.output.serverDir, "keep.txt");
+    for (const filename of [stats, serverSentinel]) {
+      await fs.promises.mkdir(path.dirname(filename), { recursive: true });
+      await fs.promises.writeFile(filename, "existing output");
+    }
+    const outputPath = "reports/before";
+    const reportPath = path.resolve(cwd, outputPath);
+    utoopackMock.analyze.mockResolvedValue({ outputPath: reportPath });
+
+    await expect(
+      utoopackAdapter.analyze?.({
+        config,
+        cwd,
+        plan,
+        hooks: [
+          {
+            configureBundler(packConfig) {
+              packConfig.resolve = {
+                ...packConfig.resolve,
+                alias: {
+                  ...packConfig.resolve?.alias,
+                  "report-test": "./src/main.tsx",
+                },
+              };
+            },
+          },
+        ],
+        outputPath,
+      }),
+    ).resolves.toEqual({ outputPath: reportPath });
+    expect(utoopackMock.analyze).toHaveBeenCalledWith(
+      {
+        config: expect.objectContaining({
+          mode: "production",
+          entry: expect.arrayContaining([
+            expect.objectContaining({ name: "main" }),
+          ]),
+          resolve: expect.objectContaining({
+            alias: expect.objectContaining({ "report-test": "./src/main.tsx" }),
+          }),
+        }),
+      },
+      cwd,
+      undefined,
+      { outputPath },
+    );
+    expect(await fs.promises.readFile(stats, "utf-8")).toBe("existing output");
+    expect(await fs.promises.readFile(serverSentinel, "utf-8")).toBe(
+      "existing output",
+    );
   });
 });
 

@@ -13,6 +13,11 @@
       "types": "./esm/index.d.ts",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
+    },
+    "./_internal/analyze": {
+      "types": "./esm/analysis/index.d.ts",
+      "import": "./esm/analysis/index.js",
+      "default": "./esm/analysis/index.js"
     }
   },
   "scripts": {

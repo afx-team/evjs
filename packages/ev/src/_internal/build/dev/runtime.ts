@@ -44,7 +44,7 @@ interface DevPortLock extends DevRuntimeLock {
   role: "client" | "server";
 }
 
-export type ProjectOperation = "build" | "dev" | "prepare";
+export type ProjectOperation = "analyze" | "build" | "dev" | "prepare";
 
 interface ProjectOperationLock extends DevRuntimeLock {
   operation: ProjectOperation;
@@ -669,7 +669,10 @@ export async function acquireProjectOperationLock(
   });
 }
 
-export async function assertNoActiveDevSessionLock(cwd: string): Promise<void> {
+export async function assertNoActiveDevSessionLock(
+  cwd: string,
+  operation: "build" | "analyze" = "build",
+): Promise<void> {
   const normalizedCwd = await normalizeProjectPath(cwd);
   const lockPath = getDevSessionLockPath(normalizedCwd);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -678,20 +681,20 @@ export async function assertNoActiveDevSessionLock(cwd: string): Promise<void> {
     if (!lock) {
       if (await removeAbandonedRuntimeLock(lockPath)) continue;
       throw new Error(
-        `[evjs] Cannot build "${normalizedCwd}" while an ev dev session is initializing. Stop ev dev first or build in a separate workspace.`,
+        `[evjs] Cannot ${operation} "${normalizedCwd}" while an ev dev session is initializing. Stop ev dev first or ${operation} in a separate workspace.`,
       );
     }
 
     if (isProcessAlive(lock.pid)) {
       throw new Error(
-        `[evjs] Cannot build "${normalizedCwd}" because ev dev is running in process ${lock.pid}. Stop ev dev first or build in a separate workspace.`,
+        `[evjs] Cannot ${operation} "${normalizedCwd}" because ev dev is running in process ${lock.pid}. Stop ev dev first or ${operation} in a separate workspace.`,
       );
     }
     if (await removeRuntimeLock(lockPath, lock.token)) return;
   }
 
   throw new Error(
-    `[evjs] Cannot build "${normalizedCwd}" because its dev session lock changed while being checked. Stop ev dev first or build in a separate workspace.`,
+    `[evjs] Cannot ${operation} "${normalizedCwd}" because its dev session lock changed while being checked. Stop ev dev first or ${operation} in a separate workspace.`,
   );
 }
 

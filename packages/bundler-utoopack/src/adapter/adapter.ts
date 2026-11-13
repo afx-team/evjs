@@ -11,6 +11,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import type {
   BundlerAdapter,
+  BundlerAnalyzeContext,
   BundlerBuildContext,
   BundlerBuildFacts,
   BundlerBuildFactsDisposition,
@@ -143,6 +144,11 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     logger.info`Build complete!`;
     return generator.collectBuildFacts();
+  },
+
+  async analyze(ctx: BundlerAnalyzeContext<ConfigComplete>) {
+    const { captureUtoopackAnalysis } = await import("./execution/analyze.js");
+    return captureUtoopackAnalysis(ctx);
   },
 
   async dev(
