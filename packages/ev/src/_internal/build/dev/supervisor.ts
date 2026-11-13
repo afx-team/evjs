@@ -62,6 +62,7 @@ export interface DevSupervisorOptions<TBundlerCfg> {
     | Promise<Config<TBundlerCfg> | undefined>;
   readonly reloadInitialConfig?: boolean;
   readonly registerExitCleanup: (cleanup: () => void) => () => void;
+  readonly setLocalOrigin: (origin: string | undefined) => void;
   readonly userConfig?: Config<TBundlerCfg>;
 }
 
@@ -382,7 +383,10 @@ export async function runDevSupervisor<TBundlerCfg>(
     // Detach identity before close so an intentional controller.done settle is
     // never classified as an unexpected active-session failure.
     active = undefined;
-    if (previous) await previous.session.close();
+    if (previous) {
+      options.setLocalOrigin(undefined);
+      await previous.session.close();
+    }
     if (stopping) return;
 
     await publishFrameworkRevision({
@@ -427,6 +431,7 @@ export async function runDevSupervisor<TBundlerCfg>(
     refreshWatcher(
       preparedDependencySet(prepared.dependencies, sessionWatchFiles),
     );
+    options.setLocalOrigin(session.origin);
     monitorSession(nextState);
     void activateSession(nextState);
     void refreshCLIShortcutsSafely();
@@ -559,6 +564,7 @@ export async function runDevSupervisor<TBundlerCfg>(
   function stop(): Promise<void> {
     stopPromise ??= (async () => {
       stopping = true;
+      options.setLocalOrigin(undefined);
       // After closing the watcher and bundler, a plugin may be waiting on an
       // unref'ed resource. Keep Node alive until disposal settles.
       const keepAlive = setInterval(() => {}, 60_000);
