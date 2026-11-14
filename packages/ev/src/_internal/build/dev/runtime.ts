@@ -68,6 +68,10 @@ export interface DevRuntimeRelease {
   sync(): void;
 }
 
+export interface DevSessionLock extends DevRuntimeRelease {
+  setLocalOrigin(origin: string | undefined): void;
+}
+
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
 }
@@ -609,9 +613,65 @@ async function acquireRuntimeLock<T extends DevRuntimeLock>(options: {
   throw options.unavailableError();
 }
 
+function getDevSessionOriginPath(lockPath: string, token: string): string {
+  // Keep readiness separate from owner.json. A replacement lock has a different
+  // token and will never pick up the previous owner's address.
+  return path.join(lockPath, `origin-${getRuntimeLockTokenKey(token)}`);
+}
+
+function normalizeDevSessionOrigin(origin: string): string | undefined {
+  try {
+    const url = new URL(origin);
+    if (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.pathname === "/"
+    ) {
+      return url.origin;
+    }
+  } catch {
+    // Some custom adapters do not report an HTTP(S) origin.
+  }
+  return undefined;
+}
+
+function readDevSessionOrigin(lockPath: string, token: string) {
+  try {
+    return normalizeDevSessionOrigin(
+      fs.readFileSync(getDevSessionOriginPath(lockPath, token), "utf-8"),
+    );
+  } catch {
+    // The address is optional, including for locks held by earlier versions.
+    return undefined;
+  }
+}
+
+function setDevSessionOrigin(originPath: string, origin?: string): void {
+  const tempPath = `${originPath}.${randomUUID()}.tmp`;
+  try {
+    const normalized = origin && normalizeDevSessionOrigin(origin);
+    if (!normalized) {
+      fs.rmSync(originPath, { force: true });
+      return;
+    }
+    fs.writeFileSync(tempPath, normalized, { mode: 0o600, flag: "wx" });
+    fs.renameSync(tempPath, originPath);
+  } catch {
+    // Failure to publish the hint must not affect the running server.
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // The owning session lock will be cleaned up separately.
+    }
+  }
+}
+
 export async function acquireDevSessionLock(
   cwd: string,
-): Promise<DevRuntimeRelease> {
+): Promise<DevSessionLock> {
   const normalizedCwd = await normalizeProjectPath(cwd);
   const lockPath = getDevSessionLockPath(normalizedCwd);
   const lock: DevRuntimeLock = {
@@ -620,11 +680,20 @@ export async function acquireDevSessionLock(
     startedAt: new Date().toISOString(),
     token: randomUUID(),
   };
-  return acquireRuntimeLock({
-    activeError: (activeLock) =>
-      new Error(
-        `[evjs] Dev is already running for "${normalizedCwd}" in process ${activeLock.pid} (started ${activeLock.startedAt}). Stop that process before starting another dev session for the same app.`,
-      ),
+  const release = await acquireRuntimeLock({
+    activeError(activeLock) {
+      const origin = readDevSessionOrigin(lockPath, activeLock.token);
+      return new Error(
+        [
+          `[evjs] Dev is already running for "${normalizedCwd}" in process ${activeLock.pid}.`,
+          origin
+            ? `Local dev server: ${origin}\nSee the original terminal for page or plugin URLs.`
+            : "Check the original terminal for startup status and the dev URL.",
+          "To restart, press Ctrl+C in the original terminal and run ev dev again.",
+          "To run two instances, use a separate project directory or Git worktree.",
+        ].join("\n"),
+      );
+    },
     initializingError: () =>
       new Error(
         `[evjs] Another dev session is initializing for "${normalizedCwd}". Wait for it to finish starting or stop that process before trying again.`,
@@ -635,6 +704,12 @@ export async function acquireDevSessionLock(
       new Error(
         `[evjs] Unable to acquire the dev session lock for "${normalizedCwd}". Try starting ev dev again.`,
       ),
+  });
+  const originPath = getDevSessionOriginPath(lockPath, lock.token);
+  return Object.assign(release, {
+    setLocalOrigin(origin: string | undefined) {
+      setDevSessionOrigin(originPath, origin);
+    },
   });
 }
 

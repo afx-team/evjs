@@ -33,8 +33,11 @@ flowchart LR
 
 If a preferred port is occupied, evjs selects an available client/server pair
 and reports the actual URLs. Only one output-changing evjs command can run for
-the same project directory at a time; stop an existing `dev`, `prepare`, or
-`build` process before starting another.
+the same project directory at a time. If you run `ev dev` again in that
+directory, the command reports the existing server's local URL once available.
+Check the original terminal for startup status or page and plugin URLs. To
+restart, stop the original process first. To run two instances side by side,
+use separate project directories, such as two Git worktrees.
 
 ## Configure ports
 

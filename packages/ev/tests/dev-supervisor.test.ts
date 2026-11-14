@@ -29,6 +29,7 @@ const temporaryProjects = new Set<string>();
 
 function createControlledBundler(
   options: {
+    origin?: (index: number) => string;
     beforeStart?: (
       context: BundlerDevContext<Record<string, never>>,
       index: number,
@@ -66,7 +67,9 @@ function createControlledBundler(
       });
       controlled.rejectDone.push(rejectDone);
       return {
-        origin: `http://localhost:${context.config.dev.port}`,
+        origin:
+          options.origin?.(index) ??
+          `http://localhost:${context.config.dev.port}`,
         done,
         async close() {
           if (closed) return;
@@ -161,6 +164,65 @@ afterEach(async () => {
 });
 
 describe("immutable dev supervisor", { timeout: 15_000 }, () => {
+  it("reports the active local dev URL and omits it during startup and replacement", async () => {
+    const cwd = await createProject();
+    const configFile = path.join(cwd, "dev-config.json");
+    await fs.writeFile(configFile, "{}\n");
+    const firstStart = Promise.withResolvers<void>();
+    const replacementStart = Promise.withResolvers<void>();
+    const origin = (index: number) => `https://localhost:${4100 + index}`;
+    const controlled = createControlledBundler({
+      origin,
+      beforeStart(_context, index) {
+        return index === 1 ? firstStart.promise : replacementStart.promise;
+      },
+    });
+    const run = dev(undefined, {
+      cwd,
+      bundler: controlled.adapter,
+      loadConfig: createJsonConfigLoader(configFile),
+      reloadInitialConfig: true,
+    });
+    const duplicate = () =>
+      dev(undefined, { cwd, bundler: controlled.adapter });
+
+    try {
+      await vi.waitFor(() => expect(controlled.starts).toHaveLength(1));
+      await expect(duplicate()).rejects.toThrow(
+        "Check the original terminal for startup status and the dev URL.",
+      );
+      firstStart.resolve();
+      await vi.waitFor(async () => {
+        await expect(duplicate()).rejects.toThrow(
+          `Local dev server: ${origin(1)}`,
+        );
+      });
+
+      await fs.writeFile(
+        configFile,
+        JSON.stringify({
+          dev: {
+            proxy: [{ context: ["/api"], target: "https://api.example.com" }],
+          },
+        }),
+      );
+      await vi.waitFor(() => expect(controlled.starts).toHaveLength(2));
+      await expect(duplicate()).rejects.toThrow(
+        "Check the original terminal for startup status and the dev URL.",
+      );
+      replacementStart.resolve();
+      await vi.waitFor(async () => {
+        await expect(duplicate()).rejects.toThrow(
+          `Local dev server: ${origin(2)}`,
+        );
+      });
+    } finally {
+      firstStart.resolve();
+      replacementStart.resolve();
+      await stopDev(run);
+    }
+  });
+
   it("plans plugin IR before setting up the accepted Session", async () => {
     const cwd = await createProject();
     const controlled = createControlledBundler();
