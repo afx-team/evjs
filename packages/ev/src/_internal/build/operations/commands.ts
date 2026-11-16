@@ -402,6 +402,7 @@ export async function dev<TBundlerCfg = unknown>(
           loadConfig: options?.loadConfig,
           reloadInitialConfig: options?.reloadInitialConfig,
           registerExitCleanup: registerRuntimeExitCleanup,
+          setLocalOrigin: releaseDevSessionLock.setLocalOrigin,
           userConfig,
         }),
       ),
