@@ -1,0 +1,171 @@
+packages/evjs/test/tsconfig.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 13,31
+packages/skill-dev/references/delivery/ecosystem-skills.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 19-21,31
+packages/evjs/src/plugins/capr/manifest/schema.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-56
+packages/evjs/test/fixtures/chair-bin-contract/package.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-6
+packages/evjs/test/fixtures/chair-bin-contract/lib/evjs/dev.js
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-18
+packages/evjs/test/plugins/capr/manifest-and-runtime.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 3-8,11,14-22,25,144-243,335,390-493,495,497-580,582-609,611-682,730,735,746
+packages/evjs/src/plugins/factories.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 7,36,188-191
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 212
+packages/evjs/test/plugins/bakery/production.integration.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 122,255,263
+packages/db-next/test/usage-isolation.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-79
+packages/evjs/test/fixtures/chair-dev-app/src/pages/page.tsx
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-3
+packages/evjs/test/fixtures/chair-dev-app/index.html
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-2
+packages/evjs/test/plugins/h5/dev-services.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 7,105-108,115,120-122
+packages/evjs/src/config/types.ts
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 14-21,35
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 13,208,220,245,263
+packages/evjs/src/plugins/uboa/types.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 16-29,34-36
+packages/evjs/test/config.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 7,27-33,55,90,99,112,143,166-172
+packages/skill-dev/references/fullstack/data/database-changes.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 11-18
+packages/evjs/test/fixtures/chair-dev-app/ev.config.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-3
+packages/evjs/src/plugins/capr/prefetch/manifest.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1,8,14,21-61,65,67,69-70,78,81-84
+packages/evjs/docs/plugins/capr.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 34,38,60-62
+packages/evjs/test/fixtures/chair-dev-app/src/chair/http/AgentHttpController.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-13
+packages/evjs/test/plugins/evdb-migration-check/dev.integration.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-261
+packages/evjs/test/framework-faas.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-260
+packages/evjs/docs/faas.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-91,93-127
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 92
+packages/evjs/test/plugins/evdb-migration-check/check.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-394
+packages/evjs/test/fixtures/apps/evjs-chair-app/events.config.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-17
+packages/evjs/src/plugins/h5/dev-services.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 6,8,53-56,170-180,191,281-285,305,316-320,351
+packages/skill-dev/SKILL.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 113
+packages/evjs/test/fixtures/chair-dev-app/src/chair/module.yml
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1
+packages/evjs/src/framework/faas.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-135
+packages/evjs/docs/plugins/evdb-migration-check.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-46
+packages/evjs/src/plugins/uboa/faas-events.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-106
+packages/evjs/test/types.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 54-58,66-69,310-311,318-319
+packages/evjs/src/plugins/uboa/deploy.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 26,28,44-45,147-148,168-184,186,188,378,399-414,454,475,526-539,555-556,561
+packages/evjs/test/fixtures/chair-dev-app/src/chair/service/Greeting.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-6
+packages/db-next/test/consumer-package.mjs
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 26,6268-6272,6374-6378
+packages/evjs/test/fixtures/apps/evjs-chair-app/src/server/legacy-events.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-5
+packages/evjs/package.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 30-34,156,185
+packages/evjs/src/plugins/evdb-migration-check/index.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-57
+packages/evjs/src/plugins/capr/graph.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 15,108
+packages/evjs/test/plugins/uboa/chair-build.integration.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 385-412
+packages/evjs/test/plugins/uboa/chair-dev.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 270-271,274,279-284,286-289,294-295,298-299,301,303-307,312,315-325,340,367-368,371,373-378,380
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 4,7,10,16-17,98-119,121,231,234-236,241,245,249,255-256,263-269,272-273,275-278,285,290-293,296-297,300,302,308-311,313-314,326-339,341-366,369-370,372,379
+packages/db-next/.mocharc.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-3
+packages/evjs/src/index.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 26,52-54
+packages/evjs/README.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 56-62
+packages/evjs/assets/uboa/server-runtime.template.js
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 21-22,46-61,64,91-92,103-134
+packages/evjs/test/plugins/uboa/uboa.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 8-15,23,40-44,217,229-230,248,269-281,304-305,342-694
+packages/evjs/test/plugins/capr/config-and-graph.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 163-164
+packages/evjs/src/plugins/capr/manifest/compose.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 2,18,62,78,81,100,102
+packages/evjs/test/plugins/evdb-migration-check/inputs.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-191
+.aci.yml
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 22
+packages/db-next/test/setup-usage.mjs
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-2
+packages/evjs/src/plugins/capr/plugin.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 171,185,197-199
+packages/evjs/src/plugins/capr/config.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 2,7,66-67,87-100,264-271
+packages/evjs/test/fixtures/chair-dev-app/src/chair/package.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-10
+packages/evjs/src/plugins/uboa/chair-session.ts
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 7,9,11,13
+packages/evjs/test/fixtures/chair-dev-app/src/chair/tr/SimpleFacade.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-13
+packages/evjs/src/plugins/evdb-migration-check/check.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-150
+packages/evjs/src/plugins/capr/manifest/production.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 3,10
+packages/db-next/docs/usage-collection.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 23-28
+packages/evjs/docs/plugins/uboa.md
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 130-131,188,212-213,215,245-250,426-427
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 128,132-133,135-187,189-196,201-207,251,396-398
+packages/evjs/src/config/define-config.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 8,39,55,148,180
+packages/evjs/src/plugins/capr/manifest/development.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 14,21,128-132,151-153,157,168
+package.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 19
+packages/evjs/src/plugins/capr/tabbar/manifest.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 5,8,11
+packages/evjs/test/faas-public-types.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-37
+packages/evjs/test/plugins/capr/plugin.test.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 117-170
+packages/evjs/src/plugins/h5/dev-origins.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-24
+packages/evjs/test/fixtures/chair-dev-app/src/apis/api/health/api.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-3
+packages/evjs/src/plugins/uboa/index.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 17,47-48,185,234-241,291-301,335-342
+  s_2bc39fe85d9ad9::t_5aa9f15cde0464 165
+packages/evjs/test/fixtures/chair-dev-app/package.json
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-7
+packages/evjs/test/fixtures/chair-dev-app/src/apis/api.config.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1
+packages/evjs/test/plugins/uboa/fixtures/dedicated/.unio/output/server-functions/fn/index.js
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 21-22,46-61,64,91-92,103-134
+packages/evjs/src/plugins/evdb-migration-check/inputs.ts
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 1-138
+packages/skill-dev/references/delivery/runtime-diagnostics.md
+  s_2bc39fe85d9ad9::t_30bcf0a60a2924 33-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "070a99d2f3d4e136d1940207d40312d0c6d272a1",
+  "prompts": {},
+  "sessions": {
+    "s_2bc39fe85d9ad9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e38a-b935-7561-8504-d79e320e791e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
