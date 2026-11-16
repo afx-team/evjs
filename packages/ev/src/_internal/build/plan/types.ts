@@ -6,6 +6,8 @@ import type {
 import type { DiscoveredServerRouteNode } from "../discovery/server-routes.js";
 
 export interface BuildPlanConfig {
+  resolve?: { alias?: Record<string, string> };
+  externals?: Record<string, string>;
   routing?: {
     mode: "spa" | "mpa";
     basepath?: string;

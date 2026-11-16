@@ -454,6 +454,8 @@ describe("createUtoopackConfig", () => {
 
   it("maps server-only externals to the Utoopack server build", async () => {
     const config = createResolvedConfig();
+    config.externals = { "shared-lib": "SharedLib" };
+    config.resolve = { alias: { "shared-sdk": "./src/shared/sdk.ts" } };
     config.server.externals = {
       "shared-lib": "commonjs configured-shared-lib",
     };
@@ -470,13 +472,10 @@ describe("createUtoopackConfig", () => {
     plan.resolve = {
       ...plan.resolve,
       external: {
+        ...plan.resolve?.external,
         "server-only-lib": {
           source: "commonjs server-only-lib",
           runtime: "server",
-        },
-        "shared-lib": {
-          source: "SharedLib",
-          runtime: "all",
         },
       },
     };
@@ -490,6 +489,9 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.externals).toEqual({
       "shared-lib": "SharedLib",
+    });
+    expect(utoopackConfig.resolve?.alias).toMatchObject({
+      "shared-sdk": "./src/shared/sdk.ts",
     });
     expect(utoopackConfig.server?.externals).toEqual({
       "server-only-lib": "commonjs server-only-lib",

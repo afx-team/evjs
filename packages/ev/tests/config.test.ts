@@ -459,6 +459,20 @@ describe("config authoring", () => {
 });
 
 describe("resolveConfig", () => {
+  it("resolves shared module settings and validates their public paths", () => {
+    const config = resolveConfig({
+      resolve: { alias: { sdk: "./src/sdk.ts" } },
+      externals: { library: "Library" },
+    });
+    expect(config.resolve).toEqual({ alias: { sdk: "./src/sdk.ts" } });
+    expect(config.externals).toEqual({ library: "Library" });
+    expect(() =>
+      resolveConfig({ resolve: { alias: { sdk: 42 } } } as never),
+    ).toThrow(/resolve.alias/);
+    expect(() =>
+      resolveConfig({ externals: { library: false } } as never),
+    ).toThrow(/externals/);
+  });
   it("applies framework defaults without inventing an application entry", () => {
     const resolved = resolveConfig();
 

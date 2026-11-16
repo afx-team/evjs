@@ -150,6 +150,18 @@ Utoopack 适配器的 `ev dev`：
 
 ## 服务端
 
+顶层 `resolve.alias` 和 `externals` 同时用于客户端与服务端构建。
+`server.resolve.alias` 和 `server.externals` 覆盖服务端的同名配置。
+运行环境需要提供 external 依赖。
+
+```ts
+export default defineConfig({
+  resolve: { alias: { "shared-sdk": "./src/shared/sdk.ts" } },
+  externals: { library: "Library" },
+  server: { externals: { library: "commonjs library" } },
+});
+```
+
 ```ts
 export default defineConfig({
   server: {
