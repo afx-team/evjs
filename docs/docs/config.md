@@ -164,6 +164,18 @@ The server requires an explicit key/certificate pair for HTTPS. See
 
 ## Server
 
+Top-level `resolve.alias` and `externals` apply to both client and server builds.
+Use `server.resolve.alias` and `server.externals` to override matching requests
+on the server. External dependencies must be provided by the runtime.
+
+```ts
+export default defineConfig({
+  resolve: { alias: { "shared-sdk": "./src/shared/sdk.ts" } },
+  externals: { library: "Library" },
+  server: { externals: { library: "commonjs library" } },
+});
+```
+
 ```ts
 export default defineConfig({
   server: {

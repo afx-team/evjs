@@ -130,6 +130,10 @@ export interface ResolvedServerRuntimeConfig {
  * A version of Config where all fields with defaults are guaranteed.
  */
 export interface ResolvedConfig<TBundlerCfg = unknown> {
+  /** Module aliases shared by client and server builds. */
+  resolve?: ResolveConfig;
+  /** External modules shared by client and server builds. */
+  externals?: ExternalsConfig;
   /** Whether framework file conventions are enabled. */
   conventions: boolean;
   /** Framework-owned browser compilation target, when explicitly enabled. */
@@ -169,6 +173,10 @@ export type ResolvedFrameworkConfig<TBundlerCfg = unknown> =
  * evjs framework configuration.
  */
 export interface Config<TBundlerCfg = unknown> {
+  /** Module aliases shared by client and server builds. */
+  resolve?: ResolveConfig;
+  /** External modules shared by client and server builds. */
+  externals?: ExternalsConfig;
   /**
    * Enable framework file conventions.
    *
@@ -301,9 +309,11 @@ export interface ServerConfig {
   dev?: ServerDevConfig;
 }
 
-export type ServerResolveConfig = Pick<ResolvePlan, "alias">;
+export type ResolveConfig = Pick<ResolvePlan, "alias">;
+export type ExternalsConfig = Record<string, string>;
+export type ServerResolveConfig = ResolveConfig;
 
-export type ServerExternalsConfig = Record<string, string>;
+export type ServerExternalsConfig = ExternalsConfig;
 
 export interface ServerRscConfig {
   /** RSC Flight endpoint path override. */
@@ -590,6 +600,8 @@ export const CONFIG_DEFAULTS = {
   browserToTerminal: "error",
 } as const;
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
+  "resolve",
+  "externals",
   "conventions",
   "target",
   "polyfill",
@@ -731,6 +743,14 @@ export function resolveConfig<TBundlerCfg = unknown>(
   );
   validateServerConfigKeys(serverConfig);
   const serverRscConfig = resolveServerRscConfig(serverConfig.rsc);
+  const sharedResolveConfig = resolveServerResolveConfig(
+    config.resolve,
+    "resolve",
+  );
+  const sharedExternalsConfig = resolveExternalsConfig(
+    config.externals,
+    "externals",
+  );
   const serverResolveConfig = resolveServerResolveConfig(serverConfig.resolve);
   const serverExternalsConfig = resolveExternalsConfig(
     serverConfig.externals,
@@ -819,6 +839,12 @@ export function resolveConfig<TBundlerCfg = unknown>(
       cliShortcuts,
     },
     logging: loggingConfig,
+    ...(sharedResolveConfig !== undefined
+      ? { resolve: sharedResolveConfig }
+      : {}),
+    ...(sharedExternalsConfig !== undefined
+      ? { externals: sharedExternalsConfig }
+      : {}),
     server: {
       basepath: serverBasepath,
       runtime: {
@@ -1736,17 +1762,18 @@ function validateServerConfigKeys(server: ServerConfig): void {
 
 function resolveServerResolveConfig(
   value: unknown,
+  configPath = "server.resolve",
 ): ResolvedServerResolveConfig | undefined {
   if (value === undefined) return undefined;
   const resolve = assertPlainConfigRecord(
     value,
-    "server.resolve",
-    "a server resolve object",
+    configPath,
+    "a resolve object",
   );
   assertKnownConfigKeys(
     resolve,
     PUBLIC_SERVER_RESOLVE_CONFIG_KEYS,
-    "server.resolve",
+    configPath,
     "alias",
   );
 
@@ -1754,7 +1781,7 @@ function resolveServerResolveConfig(
     ...(resolve.alias === undefined
       ? {}
       : {
-          alias: resolveStringRecord(resolve.alias, "server.resolve.alias"),
+          alias: resolveStringRecord(resolve.alias, `${configPath}.alias`),
         }),
   };
 }

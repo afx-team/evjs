@@ -513,7 +513,18 @@ export function createBuildPlan(
     resolve: {
       alias: {
         ...DEFAULT_RESOLVE_ALIAS,
+        ...config.resolve?.alias,
       },
+      ...(config.externals !== undefined
+        ? {
+            external: Object.fromEntries(
+              Object.entries(config.externals).map(([specifier, source]) => [
+                specifier,
+                { source, runtime: "all" as const },
+              ]),
+            ),
+          }
+        : {}),
     },
     entries,
     html,

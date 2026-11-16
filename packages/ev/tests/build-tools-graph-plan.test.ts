@@ -161,9 +161,17 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     config.server.externals = {
       "native-addon": "commonjs native-addon",
     };
+    config.resolve = { alias: { "shared-sdk": "./src/shared.ts" } };
+    config.externals = { "shared-library": "SharedLibrary" };
     const analysis = await createCoreGraph(config, cwd);
     const plan = createBuildPlan(config, analysis.graph);
 
+    expect(plan.resolve?.alias).toMatchObject({
+      "shared-sdk": "./src/shared.ts",
+    });
+    expect(plan.resolve?.external).toEqual({
+      "shared-library": { source: "SharedLibrary", runtime: "all" },
+    });
     expect(plan.server.resolve).toEqual({
       alias: config.server.resolve.alias,
     });
