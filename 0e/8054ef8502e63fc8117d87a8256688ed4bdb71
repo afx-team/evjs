@@ -1,0 +1,14 @@
+packages/skill-dev/references/fullstack/integrations/rpc-devunit.md
+  h_a1aea638c4491d 54-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0e8054ef8502e63fc8117d87a8256688ed4bdb71",
+  "prompts": {},
+  "humans": {
+    "h_a1aea638c4491d": {
+      "author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}
