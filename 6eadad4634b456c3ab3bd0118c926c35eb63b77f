@@ -1,0 +1,72 @@
+packages/evjs/src/plugins/uboa/index.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 220-234
+packages/layotto/src/tr.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 5,149-162
+  s_2bc39fe85d9ad9::t_378c57a548c36d 163
+packages/oneapi/test/middleware.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 411-484
+packages/evjs/docs/plugins/tern.md
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 441,443-451
+packages/oneapi/test/request.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 73,269,306-309,314
+packages/evjs/test/plugins/uboa/uboa.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 823-824,911
+  s_2bc39fe85d9ad9::t_f4f64efd66cfec 792-794
+  s_2bc39fe85d9ad9::t_0de9da26af35ad 770-772,795-796
+  s_2bc39fe85d9ad9::t_2784fb8ae66eb1 773-791
+packages/layotto/test/tr.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 77-107
+packages/layotto/src/function-version.ts
+  s_2bc39fe85d9ad9::t_f0cfdad0cc9d2c 1-21
+packages/oneapi/src/runtime/http.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 4-6,431-436
+  s_2bc39fe85d9ad9::t_a91f7b0373be40 3
+packages/layotto/package.json
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 43-47
+packages/evjs/src/plugins/tern/local-dev.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 17,32-33,210,232-377,379-381,389-390,402-404,449-450,452,455,493-603,606,608-613,615-634,636,644-659,881-887,902-915,933-935,939-949
+  s_2bc39fe85d9ad9::t_0a59710e191c02 950
+packages/evjs/test/exports.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 131-134,140-141
+packages/evjs/test/plugins/services/build.integration.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 460-494
+packages/evjs/test/plugins/evdb-migration-check/dev.integration.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 112-113,130-132,136
+packages/evjs/README.md
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 3,119-138
+  s_2bc39fe85d9ad9::t_7ab4d738c45bf8 139
+packages/skill-dev/references/migration/versioning.md
+  s_2bc39fe85d9ad9::t_6430659ea498ca 16
+package.json
+  s_2bc39fe85d9ad9::t_1c612ee9f5ce5a 38,64-68
+packages/oneapi/src/runtime/mgw.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 5-8,46-58,77
+packages/evjs/test/plugins/app-config/build.integration.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 159-212
+vitest.config.mts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 18-20
+packages/evjs/test/plugins/hd/hd.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 196,204
+packages/evjs/test/plugins/tern/local-dev.test.ts
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 491,539-540,592-926
+packages/evjs/package.json
+  s_2bc39fe85d9ad9::t_22463d8be4cea2 177-180,216,224
+packages/evjs/test/e2e/tern-site-app.e2e.ts
+  s_2bc39fe85d9ad9::t_f0cfdad0cc9d2c 1-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6eadad4634b456c3ab3bd0118c926c35eb63b77f",
+  "prompts": {},
+  "sessions": {
+    "s_2bc39fe85d9ad9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e38a-b935-7561-8504-d79e320e791e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

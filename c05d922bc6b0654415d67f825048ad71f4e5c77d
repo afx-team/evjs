@@ -1,0 +1,107 @@
+vitest.config.mts
+  s_1531bbd5eb39ed::t_ba86ccf021fa6b 15-17
+packages/layotto/src/local/meshboot.ts
+  s_1531bbd5eb39ed::t_d2902fdb2f95f8 1-577
+packages/evjs/docs/local-development.md
+  s_1531bbd5eb39ed::t_b6c0323c6da4e3 1-122
+packages/skill-dev/references/fullstack/integrations/layotto.md
+  s_1531bbd5eb39ed::t_c16df4c81cf3be 17-21,25-27,88
+packages/layotto/package.json
+  s_1531bbd5eb39ed::t_ba86ccf021fa6b 3,43-47
+packages/evjs/test/local-development/profile.test.ts
+  s_1531bbd5eb39ed::t_2ddee476e4e9ad 1-153
+packages/db/src/local/index.ts
+  s_1531bbd5eb39ed::t_c25abaea2b135c 1-6
+packages/evjs/README.md
+  s_1531bbd5eb39ed::t_c16df4c81cf3be 14-15
+packages/layotto/src/local/process.ts
+  s_1531bbd5eb39ed::t_c3aa4589453d8b 1-198
+packages/layotto/src/local-sofa-group.ts
+  s_1531bbd5eb39ed::t_3c6ead1db7b91d 1-23,26-83
+  s_1531bbd5eb39ed::t_5d54f5ba4977a4 24-25
+packages/evjs/src/local-development/arguments.ts
+  s_1531bbd5eb39ed::t_377d68a24f1ed7 1-7
+packages/db/test/local-development.test.ts
+  s_1531bbd5eb39ed::t_cb5ec81aef29bd 1-328
+packages/evjs/test/local-development/cli.test.ts
+  s_1531bbd5eb39ed::t_05143584677b11 1-239
+packages/db/src/cli/mesh-doctor.ts
+  s_1531bbd5eb39ed::t_11ef98079e9a55 1-25
+packages/layotto/test/local-process.test.ts
+  s_1531bbd5eb39ed::t_a0ad31ff167c7d 1-214
+packages/db/src/local/structure.ts
+  s_1531bbd5eb39ed::t_4e3757a7e14888 1-31
+packages/db/README.md
+  s_1531bbd5eb39ed::t_b60db919397121 21,95-106,111,116-118,122
+packages/db/src/cli/index.ts
+  s_1531bbd5eb39ed::t_dc05d707049762 16,19,62-67,127,242,469,582,584-595,597,652,665-666
+packages/skill-dev/references/application/local-development.md
+  s_1531bbd5eb39ed::t_b6c0323c6da4e3 1-182
+packages/skill-dev/references/fullstack/data/database-odc.md
+  s_1531bbd5eb39ed::t_c16df4c81cf3be 131-132,143-150,156,160-161,163-164,166
+packages/layotto/test/local-sofa-group.test.ts
+  s_1531bbd5eb39ed::t_975e17fb3edc6e 7,14,66,82-83,102-105,122,124-139,141-145,147-148
+  s_1531bbd5eb39ed::t_1fe39285d6b0a8 1-6,8-13,15-65,67-81,84-87,93-94,96-101,149-162,164-168,177-182,186-188,193-205,214-220,222-240,251-269
+  s_1531bbd5eb39ed::t_d657f81da16cb8 88-92,95,106-121,123,140,146,163,169-176,183-185,189-192,206-213,221,241-250
+packages/db/test/mesh-doctor.test.ts
+  s_1531bbd5eb39ed::t_ff625d750ec9c0 1-49
+packages/evjs/test/local-development/routing-evidence.test.ts
+  s_1531bbd5eb39ed::t_a61a888d7d5293 1-250
+packages/layotto/src/trace.ts
+  s_1531bbd5eb39ed::t_9e3e3ee27e1494 3,34,39,44-46,48-55,75-78
+packages/db/test/db.test.ts
+  s_1531bbd5eb39ed::t_2d6536e7cc71bf 1,13-16,21-22,79-88
+  s_1531bbd5eb39ed::t_264cfb0a21ade3 89
+packages/evjs/src/local-development/cli.ts
+  s_1531bbd5eb39ed::t_fc09bf7611f842 1-214
+packages/db/package.json
+  s_1531bbd5eb39ed::t_ba86ccf021fa6b 6,44-48
+packages/db/src/runtime/index.ts
+  s_1531bbd5eb39ed::t_e573385aeb4dd8 96,155
+packages/db/src/local/development.ts
+  s_1531bbd5eb39ed::t_c1ebb79b79e2e1 1-382
+packages/layotto/src/tr.ts
+  s_1531bbd5eb39ed::t_9e3e3ee27e1494 4-5,183-189
+packages/layotto/src/local/index.ts
+  s_1531bbd5eb39ed::t_d554aca032acbc 1-9
+packages/evjs/src/local-development/routing-evidence.ts
+  s_1531bbd5eb39ed::t_5398b4400d0356 1-319
+packages/layotto/README.md
+  s_1531bbd5eb39ed::t_9e3e3ee27e1494 26-42
+packages/evjs/bin/ev.js
+  s_1531bbd5eb39ed::t_b73f09cbffdbc9 4,12-20,33-37
+packages/skill-dev/SKILL.md
+  s_1531bbd5eb39ed::t_c16df4c81cf3be 61
+packages/evjs/src/local-development/database.ts
+  s_1531bbd5eb39ed::t_3f9f6c7267b878 1-58
+packages/evjs/src/local-development/profile.ts
+  s_1531bbd5eb39ed::t_24bd4f5fe73ae1 1-198
+packages/layotto/test/local-meshboot.test.ts
+  s_1531bbd5eb39ed::t_880df4a4a8566b 1-637
+packages/evjs/src/local-development/verification.ts
+  s_1531bbd5eb39ed::t_23b47d9be15f6a 1-250
+packages/evjs/package.json
+  s_1531bbd5eb39ed::t_ba86ccf021fa6b 150
+packages/evjs/test/local-development/verification.test.ts
+  s_1531bbd5eb39ed::t_b1cce1fcdfa659 1-149
+packages/db/src/cli/meshboot.ts
+  s_1531bbd5eb39ed::t_2695cf9715c8e5 1-7
+packages/skill-dev/references/application/configuration.md
+  s_1531bbd5eb39ed::t_c16df4c81cf3be 93-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c05d922bc6b0654415d67f825048ad71f4e5c77d",
+  "prompts": {},
+  "sessions": {
+    "s_1531bbd5eb39ed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e84a-3ddf-7141-ab2e-5a090b507107",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

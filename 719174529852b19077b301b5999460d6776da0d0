@@ -1,0 +1,42 @@
+packages/evjs/docs/changelog/README.md
+  s_fc70035ec6ca69::t_066461c18abad9 7-8
+packages/evjs/src/plugins/server-class/plugin.ts
+  s_fc70035ec6ca69::t_860032acf93e4d 149-150,153,162
+  s_fc70035ec6ca69::t_887eb6256b6ccc 192
+packages/evjs/docs/changelog/unreleased.md
+  s_fc70035ec6ca69::t_066461c18abad9 1-4
+packages/evjs/src/plugins/uboa/index.ts
+  s_fc70035ec6ca69::t_860032acf93e4d 101
+packages/evjs/test/plugins/server-class/mgw-runtime.test.ts
+  s_fc70035ec6ca69::t_407744df4bd2e5 6-8,51-90
+  s_fc70035ec6ca69::t_ca96fc7eb26017 91
+packages/evjs/src/plugins/server-class/client/protocols/mgw.ts
+  s_fc70035ec6ca69::t_860032acf93e4d 2,27,33-34,37-38,42-46,51,53
+  s_fc70035ec6ca69::t_887eb6256b6ccc 35-36
+packages/evjs/test/plugins/server-class/plugin.test.ts
+  s_fc70035ec6ca69::t_3a3a0653b6343d 299-306
+  s_fc70035ec6ca69::t_407744df4bd2e5 298
+packages/evjs/src/plugins/server-class/production-transport.ts
+  s_fc70035ec6ca69::t_887eb6256b6ccc 106
+  s_fc70035ec6ca69::t_860032acf93e4d 21-29,99,110-129,163-167,176-181
+  s_fc70035ec6ca69::t_8d508a4706cb62 182
+packages/evjs/test/plugins/server-class/gateway-transport.test.ts
+  s_fc70035ec6ca69::t_887eb6256b6ccc 58-61
+  s_fc70035ec6ca69::t_407744df4bd2e5 51-57,62-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "719174529852b19077b301b5999460d6776da0d0",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

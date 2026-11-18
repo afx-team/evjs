@@ -1,0 +1,27 @@
+packages/skill-dev/SKILL.md
+  s_92ec18b9cca036::t_d2935b918fddb3 98
+  s_92ec18b9cca036::t_93c339b1aafd86 3
+packages/skill-dev/references/delivery/local-mapping-debug.md
+  s_92ec18b9cca036::t_d70c5e00858b48 64
+  s_92ec18b9cca036::t_5ccc098b89218f 68
+  s_92ec18b9cca036::t_b044763b5fe8f6 54
+  s_92ec18b9cca036::t_86970f1df33add 27
+  s_92ec18b9cca036::t_c41e1fbdca4476 66
+  s_92ec18b9cca036::t_86bd123d1ca2ac 1-26,28-53,55-63,65,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "43b381288f65288567572046fa3c277c5356c4c3",
+  "prompts": {},
+  "sessions": {
+    "s_92ec18b9cca036": {
+      "agent_id": {
+        "tool": "antcc",
+        "id": "9b976a1c-2059-4b62-afd5-54187b31e1f3",
+        "model": "antchat/GLM-5.3"
+      },
+      "human_author": "杜杰 <wb-dj593506@antgroup.com>"
+    }
+  }
+}
