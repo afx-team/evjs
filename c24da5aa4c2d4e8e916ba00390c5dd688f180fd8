@@ -1,0 +1,63 @@
+packages/evjs/test/plugins/evdb-migration-check/dev.integration.test.ts
+  s_c7bed06562e1d5::t_d5281840e61bc5 19-21,43-52,54-56,60-66,68-71,73-77,86-94,97-100,105-107,110-118,122-123,131-138,155-163,167-169
+  s_c7bed06562e1d5::t_597efa9d2ecf3a 1-18,22-35,39-42,53,57-59,67,72,95-96,101-104,108-109,119-121,124-130,139-145,148-153,164,166,170-182
+  s_c7bed06562e1d5::t_b1ec6f60dc88a2 36-38,78-85
+  s_c7bed06562e1d5::t_95310104d29951 146-147,154,165
+  s_c7bed06562e1d5::t_e34235f79bb40f 183-185
+packages/evjs/docs/plugins/evdb-migration-check.md
+  s_c7bed06562e1d5::t_76ee85bf674369 1,10-14,16,39-40
+packages/evjs/src/plugins/evdb-migration-check/inputs.ts
+  s_c7bed06562e1d5::t_8bc916fac1c278 12-14,62-66,69-74,81-84,110-125,155,157-164,166,169-175,180-184,186-188,201-203,209,227-231
+  s_c7bed06562e1d5::t_2e5b9987bdef3e 50,54-55,79,236-243
+  s_c7bed06562e1d5::t_68da80ae2ea728 142,148-149,204-208,210-215
+  s_c7bed06562e1d5::t_0a6698dd8f4ead 1-11,15-19,21-47,51-52,56-59,61,67-68,75-77,85-91,95-101,103-109,126-139,141,145-147,150-151,153-154,190-191,199,216-226,232-235,244-253
+  s_c7bed06562e1d5::t_0eae4c98c3b8e1 20,48-49,53,60,78,80,92-94,102,140,143-144,152,156,165,167-168,176-179,185,189,192-198,200
+  s_c7bed06562e1d5::t_e224c24fa23d56 254-256
+packages/evjs/test/plugins/evdb-migration-check/check.test.ts
+  s_c7bed06562e1d5::t_3d3feb0d3b7451 4,17,21,29-31,38,41,88-91
+  s_c7bed06562e1d5::t_0658a795638af4 3,28,95-103,229,242-245,248-250
+  s_c7bed06562e1d5::t_fb70fe763fae7d 92
+  s_c7bed06562e1d5::t_3089f17923e1e4 251
+packages/evjs/assets/evdb-watch-config.mjs
+  s_c7bed06562e1d5::t_8691b6f8b6929b 16-17,20-31
+  s_c7bed06562e1d5::t_0a6698dd8f4ead 1-15,18-19,32-36
+  s_c7bed06562e1d5::t_2b8ab2655244fd 37-39
+packages/evjs/src/plugins/evdb-migration-check/check.ts
+  s_c7bed06562e1d5::t_0a6698dd8f4ead 9,51-52
+packages/evjs/src/plugins/evdb-migration-check/watch.ts
+  s_c7bed06562e1d5::t_0658a795638af4 2,36-37,39-46,56-57,99,117-121,130-143,156-158
+  s_c7bed06562e1d5::t_0eae4c98c3b8e1 47-55,101-104
+  s_c7bed06562e1d5::t_0a6698dd8f4ead 1,3-35,38,58-59,62-68,74-79,86-98,100,105-116,122-129,144-155,159-163
+  s_c7bed06562e1d5::t_dc6ef3c7c70e4c 60-61,69-73,80-85
+  s_c7bed06562e1d5::t_ba9b306339f1da 164-166
+packages/evjs/package.json
+  s_c7bed06562e1d5::t_0a6698dd8f4ead 171
+packages/evjs/test/plugins/evdb-migration-check/watch.test.ts
+  s_c7bed06562e1d5::t_76ee85bf674369 1-22,36-40,53-65,69-71,73,79,83-87,89-110,114-115,120,124-128,133-142,147-149,203-213,217,228-238,242-273,284-303
+  s_c7bed06562e1d5::t_dc6ef3c7c70e4c 160-162,167-170,174-175,186-191,197-200
+  s_c7bed06562e1d5::t_95310104d29951 23-35,41-52,66-68,72,74-78,80-82,88,111-113,116-119,121-123,129-132,143-146,150-159,163-166,192-196,201-202,214-216,239-241,274-283
+  s_c7bed06562e1d5::t_8691b6f8b6929b 171-173,176-185,218-227
+  s_c7bed06562e1d5::t_375e42a5a27f1e 304-306
+packages/evjs/src/plugins/evdb-migration-check/index.ts
+  s_c7bed06562e1d5::t_0a6698dd8f4ead 4,11,13-20,23-28
+  s_c7bed06562e1d5::t_c87548315ae11f 29
+packages/evjs/README.md
+  s_c7bed06562e1d5::t_76ee85bf674369 52,55
+  s_c7bed06562e1d5::t_3e60cdf85f8ff1 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c24da5aa4c2d4e8e916ba00390c5dd688f180fd8",
+  "prompts": {},
+  "sessions": {
+    "s_c7bed06562e1d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f8c-b022-7f70-a67f-bb37c21cdb30",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "真寻 <zhenxin.lcx@antgroup.com>"
+    }
+  }
+}

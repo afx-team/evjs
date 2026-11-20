@@ -1,0 +1,29 @@
+packages/db-next/test/usage-isolation.test.ts
+  s_d3cd2c9a8fa115::t_be9e2789ade49b 37
+  s_d3cd2c9a8fa115::t_f187ba847d4821 1-17,19-36,38-79
+  s_d3cd2c9a8fa115::t_2e3a06621a4ef8 18
+packages/db-next/test/consumer-package.mjs
+  s_d3cd2c9a8fa115::t_4efabf75a96398 26
+packages/db-next/.mocharc.json
+  s_d3cd2c9a8fa115::t_4efabf75a96398 1-3
+packages/db-next/test/setup-usage.mjs
+  s_d3cd2c9a8fa115::t_4efabf75a96398 1-2
+packages/db-next/docs/usage-collection.md
+  s_d3cd2c9a8fa115::t_4efabf75a96398 23-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "27b2128fc0186ad34d764d18bfe674f819c5a098",
+  "prompts": {},
+  "sessions": {
+    "s_d3cd2c9a8fa115": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1587e-20bf-7af2-83b7-d8ad1554eddf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "真寻 <zhenxin.lcx@antgroup.com>"
+    }
+  }
+}

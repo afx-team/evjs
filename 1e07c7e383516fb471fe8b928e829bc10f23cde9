@@ -1,0 +1,34 @@
+packages/evjs/test/workspace-dependencies.test.ts
+  s_fc70035ec6ca69::t_0603a0e8429dd9 23,34
+  s_fc70035ec6ca69::t_1f753973c77a2e 1-22,24-33,35-37
+package.json
+  s_fc70035ec6ca69::t_26810d67e10dad 60
+packages/db-next/package.json
+  s_fc70035ec6ca69::t_65426515363b1a 14,25
+packages/evjs/package.json
+  s_fc70035ec6ca69::t_a25501c79be0e3 171-174,206,214
+packages/evjs/test/exports.test.ts
+  s_fc70035ec6ca69::t_49bc0b88bfab7e 131-134,140-141
+packages/evjs/test/plugins/hd/hd.test.ts
+  s_fc70035ec6ca69::t_ad061587431422 196,204
+packages/layotto/package.json
+  s_fc70035ec6ca69::t_02c6eb3b886e32 15
+packages/oneapi/package.json
+  s_fc70035ec6ca69::t_0a967de318f623 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1e07c7e383516fb471fe8b928e829bc10f23cde9",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+packages/evjs/test/plugins/uboa/chair-build.integration.test.ts
+  s_fc70035ec6ca69::t_cfa8d2605d1702 102,302-320,354-384,386-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2f142ee1e990c549a6f60fdcde925f8327348f6",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

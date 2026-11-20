@@ -1,0 +1,21 @@
+packages/skill-dev/references/fullstack/api/server-routes.md
+  s_cbfde0e6bc9948::t_029e58e29b691f 49-50
+packages/skill-dev/references/delivery/ads-delivery.md
+  s_cbfde0e6bc9948::t_1427e099149051 16-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4c00ffa6ac5aa38d79c6006cf79bf48e39c4c727",
+  "prompts": {},
+  "sessions": {
+    "s_cbfde0e6bc9948": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ab09-8cc8-7b82-9964-f608b7ffe608",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}

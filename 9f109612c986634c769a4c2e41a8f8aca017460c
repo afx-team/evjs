@@ -1,0 +1,45 @@
+packages/skill-dev/references/fullstack/api/server-routes.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 49-50
+packages/boilerplate-h5/boilerplate/AGENTS.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 5-14
+packages/evjs/docs/plugins/uboa.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 295-297
+packages/evjs/src/plugins/tern/local-dev.ts
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 25-26,37,56-62
+packages/evjs/test/plugins/tern/local-dev.test.ts
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 25-30,179-318,597-600,603,605
+packages/evjs/test/plugins/uboa/uboa.test.ts
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 7,444-475
+  s_fc70035ec6ca69::t_1921fbddadbf4c 476
+packages/skill-dev/references/fullstack/integrations/drm.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 11-49
+  s_fc70035ec6ca69::t_27b330f6d69d1a 10
+packages/boilerplate/boilerplate/AGENTS.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 5-14
+packages/evjs/src/plugins/tern/development/minnow-preflight.ts
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 1-70
+packages/skill-dev/references/delivery/ads-delivery.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 16-21
+packages/evjs/docs/plugins/tern.md
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 413-418
+packages/evjs/test/plugins/services/build.integration.test.ts
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 858,862,887
+packages/evjs/src/plugins/tern/index.ts
+  s_fc70035ec6ca69::t_cc3e85ce1d1c7d 157-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f109612c986634c769a4c2e41a8f8aca017460c",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+packages/skill-dev/references/fullstack/chair.md
+  s_f3bfe0c35e9388::t_7562f52595777f 33-40,74-79
+  s_f3bfe0c35e9388::t_02bd2bc35b268b 101
+  s_f3bfe0c35e9388::t_529de74e1593c7 18-19
+  s_f3bfe0c35e9388::t_7609c8edb038ba 1-17,20-32,41-73,80-100,102-116
+packages/skill-dev/references/fullstack/h5.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 15,41
+packages/skill-dev/references/fullstack/business-config.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 115
+packages/skill-dev/references/fullstack/pc.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 15-17,68
+packages/skill-dev/references/delivery/ecosystem-skills.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 5
+  s_f3bfe0c35e9388::t_7562f52595777f 11-24
+packages/skill-dev/SKILL.md
+  s_f3bfe0c35e9388::t_7562f52595777f 43-45,47-51,67-75,96-98,100-105,111-115
+  s_f3bfe0c35e9388::t_1120b04f0cc643 16
+  s_f3bfe0c35e9388::t_7609c8edb038ba 3,32,34,46
+packages/skill-dev/references/fullstack/ddd.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 23,49,56,112
+packages/skill-dev/references/fullstack/overview.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 5,52,59
+  s_f3bfe0c35e9388::t_7562f52595777f 43
+packages/skill-dev/references/delivery/deployment/uboa.md
+  s_f3bfe0c35e9388::t_db1db5642d17d4 18-19
+packages/skill-dev/package.json
+  s_f3bfe0c35e9388::t_7609c8edb038ba 7-8
+  s_f3bfe0c35e9388::t_ac37bd3736d3e7 4,69-72
+packages/skill-dev/scripts/verify-skill.mjs
+  s_f3bfe0c35e9388::t_e5e18cc68e57fa 193-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "508af9c2bdacd1ede634aebf5a97d176b002268f",
+  "prompts": {},
+  "sessions": {
+    "s_f3bfe0c35e9388": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18b11-f104-7253-848f-9de948d2b970",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

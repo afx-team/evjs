@@ -1,0 +1,29 @@
+packages/evjs/src/plugins/server-class/runtime.ts
+  s_fc70035ec6ca69::t_d0a2f2bae36fc4 11-12,121-124,159,169-172,206,214-235,242-243,249,258-260,263,269-270
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_aba039ac90b241 50-57
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_aba039ac90b241 50-57
+packages/evjs/test/plugins/server-class/legacy-transport.test.ts
+  s_fc70035ec6ca69::t_9400fdf7289e76 171
+  s_fc70035ec6ca69::t_f5ae5ec597c1bd 1-157,173-267
+  s_fc70035ec6ca69::t_8d3f93535a9187 158-170,172
+packages/evjs/src/plugins/server-class/transport.ts
+  s_fc70035ec6ca69::t_d0a2f2bae36fc4 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dd840eb54e0879d13d6323a9721f98340e182e8f",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}

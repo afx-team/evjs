@@ -1,0 +1,14 @@
+packages/skill-dev/references/fullstack/schedules.md
+  h_a1aea638c4491d 42,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "298d65883deb01a81270c8a9af520f5f7a835559",
+  "prompts": {},
+  "humans": {
+    "h_a1aea638c4491d": {
+      "author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}

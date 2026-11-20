@@ -1,0 +1,25 @@
+packages/layotto/docs/mist.md
+  s_599dffd9ba3873::t_f6fdc58a8dfd4b 1-21
+packages/layotto/src/mist.ts
+  s_599dffd9ba3873::t_626421101f216f 1-33,38-40,45-57
+packages/layotto/test/all-startup.test.ts
+  s_599dffd9ba3873::t_ea7ee3b634fd96 317-321
+packages/layotto/test/mist.test.ts
+  s_599dffd9ba3873::t_4f0f4de6d588b3 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6a10fa259387036b783612e3a6e02aeb46ceaa8c",
+  "prompts": {},
+  "sessions": {
+    "s_599dffd9ba3873": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ecac-7174-72f3-aa6e-aa4416aca65d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "宏旭 <weihongxu.whx@antgroup.com>"
+    }
+  }
+}

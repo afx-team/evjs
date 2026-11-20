@@ -1,0 +1,157 @@
+packages/evjs/test/plugins/server-class/protocol-registry.test.ts
+  s_fc70035ec6ca69::t_bec8bed0606d7c 1-78
+packages/evjs/src/plugins/server-class/client/protocols/mgw.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-6,11-20,28-31,33-44
+  s_fc70035ec6ca69::t_6b36e2cece01cb 21-22,32
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 7-10,23-27
+packages/evjs/src/plugins/server-class/protocols/metadata-types.ts
+  s_fc70035ec6ca69::t_8a8293973b9108 18-19
+  s_fc70035ec6ca69::t_c47665e9d51c37 47-53
+  s_fc70035ec6ca69::t_87231af64a17ce 1-17,20-46
+packages/evjs/src/plugins/server-class/runtime.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-4,6,9-13
+packages/evjs/test/plugins/server-class/source-analysis.test.ts
+  s_fc70035ec6ca69::t_d1b2dd4c08e32f 73-75,77-89,92,94-95
+  s_fc70035ec6ca69::t_a9e5c167e5e257 181-183,193-194,239-247
+  s_fc70035ec6ca69::t_9a0ccb8d1fd868 179-180,184-192,195-238,248-250
+  s_fc70035ec6ca69::t_725003b76efafc 76,90-91,93,96
+packages/evjs/test/plugins/server-class/mgw-native-sdk.test.ts
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 28,47-54,74-78,88,91-93
+  s_fc70035ec6ca69::t_dddbaa31846a29 1-27,29-46,55-73,79-87,89-90,94-104,108-110,112-114
+  s_fc70035ec6ca69::t_dad44a53b61fc4 105-107,111
+packages/evjs/docs/plugins/server-class.en.md
+  s_fc70035ec6ca69::t_7bbb0aefb340bb 40,114
+  s_fc70035ec6ca69::t_2d0880e850e870 3-8,18-19,72,95-104,106-109,115-117,120-122
+  s_fc70035ec6ca69::t_3f23cbcf3561af 9-17
+  s_fc70035ec6ca69::t_4378f182b8268b 53-54,105,110-113
+  s_fc70035ec6ca69::t_10edc4a12e1c7c 74
+  s_fc70035ec6ca69::t_655e54827d8b1d 73
+packages/evjs/src/plugins/server-class/client/registry.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-8
+packages/evjs/src/plugins/server-class/runtime-types.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 41-48
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 49-50
+packages/evjs/test/plugins/server-class/legacy-transport.test.ts
+  s_fc70035ec6ca69::t_6b36e2cece01cb 2
+packages/evjs/src/plugins/server-class/protocols/build/mgw.ts
+  s_fc70035ec6ca69::t_e3cbd9fb7996fb 33-40
+  s_fc70035ec6ca69::t_87231af64a17ce 1-7,10-11,19-21,23-25,30,32,41-53
+  s_fc70035ec6ca69::t_dfbfe337116e27 28
+  s_fc70035ec6ca69::t_d3c0e1b04ee4e0 8,12,14-18
+  s_fc70035ec6ca69::t_b60e8f3f5f8853 9
+  s_fc70035ec6ca69::t_a9e5c167e5e257 26-27,29
+  s_fc70035ec6ca69::t_397489ee48fb8a 13,22,31
+packages/evjs/src/plugins/server-class/source-analysis-entry.ts
+  s_fc70035ec6ca69::t_c47665e9d51c37 3,13,55
+  s_fc70035ec6ca69::t_e5d359a7d30f86 14,56
+  s_fc70035ec6ca69::t_045fd3526bc4d8 2,4,25-28,39-48,50-53,57-71
+  s_fc70035ec6ca69::t_0b14d7b5cd7e4b 49
+  s_fc70035ec6ca69::t_1058425385d438 54
+packages/evjs/test/plugins/server-class/metadata.test.ts
+  s_fc70035ec6ca69::t_0bec6ac0566968 102-115,118-137,139-152,155,157-165,169,171-173,193-195,197-202,205-213,215-230,232-234,237-238,240-242
+  s_fc70035ec6ca69::t_9a0ccb8d1fd868 174,190-192
+  s_fc70035ec6ca69::t_e3cbd9fb7996fb 116,153,166
+  s_fc70035ec6ca69::t_d1b2dd4c08e32f 262,387
+  s_fc70035ec6ca69::t_a9e5c167e5e257 175-189
+  s_fc70035ec6ca69::t_07b06a1c97da77 117,138,154,156,167-168,170,196,203-204,214,231,235-236,239
+packages/evjs/src/plugins/server-class/protocols/build/types.ts
+  s_fc70035ec6ca69::t_87231af64a17ce 1-33,35-36
+  s_fc70035ec6ca69::t_b60e8f3f5f8853 34
+packages/evjs/test/plugins/server-class/mgw-runtime.test.ts
+  s_fc70035ec6ca69::t_dddbaa31846a29 1-114,121-135
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 115-120
+packages/evjs/docs/plugins/server-class.md
+  s_fc70035ec6ca69::t_2d0880e850e870 3-8,18-19,72,95-104,106-109,115-117,120-122
+  s_fc70035ec6ca69::t_10edc4a12e1c7c 74
+  s_fc70035ec6ca69::t_4378f182b8268b 53-54,105,110-113
+  s_fc70035ec6ca69::t_3f23cbcf3561af 9-17
+  s_fc70035ec6ca69::t_7bbb0aefb340bb 40,114
+  s_fc70035ec6ca69::t_8ac149608907e2 73
+packages/evjs/src/plugins/server-class/client/protocols/shared.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-16,21-43,49-58,65,71-102
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 17-20,44-48,59-64,66-70
+packages/evjs/src/plugins/server-class/protocols/build/chair-mgw-metadata.ts
+  s_fc70035ec6ca69::t_8a8293973b9108 14-15,125,148
+  s_fc70035ec6ca69::t_e3cbd9fb7996fb 126-128
+  s_fc70035ec6ca69::t_550a4454c0945a 48,50-53
+  s_fc70035ec6ca69::t_e5d359a7d30f86 36,43,124
+  s_fc70035ec6ca69::t_b60e8f3f5f8853 1,3-11,13,16-34,37,44-45,81-86,88-97,99-116,118-119,129-131,133-138,149,151-155
+  s_fc70035ec6ca69::t_c47665e9d51c37 2,12,35,46,58-70,75,80,139-141,144-147
+  s_fc70035ec6ca69::t_a9e5c167e5e257 38-42,47,49,54-57,71-74,76-79,120-123,142-143
+  s_fc70035ec6ca69::t_431ff19351ac30 87,98,117,132,150
+packages/evjs/package.json
+  s_fc70035ec6ca69::t_0d785e8116de8a 211
+packages/evjs/src/plugins/server-class/runtime-http.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-11
+packages/evjs/src/plugins/server-class/client/protocols/http.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 6-7,9-155
+  s_fc70035ec6ca69::t_819803ae8af391 8
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 1-5
+packages/evjs/test/plugins/server-class/chair-mgw-metadata.test.ts
+  s_fc70035ec6ca69::t_bca7bf8c222de2 1-9,18-21,28-32,46,58-62,74,84-88,94-98,102-107,111-116,120-121,125-128,136-137
+  s_fc70035ec6ca69::t_8144f172596bdc 10-17,22-27,33-45,47-57,63-73,75-83,89-93,99-101,108-110,117-119,122-124,129-135
+packages/evjs/src/plugins/server-class/client/protocols/webgw.ts
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 4-11
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-3,12-66
+packages/evjs/src/plugins/server-class/protocols/build/webgw.ts
+  s_fc70035ec6ca69::t_87231af64a17ce 1-7,9,11-12,14-17,19-50,52-56
+  s_fc70035ec6ca69::t_b60e8f3f5f8853 10
+  s_fc70035ec6ca69::t_da092453ddce55 8,13,18,51
+packages/evjs/src/plugins/server-class/metadata.ts
+  s_fc70035ec6ca69::t_f606b636747f22 21
+  s_fc70035ec6ca69::t_d3c0e1b04ee4e0 5,7-10,12-19,22,167,199,203-213,215,230-233,236-254,317
+  s_fc70035ec6ca69::t_237b161bdf4a02 11
+  s_fc70035ec6ca69::t_f8ae5fe749a9a2 20
+packages/evjs/src/plugins/server-class/config.ts
+  s_fc70035ec6ca69::t_3f23cbcf3561af 1
+  s_fc70035ec6ca69::t_dbe793e42c09ab 8-9,32-33
+packages/evjs/src/plugins/server-class/protocols/build/index.ts
+  s_fc70035ec6ca69::t_b60e8f3f5f8853 16,33-34,36-38,40
+  s_fc70035ec6ca69::t_87231af64a17ce 1-15,17-19,21-26,28-29,31-32,41-42
+  s_fc70035ec6ca69::t_d3c90ce61fc341 20,27,30,35,39
+packages/evjs/test/plugins/server-class/plugin.test.ts
+  s_fc70035ec6ca69::t_0e96898888bc42 65-76,78-118,239-241
+  s_fc70035ec6ca69::t_550a4454c0945a 344-365
+  s_fc70035ec6ca69::t_7b9c89e1b2e2b5 77
+  s_fc70035ec6ca69::t_a80d13e1c200be 192
+  s_fc70035ec6ca69::t_304886ed00dcac 164-191,193-203
+packages/evjs/src/plugins/server-class/protocols/build/common.ts
+  s_fc70035ec6ca69::t_87231af64a17ce 1-27,30-54
+  s_fc70035ec6ca69::t_705cc8fe64b171 28-29
+packages/evjs/src/plugins/server-class/client/reference.ts
+  s_fc70035ec6ca69::t_ab9d4db00565a7 1-10,13-17,20-23,26,33-50
+  s_fc70035ec6ca69::t_fb5171d08f2ef3 11-12,18-19,24-25,27-32
+packages/evjs/src/plugins/server-class/plugin.ts
+  s_fc70035ec6ca69::t_3f23cbcf3561af 130
+  s_fc70035ec6ca69::t_9ff676d6086721 12-15,17,19-22,99,104-106,112,125-128,131,141,149
+  s_fc70035ec6ca69::t_fadfa273999ed7 129
+  s_fc70035ec6ca69::t_550a4454c0945a 45-59
+  s_fc70035ec6ca69::t_dbe793e42c09ab 75
+packages/evjs/src/plugins/server-class/protocols/build/http.ts
+  s_fc70035ec6ca69::t_b60e8f3f5f8853 8
+  s_fc70035ec6ca69::t_87231af64a17ce 1-7,9-47,49-65
+  s_fc70035ec6ca69::t_bb6c81e24e47cc 48
+packages/evjs/src/plugins/server-class/source-analysis.ts
+  s_fc70035ec6ca69::t_e5d359a7d30f86 91,99
+  s_fc70035ec6ca69::t_a9e5c167e5e257 92-98
+  s_fc70035ec6ca69::t_dfbfe337116e27 154-155,157
+  s_fc70035ec6ca69::t_eea795cab46c30 158-161
+packages/evjs/test/plugins/server-class/mgw-bundle-compatibility.test.ts
+  s_fc70035ec6ca69::t_b35f55175599e5 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c1170f1fa8eb26fa8a9b7de25bc143f97d034699",
+  "prompts": {},
+  "sessions": {
+    "s_fc70035ec6ca69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1be65-7997-7ca3-ac19-d0c16ac7324d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "祖灵 <wd484063@antgroup.com>"
+    }
+  }
+}
