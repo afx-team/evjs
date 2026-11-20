@@ -1,0 +1,25 @@
+packages/skill-dev/SKILL.md
+  s_66c920ccbc67ac::t_4fc6f1a06e6c86 109
+  s_66c920ccbc67ac::t_7541c6e6afd711 3
+packages/skill-dev/references/fullstack/schedules.md
+  s_66c920ccbc67ac::t_4fc6f1a06e6c86 52,54
+packages/skill-dev/references/delivery/platforms.md
+  s_66c920ccbc67ac::t_4fc6f1a06e6c86 3,13,24-35
+  s_66c920ccbc67ac::t_2ac30819c63967 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3cff8bbedf5d5d69ba07f08a6e02fc70d132d198",
+  "prompts": {},
+  "sessions": {
+    "s_66c920ccbc67ac": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f833-68f3-7dd0-8d61-ff7e81f98045",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
