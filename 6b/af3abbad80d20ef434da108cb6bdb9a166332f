@@ -1,0 +1,20 @@
+packages/ev/tests/dev-signal-cleanup.test.ts
+  s_6be84328bb50e4::t_cdaaebd0a6d638 10,36-40,55,132-135,141,145
+  s_6be84328bb50e4::t_615fcd41a227a4 220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6baf3abbad80d20ef434da108cb6bdb9a166332f",
+  "prompts": {},
+  "sessions": {
+    "s_6be84328bb50e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1fe1e-07b8-7af2-bda6-e83905a3f746",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
