@@ -3706,7 +3706,6 @@ describe("analyzeFrameworkBuild", () => {
     const cwd = await createServerOutputProject();
     const events: string[] = [];
     const dist = path.join(cwd, "dist");
-    const outputPath = "reports/bundle-before";
     await writeFile(path.join(dist, "client", "stats.json"), '{"prior":true}');
     await writeFile(path.join(dist, "server", "main.js"), "existing bundle");
     const before = await readDirectorySnapshot(dist);
@@ -3733,7 +3732,8 @@ describe("analyzeFrameworkBuild", () => {
           await fs.promises.access(path.resolve(cwd, entry.import));
         }
         expect(hooks.some((hook) => hook.configureBundler)).toBe(true);
-        const reportDir = path.resolve(cwd, outputPath ?? ".utoo/analyze");
+        expect(outputPath).toBe(".turbopack/analyze");
+        const reportDir = path.join(cwd, ".turbopack/analyze");
         await writeFile(path.join(reportDir, "index.html"), "Analysis report");
         return { outputPath: reportDir };
       },
@@ -3764,10 +3764,10 @@ describe("analyzeFrameworkBuild", () => {
           },
         ],
       },
-      { cwd, flags: { profile: "preview" }, outputPath },
+      { cwd, flags: { profile: "preview" } },
     );
 
-    expect(report.outputPath).toBe(path.join(cwd, outputPath));
+    expect(report.outputPath).toBe(path.join(cwd, ".turbopack/analyze"));
     await expect(
       fs.promises.readFile(path.join(report.outputPath, "index.html"), "utf-8"),
     ).resolves.toBe("Analysis report");

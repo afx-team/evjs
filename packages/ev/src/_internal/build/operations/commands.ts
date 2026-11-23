@@ -446,7 +446,7 @@ export async function analyzeFrameworkBuild<TBundlerCfg = unknown>(
         );
       }
       preflightBundlerBuild(bundler, prepared.plan);
-      const outputPath = options?.outputPath ?? ".utoo/analyze";
+      const outputPath = options?.outputPath ?? ".turbopack/analyze";
       await assertAnalysisOutputOutsideDist(
         cwd,
         prepared.plan.distDir,

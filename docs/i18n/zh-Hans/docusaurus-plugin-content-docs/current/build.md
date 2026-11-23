@@ -26,13 +26,16 @@ ev build
 
 ```bash
 ev analyze
+ev analyze export > bundle-analysis.jsonl
 ev analyze --output --output-dir reports/bundle-before
 ev analyze export --report reports/bundle-before --environment client > bundle-before.jsonl
 ```
 
-第一条命令在 `http://127.0.0.1:4000` 提供报告界面。`--port` 可以指定端口，
-`--output` 只保存静态报告，不启动服务。报告默认写到 `.utoo/analyze`，请将其放在
-`dist` 之外。再次采集到同一报告目录会替换旧报告，因此比较前后结果时请使用不同目录。
+`ev analyze` 在 `http://127.0.0.1:4000` 提供报告界面。`--port` 可以指定端口，
+`--output` 只保存静态报告。采集和导出的默认目录都是 `.turbopack/analyze`。
+导出保存在旧默认目录里的报告时，可以传入 `--report .utoo/analyze`。
+
+将报告保存在 `dist` 之外，比较前后结果时使用不同目录。再次采集到同一报告目录会替换旧报告。
 
 分析使用应用的生产配置及框架生成的客户端和服务端入口，保留已有生产产物与 stats。
 导出只读取已有报告，不加载应用配置，也不重新编译。可用 `--entry` 筛选报告入口。

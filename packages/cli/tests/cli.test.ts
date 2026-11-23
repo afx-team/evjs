@@ -23,7 +23,12 @@ function createDependencies(overrides: Partial<CliProgramDependencies> = {}) {
     dev: command,
     build: command,
     analysis: {
-      capture: async () => ({ outputPath: "/project/.utoo/analyze" }),
+      capture: async (_config, { outputPath }) => ({
+        outputPath: path.resolve(
+          "/project",
+          outputPath ?? ".turbopack/analyze",
+        ),
+      }),
       serveReport: async () => ({ url: "http://127.0.0.1:4000" }),
       async *exportReport() {},
       writeJsonLine(line) {
@@ -213,7 +218,7 @@ describe("CLI bundle analysis", () => {
     });
     expect(serveReport).not.toHaveBeenCalled();
     expect(stdout).toEqual([
-      "Analyzer report written to /project/.utoo/analyze\n",
+      `Analyzer report written to ${path.resolve("/project", "reports/before")}\n`,
     ]);
   });
 
@@ -225,7 +230,10 @@ describe("CLI bundle analysis", () => {
       runCliProgram(["node", "ev", "analyze", "--port", "0"], dependencies),
     ).resolves.toBe(0);
 
-    expect(serveReport).toHaveBeenCalledWith("/project/.utoo/analyze", 0);
+    expect(serveReport).toHaveBeenCalledWith(
+      path.resolve("/project", ".turbopack/analyze"),
+      0,
+    );
     expect(stdout.join("")).toContain(
       "Bundle Analyzer available at http://127.0.0.1:4000",
     );
@@ -273,6 +281,20 @@ describe("CLI bundle analysis", () => {
       '{"type":"meta","version":1}\n',
       '{"type":"entry","name":"api"}\n',
     ]);
+  });
+
+  it("exports the default report directory without --report", async () => {
+    const { dependencies } = createDependencies();
+    const exportReport = vi.spyOn(dependencies.analysis, "exportReport");
+
+    await expect(
+      runCliProgram(["node", "ev", "analyze", "export"], dependencies),
+    ).resolves.toBe(0);
+
+    expect(exportReport).toHaveBeenCalledWith(
+      path.resolve("/project", ".turbopack/analyze"),
+      { entry: undefined, environment: undefined },
+    );
   });
 
   it.each<[string[], string]>([

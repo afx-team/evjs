@@ -18,12 +18,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### Dependencies
 
-- Require `@utoo/pack` 1.6.0 or newer in the default bundler adapter and use its
+- Require `@utoo/pack` 1.6.6 or newer in the default bundler adapter and use its
   published module-reference configuration types. Browser module references
   continue to validate the capability of the loaded native binding.
 
 ### Bug Fixes
 
+- Fix blank Analyzer pages with the updated Utoopack UI. Capture and export
+  default to `.turbopack/analyze`.
 - Wait for asynchronous plugin disposal on development shutdown, including
   repeated SIGTERM signals. A second Ctrl+C still forces `ev dev` to exit;
   programmatic calls leave forced exit to their host process.

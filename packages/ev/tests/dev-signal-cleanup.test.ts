@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const STEP_TIMEOUT_MS = 5_000;
+const STARTUP_TIMEOUT_MS = 15_000;
 
 function killOwnedProcessGroup(child: ChildProcess): void {
   if (!child.pid) return;
@@ -32,7 +33,11 @@ function withTimeout<T>(
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-function nextMessage<T>(child: ChildProcess, description: string): Promise<T> {
+function nextMessage<T>(
+  child: ChildProcess,
+  description: string,
+  timeoutMs = STEP_TIMEOUT_MS,
+): Promise<T> {
   let detach = () => {};
   const pending = new Promise<T>((resolve, reject) => {
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
@@ -47,7 +52,7 @@ function nextMessage<T>(child: ChildProcess, description: string): Promise<T> {
       child.off("error", reject);
     };
   });
-  return withTimeout(pending, description).finally(detach);
+  return withTimeout(pending, description, timeoutMs).finally(detach);
 }
 
 function didProcessExit(pid: number): boolean {
@@ -124,18 +129,20 @@ describe.skipIf(process.platform === "win32")("dev signal disposal", () => {
       exited = waitForExit(child);
       void exited.catch(() => {});
       if (signal === null) {
-        expect(await withTimeout(exited, "startup failure"), stderr).toEqual({
-          code: 1,
-          signal: null,
-        });
+        expect(
+          await withTimeout(exited, "startup failure", STARTUP_TIMEOUT_MS),
+          stderr,
+        ).toEqual({ code: 1, signal: null });
         expect(stderr).toContain("watcher startup failed");
         expect(stderr).not.toContain("Uncaught watcher failure");
         completed = true;
         return;
       }
+      // The subprocess loads the framework through Jiti before sending ready.
       const ready = await nextMessage<{ type: string; resourcePid?: number }>(
         child,
         "dev readiness",
+        STARTUP_TIMEOUT_MS,
       );
       expect(ready.type, stderr).toBe("ready");
       const resourcePid = ready.resourcePid;
@@ -210,5 +217,5 @@ describe.skipIf(process.platform === "win32")("dev signal disposal", () => {
         await fs.rm(cwd, { recursive: true, force: true });
       }
     }
-  }, 25_000);
+  }, 35_000);
 });
