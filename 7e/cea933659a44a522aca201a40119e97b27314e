@@ -1,0 +1,39 @@
+packages/ev/tests/commands.test.ts
+  s_6be84328bb50e4::t_eb835e79f4d909 3735-3736,3767,3770
+packages/cli/tests/cli.test.ts
+  s_6be84328bb50e4::t_eb835e79f4d909 26-31,286-297
+  s_6be84328bb50e4::t_d8e50277f7e0ec 221,233-236
+  s_6be84328bb50e4::t_c1b52b8ebc9986 298-299
+packages/bundler-utoopack/package.json
+  s_6be84328bb50e4::t_eb835e79f4d909 43
+docs/docs/build.md
+  s_6be84328bb50e4::t_d8e50277f7e0ec 30,35-42
+docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/build.md
+  s_6be84328bb50e4::t_d8e50277f7e0ec 29,34-38
+CHANGELOG.md
+  s_6be84328bb50e4::t_d8e50277f7e0ec 21,27-28
+packages/cli/src/commands/analyze/command.ts
+  s_6be84328bb50e4::t_eb835e79f4d909 8-9,64,104
+packages/bundler-utoopack/README.md
+  s_6be84328bb50e4::t_eb835e79f4d909 8
+packages/ev/src/_internal/build/operations/commands.ts
+  s_6be84328bb50e4::t_eb835e79f4d909 449
+package-lock.json
+  s_6be84328bb50e4::t_9904a3b6147c5c 9164-9166,9180-9182,9196-9198,9212-9214,9228-9230,9244-9246,9260-9262,9285-9287,24883,24906-24908,24916,24931-24937
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7ecea933659a44a522aca201a40119e97b27314e",
+  "prompts": {},
+  "sessions": {
+    "s_6be84328bb50e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1fe1e-07b8-7af2-bda6-e83905a3f746",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "zoomdong <1344492820@qq.com>"
+    }
+  }
+}
