@@ -5,6 +5,8 @@ import { type Command, InvalidArgumentError, Option } from "commander";
 import type { DefaultBundlerConfig } from "../../config/load.js";
 import { parseCliFlags } from "../../program/options.js";
 
+const DEFAULT_REPORT_DIR = ".turbopack/analyze";
+
 interface ExportFilters {
   entry?: string;
   environment?: "client" | "server";
@@ -59,7 +61,7 @@ export function registerAnalyzeCommand(
     .option("-o, --output", "Write the report without starting a server")
     .option(
       "--output-dir <directory>",
-      "Report directory relative to the project (default: .utoo/analyze)",
+      `Report directory relative to the project (default: ${DEFAULT_REPORT_DIR})`,
     )
     .option(
       "--port <port>",
@@ -99,7 +101,7 @@ export function registerAnalyzeCommand(
     .option(
       "--report <directory>",
       "Saved report directory, relative to the current directory",
-      ".utoo/analyze",
+      DEFAULT_REPORT_DIR,
     )
     .option("--entry <name>", "Filter by entry name or /entry-N ID")
     .addOption(

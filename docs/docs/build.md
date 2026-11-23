@@ -27,15 +27,19 @@ With the default Utoopack bundler, run:
 
 ```bash
 ev analyze
+ev analyze export > bundle-analysis.jsonl
 ev analyze --output --output-dir reports/bundle-before
 ev analyze export --report reports/bundle-before --environment client > bundle-before.jsonl
 ```
 
-The first command serves the report at `http://127.0.0.1:4000`. Use `--port`
-to choose another port or `--output` to save a static report without starting a
-server. The default report directory is `.utoo/analyze`; keep it outside
-`dist`. Capturing into an existing Analyzer report directory replaces that
-report, so use separate directories for before and after comparisons.
+`ev analyze` serves the report at `http://127.0.0.1:4000`. Use `--port` to
+choose another port or `--output` to save only the static report. Capture and
+export default to `.turbopack/analyze`. For an existing report in the former
+default location, pass `--report .utoo/analyze` to export it.
+
+Keep report directories outside `dist` and save before-and-after reports to
+separate directories. Capturing into an existing Analyzer report directory
+replaces that report.
 
 Analysis uses the application's production settings and generated client and
 server entries. It leaves existing production output and stats intact. Export
