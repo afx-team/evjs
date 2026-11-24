@@ -25,11 +25,13 @@ import type { PluginHooks } from "@evjs/ev/plugin";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClientRuntime } from "../../ev/src/_internal/build/framework-runtime.js";
-import { utoopackAdapter } from "../src/adapter/index.js";
+import { createUtoopackAdapter, utoopackAdapter } from "../src/index.js";
 
 const utoopackMock = vi.hoisted(() => ({
   initialClientAssets: undefined as string[] | undefined,
   supportsClientBuild: true,
+  supportsEditBatch: true,
+  closeServer: vi.fn(async () => {}),
   onClientBuild: undefined as
     | ((context: {
         clientPaths: string[];
@@ -37,6 +39,7 @@ const utoopackMock = vi.hoisted(() => ({
       }) => Promise<void>)
     | undefined,
   requireUtoopack: vi.fn(() => ({
+    EditBatchRequestError: utoopackMock.supportsEditBatch ? Error : undefined,
     serve: vi.fn(async ({ config }, _projectPath, _rootPath, serverOptions) => {
       const fs = await import("node:fs");
       const path = await import("node:path");
@@ -88,6 +91,9 @@ const utoopackMock = vi.hoisted(() => ({
         port: 3210,
         hostname: "0.0.0.0",
       });
+      if (serverOptions?.returnHandle) {
+        return { close: utoopackMock.closeServer };
+      }
     }),
     build: vi.fn(),
   })),
@@ -133,6 +139,9 @@ async function makeProject() {
 afterEach(async () => {
   utoopackMock.initialClientAssets = undefined;
   utoopackMock.supportsClientBuild = true;
+  utoopackMock.supportsEditBatch = true;
+  utoopackMock.requireUtoopack.mockClear();
+  utoopackMock.closeServer.mockClear();
   utoopackMock.onClientBuild = undefined;
   await Promise.all(
     tempDirs.splice(0).map((dir) =>
@@ -321,6 +330,113 @@ async function expectRejectedMessage(action: () => void | Promise<void>) {
 }
 
 describe("utoopackAdapter dev", () => {
+  const editBatch = {
+    policy: { timeout: { action: "none" }, afterBuild: "hold" },
+    token: "test-token",
+  } as const;
+
+  it("passes edit batches to Pack and closes the owned server once", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildFacts = vi.fn();
+    const onDevServerReady = vi.fn(() => {
+      expect(onBuildFacts).toHaveBeenCalledOnce();
+    });
+    const adapter = createUtoopackAdapter({ devEditBatch: editBatch });
+    const controller = await adapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: { onBuildFacts, onDevServerReady, onServerBundleReady: vi.fn() },
+      hooks: [],
+    });
+    const pack = utoopackMock.requireUtoopack.mock.results[0]?.value;
+    expect(pack.serve.mock.calls[0]?.[3]).toMatchObject({
+      editBatch: editBatch.policy,
+      agentHmrToken: editBatch.token,
+      returnHandle: true,
+      handleSignals: false,
+    });
+    expect(onDevServerReady).toHaveBeenCalledOnce();
+    await Promise.all([controller.close(), controller.close()]);
+    expect(utoopackMock.closeServer).toHaveBeenCalledOnce();
+  });
+
+  it("requires the Pack edit batch export only when enabled", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const ctx = {
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: { onBuildFacts: vi.fn(), onServerBundleReady: vi.fn() },
+      hooks: [],
+    };
+    utoopackMock.supportsEditBatch = false;
+    const adapter = createUtoopackAdapter({ devEditBatch: editBatch });
+    await expect(adapter.dev(ctx)).rejects.toThrow(
+      "Commit Compile requires @utoo/pack with edit batch support",
+    );
+    const rejectedPack = utoopackMock.requireUtoopack.mock.results[0]?.value;
+    expect(rejectedPack.serve).not.toHaveBeenCalled();
+
+    const controller = await createUtoopackAdapter().dev(ctx);
+    const pack = utoopackMock.requireUtoopack.mock.results[1]?.value;
+    const options = pack.serve.mock.calls[0]?.[3];
+    expect(options).not.toHaveProperty("editBatch");
+    expect(options).not.toHaveProperty("agentHmrToken");
+    await controller.close();
+  });
+
+  it("closes the owned Pack server if EVJS readiness fails after startup", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const adapter = createUtoopackAdapter({ devEditBatch: editBatch });
+    await expect(
+      adapter.dev({
+        config,
+        cwd,
+        ...buildContext,
+        callbacks: {
+          onBuildFacts: vi.fn(),
+          onDevServerReady: vi.fn().mockRejectedValue(new Error("not ready")),
+          onServerBundleReady: vi.fn(),
+        },
+        hooks: [],
+      }),
+    ).rejects.toThrow("not ready");
+    expect(utoopackMock.closeServer).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the startup failure when closing the Pack server also fails", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({ html: "./index.html" });
+    const buildContext = await createBuildContext(config, cwd);
+    const startupError = new Error("not ready");
+    const closeError = new Error("close failed");
+    utoopackMock.closeServer.mockRejectedValueOnce(closeError);
+    const adapter = createUtoopackAdapter({ devEditBatch: editBatch });
+    await expect(
+      adapter.dev({
+        config,
+        cwd,
+        ...buildContext,
+        callbacks: {
+          onBuildFacts: vi.fn(),
+          onDevServerReady: vi.fn().mockRejectedValue(startupError),
+          onServerBundleReady: vi.fn(),
+        },
+        hooks: [],
+      }),
+    ).rejects.toMatchObject({
+      cause: startupError,
+      errors: [startupError, closeError],
+    });
+  });
+
   it("rejects Utoopack versions without client build callbacks", async () => {
     const cwd = await makeProject();
     utoopackMock.supportsClientBuild = false;

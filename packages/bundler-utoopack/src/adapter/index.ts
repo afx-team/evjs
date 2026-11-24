@@ -19,7 +19,7 @@ import type {
 import type { BuildPlan, BuildPlanUpdate } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import { getLogger } from "@logtape/logtape";
-import type { ConfigComplete } from "@utoo/pack";
+import type { ConfigComplete, DevServerHandle } from "@utoo/pack";
 import {
   IncompleteClientStatsError,
   UtoopackManifestGenerator,
@@ -28,7 +28,9 @@ import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 const require = createRequire(import.meta.url);
-type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build" | "serve">;
+type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build" | "serve"> & {
+  EditBatchRequestError?: unknown;
+};
 type UtoopackServerOptions = NonNullable<
   Parameters<UtoopackRuntime["serve"]>[3]
 > & {
@@ -37,6 +39,16 @@ type UtoopackServerOptions = NonNullable<
     isRebuild: boolean;
   }): Promise<void>;
 };
+
+export interface UtoopackDevEditBatchOptions {
+  policy: {
+    timeout:
+      | { action: "none" }
+      | { action: "release" | "keep-held"; afterMs: number };
+    afterBuild: "resume" | "hold";
+  };
+  token: string;
+}
 
 async function cleanServerOutput(
   cwd: string,
@@ -78,18 +90,36 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     return generator.collectBuildFacts();
   },
 
-  async dev(
+  dev: createUtoopackDev(),
+};
+
+export function createUtoopackAdapter(
+  options: { devEditBatch?: UtoopackDevEditBatchOptions } = {},
+): BundlerAdapter<ConfigComplete> {
+  return options.devEditBatch
+    ? { ...utoopackAdapter, dev: createUtoopackDev(options.devEditBatch) }
+    : utoopackAdapter;
+}
+
+function createUtoopackDev(devEditBatch?: UtoopackDevEditBatchOptions) {
+  return async function dev(
     ctx: BundlerDevContext<ConfigComplete>,
   ): Promise<BundlerDevController> {
+    const { serve, EditBatchRequestError } = requireUtoopack();
+    if (devEditBatch && typeof EditBatchRequestError !== "function") {
+      throw new Error(
+        "[evjs] Commit Compile requires @utoo/pack with edit batch support.",
+      );
+    }
     const { config, cwd, callbacks, hooks, plan } = ctx;
     const { createUtoopackConfig, updateSpaHistoryFallbackTarget } =
       await import("./create-config.js");
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, hooks);
     let serverReadyWatcher: fs.FSWatcher | undefined;
+    let serverHandle: DevServerHandle | undefined;
 
     logger.info`Starting development server with utoopack...`;
 
-    const { serve } = requireUtoopack();
     let devServerOrigin = formatDevServerOrigin(config, config.dev.port);
     const controller = new UtoopackDevController({
       cwd,
@@ -98,6 +128,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       closeWatcher() {
         serverReadyWatcher?.close();
       },
+      closeServer: () => serverHandle?.close(),
     });
     let clientBuildReceived = false;
     const serverOptions: UtoopackServerOptions = {
@@ -133,12 +164,28 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     };
 
     try {
-      await serve(
-        { config: utoopackConfig },
-        undefined,
-        undefined,
-        serverOptions,
-      );
+      if (devEditBatch) {
+        const batchServerOptions = {
+          ...serverOptions,
+          returnHandle: true,
+          handleSignals: false,
+          editBatch: devEditBatch.policy,
+          agentHmrToken: devEditBatch.token,
+        } as const;
+        serverHandle = await serve(
+          { config: utoopackConfig },
+          undefined,
+          undefined,
+          batchServerOptions,
+        );
+      } else {
+        await serve(
+          { config: utoopackConfig },
+          undefined,
+          undefined,
+          serverOptions,
+        );
+      }
       await callbacks.onDevServerReady?.({ origin: devServerOrigin });
       if (!hasRuntimeServerEntry(plan)) return controller;
 
@@ -177,11 +224,19 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       await checkReady();
       return controller;
     } catch (error) {
-      await controller.close();
+      try {
+        await controller.close();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "[evjs] Utoopack dev failed and cleanup also failed.",
+          { cause: error },
+        );
+      }
       throw error;
     }
-  },
-};
+  };
+}
 
 function hasRuntimeServerEntry(plan: BuildPlan): boolean {
   return plan.entries.some(
@@ -212,6 +267,7 @@ class UtoopackDevController implements BundlerDevController {
       plan: BuildPlan;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
       closeWatcher?: () => void;
+      closeServer?: () => Promise<void> | undefined;
     },
   ) {
     this.plan = options.plan;
@@ -233,6 +289,7 @@ class UtoopackDevController implements BundlerDevController {
       this.closed = true;
       this.options.closeWatcher?.();
       await this.publicationQueue;
+      await this.options.closeServer?.();
     })();
     return this.closePromise;
   }
