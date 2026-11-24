@@ -41,7 +41,7 @@ interface ActiveSession {
 
 type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve"> & {
   moduleReferencesVersion?: number;
-  EditBatchRequestError?: typeof import("@utoo/pack").EditBatchRequestError;
+  EditBatchRequestError?: unknown;
 };
 
 const require = createRequire(import.meta.url);

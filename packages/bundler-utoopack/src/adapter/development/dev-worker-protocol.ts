@@ -9,6 +9,13 @@ export const PATH_REWRITE_HEADER_INTS = 3;
 export const PATH_REWRITE_BUFFER_BYTES = 256 * 1024;
 export const PATH_REWRITE_TIMEOUT_MS = 5_000;
 
+export interface UtoopackEditBatchPolicy {
+  timeout:
+    | { action: "none" }
+    | { action: "release" | "keep-held"; afterMs: number };
+  afterBuild: "resume" | "hold";
+}
+
 export interface UtoopackDevWorkerOptions {
   cwd: string;
   config: ConfigComplete;
@@ -19,7 +26,10 @@ export interface UtoopackDevWorkerOptions {
   spaHistoryFallbackRuleIndex?: number;
   server: Required<
     Pick<StartServerOptions, "port" | "https" | "hostname" | "logServerInfo">
-  > & Pick<StartServerOptions, "editBatch" | "agentHmrToken">;
+  > & {
+    editBatch?: UtoopackEditBatchPolicy;
+    agentHmrToken?: string;
+  };
 }
 
 export interface UtoopackDevWorkerSessionOptions

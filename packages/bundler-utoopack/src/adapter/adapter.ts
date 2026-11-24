@@ -31,12 +31,13 @@ import {
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
-import type { ConfigComplete, EditBatchPolicy } from "@utoo/pack";
+import type { ConfigComplete } from "@utoo/pack";
 import { markUtoopackProcessForBuild } from "./development/dev-process-mode.js";
 import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./development/dev-worker-client.js";
+import type { UtoopackEditBatchPolicy } from "./development/dev-worker-protocol.js";
 import { runUtoopackBuild } from "./execution/utoopack.js";
 import { UtoopackManifestGenerator } from "./output/manifest-generator.js";
 import { assertSafeUtoopackCleanOutput } from "./output/output-paths.js";
@@ -160,7 +161,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
 /** Batch policy and authentication for a Node development host. */
 export interface UtoopackDevEditBatchOptions {
-  policy: EditBatchPolicy;
+  policy: UtoopackEditBatchPolicy;
   token: string;
 }
 
