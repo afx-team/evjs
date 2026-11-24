@@ -170,7 +170,9 @@ export function createUtoopackAdapter(options: {
 }): BundlerAdapter<ConfigComplete> {
   const devEditBatch = structuredClone(options.devEditBatch);
   if (!devEditBatch.token.trim()) {
-    throw new Error("[evjs] A control token is required for Utoopack edit batches.");
+    throw new Error(
+      "[evjs] A control token is required for Utoopack edit batches.",
+    );
   }
   return {
     ...utoopackAdapter,

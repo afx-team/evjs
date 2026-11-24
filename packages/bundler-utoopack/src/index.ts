@@ -7,8 +7,8 @@
 
 export {
   createUtoopackAdapter,
-  utoopackAdapter,
   type UtoopackDevEditBatchOptions,
+  utoopackAdapter,
 } from "./adapter/index.js";
 export type { ConfigPatch } from "./plugin/configure.js";
 export { merge, utoopack } from "./plugin/configure.js";

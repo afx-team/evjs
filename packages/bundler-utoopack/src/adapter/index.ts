@@ -1,5 +1,5 @@
 export {
   createUtoopackAdapter,
-  utoopackAdapter,
   type UtoopackDevEditBatchOptions,
+  utoopackAdapter,
 } from "./adapter.js";
