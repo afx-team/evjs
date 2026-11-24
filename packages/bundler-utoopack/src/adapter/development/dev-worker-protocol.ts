@@ -1,9 +1,20 @@
-import type { ConfigComplete, DevServerReadyContext } from "@utoo/pack";
+import type {
+  ConfigComplete,
+  DevServerReadyContext,
+  StartServerOptions,
+} from "@utoo/pack";
 import type { UtoopackClientBuildContext } from "../execution/utoopack.js";
 
 export const PATH_REWRITE_HEADER_INTS = 3;
 export const PATH_REWRITE_BUFFER_BYTES = 256 * 1024;
 export const PATH_REWRITE_TIMEOUT_MS = 5_000;
+
+export interface UtoopackEditBatchPolicy {
+  timeout:
+    | { action: "none" }
+    | { action: "release" | "keep-held"; afterMs: number };
+  afterBuild: "resume" | "hold";
+}
 
 export interface UtoopackDevWorkerOptions {
   cwd: string;
@@ -13,11 +24,11 @@ export interface UtoopackDevWorkerOptions {
   onClientBuild?(context: UtoopackClientBuildContext): Promise<void>;
   onServerError?(error: Error): void;
   spaHistoryFallbackRuleIndex?: number;
-  server: {
-    port: number;
-    https: boolean;
-    hostname: string;
-    logServerInfo: boolean;
+  server: Required<
+    Pick<StartServerOptions, "port" | "https" | "hostname" | "logServerInfo">
+  > & {
+    editBatch?: UtoopackEditBatchPolicy;
+    agentHmrToken?: string;
   };
 }
 

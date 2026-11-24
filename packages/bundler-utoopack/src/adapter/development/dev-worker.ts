@@ -41,6 +41,7 @@ interface ActiveSession {
 
 type UtoopackDevRuntime = Pick<typeof import("@utoo/pack"), "serve"> & {
   moduleReferencesVersion?: number;
+  EditBatchRequestError?: unknown;
 };
 
 const require = createRequire(import.meta.url);
@@ -130,6 +131,14 @@ async function startSession(
     );
   }
 
+  if (
+    options.server.editBatch &&
+    typeof runtime.EditBatchRequestError !== "function"
+  ) {
+    throw new Error(
+      "[evjs] Utoopack edit batches require a Node @utoo/pack build with begin/commit/wait support.",
+    );
+  }
   assertUtoopackModuleReferenceSupport(runtime, options.config);
   const lifecycle = createUtoopackReusableSessionLifecycle();
   const session: ActiveSession = {

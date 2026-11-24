@@ -37,6 +37,7 @@ import {
   startUtoopackDevWorker,
   type UtoopackDevWorkerHandle,
 } from "./development/dev-worker-client.js";
+import type { UtoopackEditBatchPolicy } from "./development/dev-worker-protocol.js";
 import { runUtoopackBuild } from "./execution/utoopack.js";
 import { UtoopackManifestGenerator } from "./output/manifest-generator.js";
 import { assertSafeUtoopackCleanOutput } from "./output/output-paths.js";
@@ -158,8 +159,30 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   },
 };
 
+/** Batch policy and authentication for a Node development host. */
+export interface UtoopackDevEditBatchOptions {
+  policy: UtoopackEditBatchPolicy;
+  token: string;
+}
+
+export function createUtoopackAdapter(options: {
+  devEditBatch: UtoopackDevEditBatchOptions;
+}): BundlerAdapter<ConfigComplete> {
+  const devEditBatch = structuredClone(options.devEditBatch);
+  if (!devEditBatch.token.trim()) {
+    throw new Error(
+      "[evjs] A control token is required for Utoopack edit batches.",
+    );
+  }
+  return {
+    ...utoopackAdapter,
+    dev: (ctx) => startUtoopackDev(ctx, devEditBatch),
+  };
+}
+
 async function startUtoopackDev(
   ctx: BundlerDevContext<ConfigComplete>,
+  devEditBatch?: UtoopackDevEditBatchOptions,
 ): Promise<UtoopackDevController> {
   const { addWatchFile, callbacks, config, cwd, hooks, plan, signal } = ctx;
   throwIfUtoopackDevAborted(signal);
@@ -205,6 +228,10 @@ async function startUtoopackDev(
       https: middlewareEnabled ? false : config.dev.https !== false,
       hostname: "0.0.0.0",
       logServerInfo: false,
+      ...(devEditBatch && {
+        editBatch: devEditBatch.policy,
+        agentHmrToken: devEditBatch.token,
+      }),
     },
   });
   const controller = new UtoopackDevController({
