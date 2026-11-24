@@ -5,6 +5,7 @@
  * for zero-config server function handling.
  */
 
-export { utoopackAdapter } from "./adapter/index.js";
+export type { UtoopackDevEditBatchOptions } from "./adapter/index.js";
+export { createUtoopackAdapter, utoopackAdapter } from "./adapter/index.js";
 export type { ConfigPatch } from "./plugin-helper.js";
 export { merge, utoopack } from "./plugin-helper.js";
