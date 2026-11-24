@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { __testing as modeTesting } from "../src/adapter/development/dev-process-mode.js";
 import {
   __testing as ownerTesting,
+  prepareUtoopackDevWorkerOptions,
   startUtoopackDevWorker,
 } from "../src/adapter/development/dev-worker-client.js";
 
@@ -51,6 +52,26 @@ function createOptions(
 }
 
 describe("Utoopack dev worker client", () => {
+  it("carries batch policy and credential only in the dev server options", () => {
+    const input = createOptions((pathname) => pathname);
+    const devOptions = {
+      ...input,
+      server: {
+        ...input.server,
+        editBatch: { timeout: { action: "none" }, afterBuild: "hold" } as const,
+        agentHmrToken: "test-token",
+      },
+    };
+    const { workerOptions } = prepareUtoopackDevWorkerOptions(devOptions);
+    expect(workerOptions.server).toEqual(devOptions.server);
+    expect(workerOptions.server).not.toBe(devOptions.server);
+    expect(workerOptions.config).not.toHaveProperty("editBatch");
+    expect(workerOptions.config).not.toHaveProperty("agentHmrToken");
+    expect(prepareUtoopackDevWorkerOptions(input).workerOptions.server).toEqual(
+      input.server,
+    );
+  });
+
   it.each([
     "server",
     "client",

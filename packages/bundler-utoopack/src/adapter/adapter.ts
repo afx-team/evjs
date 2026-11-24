@@ -31,7 +31,7 @@ import {
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
-import type { ConfigComplete } from "@utoo/pack";
+import type { ConfigComplete, EditBatchPolicy } from "@utoo/pack";
 import { markUtoopackProcessForBuild } from "./development/dev-process-mode.js";
 import {
   startUtoopackDevWorker,
@@ -158,8 +158,28 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   },
 };
 
+/** Batch policy and authentication for a Node development host. */
+export interface UtoopackDevEditBatchOptions {
+  policy: EditBatchPolicy;
+  token: string;
+}
+
+export function createUtoopackAdapter(options: {
+  devEditBatch: UtoopackDevEditBatchOptions;
+}): BundlerAdapter<ConfigComplete> {
+  const devEditBatch = structuredClone(options.devEditBatch);
+  if (!devEditBatch.token.trim()) {
+    throw new Error("[evjs] A control token is required for Utoopack edit batches.");
+  }
+  return {
+    ...utoopackAdapter,
+    dev: (ctx) => startUtoopackDev(ctx, devEditBatch),
+  };
+}
+
 async function startUtoopackDev(
   ctx: BundlerDevContext<ConfigComplete>,
+  devEditBatch?: UtoopackDevEditBatchOptions,
 ): Promise<UtoopackDevController> {
   const { addWatchFile, callbacks, config, cwd, hooks, plan, signal } = ctx;
   throwIfUtoopackDevAborted(signal);
@@ -205,6 +225,10 @@ async function startUtoopackDev(
       https: middlewareEnabled ? false : config.dev.https !== false,
       hostname: "0.0.0.0",
       logServerInfo: false,
+      ...(devEditBatch && {
+        editBatch: devEditBatch.policy,
+        agentHmrToken: devEditBatch.token,
+      }),
     },
   });
   const controller = new UtoopackDevController({

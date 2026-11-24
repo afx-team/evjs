@@ -1,4 +1,8 @@
-import type { ConfigComplete, DevServerReadyContext } from "@utoo/pack";
+import type {
+  ConfigComplete,
+  DevServerReadyContext,
+  StartServerOptions,
+} from "@utoo/pack";
 import type { UtoopackClientBuildContext } from "../execution/utoopack.js";
 
 export const PATH_REWRITE_HEADER_INTS = 3;
@@ -13,12 +17,9 @@ export interface UtoopackDevWorkerOptions {
   onClientBuild?(context: UtoopackClientBuildContext): Promise<void>;
   onServerError?(error: Error): void;
   spaHistoryFallbackRuleIndex?: number;
-  server: {
-    port: number;
-    https: boolean;
-    hostname: string;
-    logServerInfo: boolean;
-  };
+  server: Required<
+    Pick<StartServerOptions, "port" | "https" | "hostname" | "logServerInfo">
+  > & Pick<StartServerOptions, "editBatch" | "agentHmrToken">;
 }
 
 export interface UtoopackDevWorkerSessionOptions
